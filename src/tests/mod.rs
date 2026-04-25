@@ -74,6 +74,7 @@ pub mod telegram_resume_test;
 pub mod token_tracking_test;
 pub mod tui_error_test;
 pub mod tui_render_clear_test;
+pub mod usage_activity_columns_test;
 pub mod usage_ledger_test;
 pub mod voice_onboarding_test;
 pub mod voice_stt_dispatch_test;

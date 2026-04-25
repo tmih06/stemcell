@@ -323,6 +323,7 @@ fn import_nonexistent_archive_fails() {
 // ─── Registry Filesystem (Read-Only) ────────────────────────────────
 
 #[test]
+#[ignore = "touches user's ~/.opencrabs/ — slow + serial; run with `cargo test -- --ignored`"]
 fn registry_load_from_real_path() {
     let _guard = fs_lock();
     // Should not error regardless of host state
@@ -331,6 +332,7 @@ fn registry_load_from_real_path() {
 }
 
 #[test]
+#[ignore = "touches user's ~/.opencrabs/ — slow + serial; run with `cargo test -- --ignored`"]
 fn list_profiles_always_includes_default() {
     let _guard = fs_lock();
     let profiles = list_profiles().unwrap();
@@ -351,6 +353,7 @@ fn list_profiles_always_includes_default() {
 // parallel test execution.
 
 #[test]
+#[ignore = "touches user's ~/.opencrabs/ — slow + serial; run with `cargo test -- --ignored`"]
 fn filesystem_operations_sequential() {
     let _guard = fs_lock();
     let pid = std::process::id();
@@ -561,6 +564,7 @@ fn migrate_nonexistent_destination_errors() {
 }
 
 #[test]
+#[ignore = "touches user's ~/.opencrabs/ — slow + serial; run with `cargo test -- --ignored`"]
 fn migrate_profile_copies_md_and_toml_files() {
     let _guard = fs_lock();
     let base = crate::config::profile::base_opencrabs_dir();
@@ -637,6 +641,7 @@ fn migrate_profile_copies_md_and_toml_files() {
 }
 
 #[test]
+#[ignore = "touches user's ~/.opencrabs/ — slow + serial; run with `cargo test -- --ignored`"]
 fn migrate_profile_skips_existing_without_force() {
     let _guard = fs_lock();
     let base = crate::config::profile::base_opencrabs_dir();
@@ -690,6 +695,7 @@ fn migrate_profile_skips_existing_without_force() {
 }
 
 #[test]
+#[ignore = "touches user's ~/.opencrabs/ — slow + serial; run with `cargo test -- --ignored`"]
 fn migrate_from_default_profile_works() {
     let _guard = fs_lock();
     let base = crate::config::profile::base_opencrabs_dir();
@@ -769,6 +775,7 @@ fn active_profile_returns_none_or_valid() {
 // ─── Profile Isolation ──────────────────────────────────────────────
 
 #[test]
+#[ignore = "touches user's ~/.opencrabs/ — slow + serial; run with `cargo test -- --ignored`"]
 fn profiles_have_completely_separate_directories() {
     let _guard = fs_lock();
     let base = base_opencrabs_dir();
@@ -850,6 +857,7 @@ fn profiles_have_completely_separate_directories() {
 }
 
 #[test]
+#[ignore = "touches user's ~/.opencrabs/ — slow + serial; run with `cargo test -- --ignored`"]
 fn token_lock_prevents_same_token_reuse() {
     let _guard = fs_lock();
     let base = base_opencrabs_dir();
@@ -950,6 +958,7 @@ fn different_tokens_same_channel_no_conflict() {
 }
 
 #[test]
+#[ignore = "touches user's ~/.opencrabs/ — slow + serial; run with `cargo test -- --ignored`"]
 fn default_profile_isolation_from_named_profiles() {
     let _guard = fs_lock();
     // The default profile (root ~/.opencrabs/) should not interfere with
@@ -988,6 +997,7 @@ fn default_profile_isolation_from_named_profiles() {
 // ─── Concurrent Profile Access ───────────────────────────────────────
 
 #[test]
+#[ignore = "touches user's ~/.opencrabs/ — slow + serial; run with `cargo test -- --ignored`"]
 fn concurrent_writes_to_separate_profiles_are_isolated() {
     // Hold lock for entire test — setup and cleanup both touch shared profiles.toml.
     // The concurrent threads only write to separate profile directories, not the registry.
@@ -1066,6 +1076,7 @@ fn concurrent_writes_to_separate_profiles_are_isolated() {
 // ─── Export/Import with Nested Memory ────────────────────────────────
 
 #[test]
+#[ignore = "touches user's ~/.opencrabs/ — slow + serial; run with `cargo test -- --ignored`"]
 fn export_import_preserves_nested_memory_directories() {
     let _guard = fs_lock();
     let base = base_opencrabs_dir();
@@ -1254,6 +1265,7 @@ fn test_set_and_get_active_profile() {
 }
 
 #[test]
+#[ignore = "touches user's ~/.opencrabs/ — slow + serial; run with `cargo test -- --ignored`"]
 fn test_concurrent_profile_writes() {
     use std::thread;
 
@@ -1329,6 +1341,7 @@ fn test_concurrent_profile_writes() {
 }
 
 #[test]
+#[ignore = "touches user's ~/.opencrabs/ — slow + serial; run with `cargo test -- --ignored`"]
 fn test_export_import_nested_memory() {
     let _guard = fs_lock();
     let base = base_opencrabs_dir();

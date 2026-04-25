@@ -365,6 +365,55 @@ pub fn render_tools(f: &mut Frame, tools: &[ToolStats], area: Rect, focused: boo
 
 // ── By Activity ──────────────────────────────────────────────────────────────
 
+/// Column widths for the "By Activity" card. Each width is the larger
+/// of the widest data value and its header label, so headers like
+/// "1-shot" or "Turns" never overflow a column sized only for the
+/// values (the 2026-04-25 "1-sho" clip).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct ActivityColumnWidths {
+    pub cat: usize,
+    pub cost: usize,
+    pub turns: usize,
+    /// Pct width includes one slot for the trailing '%' so values like
+    /// "60%" line up at the same right edge as the bare-number widest.
+    pub pct: usize,
+}
+
+/// Pure column-width calculator for the "By Activity" card. Pulled out
+/// so `src/tests/usage_activity_columns_test.rs` can exercise the
+/// header-label floor that prevents "1-shot" / "Turns" from being
+/// clipped when their data values are narrower than the header.
+pub(crate) fn activity_column_widths(activities: &[ActivityStats]) -> ActivityColumnWidths {
+    let max_cat_len = activities
+        .iter()
+        .map(|a| a.category.len())
+        .max()
+        .unwrap_or(8);
+    let max_cost_len = activities
+        .iter()
+        .map(|a| fmt_cost(a.cost).len())
+        .max()
+        .unwrap_or(6);
+    let max_turns_len = activities
+        .iter()
+        .map(|a| a.turns.to_string().len())
+        .max()
+        .unwrap_or(1);
+    let max_pct_len = activities
+        .iter()
+        .map(|a| a.one_shot_pct.to_string().len())
+        .max()
+        .unwrap_or(1);
+
+    ActivityColumnWidths {
+        cat: max_cat_len,
+        cost: max_cost_len.max("Cost".len()),
+        turns: max_turns_len.max("Turns".len()),
+        // +1 for the trailing '%' the values render with.
+        pct: (max_pct_len + 1).max("1-shot".len()),
+    }
+}
+
 pub fn render_activities(f: &mut Frame, activities: &[ActivityStats], area: Rect, focused: bool) {
     let block = card_block("By Activity", focused);
     let inner = block.inner(area);
@@ -378,35 +427,15 @@ pub fn render_activities(f: &mut Frame, activities: &[ActivityStats], area: Rect
 
     // Compute column widths from actual data
     let visible = (inner.height.saturating_sub(1) as usize).min(activities.len());
-    let max_cat_len = activities
-        .iter()
-        .take(visible)
-        .map(|a| a.category.len())
-        .max()
-        .unwrap_or(8);
-    let max_cost_len = activities
-        .iter()
-        .take(visible)
-        .map(|a| fmt_cost(a.cost).len())
-        .max()
-        .unwrap_or(6);
-    let max_turns_len = activities
-        .iter()
-        .take(visible)
-        .map(|a| a.turns.to_string().len())
-        .max()
-        .unwrap_or(1);
-    let max_pct_len = activities
-        .iter()
-        .take(visible)
-        .map(|a| a.one_shot_pct.to_string().len())
-        .max()
-        .unwrap_or(1);
+    let widths = activity_column_widths(&activities[..visible]);
+    let max_cat_len = widths.cat;
+    let cost_width = widths.cost;
+    let turns_width = widths.turns;
+    let pct_width = widths.pct;
 
     // Data columns get guaranteed space; category+bar fill whatever is left
     let spacing = 1; // single space between data cols
-    let pct_width = max_pct_len + 2; // e.g. "45%" needs digit + %
-    let fixed_data = max_cost_len + max_turns_len + pct_width + spacing * 3;
+    let fixed_data = cost_width + turns_width + pct_width + spacing * 3;
     let cat_bar_width = (inner.width as usize).saturating_sub(fixed_data + 1); // +1 leading space
     let cat_width = max_cat_len.min(cat_bar_width / 3).max(4);
     let bar_width = cat_bar_width.saturating_sub(cat_width);
@@ -414,11 +443,8 @@ pub fn render_activities(f: &mut Frame, activities: &[ActivityStats], area: Rect
     let header_line = Line::from(vec![
         Span::styled(format!(" {:<width$}", "Category", width = cat_width), LABEL),
         Span::raw(" ".repeat(bar_width)),
-        Span::styled(format!(" {:>width$}", "Cost", width = max_cost_len), LABEL),
-        Span::styled(
-            format!(" {:>width$}", "Turns", width = max_turns_len),
-            LABEL,
-        ),
+        Span::styled(format!(" {:>width$}", "Cost", width = cost_width), LABEL),
+        Span::styled(format!(" {:>width$}", "Turns", width = turns_width), LABEL),
         Span::styled(format!(" {:>width$}", "1-shot", width = pct_width), LABEL),
     ]);
     let mut lines: Vec<Line> = vec![header_line];
@@ -453,13 +479,10 @@ pub fn render_activities(f: &mut Frame, activities: &[ActivityStats], area: Rect
             Span::styled(bar, ACCENT),
             Span::raw(pad),
             Span::styled(
-                format!(" {:>width$}", fmt_cost(act.cost), width = max_cost_len),
+                format!(" {:>width$}", fmt_cost(act.cost), width = cost_width),
                 LABEL,
             ),
-            Span::styled(
-                format!(" {:>width$}", act.turns, width = max_turns_len),
-                DIM,
-            ),
+            Span::styled(format!(" {:>width$}", act.turns, width = turns_width), DIM),
             Span::styled(format!(" {:>width$}", one_shot, width = pct_width), DIM),
         ]));
     }
