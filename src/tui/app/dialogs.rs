@@ -1,7 +1,7 @@
 //! Dialogs — model selector, onboarding wizard, file/directory pickers.
 
 use super::events::{AppMode, TuiEvent};
-use super::onboarding::{OnboardingStep, WizardAction};
+use super::onboarding::{OnboardingStep, WizardAction, WELCOME_MESSAGE};
 use super::*;
 use crate::brain::provider::{ContentBlock, LLMRequest};
 use crate::tui::provider_selector::{CUSTOM_INSTANCES_START, CUSTOM_PROVIDER_IDX};
@@ -1589,12 +1589,11 @@ impl App {
 
                     // First-time onboard welcome message — only on genuine fresh installs
                     if is_first_time {
-                        let welcome = "Holy shit, we are live. Onboard complete, brain files locked and loaded. I am ready to help you out. What about we start with a cronjob or heartbeat so I can reach out randomly, check missing tasks, or just bug you when something needs attention?";
                         let msg_id = Uuid::new_v4();
                         let display_msg = DisplayMessage {
                             id: msg_id,
                             role: "assistant".to_string(),
-                            content: welcome.to_string(),
+                            content: WELCOME_MESSAGE.to_string(),
                             timestamp: chrono::Utc::now(),
                             token_count: None,
                             cost: None,
@@ -1609,7 +1608,7 @@ impl App {
                             let _ = self.message_service.create_message(
                                 session.id,
                                 "assistant".to_string(),
-                                welcome.to_string(),
+                                WELCOME_MESSAGE.to_string(),
                             ).await;
                         }
                     }
@@ -1991,12 +1990,11 @@ impl App {
 
                     // First-time onboard welcome message — only on genuine fresh installs
                     if is_first_time {
-                        let welcome = "Holy shit, we are live. Onboard complete, brain files locked and loaded. I am ready to help you out. What about we start with a cronjob or heartbeat so I can reach out randomly, check missing tasks, or just bug you when something needs attention?";
                         let msg_id = Uuid::new_v4();
                         let display_msg = DisplayMessage {
                             id: msg_id,
                             role: "assistant".to_string(),
-                            content: welcome.to_string(),
+                            content: WELCOME_MESSAGE.to_string(),
                             timestamp: chrono::Utc::now(),
                             token_count: None,
                             cost: None,
@@ -2011,7 +2009,7 @@ impl App {
                             let _ = self.message_service.create_message(
                                 session.id,
                                 "assistant".to_string(),
-                                welcome.to_string(),
+                                WELCOME_MESSAGE.to_string(),
                             ).await;
                         }
                     }

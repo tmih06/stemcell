@@ -32,3 +32,6 @@ pub use wizard::OnboardingWizard;
 
 pub(crate) use brain::parse_brain_sections;
 pub use fetch::{fetch_provider_models, is_first_time};
+
+/// Welcome message sent once after the user completes first-time onboarding.
+pub const WELCOME_MESSAGE: &str = "Holy shit, we are live. Onboard complete, brain files locked and loaded. I am ready to help you out. What about we start with a cronjob or heartbeat so I can reach out randomly, check missing tasks, or just bug you when something needs attention?";
