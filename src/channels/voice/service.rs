@@ -230,12 +230,18 @@ async fn ensure_opus(audio_bytes: Vec<u8>) -> Vec<u8> {
         // Stage 1: voip-tuned opus (optimized for voice notes)
         let mut cmd = std::process::Command::new(&ffmpeg_path);
         cmd.args([
-            "-i", "pipe:0",
-            "-f", "ogg",
-            "-c:a", "libopus",
-            "-b:a", "48k",
-            "-application", "voip",
-            "-y", "pipe:1",
+            "-i",
+            "pipe:0",
+            "-f",
+            "ogg",
+            "-c:a",
+            "libopus",
+            "-b:a",
+            "48k",
+            "-application",
+            "voip",
+            "-y",
+            "pipe:1",
         ])
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
@@ -243,7 +249,9 @@ async fn ensure_opus(audio_bytes: Vec<u8>) -> Vec<u8> {
 
         if let Ok(mut child) = cmd.spawn() {
             use std::io::Write;
-            let write_ok = child.stdin.take()
+            let write_ok = child
+                .stdin
+                .take()
                 .map(|mut stdin| stdin.write_all(&audio_bytes).is_ok())
                 .unwrap_or(false);
 
@@ -258,7 +266,11 @@ async fn ensure_opus(audio_bytes: Vec<u8>) -> Vec<u8> {
                         return output.stdout;
                     }
                     let stderr = String::from_utf8_lossy(&output.stderr);
-                    tracing::warn!("TTS: voip opus failed ({}): {}", output.status, stderr.lines().next().unwrap_or(""));
+                    tracing::warn!(
+                        "TTS: voip opus failed ({}): {}",
+                        output.status,
+                        stderr.lines().next().unwrap_or("")
+                    );
                 }
             } else {
                 tracing::warn!("TTS: failed to write audio to ffmpeg stage 1");
@@ -269,11 +281,7 @@ async fn ensure_opus(audio_bytes: Vec<u8>) -> Vec<u8> {
         tracing::info!("TTS: trying basic opus fallback");
         let mut cmd2 = std::process::Command::new(&ffmpeg_path);
         cmd2.args([
-            "-i", "pipe:0",
-            "-f", "ogg",
-            "-c:a", "libopus",
-            "-b:a", "64k",
-            "-y", "pipe:1",
+            "-i", "pipe:0", "-f", "ogg", "-c:a", "libopus", "-b:a", "64k", "-y", "pipe:1",
         ])
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
@@ -281,7 +289,9 @@ async fn ensure_opus(audio_bytes: Vec<u8>) -> Vec<u8> {
 
         if let Ok(mut child) = cmd2.spawn() {
             use std::io::Write;
-            let write_ok = child.stdin.take()
+            let write_ok = child
+                .stdin
+                .take()
                 .map(|mut stdin| stdin.write_all(&audio_bytes).is_ok())
                 .unwrap_or(false);
 
@@ -296,7 +306,11 @@ async fn ensure_opus(audio_bytes: Vec<u8>) -> Vec<u8> {
                         return output.stdout;
                     }
                     let stderr = String::from_utf8_lossy(&output.stderr);
-                    tracing::warn!("TTS: basic opus fallback failed ({}): {}", output.status, stderr.lines().next().unwrap_or(""));
+                    tracing::warn!(
+                        "TTS: basic opus fallback failed ({}): {}",
+                        output.status,
+                        stderr.lines().next().unwrap_or("")
+                    );
                 }
             } else {
                 tracing::warn!("TTS: failed to write audio to ffmpeg stage 2");
@@ -312,7 +326,10 @@ async fn ensure_opus(audio_bytes: Vec<u8>) -> Vec<u8> {
     match tokio::time::timeout(std::time::Duration::from_secs(300), handle).await {
         Ok(result) => result.unwrap_or(audio_fallback),
         Err(_) => {
-            tracing::warn!("TTS: ffmpeg conversion timed out after 5m ({} bytes), sending original audio", audio_len);
+            tracing::warn!(
+                "TTS: ffmpeg conversion timed out after 5m ({} bytes), sending original audio",
+                audio_len
+            );
             audio_fallback
         }
     }
