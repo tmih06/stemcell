@@ -143,6 +143,56 @@ fn find_case_insensitive(haystack: &str, needle: &str) -> Option<usize> {
     None
 }
 
+/// Recursively replace the user's home directory path with `~` in all strings.
+///
+/// Transforms `/Users/adolfousierstudio/srv/rs/opencrabs` → `~/srv/rs/opencrabs`
+/// This makes tool call displays much cleaner in the TUI and channels.
+fn shrink_home_paths(value: &Value) -> Value {
+    // Cross-platform home directory detection:
+    // - macOS/Linux: HOME
+    // - Windows: USERPROFILE (or HOMEDRIVE + HOMEPATH as fallback)
+    let home = std::env::var("HOME")
+        .or_else(|_| std::env::var("USERPROFILE"))
+        .or_else(|_| {
+            let drive = std::env::var("HOMEDRIVE").unwrap_or_default();
+            let path = std::env::var("HOMEPATH").unwrap_or_default();
+            let combined = format!("{}{}", drive, path);
+            if combined.is_empty() {
+                Err(std::env::VarError::NotPresent)
+            } else {
+                Ok(combined)
+            }
+        });
+
+    let home = match home {
+        Ok(h) if !h.is_empty() => h,
+        _ => return value.clone(),
+    };
+
+    shrink_home_paths_inner(value, &home)
+}
+
+fn shrink_home_paths_inner(value: &Value, home: &str) -> Value {
+    match value {
+        Value::String(s) => {
+            // Replace home path at the start of the string, or anywhere inside it
+            let shortened = s.replace(home, "~");
+            Value::String(shortened)
+        }
+        Value::Object(map) => {
+            let mut out = Map::with_capacity(map.len());
+            for (k, v) in map {
+                out.insert(k.clone(), shrink_home_paths_inner(v, home));
+            }
+            Value::Object(out)
+        }
+        Value::Array(arr) => {
+            Value::Array(arr.iter().map(|v| shrink_home_paths_inner(v, home)).collect())
+        }
+        other => other.clone(),
+    }
+}
+
 /// Recursively redact sensitive fields from a tool input JSON value.
 ///
 /// - Object keys matching `SENSITIVE_KEYS` have their string values replaced
@@ -150,8 +200,11 @@ fn find_case_insensitive(haystack: &str, needle: &str) -> Option<usize> {
 /// - The `command` field (bash) has inline secret patterns redacted
 /// - The `headers` object has all values for sensitive header names redacted
 /// - Arrays and nested objects are recursively processed
+/// - Home directory paths are shortened to `~` for cleaner display
 pub fn redact_tool_input(value: &Value) -> Value {
-    redact_value(value, None)
+    // First shrink home paths, then redact secrets
+    let shortened = shrink_home_paths(value);
+    redact_value(&shortened, None)
 }
 
 fn redact_value(value: &Value, parent_key: Option<&str>) -> Value {
@@ -739,5 +792,62 @@ mod tests {
         let input = "Hello world, İstanbul, München, Ñoño";
         let out = redact_secrets(input);
         assert_eq!(out, input, "normal text should not change");
+    }
+
+    // --- Home path shortening tests ---
+
+    #[test]
+    fn shrinks_home_path_in_string() {
+        let home = std::env::var("HOME").unwrap_or_else(|_| "/Users/testuser".to_string());
+        let input = json!({"path": format!("{}/srv/rs/opencrabs", home)});
+        let out = redact_tool_input(&input);
+        assert_eq!(out["path"], "~/srv/rs/opencrabs");
+    }
+
+    #[test]
+    fn shrinks_home_path_in_nested_object() {
+        let home = std::env::var("HOME").unwrap_or_else(|_| "/Users/testuser".to_string());
+        let input = json!({
+            "config": {
+                "dir": format!("{}/.opencrabs", home),
+                "name": "test"
+            }
+        });
+        let out = redact_tool_input(&input);
+        assert_eq!(out["config"]["dir"], "~/.opencrabs");
+        assert_eq!(out["config"]["name"], "test");
+    }
+
+    #[test]
+    fn shrinks_home_path_in_array() {
+        let home = std::env::var("HOME").unwrap_or_else(|_| "/Users/testuser".to_string());
+        let input = json!([format!("{}/file1.rs", home), format!("{}/file2.rs", home)]);
+        let out = redact_tool_input(&input);
+        assert_eq!(out[0], "~/file1.rs");
+        assert_eq!(out[1], "~/file2.rs");
+    }
+
+    #[test]
+    fn shrinks_home_path_in_bash_command() {
+        let home = std::env::var("HOME").unwrap_or_else(|_| "/Users/testuser".to_string());
+        let input = json!({"command": format!("cat {}/.opencrabs/config.toml", home)});
+        let out = redact_tool_input(&input);
+        assert!(out["command"].as_str().unwrap().contains("~/.opencrabs/config.toml"));
+    }
+
+    #[test]
+    fn preserves_non_home_paths() {
+        let input = json!({"path": "/etc/hosts", "other": "/var/log/syslog"});
+        let out = redact_tool_input(&input);
+        assert_eq!(out["path"], "/etc/hosts");
+        assert_eq!(out["other"], "/var/log/syslog");
+    }
+
+    #[test]
+    fn shrinks_home_path_mid_string() {
+        let home = std::env::var("HOME").unwrap_or_else(|_| "/Users/testuser".to_string());
+        let input = json!({"msg": format!("Found at {}/docs/readme.md", home)});
+        let out = redact_tool_input(&input);
+        assert_eq!(out["msg"], "Found at ~/docs/readme.md");
     }
 }
