@@ -110,39 +110,89 @@ impl FeedbackLedgerRepository {
 
     /// Get aggregated stats per dimension for a given event type.
     /// For tool_success/tool_failure, dimension is the tool name.
+    /// Lifetime aggregate — see `stats_by_dimension_since` for windowed.
     pub async fn stats_by_dimension(&self, event_type_prefix: &str) -> Result<Vec<DimensionStats>> {
+        self.stats_by_dimension_since(event_type_prefix, None).await
+    }
+
+    /// Same as `stats_by_dimension`, but only counts events whose
+    /// `created_at` is at or after `since` (ISO 8601 / RFC3339 string
+    /// matching the column's storage format). Pass `None` to get the
+    /// full lifetime aggregate.
+    ///
+    /// Without the window, a tool that broke once and was fixed shows
+    /// "100% failure" until the success count finally exceeds the
+    /// failure count. The 2026-04-25 RSI logs were full of stale
+    /// "exa_search 100% failure" / "wait_agent 100% failure"
+    /// opportunities long after both bugs landed fixes — old failure
+    /// rows never aged out.
+    pub async fn stats_by_dimension_since(
+        &self,
+        event_type_prefix: &str,
+        since: Option<&str>,
+    ) -> Result<Vec<DimensionStats>> {
         let prefix = format!("{}%", event_type_prefix);
+        let since = since.map(|s| s.to_string());
         self.pool
             .get()
             .await
             .context("Failed to get connection")?
             .interact(move |conn| {
-                let mut stmt = conn.prepare_cached(
-                    "SELECT \
-                       dimension, \
-                       COUNT(*) as total, \
-                       SUM(CASE WHEN event_type = 'tool_success' THEN 1 ELSE 0 END) as successes, \
-                       SUM(CASE WHEN event_type = 'tool_failure' THEN 1 ELSE 0 END) as failures, \
-                       CASE WHEN COUNT(*) > 0 \
-                         THEN CAST(SUM(CASE WHEN event_type = 'tool_success' THEN 1 ELSE 0 END) AS REAL) / COUNT(*) \
-                         ELSE 0.0 END as success_rate, \
-                       AVG(value) as avg_value \
-                     FROM feedback_ledger \
-                     WHERE event_type LIKE ?1 \
-                     GROUP BY dimension \
-                     ORDER BY total DESC",
-                )?;
-                let rows = stmt.query_map(params![prefix], |row| {
-                    Ok(DimensionStats {
-                        dimension: row.get(0)?,
-                        total_events: row.get(1)?,
-                        successes: row.get(2)?,
-                        failures: row.get(3)?,
-                        success_rate: row.get(4)?,
-                        avg_value: row.get(5)?,
-                    })
-                })?;
-                rows.collect::<std::result::Result<Vec<_>, _>>()
+                if let Some(since_ts) = since {
+                    let mut stmt = conn.prepare_cached(
+                        "SELECT \
+                           dimension, \
+                           COUNT(*) as total, \
+                           SUM(CASE WHEN event_type = 'tool_success' THEN 1 ELSE 0 END) as successes, \
+                           SUM(CASE WHEN event_type = 'tool_failure' THEN 1 ELSE 0 END) as failures, \
+                           CASE WHEN COUNT(*) > 0 \
+                             THEN CAST(SUM(CASE WHEN event_type = 'tool_success' THEN 1 ELSE 0 END) AS REAL) / COUNT(*) \
+                             ELSE 0.0 END as success_rate, \
+                           AVG(value) as avg_value \
+                         FROM feedback_ledger \
+                         WHERE event_type LIKE ?1 AND created_at >= ?2 \
+                         GROUP BY dimension \
+                         ORDER BY total DESC",
+                    )?;
+                    let rows = stmt.query_map(params![prefix, since_ts], |row| {
+                        Ok(DimensionStats {
+                            dimension: row.get(0)?,
+                            total_events: row.get(1)?,
+                            successes: row.get(2)?,
+                            failures: row.get(3)?,
+                            success_rate: row.get(4)?,
+                            avg_value: row.get(5)?,
+                        })
+                    })?;
+                    rows.collect::<std::result::Result<Vec<_>, _>>()
+                } else {
+                    let mut stmt = conn.prepare_cached(
+                        "SELECT \
+                           dimension, \
+                           COUNT(*) as total, \
+                           SUM(CASE WHEN event_type = 'tool_success' THEN 1 ELSE 0 END) as successes, \
+                           SUM(CASE WHEN event_type = 'tool_failure' THEN 1 ELSE 0 END) as failures, \
+                           CASE WHEN COUNT(*) > 0 \
+                             THEN CAST(SUM(CASE WHEN event_type = 'tool_success' THEN 1 ELSE 0 END) AS REAL) / COUNT(*) \
+                             ELSE 0.0 END as success_rate, \
+                           AVG(value) as avg_value \
+                         FROM feedback_ledger \
+                         WHERE event_type LIKE ?1 \
+                         GROUP BY dimension \
+                         ORDER BY total DESC",
+                    )?;
+                    let rows = stmt.query_map(params![prefix], |row| {
+                        Ok(DimensionStats {
+                            dimension: row.get(0)?,
+                            total_events: row.get(1)?,
+                            successes: row.get(2)?,
+                            failures: row.get(3)?,
+                            success_rate: row.get(4)?,
+                            avg_value: row.get(5)?,
+                        })
+                    })?;
+                    rows.collect::<std::result::Result<Vec<_>, _>>()
+                }
             })
             .await
             .map_err(interact_err)?

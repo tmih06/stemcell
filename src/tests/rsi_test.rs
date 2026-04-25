@@ -218,6 +218,148 @@ mod feedback_ledger_repo {
         assert_eq!(count, 0);
     }
 
+    /// Helper: insert a feedback row at a specific historical timestamp,
+    /// bypassing `record()` which always stamps "now". Required to
+    /// simulate the staleness scenario the windowed stats are built for.
+    async fn record_at(
+        repo: &crate::db::repository::FeedbackLedgerRepository,
+        session_id: &str,
+        event_type: &str,
+        dimension: &str,
+        value: f64,
+        created_at: &str,
+    ) {
+        let sid = session_id.to_string();
+        let et = event_type.to_string();
+        let dim = dimension.to_string();
+        let ts = created_at.to_string();
+        repo.pool()
+            .get()
+            .await
+            .unwrap()
+            .interact(move |conn| -> rusqlite::Result<()> {
+                conn.execute(
+                    "INSERT INTO feedback_ledger (session_id, event_type, dimension, value, created_at) \
+                     VALUES (?1, ?2, ?3, ?4, ?5)",
+                    rusqlite::params![sid, et, dim, value, ts],
+                )?;
+                Ok(())
+            })
+            .await
+            .unwrap()
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn stats_by_dimension_since_none_matches_lifetime() {
+        // Pinning that passing None to the windowed variant is identical
+        // to the old (lifetime) `stats_by_dimension`. Without this the
+        // two could quietly diverge on schema changes.
+        let (_db, repo) = setup().await;
+        for _ in 0..3 {
+            repo.record("s1", "tool_success", "bash", 1.0, None)
+                .await
+                .unwrap();
+        }
+        repo.record("s1", "tool_failure", "bash", 0.0, None)
+            .await
+            .unwrap();
+
+        let lifetime = repo.stats_by_dimension("tool_").await.unwrap();
+        let windowed = repo.stats_by_dimension_since("tool_", None).await.unwrap();
+        assert_eq!(lifetime.len(), windowed.len());
+        assert_eq!(lifetime[0].dimension, windowed[0].dimension);
+        assert_eq!(lifetime[0].total_events, windowed[0].total_events);
+        assert_eq!(lifetime[0].successes, windowed[0].successes);
+        assert_eq!(lifetime[0].failures, windowed[0].failures);
+    }
+
+    #[tokio::test]
+    async fn stats_by_dimension_since_drops_stale_failures() {
+        // Regression: the 2026-04-25 RSI logs reported "exa_search 100%
+        // failure (5/5)" forever because old failures from 2026-04-14/17
+        // never aged out. After the fix we window stats; the same
+        // failures with no recent activity must report zero events
+        // inside a 7-day window.
+        let (_db, repo) = setup().await;
+        let stale = "2026-04-14T22:49:45Z";
+        for _ in 0..5 {
+            record_at(&repo, "s1", "tool_failure", "exa_search", 0.0, stale).await;
+        }
+        // Today's reference point — picked so the stale rows fall
+        // 11 days behind it.
+        let since = "2026-04-25T00:00:00Z";
+        let stats = repo
+            .stats_by_dimension_since("tool_", Some(since))
+            .await
+            .unwrap();
+        assert!(
+            stats.iter().all(|s| s.dimension != "exa_search"),
+            "exa_search must be excluded once its only events are outside the window: {:?}",
+            stats
+        );
+    }
+
+    #[tokio::test]
+    async fn stats_by_dimension_since_keeps_recent_real_failures() {
+        // Mirror image of the above: tools with failures inside the
+        // window stay reported. browser_navigate had failures on
+        // 2026-04-22 — those must survive a 7-day window from 04-25.
+        let (_db, repo) = setup().await;
+        let recent = "2026-04-22T12:54:40Z";
+        let stale = "2026-04-13T00:31:08Z";
+        for _ in 0..4 {
+            record_at(&repo, "s1", "tool_failure", "browser_navigate", 0.0, recent).await;
+        }
+        // Old successes that should NOT inflate the in-window denominator.
+        for _ in 0..10 {
+            record_at(&repo, "s1", "tool_success", "browser_navigate", 1.0, stale).await;
+        }
+
+        let since = "2026-04-18T00:00:00Z";
+        let stats = repo
+            .stats_by_dimension_since("tool_", Some(since))
+            .await
+            .unwrap();
+        let row = stats
+            .iter()
+            .find(|s| s.dimension == "browser_navigate")
+            .expect("browser_navigate must remain visible inside the window");
+        assert_eq!(row.total_events, 4, "only the 4 in-window failures count");
+        assert_eq!(row.failures, 4);
+        assert_eq!(row.successes, 0);
+        assert!(
+            row.success_rate < 0.01,
+            "with all in-window events being failures, success_rate must be ~0"
+        );
+    }
+
+    #[tokio::test]
+    async fn stats_by_dimension_since_mixed_events_inside_window() {
+        // Sanity: a tool with both successes and failures inside the
+        // window reports the right ratio.
+        let (_db, repo) = setup().await;
+        let recent = "2026-04-24T10:00:00Z";
+        for _ in 0..3 {
+            record_at(&repo, "s1", "tool_success", "bash", 1.0, recent).await;
+        }
+        record_at(&repo, "s1", "tool_failure", "bash", 0.0, recent).await;
+
+        let since = "2026-04-18T00:00:00Z";
+        let stats = repo
+            .stats_by_dimension_since("tool_", Some(since))
+            .await
+            .unwrap();
+        let bash = stats
+            .iter()
+            .find(|s| s.dimension == "bash")
+            .expect("bash present");
+        assert_eq!(bash.total_events, 4);
+        assert_eq!(bash.successes, 3);
+        assert_eq!(bash.failures, 1);
+        assert!((bash.success_rate - 0.75).abs() < 0.01);
+    }
+
     #[tokio::test]
     async fn multiple_sessions() {
         let (_db, repo) = setup().await;

@@ -441,8 +441,18 @@ pub fn spawn_rsi_engine(
             // Collect actionable opportunities
             let mut opportunities = Vec::new();
 
-            // Tools with >20% failure rate and >5 executions
-            if let Ok(stats) = repo.stats_by_dimension("tool_").await {
+            // Tools with >20% failure rate and >5 executions over the
+            // last 7 days. Without the window, a tool that broke once
+            // and was fixed shows "100% failure" forever — the
+            // 2026-04-25 RSI logs were full of stale alerts about
+            // exa_search and wait_agent long after both bugs landed.
+            let window_since = (chrono::Utc::now() - chrono::Duration::days(7))
+                .format("%Y-%m-%dT%H:%M:%SZ")
+                .to_string();
+            if let Ok(stats) = repo
+                .stats_by_dimension_since("tool_", Some(&window_since))
+                .await
+            {
                 for s in stats
                     .iter()
                     .filter(|s| s.total_events >= 5 && s.success_rate < 0.8)
