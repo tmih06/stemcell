@@ -755,10 +755,7 @@ pub async fn switch_model(
         None => agent.swap_provider(new_provider),
     }
 
-    let change_msg = format!(
-        "[Model changed to {} (provider: {})]",
-        model_name, display_name
-    );
+    let change_msg = format!("[Model changed to {}/{}]", display_name, model_name);
 
     // Persist provider + model to session DB record so it survives restarts
     if let Some(sid) = session_id {

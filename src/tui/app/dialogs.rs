@@ -1,7 +1,7 @@
 //! Dialogs — model selector, onboarding wizard, file/directory pickers.
 
 use super::events::{AppMode, TuiEvent};
-use super::onboarding::{OnboardingStep, WizardAction, WELCOME_MESSAGE};
+use super::onboarding::{OnboardingStep, WELCOME_MESSAGE, WizardAction};
 use super::*;
 use crate::brain::provider::{ContentBlock, LLMRequest};
 use crate::tui::provider_selector::{CUSTOM_INSTANCES_START, CUSTOM_PROVIDER_IDX};
@@ -1387,10 +1387,7 @@ impl App {
                         .to_string()
                 };
 
-            let change_msg = format!(
-                "[Model changed to {} (provider: {})]",
-                default_model, provider_name
-            );
+            let change_msg = format!("[Model changed to {}/{}]", provider_name, default_model);
             self.push_system_message(change_msg.clone());
             self.pending_context.push(change_msg);
 
@@ -1440,7 +1437,7 @@ impl App {
                                             wizard.ps.selected_model_name().to_string(),
                                         )
                                     };
-                                    format!("[Model changed to {} (provider: {})]", mname, pname)
+                                    format!("[Model changed to {}/{}]", pname, mname)
                                 }
                                 OnboardingStep::VoiceSetup => {
                                     let stt_name = match wizard.stt_provider {
@@ -1605,11 +1602,14 @@ impl App {
                         };
                         self.messages.push(display_msg.clone());
                         if let Some(ref session) = self.current_session {
-                            let _ = self.message_service.create_message(
-                                session.id,
-                                "assistant".to_string(),
-                                WELCOME_MESSAGE.to_string(),
-                            ).await;
+                            let _ = self
+                                .message_service
+                                .create_message(
+                                    session.id,
+                                    "assistant".to_string(),
+                                    WELCOME_MESSAGE.to_string(),
+                                )
+                                .await;
                         }
                     }
                 }
@@ -2006,11 +2006,14 @@ impl App {
                         };
                         self.messages.push(display_msg.clone());
                         if let Some(ref session) = self.current_session {
-                            let _ = self.message_service.create_message(
-                                session.id,
-                                "assistant".to_string(),
-                                WELCOME_MESSAGE.to_string(),
-                            ).await;
+                            let _ = self
+                                .message_service
+                                .create_message(
+                                    session.id,
+                                    "assistant".to_string(),
+                                    WELCOME_MESSAGE.to_string(),
+                                )
+                                .await;
                         }
                     }
 
