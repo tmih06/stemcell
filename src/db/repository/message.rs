@@ -274,6 +274,7 @@ impl MessageRepository {
             .context("Failed to count messages")
     }
 
+    /// Count all messages across all sessions
     /// Get the last message in a session
     pub async fn get_last_message(&self, session_id: Uuid) -> Result<Option<Message>> {
         let sid = session_id.to_string();

@@ -154,6 +154,10 @@ pub struct OnboardingWizard {
     /// Set by `next_step()` when `quick_jump` is true — signals the step is done
     /// and `handle_key` should return `WizardAction::Cancel`.
     pub quick_jump_done: bool,
+    /// Whether onboarding auto-triggered because no config exists (true) vs
+    /// user manually re-ran it via /onboard (false). Used to decide whether
+    /// to send the first-time welcome message on completion.
+    pub is_first_time: bool,
 }
 
 impl Default for OnboardingWizard {
@@ -443,6 +447,7 @@ impl OnboardingWizard {
             error_message: None,
             quick_jump: false,
             quick_jump_done: false,
+            is_first_time: false,
         };
 
         // Load existing brain files from workspace if available

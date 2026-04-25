@@ -734,7 +734,9 @@ impl App {
         if self.force_onboard || is_first {
             self.force_onboard = false;
             tracing::info!("[init] Starting onboarding wizard");
-            self.onboarding = Some(OnboardingWizard::new());
+            let mut wizard = OnboardingWizard::new();
+            wizard.is_first_time = is_first;
+            self.onboarding = Some(wizard);
             self.mode = AppMode::Onboarding;
             return false;
         }
@@ -2308,8 +2310,21 @@ impl App {
             return Ok(());
         }
 
-        // Ctrl+C: first press clears input, second press (within 3s) quits
+        // Ctrl+C: first press clears input, second press (within 3s) quits.
+        // When scrolled up, first press snaps back to bottom instead.
         if keys::is_quit(&event) {
+            if !self.auto_scroll {
+                // User is scrolled up — snap to bottom, clear input, no quit hint
+                self.scroll_offset = 0;
+                self.auto_scroll = true;
+                self.input_buffer.clear();
+                self.cursor_position = 0;
+                self.slash_suggestions_active = false;
+                self.error_message = None;
+                self.error_message_shown_at = None;
+                self.ctrl_c_pending_at = None;
+                return Ok(());
+            }
             if let Some(pending_at) = self.ctrl_c_pending_at
                 && pending_at.elapsed() < std::time::Duration::from_secs(3)
             {

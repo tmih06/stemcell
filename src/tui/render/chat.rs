@@ -284,8 +284,13 @@ pub(super) fn render_chat(f: &mut Frame, app: &mut App, area: Rect) {
 
     let has_pending_approval = app.has_pending_approval();
 
-    // Add streaming response if present (hide when approval is pending)
-    if !has_pending_approval && let Some(ref response) = app.streaming_response {
+    // Add streaming response if present (hide when approval is pending).
+    // Also hide when user has scrolled up (auto_scroll=false) so the viewport
+    // stays pinned to the content they are reading.
+    if !has_pending_approval
+        && app.auto_scroll
+        && let Some(ref response) = app.streaming_response
+    {
         // Render reasoning/thinking content above the response text (dimmed style)
         if let Some(ref reasoning) = app.streaming_reasoning {
             lines.push(Line::from(vec![
