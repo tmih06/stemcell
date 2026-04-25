@@ -162,7 +162,8 @@ fn cache_pricing_opus_default_rates() {
     let cfg = test_pricing_config();
     // opus-4: input=$15, output=$75, cache_write=$18.75, cache_read=$1.50
     let cost = cfg.calculate_cost_with_cache(
-        "claude-opus-4", 1_000_000, // 1M non-cached input
+        "claude-opus-4",
+        1_000_000, // 1M non-cached input
         1_000_000, // 1M output
         0,         // no cache write
         0,         // no cache read
@@ -174,7 +175,8 @@ fn cache_pricing_opus_default_rates() {
 fn cache_pricing_opus_with_cache_write() {
     let cfg = test_pricing_config();
     let cost = cfg.calculate_cost_with_cache(
-        "claude-opus-4", 3,      // 3 non-cached input tokens
+        "claude-opus-4",
+        3,      // 3 non-cached input tokens
         500,    // 500 output tokens
         83_000, // 83K cache write tokens
         0,      // no cache read
@@ -190,7 +192,8 @@ fn cache_pricing_opus_with_cache_write() {
 fn cache_pricing_opus_with_cache_read() {
     let cfg = test_pricing_config();
     let cost = cfg.calculate_cost_with_cache(
-        "claude-opus-4", 3,      // 3 non-cached input
+        "claude-opus-4",
+        3,      // 3 non-cached input
         500,    // 500 output
         0,      // no cache write
         14_000, // 14K cache read
@@ -371,7 +374,8 @@ fn cost_not_zero_for_cli_with_cache_tokens() {
     // THE BUG: was returning $0.00 because cache tokens were excluded
     let cfg = PricingConfig::load().expect("usage_pricing.toml should load");
     let cost = cfg.calculate_cost_with_cache(
-        "claude-opus-4", 3,      // non-cached input
+        "claude-opus-4",
+        3,      // non-cached input
         501,    // output
         83_129, // cache write
         13_981, // cache read
