@@ -216,7 +216,7 @@ impl TelegramAgent {
                                         }
                                     }
                                     if !resp.current_model.is_empty() {
-                                        let _ = crate::channels::commands::switch_model(&agent, &resp.current_model, session_id).await;
+                                        let _ = crate::channels::commands::switch_model(&agent, &resp.current_model, session_id, Some(provider_name)).await;
                                     }
                                     let _ = bot.answer_callback_query(&query.id).await;
                                     // Send synthetic message to agent so it handles follow-up
@@ -328,7 +328,7 @@ impl TelegramAgent {
                                 let (switch_ok, display_text) = if let Some(err) = provider_err {
                                     (false, format!("⚠️ {}", err))
                                 } else {
-                                    match crate::channels::commands::switch_model(&agent, model_name, session_id).await {
+                                    match crate::channels::commands::switch_model(&agent, model_name, session_id, provider_name).await {
                                         Ok(_) => (true, format!("✅ Model switched to <code>{}</code>", model_name)),
                                         Err(e) => (false, format!("⚠️ {}", e)),
                                     }

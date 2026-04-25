@@ -202,6 +202,7 @@ impl EventHandler for Handler {
                             &self.agent,
                             &resp.current_model,
                             session_id,
+                            Some(provider_name),
                         )
                         .await;
                     }
@@ -356,6 +357,7 @@ impl EventHandler for Handler {
                         &self.agent,
                         model_name,
                         session_id,
+                        provider_name,
                     )
                     .await
                     {

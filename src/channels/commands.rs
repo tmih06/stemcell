@@ -716,15 +716,17 @@ pub async fn switch_model(
     agent: &AgentService,
     model_name: &str,
     session_id: Option<uuid::Uuid>,
+    provider_name_override: Option<&str>,
 ) -> Result<String, String> {
-    // Provider name MUST come from the same session we're about to store
-    // the pair for. Reading `agent.provider_name()` (global) meant that
-    // when another session had just nudged the global away, the pair
-    // saved here would be `(wrong_provider, this_session_model)` — the
-    // exact "opencodeiolo-qwen + glm-5.1" mix the user hit on Telegram.
-    let provider_name = match session_id {
-        Some(sid) => agent.provider_name_for_session(sid),
-        None => agent.provider_name(),
+    // Provider name MUST come from the caller (callback data) when available.
+    // Falling back to agent state caused crossed pairs when the in-memory
+    // slot was stale or another session had just nudged the global default.
+    let provider_name = match provider_name_override {
+        Some(p) => p.to_string(),
+        None => match session_id {
+            Some(sid) => agent.provider_name_for_session(sid),
+            None => agent.provider_name(),
+        },
     };
 
     let config =

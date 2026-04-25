@@ -74,6 +74,7 @@ pub async fn on_interaction(
                                     &state.agent,
                                     &resp.current_model,
                                     session_id,
+                                    Some(provider_name),
                                 )
                                 .await;
                             }
@@ -207,6 +208,7 @@ pub async fn on_interaction(
                             &state.agent,
                             model_name,
                             session_id,
+                            provider_name,
                         )
                         .await
                         {
