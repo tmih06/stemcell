@@ -64,6 +64,7 @@ pub mod voice_openai_compatible_test;
 pub mod voice_voicebox_test;
 //pub mod streaming_test;
 pub mod profile_test;
+pub mod rsi_git_history_test;
 pub mod rsi_test;
 pub mod self_healing_test;
 pub mod split_pane_test;

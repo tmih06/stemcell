@@ -449,6 +449,14 @@ pub fn spawn_rsi_engine(
             let window_since = (chrono::Utc::now() - chrono::Duration::days(7))
                 .format("%Y-%m-%dT%H:%M:%SZ")
                 .to_string();
+            // Resolve the opencrabs source repo once per cycle so we
+            // can ask `git log` whether a given tool's failures already
+            // have a fix commit between them and now. Returns None when
+            // we can't find a checkout (installed binary launched from
+            // an unrelated cwd, no OPENCRABS_SRC env var) — we then
+            // skip the git-context check, falling back to the
+            // window-only behaviour.
+            let source_repo = crate::brain::rsi_git_history::resolve_source_repo();
             if let Ok(stats) = repo
                 .stats_by_dimension_since("tool_", Some(&window_since))
                 .await
@@ -457,6 +465,31 @@ pub fn spawn_rsi_engine(
                     .iter()
                     .filter(|s| s.total_events >= 5 && s.success_rate < 0.8)
                 {
+                    // Suppress the alert when the source repo has a
+                    // commit since the window opened whose subject
+                    // mentions this dimension (= tool name). Convention
+                    // here: nearly every fix commit names the tool in
+                    // its subject ("fix(provider): unwrap proxy",
+                    // "fix(browser): name the actual browser"), so a
+                    // grep on `dimension` against `--since=window_start`
+                    // catches "we already fixed that".
+                    if let Some(ref repo_path) = source_repo {
+                        let commits = crate::brain::rsi_git_history::commits_matching_since(
+                            repo_path,
+                            &window_since,
+                            &s.dimension,
+                        );
+                        if !commits.is_empty() {
+                            tracing::info!(
+                                "RSI suppress '{}': {} fix commit(s) since window open — first: {} {}",
+                                s.dimension,
+                                commits.len(),
+                                &commits[0].sha[..7.min(commits[0].sha.len())],
+                                commits[0].subject,
+                            );
+                            continue;
+                        }
+                    }
                     // Pull recent failures for this tool to give agent context
                     let mut detail = format!(
                         "Tool '{}' has {:.0}% failure rate ({} failures out of {}). \
