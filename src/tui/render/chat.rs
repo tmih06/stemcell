@@ -396,7 +396,9 @@ pub(super) fn render_chat(f: &mut Frame, app: &mut App, area: Rect) {
     // Render standalone reasoning during thinking-only phase
     // (before first text token — Kimi K2.5, DeepSeek-R1, etc.)
     // streaming_response=None but reasoning is already streaming in
+    // Hide when user has scrolled up so the viewport stays frozen.
     if !has_pending_approval
+        && app.auto_scroll
         && app.streaming_response.is_none()
         && let Some(ref reasoning) = app.streaming_reasoning
     {
@@ -471,7 +473,9 @@ pub(super) fn render_chat(f: &mut Frame, app: &mut App, area: Rect) {
     // Inline "OpenCrabs is thinking..." spinner during tool execution / waiting
     // (no streaming text or reasoning yet). Renders ABOVE the tool group so the
     // user always sees the spinner on top of the processing indicator.
+    // Hide when user has scrolled up so the viewport stays frozen.
     if !has_pending_approval
+        && app.auto_scroll
         && app.is_processing
         && app.streaming_response.is_none()
         && app.streaming_reasoning.is_none()
@@ -514,8 +518,11 @@ pub(super) fn render_chat(f: &mut Frame, app: &mut App, area: Rect) {
     }
 
     // Render active tool group (live, during processing) — below spinner
-    // so it's always visible at the bottom with auto-scroll
-    if let Some(ref group) = app.active_tool_group {
+    // so it's always visible at the bottom with auto-scroll.
+    // Hide when user has scrolled up so the viewport stays frozen.
+    if app.auto_scroll
+        && let Some(ref group) = app.active_tool_group
+    {
         render_tool_group(&mut lines, group, true, app.animation_frame, content_width);
     }
 
