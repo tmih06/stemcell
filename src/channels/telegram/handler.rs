@@ -607,22 +607,67 @@ pub(crate) async fn handle_message(
     }
 
     // Sessions are ALWAYS isolated per chat — owner DMs no longer share the
-    // TUI session. DM title includes user_id so two users with the same
-    // first_name don't collide and so a DM never reuses a group's session
-    // accidentally. Group title kept as "Telegram: {chat_title}" to preserve
-    // existing DB session rows (changing the format would orphan history).
+    // TUI session. The user-visible label (chat_title for groups, first_name
+    // for DMs) is informational; the stable identifier is `chat_id`, which
+    // Telegram never changes even when the user renames the group. We
+    // suffix every title with `[chat:{id}]` and look up by that suffix so a
+    // rename of the label still resolves to the same session row.
+    //
+    // 2026-04-25: a "🦀 KRAB-INCEPTION 🦀" group renamed to "🦀 HEY IOLO
+    // BUILD 🦀" produced two distinct DB rows under the old title-only
+    // lookup. The chat_id suffix prevents that.
+    let chat_id_suffix = format!("[chat:{}]", msg.chat.id.0);
     let session_title = if is_dm {
+        format!(
+            "Telegram: DM {} ({}) {}",
+            user.first_name, user_id, chat_id_suffix
+        )
+    } else {
+        format!("Telegram: {} {}", chat_title, chat_id_suffix)
+    };
+    // Legacy title format used before the chat_id suffix was added.
+    // Kept so the first message after the upgrade matches the existing
+    // row instead of orphaning it.
+    let legacy_title = if is_dm {
         format!("Telegram: DM {} ({})", user.first_name, user_id)
     } else {
         format!("Telegram: {}", chat_title)
     };
 
     let session_id = {
-        let existing = session_svc
-            .find_session_by_title(&session_title)
+        // 1) Stable lookup: any session whose title ends with the chat_id
+        //    suffix is THIS chat regardless of how the label has changed.
+        // 2) Legacy fallback: pre-suffix sessions match the bare title.
+        //    On hit we update the row to the new format so subsequent
+        //    lookups go through the suffix path directly.
+        let mut existing = session_svc
+            .find_session_by_title_suffix(&chat_id_suffix)
             .await
             .ok()
             .flatten();
+
+        if existing.is_none()
+            && let Ok(Some(legacy)) = session_svc.find_session_by_title(&legacy_title).await
+        {
+            tracing::info!(
+                "Telegram: forward-migrating legacy session {} '{}' → '{}'",
+                legacy.id,
+                legacy.title.as_deref().unwrap_or(""),
+                session_title
+            );
+            let mut migrated = legacy.clone();
+            migrated.title = Some(session_title.clone());
+            if let Err(e) = session_svc.update_session(&migrated).await {
+                tracing::warn!(
+                    "Telegram: failed to forward-migrate session {} title: {}",
+                    legacy.id,
+                    e
+                );
+                existing = Some(legacy);
+            } else {
+                existing = Some(migrated);
+            }
+        }
 
         if let Some(session) = existing {
             if idle_timeout_hours.is_some_and(|h| {
@@ -654,6 +699,32 @@ pub(crate) async fn handle_message(
                     }
                 }
             } else {
+                // Label drift: the chat was renamed since this session
+                // was created. The chat_id suffix kept us pointing at
+                // the right row, but the stored title still shows the
+                // old label. Update it so /sessions etc. show the
+                // user's current name for the chat.
+                if session.title.as_deref() != Some(session_title.as_str()) {
+                    let mut renamed = session.clone();
+                    let prev_title = renamed.title.clone().unwrap_or_default();
+                    renamed.title = Some(session_title.clone());
+                    if let Err(e) = session_svc.update_session(&renamed).await {
+                        tracing::warn!(
+                            "Telegram: failed to update renamed session {} title ({} → {}): {}",
+                            renamed.id,
+                            prev_title,
+                            session_title,
+                            e
+                        );
+                    } else {
+                        tracing::info!(
+                            "Telegram: chat rename — session {} title '{}' → '{}'",
+                            renamed.id,
+                            prev_title,
+                            session_title
+                        );
+                    }
+                }
                 tracing::debug!(
                     "Telegram: reusing existing session {} for \"{}\"",
                     session.id,

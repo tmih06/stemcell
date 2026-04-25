@@ -69,6 +69,36 @@ impl SessionRepository {
             .context("Failed to find session by title")
     }
 
+    /// Find the most recent non-archived session whose title ends with
+    /// `suffix`. Used by channel handlers to look up sessions by a stable
+    /// platform id embedded in the title (e.g. Telegram `[chat:12345]`)
+    /// regardless of any user-driven label rename.
+    ///
+    /// 2026-04-25: a Telegram group renamed from "🦀 KRAB-INCEPTION 🦀"
+    /// to "🦀 HEY IOLO BUILD 🦀" produced two distinct sessions because
+    /// `find_by_title` only matched the exact (post-rename) string.
+    /// Embedding the stable chat_id as a `[chat:N]` suffix on creation
+    /// and looking up by that suffix here keeps a single session per
+    /// underlying chat across renames.
+    pub async fn find_by_title_suffix(&self, suffix: &str) -> Result<Option<Session>> {
+        let pattern = format!("%{}", suffix);
+        self.pool
+            .get()
+            .await
+            .context("Failed to get connection")?
+            .interact(move |conn| {
+                conn.prepare_cached(
+                    "SELECT * FROM sessions WHERE title LIKE ?1 ESCAPE '\\' AND archived_at IS NULL \
+                     ORDER BY updated_at DESC LIMIT 1",
+                )?
+                .query_row(params![pattern], Session::from_row)
+                .optional()
+            })
+            .await
+            .map_err(interact_err)?
+            .context("Failed to find session by title suffix")
+    }
+
     /// Create a new session
     pub async fn create(&self, session: &Session) -> Result<()> {
         let s = session.clone();

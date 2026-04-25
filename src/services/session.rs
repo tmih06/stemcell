@@ -211,6 +211,16 @@ impl SessionService {
         repo.find_by_title(title).await
     }
 
+    /// Find the most recent non-archived session whose title ends with
+    /// `suffix`. Channel handlers embed a stable platform id
+    /// (e.g. `[chat:12345]`) as the title suffix on creation so a
+    /// rename of the user-visible label still resolves to the same
+    /// session row.
+    pub async fn find_session_by_title_suffix(&self, suffix: &str) -> Result<Option<Session>> {
+        let repo = SessionRepository::new(self.context.pool());
+        repo.find_by_title_suffix(suffix).await
+    }
+
     /// Get the most recent active session
     pub async fn get_most_recent_session(&self) -> Result<Option<Session>> {
         let repo = SessionRepository::new(self.context.pool());
