@@ -1577,9 +1577,62 @@ impl App {
                             }
                         }
                     }
+                    // Extract user's name from onboarding for personalized welcome
+                    let user_name = self
+                        .onboarding
+                        .as_ref()
+                        .and_then(|w| {
+                            w.about_me
+                                .lines()
+                                .find(|l| !l.trim().is_empty())
+                                .map(|l| l.trim().to_string())
+                        })
+                        .unwrap_or_else(|| "there".to_string());
+
                     self.onboarding = None;
                     self.sync_session_to_provider().await;
                     self.switch_mode(AppMode::Chat).await?;
+
+                    // Inject personalized welcome message after onboarding
+                    if let Some(session) = &self.current_session {
+                        let welcome = format!(
+                            "Hey {name}! 👋 Welcome to OpenCrabs.\n\n\
+                            I'm all set up and ready to roll. Here's what I know about you so far, \
+                            and I'm already personalizing my brain files in the background so I can \
+                            be actually useful to *you*, not generic.\n\n\
+                            A couple of things we could set up right now if you want:\n\n\
+                            • **Cron jobs** — I can run tasks on a schedule (daily standups, \
+                            weekly reports, health checks)\n\
+                            • **Heartbeat** — Periodic monitoring of your systems, repos, or \
+                            anything you want me to keep an eye on\n\
+                            • **Automations** — Hook up channels so I can respond to Telegram, \
+                            Discord, Slack, or WhatsApp messages\n\n\
+                            Want to set any of that up now, or just jump into chatting?",
+                            name = user_name
+                        );
+
+                        // Save to DB so it persists
+                        let _ = self
+                            .message_service
+                            .create_message(session.id, "assistant".to_string(), welcome.clone())
+                            .await;
+
+                        // Show in UI
+                        self.messages.push(DisplayMessage {
+                            id: uuid::Uuid::new_v4(),
+                            role: "assistant".to_string(),
+                            content: welcome,
+                            timestamp: chrono::Utc::now(),
+                            token_count: Some(0),
+                            cost: Some(0.0),
+                            approval: None,
+                            approve_menu: None,
+                            details: None,
+                            expanded: false,
+                            tool_group: None,
+                        });
+                        self.scroll_offset = 0;
+                    }
                 }
                 WizardAction::FetchModels => {
                     let provider_idx = wizard.ps.selected_provider;
@@ -1947,9 +2000,62 @@ impl App {
                             }
                         }
                     }
+                    // Extract user's name from onboarding for personalized welcome
+                    let user_name = self
+                        .onboarding
+                        .as_ref()
+                        .and_then(|w| {
+                            w.about_me
+                                .lines()
+                                .find(|l| !l.trim().is_empty())
+                                .map(|l| l.trim().to_string())
+                        })
+                        .unwrap_or_else(|| "there".to_string());
+
                     self.onboarding = None;
                     self.sync_session_to_provider().await;
                     self.switch_mode(AppMode::Chat).await?;
+
+                    // Inject personalized welcome message after onboarding
+                    if let Some(session) = &self.current_session {
+                        let welcome = format!(
+                            "Hey {name}! 👋 Welcome to OpenCrabs.\n\n\
+                            I'm all set up and ready to roll. Here's what I know about you so far, \
+                            and I'm already personalizing my brain files in the background so I can \
+                            be actually useful to *you*, not generic.\n\n\
+                            A couple of things we could set up right now if you want:\n\n\
+                            • **Cron jobs** — I can run tasks on a schedule (daily standups, \
+                            weekly reports, health checks)\n\
+                            • **Heartbeat** — Periodic monitoring of your systems, repos, or \
+                            anything you want me to keep an eye on\n\
+                            • **Automations** — Hook up channels so I can respond to Telegram, \
+                            Discord, Slack, or WhatsApp messages\n\n\
+                            Want to set any of that up now, or just jump into chatting?",
+                            name = user_name
+                        );
+
+                        // Save to DB so it persists
+                        let _ = self
+                            .message_service
+                            .create_message(session.id, "assistant".to_string(), welcome.clone())
+                            .await;
+
+                        // Show in UI
+                        self.messages.push(DisplayMessage {
+                            id: uuid::Uuid::new_v4(),
+                            role: "assistant".to_string(),
+                            content: welcome,
+                            timestamp: chrono::Utc::now(),
+                            token_count: Some(0),
+                            cost: Some(0.0),
+                            approval: None,
+                            approve_menu: None,
+                            details: None,
+                            expanded: false,
+                            tool_group: None,
+                        });
+                        self.scroll_offset = 0;
+                    }
 
                     // Fire brain generation in the background
                     if let Some((prompt, workspace)) = brain_context {
