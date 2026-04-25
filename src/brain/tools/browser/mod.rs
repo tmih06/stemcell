@@ -37,6 +37,11 @@ pub use wait::BrowserWaitTool;
 #[cfg(all(target_os = "macos", test))]
 pub(crate) use manager::parse_ls_handlers;
 
+// Case-insensitive default-browser id comparison — re-exported for
+// test fixtures (src/tests/browser_default_test.rs).
+#[cfg(test)]
+pub(crate) use manager::id_matches_default;
+
 // Linux xdg-settings parser — re-exported for tests.
 #[cfg(all(target_os = "linux", test))]
 pub(crate) use manager::parse_xdg_default_browser;

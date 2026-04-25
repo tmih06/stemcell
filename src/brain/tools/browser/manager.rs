@@ -159,16 +159,29 @@ impl BrowserManager {
             .as_ref()
             .map(|b| b.name.as_str())
             .unwrap_or("Chrome");
-        tracing::info!("Launching {mode} {browser_name} via CDP...");
+        let browser_path_for_log = detected
+            .as_ref()
+            .map(|b| b.path.display().to_string())
+            .unwrap_or_else(|| "<chromey default>".to_string());
+        tracing::info!("Launching {mode} {browser_name} via CDP (binary: {browser_path_for_log})");
 
         let mut builder = BrowserConfig::builder();
         builder = builder.no_sandbox().window_size(1280, 720);
         if !inner.headless {
             builder = builder.with_head();
         }
+        // Bump launch_timeout from chromey's default 20s to 60s. The
+        // 2026-04-22 13:54 failure showed Brave on macOS occasionally
+        // taking longer than 20s to print its `DevTools listening on
+        // ws://...` line — 30s gap between two retries followed by a
+        // BrowserStderr("") timeout. macOS app-bundle binaries can be
+        // slow to print stderr when LaunchServices is in the loop, and
+        // chromey's only wedge-recovery is the timeout. 60s gives slow
+        // launches room without making real failures take noticeably
+        // longer to surface.
+        builder = builder.launch_timeout(std::time::Duration::from_secs(60));
         if let Some(ref info) = detected {
             builder = builder.chrome_executable(&info.path);
-            tracing::info!("Using browser: {} at {}", info.name, info.path.display());
         }
 
         // Use the browser's own profile so the user's logins/cookies are available.
@@ -185,9 +198,14 @@ impl BrowserManager {
         // (250ms → 500 → 1000 → 2000 → 4000 ≈ 7.75s; next retry
         // would exceed the cap so we stop).
         let native_profile = detected.as_ref().and_then(|b| b.user_data_dir.clone());
+        let used_native;
         let profile_dir = match native_profile {
-            Some(p) if p.exists() && wait_for_profile_unlock(&p, 10_000).await => p,
+            Some(p) if p.exists() && wait_for_profile_unlock(&p, 10_000).await => {
+                used_native = true;
+                p
+            }
             _ => {
+                used_native = false;
                 let fallback = crate::config::opencrabs_home().join("chrome-profile");
                 if !fallback.exists() {
                     let _ = std::fs::create_dir_all(&fallback);
@@ -209,7 +227,15 @@ impl BrowserManager {
             clean_stale_locks(&profile_dir);
         }
 
-        tracing::debug!("Browser profile: {}", profile_dir.display());
+        tracing::info!(
+            "Browser profile: {} ({})",
+            profile_dir.display(),
+            if used_native {
+                "native — has user logins/cookies"
+            } else {
+                "fallback — fresh, no user state"
+            },
+        );
         builder = builder.user_data_dir(profile_dir);
 
         // Stealth flags — reduce bot detection fingerprinting
@@ -227,9 +253,14 @@ impl BrowserManager {
             .build()
             .map_err(|e| anyhow::anyhow!("BrowserConfig error: {e}"))?;
 
+        // Error message says the actual browser name we tried to launch
+        // (Brave / Chrome / Edge / etc.). Hardcoding "Chrome" here was
+        // confusing — users saw "Failed to launch Chrome" while we'd
+        // actually been launching Brave, and assumed we'd ignored their
+        // default browser entirely.
         let (browser, mut handler) = Browser::launch(config)
             .await
-            .map_err(|e| anyhow::anyhow!("Failed to launch Chrome: {e}"))?;
+            .map_err(|e| anyhow::anyhow!("Failed to launch {browser_name}: {e}"))?;
 
         let handle = tokio::spawn(async move {
             while let Some(event) = handler.next().await {
@@ -967,20 +998,31 @@ pub(crate) fn parse_windows_reg_prog_id(text: &str) -> Option<String> {
     None
 }
 
+/// Case-insensitive equality check used by `matches_default` and the
+/// associated tests. The actual comparison is split out so we can pin
+/// it in a unit test without exposing the full `BrowserCandidate`
+/// struct (which is platform-cfg-tangled). The 2026-04-19 macOS
+/// fixtures showed `defaults` reporting `"com.brave.browser"`
+/// (lowercase b) while our candidate carries `"com.brave.Browser"`
+/// (capital B); without this case-insensitive compare we'd fall
+/// through to Chrome.
+pub(crate) fn id_matches_default(candidate_id: &str, default_id: &str) -> bool {
+    candidate_id.eq_ignore_ascii_case(default_id)
+}
+
 /// Check if a browser candidate matches the detected default browser ID.
 fn matches_default(candidate: &BrowserCandidate, default_id: &str) -> bool {
-    let id = default_id.to_lowercase();
     #[cfg(target_os = "macos")]
     {
-        candidate.bundle_id.to_lowercase() == id
+        id_matches_default(candidate.bundle_id, default_id)
     }
     #[cfg(target_os = "linux")]
     {
-        candidate.desktop_file.to_lowercase() == id
+        id_matches_default(candidate.desktop_file, default_id)
     }
     #[cfg(target_os = "windows")]
     {
-        candidate.prog_id.to_lowercase() == id
+        id_matches_default(candidate.prog_id, default_id)
     }
 }
 

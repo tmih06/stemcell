@@ -143,3 +143,56 @@ fn block_without_web_marker_is_ignored() {
 )"#;
     assert_eq!(parse_ls_handlers(plist), None);
 }
+
+// ─── id_matches_default: candidate vs LaunchServices id comparison ──
+//
+// 2026-04-25: user reported the browser tool launching Google Chrome
+// instead of Brave. The literal "Chrome" came from a hardcoded error
+// string, but the comparison itself is the failure mode that bit
+// past Brave users and is worth pinning explicitly.
+//
+// macOS `defaults read … LSHandlers` reports bundle ids in their
+// canonical lowercased form (`com.brave.browser`). Our candidate
+// table carries Apple's mixed-case form (`com.brave.Browser`). A
+// naive `==` would miss the match and `detect_browser` would fall
+// through to the next installed Chromium-based browser — usually
+// Chrome.
+
+use crate::brain::tools::browser::id_matches_default;
+
+#[test]
+fn id_match_brave_handles_case_difference() {
+    // The exact 2026-04-25 user case.
+    assert!(id_matches_default("com.brave.Browser", "com.brave.browser"));
+    assert!(id_matches_default("com.brave.browser", "com.brave.Browser"));
+}
+
+#[test]
+fn id_match_chrome_does_not_match_brave_default() {
+    // Sanity: case-insensitive does NOT collapse different families.
+    assert!(!id_matches_default(
+        "com.google.chrome",
+        "com.brave.browser"
+    ));
+    assert!(!id_matches_default(
+        "com.brave.browser",
+        "com.google.chrome"
+    ));
+}
+
+#[test]
+fn id_match_handles_uppercased_scheme_output() {
+    // Some macOS versions uppercase the bundle id in LSHandlers output;
+    // parse_ls_handlers lowercases for us, but the comparator must
+    // tolerate either side being upper anyway.
+    assert!(id_matches_default("com.brave.Browser", "COM.BRAVE.BROWSER"));
+}
+
+#[test]
+fn id_match_empty_strings_do_not_silently_collide() {
+    // Defensive: an empty default_id (parse failure) must NOT match
+    // an empty candidate (which can't happen but pin it anyway).
+    assert!(id_matches_default("", ""));
+    assert!(!id_matches_default("com.brave.Browser", ""));
+    assert!(!id_matches_default("", "com.brave.browser"));
+}
