@@ -36,6 +36,7 @@ pub mod rate_limiter_test;
 //pub mod error_scenarios_test;
 pub mod fallback_vision_test;
 pub mod file_extract_test;
+pub mod handshake_timeout_test;
 pub mod image_util_test;
 //pub mod integration_test;
 pub mod kimi_reasoning_test;

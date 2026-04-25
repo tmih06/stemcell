@@ -4,8 +4,35 @@ use crate::brain::provider::{
     ContentBlock, ImageSource, LLMRequest, LLMResponse, Message, Role, StopReason,
 };
 use serde_json::Value;
+use std::time::Duration;
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
+
+/// Pick the stream-handshake timeout based on what kind of provider
+/// we're calling. Pulled out as a free `pub(crate)` function so the
+/// matrix is unit-testable without spinning up a real async stream.
+///
+/// Branches:
+///   - CLI providers (claude-cli, opencode-cli, etc.): **10 min**.
+///     Subprocess startup + auth refresh can be slow.
+///   - Local HTTP (llama.cpp / MLX / Ollama / LM Studio): **90s**.
+///     30s killed real Unsloth cold starts (2026-04-17 20:18: 35B
+///     gguf loading KV cache succeeded at +38s); 90s still fails an
+///     unrecoverable wedge in under 2 min via the retry chain.
+///   - Cloud HTTP (OpenAI, Anthropic, Zhipu, opencode.ai, NVIDIA NIM,
+///     etc.): **30s**. Healthy cloud gateways return headers in <5s;
+///     past 30s their LB is wedged. The previous blanket 90s let
+///     NVIDIA's wedged integrate.api eat ~3 min (3 × 90s) of retry
+///     budget before falling back.
+pub(crate) fn handshake_timeout_for(cli_handles_tools: bool, base_url: Option<&str>) -> Duration {
+    if cli_handles_tools {
+        Duration::from_secs(600)
+    } else if base_url.is_some_and(crate::brain::provider::factory::is_local_base_url) {
+        Duration::from_secs(90)
+    } else {
+        Duration::from_secs(30)
+    }
+}
 
 impl AgentService {
     /// Actual token count for the serialized tool schemas (cached per call).
@@ -78,23 +105,10 @@ impl AgentService {
         let request_model = request.model.clone();
 
         // Bound the initial stream handshake (HTTP POST + response headers)
-        // so a wedged local server — accepts TCP but never replies — can't
-        // eat the full 300s reqwest timeout before the retry chain fires.
-        //
-        // Local: 90s. 30s looked right for a wedged server but killed real
-        // Unsloth cold starts: log 2026-04-17 20:18 had POST→30s timeout,
-        // retry1→30s timeout, retry2 succeeded at +38s — a 35B gguf loading
-        // its KV cache. 90s still fails an unrecoverable wedge in under
-        // 2min via the retry chain (3 × 90s = 270s max) and covers real
-        // cold-load latency.
-        //
-        // Remote: 90s matches — cross-continent + LLM warmup is similar.
-        // CLI: 10min (local subprocess startup + auth refresh can be slow).
-        let handshake_timeout = if provider.cli_handles_tools() {
-            std::time::Duration::from_secs(600)
-        } else {
-            std::time::Duration::from_secs(90)
-        };
+        // so a wedged server — accepts TCP but never replies — can't eat
+        // the full 300s reqwest timeout before the retry chain fires.
+        let handshake_timeout =
+            handshake_timeout_for(provider.cli_handles_tools(), provider.base_url());
         let mut stream =
             match tokio::time::timeout(handshake_timeout, provider.stream(request)).await {
                 Ok(Ok(s)) => s,

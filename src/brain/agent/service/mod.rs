@@ -5,7 +5,7 @@
 
 mod builder;
 mod context;
-mod helpers;
+pub(crate) mod helpers;
 mod messaging;
 pub(crate) mod tool_loop;
 mod types;
