@@ -35,7 +35,13 @@ impl Tool for BashTool {
     }
 
     fn description(&self) -> &str {
-        "Execute a shell command. Returns stdout, stderr, and exit code. Use carefully as this can modify system state."
+        "Execute a shell command. Returns stdout, stderr, and exit code. \
+         stdin is /dev/null — interactive commands (git add -p, git rebase -i, \
+         vim/nano/less/top, REPLs like python/node with no script) will not work; \
+         use non-interactive flags (-A, -m, --no-edit) or pipe input via heredoc/echo. \
+         Each call is a fresh shell — `cd` does not persist across calls; chain with \
+         `&&` or use `git -C <path> <cmd>` for cross-directory work. Use carefully \
+         as this can modify system state."
     }
 
     fn input_schema(&self) -> Value {
@@ -110,6 +116,15 @@ impl Tool for BashTool {
                 "Working directory does not exist: {}",
                 working_dir.display()
             )));
+        }
+
+        // Pre-flight: refuse interactive commands. With stdin=/dev/null
+        // (the post-2026-04-23 stdin-detach fix) most of these exit
+        // cleanly on EOF — looks like success, did nothing — and the
+        // agent gets stuck retrying. Surface the failure clearly with
+        // a non-interactive alternative so the loop breaks on attempt 1.
+        if let Some(hint) = check_interactive_command(&input.command) {
+            return Ok(ToolResult::error(hint.to_string()));
         }
 
         // Prepare command for the current platform
@@ -381,6 +396,151 @@ fn check_blocked_command(command: &str) -> Option<&'static str> {
     // ── iptables flush (locks out remote access) ─────────────────
     if normalized.contains("iptables -f") && normalized.contains("drop") {
         return Some("firewall flush with default DROP (can lock out remote access)");
+    }
+
+    None
+}
+
+/// Detect commands that require an interactive TTY and return a useful
+/// non-interactive alternative. Returns `None` when the command is fine
+/// to run as-is, `Some(message)` when it should be rejected up-front.
+///
+/// The Apr 23 stdin-detach fix made the bash tool well-behaved (no more
+/// keystroke theft from the TUI), but it also made interactive commands
+/// fail *silently*: stdin=/dev/null returns EOF, the program exits with
+/// code 0, output looks plausible, and the agent retries the same
+/// command thinking it just needs another shot. Cut the loop on attempt
+/// 1 with a clear message that names the alternative.
+pub(crate) fn check_interactive_command(command: &str) -> Option<&'static str> {
+    let normalized: String = command
+        .split_whitespace()
+        .collect::<Vec<&str>>()
+        .join(" ")
+        .to_lowercase();
+
+    // Walk each segment of a chain (`a && b`, `a; b`, `a || b`) and
+    // check the first token of each — protects against e.g. `cd foo && vim bar`.
+    let segments = normalized
+        .split([';', '|', '&'])
+        .map(str::trim)
+        .filter(|s| !s.is_empty());
+
+    for seg in segments {
+        // Skip leading env-var assignments (e.g. `EDITOR=vim git commit`)
+        let cmd_start = seg
+            .split_whitespace()
+            .find(|tok| !tok.contains('='))
+            .unwrap_or(seg);
+        let cmd_seg = &seg[seg.find(cmd_start).unwrap_or(0)..];
+
+        // `git add -p` / `--patch` / `-i` / `--interactive`
+        if cmd_seg.starts_with("git add ")
+            && (cmd_seg.contains(" -p")
+                || cmd_seg.contains(" --patch")
+                || cmd_seg.contains(" -i")
+                || cmd_seg.contains(" --interactive"))
+        {
+            return Some(
+                "`git add -p` / `git add -i` is interactive and won't work — stdin is /dev/null so it exits silently after printing the first hunk. \
+                 Stage specific files with `git add <path>` (or `git add -A` for everything), or apply a precomputed patch with `git apply <patch>`. \
+                 If you really need hunk-level granularity, use `git diff > /tmp/x.patch`, edit it, then `git apply --cached /tmp/x.patch`.",
+            );
+        }
+
+        // `git rebase -i` / `--interactive`
+        if cmd_seg.starts_with("git rebase ")
+            && (cmd_seg.contains(" -i") || cmd_seg.contains(" --interactive"))
+        {
+            return Some(
+                "`git rebase -i` is interactive and won't work — stdin is /dev/null. \
+                 For squashing use `git reset --soft <base>` then `git commit -m`; \
+                 for non-interactive autosquash run `GIT_SEQUENCE_EDITOR=: git rebase -i --autosquash <base>`.",
+            );
+        }
+
+        // `git commit` with no message source — opens an editor.
+        // Short-flag combos like `-am` / `-ma` count as a message
+        // source; long form `--message=...` too.
+        if cmd_seg.starts_with("git commit")
+            && !cmd_seg.contains(" -m")
+            && !cmd_seg.contains(" -am")
+            && !cmd_seg.contains(" -ma")
+            && !cmd_seg.contains(" --message")
+            && !cmd_seg.contains(" -f ")
+            && !cmd_seg.contains(" --file")
+            && !cmd_seg.contains(" --no-edit")
+            && !cmd_seg.contains(" -c ")
+            && !cmd_seg.contains(" --reuse-message")
+            && !cmd_seg.contains(" -c=")
+            && !cmd_seg.contains(" --fixup")
+            && !cmd_seg.contains(" --squash")
+        {
+            return Some(
+                "`git commit` without a message opens an editor (interactive) — stdin is /dev/null. \
+                 Pass `-m \"...\"` directly, or use `--no-edit` when amending.",
+            );
+        }
+
+        // Standalone editors / pagers / TUI viewers — reject when they're
+        // the actual command (not in the middle of a longer pipeline).
+        let first_word = cmd_seg.split_whitespace().next().unwrap_or("");
+        if matches!(
+            first_word,
+            "vim" | "vi" | "nvim" | "nano" | "emacs" | "pico" | "ed" | "joe" | "micro"
+        ) {
+            return Some(
+                "Editors (vim/nvim/nano/emacs/...) need a TTY — they will hang on /dev/null stdin. \
+                 Use the `edit_file` or `write_file` tool to modify a file, or pipe content via heredoc: `cat > file.txt <<'EOF' ... EOF`.",
+            );
+        }
+        if matches!(first_word, "less" | "more" | "most" | "man") {
+            return Some(
+                "Pagers (less/more/man) need a TTY. Use `cat`, `head`, `tail`, or pipe to `cat` (e.g. `git log | cat`) so the output streams non-interactively.",
+            );
+        }
+        if matches!(first_word, "top" | "htop" | "btop" | "atop" | "iotop") {
+            return Some(
+                "TUI process viewers (top/htop/btop) need a TTY. Use `ps aux` or `ps -ef` for a snapshot, or `ps aux --sort=-%cpu | head` for top consumers.",
+            );
+        }
+        // REPLs without a script argument
+        if matches!(
+            first_word,
+            "python" | "python3" | "node" | "irb" | "ghci" | "scala"
+        ) && cmd_seg
+            .split_whitespace()
+            .nth(1)
+            .map(|t| t.starts_with('-') && t != "-c" && t != "-e")
+            .unwrap_or(true)
+        {
+            return Some(
+                "Bare REPLs (python/node/irb/ghci) hang on /dev/null stdin. \
+                 Pass code via `-c \"...\"` (python) / `-e \"...\"` (node), or save to a file and run it.",
+            );
+        }
+        // Database / Redis CLIs without a query
+        if first_word == "psql" && !cmd_seg.contains(" -c ") && !cmd_seg.contains(" -f ") {
+            return Some(
+                "`psql` without `-c` or `-f` opens a REPL — pass `-c \"SQL\"` or `-f script.sql`.",
+            );
+        }
+        if first_word == "mysql" && !cmd_seg.contains(" -e ") {
+            return Some(
+                "`mysql` without `-e` opens a REPL — pass `-e \"SQL\"` to run a single statement.",
+            );
+        }
+        if first_word == "redis-cli" && cmd_seg.split_whitespace().count() == 1 {
+            return Some(
+                "`redis-cli` with no command opens a REPL — pass the command directly, e.g. `redis-cli GET key`.",
+            );
+        }
+
+        // Interactive selectors / TUIs commonly invoked by mistake.
+        if matches!(first_word, "fzf" | "gum" | "tmux" | "screen") {
+            return Some(
+                "Interactive TUI tools (fzf/gum/tmux/screen) need a TTY. They cannot be driven from this tool.",
+            );
+        }
     }
 
     None
