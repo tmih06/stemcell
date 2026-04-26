@@ -1,5 +1,6 @@
 pub mod altgr_input_test;
 pub mod bash_interactive_reject_test;
+pub mod bash_retry_loop_test;
 pub mod brain_file_safety_test;
 pub mod brain_templates_test;
 pub mod browser_default_linux_test;

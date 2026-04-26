@@ -7,9 +7,12 @@ use super::r#trait::{Tool, ToolCapability, ToolExecutionContext, ToolResult};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::collections::{HashMap, VecDeque};
+use std::sync::{OnceLock, RwLock};
 use tokio::io::AsyncWriteExt;
 use tokio::process::Command;
 use tokio::time::{Duration, timeout};
+use uuid::Uuid;
 
 /// Bash execution tool
 pub struct BashTool;
@@ -112,18 +115,39 @@ impl Tool for BashTool {
 
         // Verify working directory exists
         if !working_dir.exists() {
-            return Ok(ToolResult::error(format!(
+            let msg = format!(
                 "Working directory does not exist: {}",
                 working_dir.display()
-            )));
+            );
+            record_bash_outcome(
+                context.session_id,
+                input.command.clone(),
+                true,
+                Some(msg.clone()),
+            );
+            return Ok(ToolResult::error(msg));
         }
 
-        // Pre-flight: refuse interactive commands. With stdin=/dev/null
+        // Layer 3: short-circuit if the agent just ran this exact
+        // command and it failed. Stops the same-command-twice loop
+        // dead with a strong "stop retrying" message instead of
+        // letting the underlying error fire a second time.
+        if let Some(msg) = check_recent_failure(context.session_id, &input.command) {
+            return Ok(ToolResult::error(msg));
+        }
+
+        // Layer 1: refuse interactive commands. With stdin=/dev/null
         // (the post-2026-04-23 stdin-detach fix) most of these exit
         // cleanly on EOF — looks like success, did nothing — and the
         // agent gets stuck retrying. Surface the failure clearly with
         // a non-interactive alternative so the loop breaks on attempt 1.
         if let Some(hint) = check_interactive_command(&input.command) {
+            record_bash_outcome(
+                context.session_id,
+                input.command.clone(),
+                true,
+                Some(hint.to_string()),
+            );
             return Ok(ToolResult::error(hint.to_string()));
         }
 
@@ -249,6 +273,20 @@ impl Tool for BashTool {
         }
 
         let success = output.status.success();
+
+        // Record the outcome so a follow-up call with the exact same
+        // command can be short-circuited by Layer 3 instead of re-running.
+        let error_snippet = if !success {
+            Some(result_text.chars().take(300).collect::<String>())
+        } else {
+            None
+        };
+        record_bash_outcome(
+            context.session_id,
+            input.command.clone(),
+            !success,
+            error_snippet,
+        );
 
         let result = if success {
             ToolResult::success(result_text)
@@ -399,6 +437,81 @@ fn check_blocked_command(command: &str) -> Option<&'static str> {
     }
 
     None
+}
+
+/// Maximum number of recent bash commands tracked per session for the
+/// retry-loop guard. Five is enough to catch tight back-to-back loops
+/// (the actual symptom — same command twice in a row), small enough
+/// that a legitimate retry after enough other work won't false-fire.
+pub(crate) const RECENT_BASH_WINDOW: usize = 5;
+
+#[derive(Debug, Clone)]
+pub(crate) struct RecentBashOutcome {
+    pub command: String,
+    pub failed: bool,
+    pub error_snippet: Option<String>,
+}
+
+/// Per-session ring buffer of the most recent bash commands and their
+/// outcomes. In-memory only; cleared on process restart. Keyed by
+/// `session_id` so different conversations never see each other's
+/// retry history.
+pub(crate) fn recent_bash_state() -> &'static RwLock<HashMap<Uuid, VecDeque<RecentBashOutcome>>> {
+    static STATE: OnceLock<RwLock<HashMap<Uuid, VecDeque<RecentBashOutcome>>>> = OnceLock::new();
+    STATE.get_or_init(|| RwLock::new(HashMap::new()))
+}
+
+/// Layer 3 of the retry-loop guard: if the agent ran this exact
+/// command in the last `RECENT_BASH_WINDOW` calls and it failed,
+/// short-circuit with a stronger "you already tried this" message
+/// that quotes the prior error. Returns `None` when there's no
+/// matching prior failure (the command should be allowed to run).
+pub(crate) fn check_recent_failure(session_id: Uuid, cmd: &str) -> Option<String> {
+    let normalized = cmd.trim();
+    let state = recent_bash_state().read().ok()?;
+    let buf = state.get(&session_id)?;
+    for prev in buf.iter() {
+        if prev.failed && prev.command.trim() == normalized {
+            let snippet = prev
+                .error_snippet
+                .as_deref()
+                .unwrap_or("(no detail captured)");
+            return Some(format!(
+                "You already ran this exact command in the last {} bash calls and it failed. \
+                 Don't retry the same string — try a different approach (different flags, a \
+                 different command, or address the root cause).\n\nPrevious error:\n{}",
+                RECENT_BASH_WINDOW, snippet
+            ));
+        }
+    }
+    None
+}
+
+/// Record the outcome of a bash call so a follow-up matching call can
+/// be intercepted by `check_recent_failure`. Move-to-front semantics:
+/// repeating the same command bumps the existing entry rather than
+/// adding a duplicate, so the buffer always reflects the latest
+/// outcome per unique command string.
+pub(crate) fn record_bash_outcome(
+    session_id: Uuid,
+    command: String,
+    failed: bool,
+    error_snippet: Option<String>,
+) {
+    let Ok(mut state) = recent_bash_state().write() else {
+        return;
+    };
+    let buf = state.entry(session_id).or_default();
+    let normalized = command.trim().to_string();
+    buf.retain(|o| o.command.trim() != normalized);
+    buf.push_back(RecentBashOutcome {
+        command,
+        failed,
+        error_snippet,
+    });
+    while buf.len() > RECENT_BASH_WINDOW {
+        buf.pop_front();
+    }
 }
 
 /// Detect commands that require an interactive TTY and return a useful
