@@ -199,6 +199,7 @@ impl BrainLoader {
             }
             if let Some(ref wd) = info.working_directory {
                 prompt.push_str(&format!("Working directory: {}\n", wd));
+                push_home_anchor_and_expansion_rule(&mut prompt);
             }
             prompt.push_str(&format!("OS: {}\n", std::env::consts::OS));
             prompt.push_str(&format!(
@@ -324,6 +325,7 @@ impl BrainLoader {
             }
             if let Some(ref wd) = info.working_directory {
                 prompt.push_str(&format!("Working directory: {}\n", wd));
+                push_home_anchor_and_expansion_rule(&mut prompt);
             }
             prompt.push_str(&format!("OS: {}\n", std::env::consts::OS));
             prompt.push_str(&format!(
@@ -421,6 +423,36 @@ pub struct RuntimeInfo {
     /// of every prompt's cache key. Callers MUST call `collapse_home`
     /// before stuffing a real path here.
     pub working_directory: Option<String>,
+}
+
+/// Append the home-anchor + tilde-expansion rule directly under the
+/// `Working directory:` line.
+///
+/// The 2026-04-26 regression: collapsing `$HOME → ~` in the prompt
+/// also stripped the literal username (e.g. `adolfousierstudio`) the
+/// model used to parrot back when constructing absolute paths. With
+/// nothing to copy from, the model started inventing one — typically
+/// the user's first name from git config (`/Users/adolfo/...`),
+/// breaking every shell command that needed an absolute path.
+///
+/// The fix is two short lines:
+///
+/// 1. Anchor `~` to the literal home so the model has ground truth if
+///    it ever needs to expand it (defense in depth).
+/// 2. Tell the model not to expand it itself — the shell handles `~`,
+///    so passing `~/foo` to bash always works.
+fn push_home_anchor_and_expansion_rule(prompt: &mut String) {
+    if let Some(home) = dirs::home_dir().and_then(|p| p.to_str().map(String::from)) {
+        prompt.push_str(&format!(
+            "Home: {} (the '~' in paths above expands to this)\n",
+            home
+        ));
+    }
+    prompt.push_str(
+        "Path expansion: when invoking shell tools (bash, etc.), pass `~/...` paths verbatim — \
+         the shell expands `~` for you. Do NOT substitute `/Users/<name>/...` yourself; if you \
+         need an absolute form, copy the `Home:` line above exactly.\n",
+    );
 }
 
 #[cfg(test)]
