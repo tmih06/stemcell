@@ -1,7 +1,7 @@
 use super::builder::AgentService;
 use crate::brain::agent::context::AgentContext;
 use crate::brain::agent::error::{AgentError, Result};
-use crate::brain::provider::{LLMRequest, Message};
+use crate::brain::provider::{ContentBlock, LLMRequest, Message};
 use crate::services::{MessageService, SessionService};
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
@@ -65,18 +65,81 @@ impl AgentService {
         let request = LLMRequest::new(model_name.clone(), context.messages.clone())
             .with_max_tokens(self.max_tokens);
 
-        let mut request = if let Some(system) = context.system_brain {
+        // Surface a small "Recently accessed" anchor section so the
+        // agent re-uses real paths from prior sessions / pre-compaction
+        // turns instead of hallucinating directory layouts. Filtered
+        // against the live messages so we don't double-list paths the
+        // agent just touched in this same session.
+        let working_directory = self.get_working_directory();
+        let recent_paths = self.recent_paths_for_dir(&working_directory).await;
+        let augmented_system = Self::augment_system_with_recent_paths(
+            context.system_brain,
+            &recent_paths,
+            &context.messages,
+        );
+
+        let mut request = if let Some(system) = augmented_system {
             request.with_system(system)
         } else {
             request
         };
 
         // Pass working directory so proxy-aware providers can forward it
-        request.working_directory =
-            Some(self.get_working_directory().to_string_lossy().to_string());
+        request.working_directory = Some(working_directory.to_string_lossy().to_string());
         request.session_id = Some(session_id);
 
         Ok((model_name, request, message_service, session_service))
+    }
+
+    /// Append a "Recently accessed" anchor section to `system_brain`,
+    /// listing only the paths from the persistent recent-paths store
+    /// that don't already appear verbatim in any of the live messages.
+    /// Returns `base` unchanged when there's nothing to surface — keeps
+    /// the prompt clean during normal uncompacted runs where the literal
+    /// tool_call/tool_result blocks already mention the path.
+    pub(crate) fn augment_system_with_recent_paths(
+        base: Option<String>,
+        recent_paths: &[String],
+        messages: &[Message],
+    ) -> Option<String> {
+        if recent_paths.is_empty() {
+            return base;
+        }
+        let context_blob: String = messages
+            .iter()
+            .flat_map(|m| m.content.iter())
+            .filter_map(|b| match b {
+                ContentBlock::Text { text } => Some(text.clone()),
+                ContentBlock::ToolUse { input, .. } => Some(input.to_string()),
+                ContentBlock::ToolResult { content, .. } => Some(content.clone()),
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        let context_for_match = context_blob.to_lowercase();
+
+        let surviving: Vec<&String> = recent_paths
+            .iter()
+            .filter(|p| !context_for_match.contains(&p.to_lowercase()))
+            .collect();
+        if surviving.is_empty() {
+            return base;
+        }
+        let mut out = base.unwrap_or_default();
+        if !out.is_empty() && !out.ends_with('\n') {
+            out.push('\n');
+        }
+        out.push_str(
+            "\n--- Recently accessed in this project ---\n\
+             (Real paths previously confirmed by read/edit/grep/ls. Prefer these as anchors \
+             over guessing from naming conventions.)\n",
+        );
+        for p in surviving {
+            out.push_str("  - ");
+            out.push_str(p);
+            out.push('\n');
+        }
+        Some(out)
     }
 
     /// Load messages from the last compaction point forward.

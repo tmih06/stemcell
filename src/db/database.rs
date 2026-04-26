@@ -141,7 +141,7 @@ impl Database {
     }
 
     /// Total number of migrations defined below — keep in sync when adding new ones.
-    const MIGRATION_COUNT: usize = 19;
+    const MIGRATION_COUNT: usize = 20;
 
     /// Run database migrations
     pub async fn run_migrations(&self) -> Result<()> {
@@ -200,6 +200,9 @@ impl Database {
             )),
             M::up(include_str!(
                 "../migrations/20260421000001_add_message_thinking.sql"
+            )),
+            M::up(include_str!(
+                "../migrations/20260426000001_add_recent_paths.sql"
             )),
         ]);
 

@@ -6,6 +6,12 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use uuid::Uuid;
 
+/// Maximum number of recently-touched paths surfaced to the agent in
+/// the system prompt for any one project. ~12 entries × ~30 tokens
+/// each ≈ 400 tokens worst-case — small enough that the win on
+/// cross-session continuity dominates the cost.
+pub(super) const RECENT_PATHS_CAP: usize = 12;
+
 /// Agent Service for managing AI conversations
 pub struct AgentService {
     /// Default LLM provider — used for brand-new sessions that haven't
@@ -413,6 +419,53 @@ impl AgentService {
     /// real limit.
     pub fn context_window_for_model(&self, _model: &str) -> u32 {
         self.context_limit()
+    }
+
+    /// Record that the agent just successfully accessed `raw_path`
+    /// while operating under `working_directory`. Persists to the
+    /// `recent_paths` table so a later session on the same project
+    /// can re-anchor on real paths instead of guessing.
+    ///
+    /// Fire-and-forget: spawns a task and never blocks the tool loop.
+    /// Both the working directory and the path are collapsed to
+    /// `~/...` form before storage so the key is stable across
+    /// machines and OS user names.
+    pub fn record_recent_path(
+        &self,
+        working_directory: &std::path::Path,
+        raw_path: &std::path::Path,
+    ) {
+        let wd_collapsed = crate::brain::tools::error::collapse_home(working_directory);
+        let path_collapsed = crate::brain::tools::error::collapse_home(raw_path);
+        if wd_collapsed.is_empty() || path_collapsed.is_empty() {
+            return;
+        }
+        let pool = self.context.pool();
+        tokio::spawn(async move {
+            let repo = crate::db::repository::RecentPathsRepository::new(pool);
+            if let Err(e) = repo.record(&wd_collapsed, &path_collapsed).await {
+                tracing::debug!("recent_paths write failed: {e}");
+            }
+        });
+    }
+
+    /// Top recently-accessed paths under the given `working_directory`,
+    /// most-recent first, capped at `RECENT_PATHS_CAP`. Returns an empty
+    /// Vec when the project has no recorded paths yet (or on DB error).
+    /// Stored & returned in `~/...` collapsed form.
+    pub async fn recent_paths_for_dir(&self, working_directory: &std::path::Path) -> Vec<String> {
+        let wd_collapsed = crate::brain::tools::error::collapse_home(working_directory);
+        if wd_collapsed.is_empty() {
+            return Vec::new();
+        }
+        let repo = crate::db::repository::RecentPathsRepository::new(self.context.pool());
+        match repo.top_for_dir(&wd_collapsed, RECENT_PATHS_CAP).await {
+            Ok(paths) => paths,
+            Err(e) => {
+                tracing::debug!("recent_paths read failed: {e}");
+                Vec::new()
+            }
+        }
     }
 
     /// Build fallback providers from config for mid-stream rate limit recovery.

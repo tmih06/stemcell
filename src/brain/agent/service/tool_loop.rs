@@ -16,6 +16,39 @@ fn strip_ansi_output(raw: &str) -> String {
     strip_ansi::strip_ansi(raw)
 }
 
+/// Pull the file path the agent just touched out of a successful tool
+/// call, ready for the persistent recent-paths store. Returns `None`
+/// for tools that don't address a single file (`bash`, `glob`, …),
+/// for inputs that don't carry a path field, or for empty strings.
+///
+/// The 2026-04-25/26 logs showed that the agent's wrong-path failures
+/// concentrate on `read_file`, `edit_file`, `grep`, `ls` — those are
+/// the tools whose successful inputs are worth re-surfacing later.
+/// `write_file` is included for symmetry: if the agent just wrote a
+/// file, it'll likely want to read or edit it again next turn.
+///
+/// The returned path is resolved against `working_directory` so we
+/// always store an absolute, then-collapsed `~/...` form.
+fn extract_path_for_recent_buffer(
+    tool_name: &str,
+    input: &Value,
+    working_directory: &std::path::Path,
+) -> Option<std::path::PathBuf> {
+    let raw_path = match tool_name {
+        "read_file" | "edit_file" | "write_file" | "ls" | "grep" => {
+            input.get("path").and_then(|v| v.as_str())?
+        }
+        _ => return None,
+    };
+    if raw_path.trim().is_empty() {
+        return None;
+    }
+    Some(crate::brain::tools::error::resolve_tool_path(
+        raw_path,
+        working_directory,
+    ))
+}
+
 /// RAII guard that restores a session's provider on drop.
 ///
 /// The fallback arms in `run_tool_loop_inner` swap the session's
@@ -3100,6 +3133,19 @@ impl AgentService {
                                                 tool_name,
                                                 content.len()
                                             );
+                                            // Persist the touched path so a later
+                                            // session on this project can re-anchor
+                                            // on real paths instead of guessing.
+                                            if let Some(p) = extract_path_for_recent_buffer(
+                                                &tool_name,
+                                                &tool_input_for_progress,
+                                                &approved_tool_context.working_directory,
+                                            ) {
+                                                self.record_recent_path(
+                                                    &approved_tool_context.working_directory,
+                                                    &p,
+                                                );
+                                            }
                                         } else {
                                             tracing::error!(
                                                 "[TOOL_EXEC] ❌ Tool '{}' failed: {}",
@@ -3294,6 +3340,15 @@ impl AgentService {
                                 tool_name,
                                 content.len()
                             );
+                            // Persist the touched path (same rationale as the
+                            // approval-path branch above).
+                            if let Some(p) = extract_path_for_recent_buffer(
+                                &tool_name,
+                                &tool_input_for_progress,
+                                &approved_context.working_directory,
+                            ) {
+                                self.record_recent_path(&approved_context.working_directory, &p);
+                            }
                         } else {
                             tracing::error!(
                                 "[TOOL_EXEC] ❌ Tool '{}' failed: {}",
