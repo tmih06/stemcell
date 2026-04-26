@@ -416,6 +416,10 @@ pub async fn build_feedback_digest(pool: crate::db::Pool) -> Option<String> {
 pub struct RuntimeInfo {
     pub model: Option<String>,
     pub provider: Option<String>,
+    /// Pre-collapsed via `tools::error::collapse_home` so `$HOME` is
+    /// rendered as `~/...` — saves tokens AND keeps the username out
+    /// of every prompt's cache key. Callers MUST call `collapse_home`
+    /// before stuffing a real path here.
     pub working_directory: Option<String>,
 }
 

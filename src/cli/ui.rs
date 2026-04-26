@@ -302,7 +302,12 @@ async fn cmd_chat_inner(
     let runtime_info = RuntimeInfo {
         model: Some(provider.default_model().to_string()),
         provider: Some(provider.name().to_string()),
-        working_directory: Some(working_directory.to_string_lossy().to_string()),
+        // Collapse $HOME → ~ so the system prompt doesn't leak the
+        // local username into every request and burn cache slots
+        // varying per-machine.
+        working_directory: Some(crate::brain::tools::error::collapse_home(
+            &working_directory,
+        )),
     };
 
     let builtin_commands: Vec<(&str, &str)> = crate::tui::app::SLASH_COMMANDS

@@ -72,6 +72,33 @@ pub fn expand_tilde(path: &str) -> std::path::PathBuf {
     PathBuf::from(path)
 }
 
+/// Inverse of `expand_tilde`: replace a leading home-dir prefix in an
+/// absolute path with `~`. Falls back to the original path string when
+/// no replacement applies.
+///
+/// Used everywhere a path lands in user-visible output OR in the
+/// model's system prompt — the goal is twofold:
+///   1. Don't leak the local username (`/Users/$you/srv/...`) into
+///      every prompt; that's a privacy/identity leak that also varies
+///      between machines, hurting prompt-cache hit rates.
+///   2. Save tokens — `~/srv/dart/heyiolo/...` is consistently shorter
+///      than `/Users/adolfousierstudio/srv/dart/heyiolo/...`.
+pub fn collapse_home(path: &std::path::Path) -> String {
+    if let Some(home) = dirs::home_dir()
+        && let Ok(rest) = path.strip_prefix(&home)
+    {
+        if rest.as_os_str().is_empty() {
+            return "~".to_string();
+        }
+        let suffix = rest.display().to_string();
+        if let Some(stripped) = suffix.strip_prefix('/') {
+            return format!("~/{}", stripped);
+        }
+        return format!("~/{}", suffix);
+    }
+    path.display().to_string()
+}
+
 /// Resolve a user-provided path into an absolute `PathBuf`.
 ///
 /// 1. Leading `~` / `~/` is expanded to the user's home directory.

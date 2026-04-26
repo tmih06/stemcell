@@ -805,12 +805,12 @@ pub(crate) async fn cmd_run(
     let runtime_info = RuntimeInfo {
         model: Some(provider.default_model().to_string()),
         provider: Some(provider.name().to_string()),
-        working_directory: Some(
-            std::env::current_dir()
-                .unwrap_or_default()
-                .to_string_lossy()
-                .to_string(),
-        ),
+        // Collapse $HOME → ~ for the same reason as the TUI runtime
+        // info builder: don't leak username, save tokens, keep cache
+        // keys stable across machines.
+        working_directory: Some(crate::brain::tools::error::collapse_home(
+            &std::env::current_dir().unwrap_or_default(),
+        )),
     };
     let mut system_brain = brain_loader.build_system_brain(Some(&runtime_info), None);
     if let Some(digest) =
@@ -1156,12 +1156,9 @@ pub(crate) async fn cmd_agent_interactive(
     let runtime_info = RuntimeInfo {
         model: Some(provider.default_model().to_string()),
         provider: Some(provider.name().to_string()),
-        working_directory: Some(
-            std::env::current_dir()
-                .unwrap_or_default()
-                .to_string_lossy()
-                .to_string(),
-        ),
+        working_directory: Some(crate::brain::tools::error::collapse_home(
+            &std::env::current_dir().unwrap_or_default(),
+        )),
     };
     let mut system_brain = brain_loader.build_system_brain(Some(&runtime_info), None);
     if let Some(digest) =

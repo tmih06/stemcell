@@ -186,9 +186,11 @@ fn shrink_home_paths_inner(value: &Value, home: &str) -> Value {
             }
             Value::Object(out)
         }
-        Value::Array(arr) => {
-            Value::Array(arr.iter().map(|v| shrink_home_paths_inner(v, home)).collect())
-        }
+        Value::Array(arr) => Value::Array(
+            arr.iter()
+                .map(|v| shrink_home_paths_inner(v, home))
+                .collect(),
+        ),
         other => other.clone(),
     }
 }
@@ -832,7 +834,12 @@ mod tests {
         let home = std::env::var("HOME").unwrap_or_else(|_| "/Users/testuser".to_string());
         let input = json!({"command": format!("cat {}/.opencrabs/config.toml", home)});
         let out = redact_tool_input(&input);
-        assert!(out["command"].as_str().unwrap().contains("~/.opencrabs/config.toml"));
+        assert!(
+            out["command"]
+                .as_str()
+                .unwrap()
+                .contains("~/.opencrabs/config.toml")
+        );
     }
 
     #[test]
