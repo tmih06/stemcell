@@ -78,6 +78,10 @@ impl Tool for SelfImproveTool {
                 "old_content": {
                     "type": "string",
                     "description": "For 'update' only: the existing text to find and replace (must be an exact match of the current content)."
+                },
+                "dedup_intent": {
+                    "type": "boolean",
+                    "description": "For 'update' only: set to true when the update is removing a duplicate that already exists elsewhere in the same file. Brain files are append-only — any update whose replacement is shorter than old_content will be rejected unless dedup_intent=true AND every original line still appears in the result."
                 }
             },
             "required": ["action"]
@@ -224,12 +228,37 @@ impl Tool for SelfImproveTool {
                 // Perform the replacement (first occurrence only)
                 let updated = existing.replacen(old_content, new_content.trim(), 1);
 
+                // Append-only enforcement: brain files are append-only by user
+                // policy. Removals only allowed when the caller explicitly opts
+                // into a dedup intent AND every line of the original survives.
+                let dedup_intent = input
+                    .get("dedup_intent")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false);
+                use crate::brain::tools::brain_file_safety;
+                if let brain_file_safety::ShrinkCheck::Rejected { message } =
+                    brain_file_safety::check_no_shrink(
+                        &target_path,
+                        &existing,
+                        &updated,
+                        dedup_intent,
+                    )
+                {
+                    return Ok(ToolResult::error(message));
+                }
+
                 // Ensure RSI dirs exist for logging
                 ensure_rsi_dirs(&home).map_err(|e| {
                     crate::brain::tools::ToolError::Execution(format!(
                         "Failed to create RSI directories: {e}"
                     ))
                 })?;
+
+                // Snapshot the file before mutating so a bad agent edit can
+                // be rolled back from `<file>.YYYY-MM-DDTHHMMSS.bak`.
+                if let Err(e) = brain_file_safety::backup_before_write(&target_path) {
+                    tracing::warn!("RSI: failed to back up {target_file} before update: {e}");
+                }
 
                 // Write the updated file
                 std::fs::write(&target_path, updated.as_bytes()).map_err(|e| {

@@ -83,6 +83,10 @@ impl Tool for WriteOpenCrabsFileTool {
                 "new_text": {
                     "type": "string",
                     "description": "Replacement text (required for replace)."
+                },
+                "dedup_intent": {
+                    "type": "boolean",
+                    "description": "Set to true ONLY when shrinking a protected brain file (TOOLS.md, MEMORY.md, SOUL.md, USER.md, AGENTS.md, CODE.md, SECURITY.md, BOOT.md, IDENTITY.md) to deduplicate. Brain files are append-only — any overwrite/replace whose result is shorter than the existing file is rejected unless dedup_intent=true AND every original line still appears in the result."
                 }
             },
             "required": ["path", "operation"]
@@ -127,6 +131,29 @@ impl Tool for WriteOpenCrabsFileTool {
                         ));
                     }
                 };
+                // Append-only contract: overwriting a protected brain file
+                // is only allowed when it doesn't lose bytes. The 2026-04-26
+                // RSI rewrite of TOOLS.md happened by passing the whole file
+                // as `old_content` to a `replace` — but `overwrite` is the
+                // even more direct path to the same damage.
+                use crate::brain::tools::brain_file_safety;
+                if brain_file_safety::is_protected_path(&full_path) {
+                    let existing = std::fs::read_to_string(&full_path).unwrap_or_default();
+                    let dedup_intent = input
+                        .get("dedup_intent")
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or(false);
+                    if let brain_file_safety::ShrinkCheck::Rejected { message } =
+                        brain_file_safety::check_no_shrink(
+                            &full_path,
+                            &existing,
+                            content,
+                            dedup_intent,
+                        )
+                    {
+                        return Ok(ToolResult::error(message));
+                    }
+                }
                 if let Some(parent) = full_path.parent()
                     && let Err(e) = std::fs::create_dir_all(parent)
                 {
@@ -134,6 +161,9 @@ impl Tool for WriteOpenCrabsFileTool {
                         "Failed to create directory: {}",
                         e
                     )));
+                }
+                if let Err(e) = brain_file_safety::backup_before_write(&full_path) {
+                    tracing::warn!("write_opencrabs_file: backup failed for {path_str}: {e}");
                 }
                 match std::fs::write(&full_path, content) {
                     Ok(()) => Ok(ToolResult::success(format!(
@@ -214,6 +244,24 @@ impl Tool for WriteOpenCrabsFileTool {
                     )));
                 }
                 let updated = existing.replacen(old_text, new_text, 1);
+                use crate::brain::tools::brain_file_safety;
+                let dedup_intent = input
+                    .get("dedup_intent")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false);
+                if let brain_file_safety::ShrinkCheck::Rejected { message } =
+                    brain_file_safety::check_no_shrink(
+                        &full_path,
+                        &existing,
+                        &updated,
+                        dedup_intent,
+                    )
+                {
+                    return Ok(ToolResult::error(message));
+                }
+                if let Err(e) = brain_file_safety::backup_before_write(&full_path) {
+                    tracing::warn!("write_opencrabs_file: backup failed for {path_str}: {e}");
+                }
                 match std::fs::write(&full_path, &updated) {
                     Ok(()) => Ok(ToolResult::success(format!(
                         "Replaced text in ~/.opencrabs/{}",

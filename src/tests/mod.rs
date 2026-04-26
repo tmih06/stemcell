@@ -1,4 +1,5 @@
 pub mod altgr_input_test;
+pub mod brain_file_safety_test;
 pub mod brain_templates_test;
 pub mod browser_default_linux_test;
 pub mod browser_default_test;

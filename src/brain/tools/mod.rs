@@ -3,6 +3,7 @@
 //! Provides an abstraction for tools that can be called by LLM agents,
 //! including file operations, shell commands, and more.
 
+pub mod brain_file_safety;
 pub mod error;
 pub mod registry;
 mod r#trait;
