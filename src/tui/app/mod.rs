@@ -1,7 +1,7 @@
 //! App Module — TUI application state and logic.
 
 mod dialogs;
-mod input;
+pub(crate) mod input;
 mod messaging;
 mod state;
 

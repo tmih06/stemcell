@@ -10,11 +10,17 @@ use uuid::Uuid;
 /// that crossterm failed to parse (e.g. `[<35;116;77M` arriving as individual
 /// chars after ESC was consumed as KeyCode::Esc).
 ///
-/// Strategy: scan the recent tail for `[<` — if found, every char after it
-/// that fits the SGR mouse pattern (digits, `;`, `M`, `m`) is garbage.
-/// Also detect `[` at the very end of the tail (CSI about to start).
-fn is_mouse_sequence_fragment(c: char, buf: &str, cursor: usize) -> bool {
-    // Only bother checking chars that actually appear in SGR mouse sequences
+/// Strategy: scan the recent tail for the start of either:
+///
+/// - SGR mouse mode (1006): `\x1b[<Cb;Cx;Cy[Mm]` — visible as `[<…M/m`
+/// - URXVT mouse mode (1015): `\x1b[Cb;Cx;Cy M` — visible as `[N;…M`
+///
+/// crossterm enables both modes (`EnableMouseCapture` emits `?1015h ?1006h`)
+/// and some terminals fall back to URXVT for motion events. If the tail
+/// matches either prefix and the current char fits the continuation pattern
+/// (digits, `;`, `M`, `m`) we treat it as garbage.
+pub(crate) fn is_mouse_sequence_fragment(c: char, buf: &str, cursor: usize) -> bool {
+    // Only bother checking chars that actually appear in mouse sequences
     if !matches!(c, '[' | '<' | '>' | 'M' | 'm' | ';') && !c.is_ascii_digit() {
         return false;
     }
@@ -27,12 +33,10 @@ fn is_mouse_sequence_fragment(c: char, buf: &str, cursor: usize) -> bool {
     }
     let tail = &buf[tail_start..cursor];
 
-    // Look for `[<` anywhere in the tail — that's the start of an SGR mouse seq.
+    // SGR mode (1006): `[<` anywhere in the tail starts the sequence.
     // Everything after it (digits, ;, M/m) is garbage until a non-matching char.
     if let Some(csi_pos) = tail.rfind("[<") {
         let after_csi = &tail[csi_pos + 2..];
-        // If everything after `[<` is digits/semicolons (still in the sequence),
-        // then this next char is part of it too
         if after_csi
             .chars()
             .all(|ch| ch.is_ascii_digit() || matches!(ch, ';' | 'M' | 'm'))
@@ -41,8 +45,30 @@ fn is_mouse_sequence_fragment(c: char, buf: &str, cursor: usize) -> bool {
         }
     }
 
-    // `[` at the end of tail = CSI just started, `<` would be next
-    if tail.ends_with('[') && matches!(c, '<' | 'A'..='Z' | 'a'..='z') {
+    // URXVT mode (1015): the rightmost `[` in the tail is followed only by
+    // digits/`;` — that's the cb;cx;cy stretch of `\x1b[Cb;Cx;Cy M`. Skip
+    // when the bracket is followed by `<` since that's already handled above.
+    // Requires at least one digit between `[` and the cursor so we don't
+    // false-fire on a bare `[` that the user just typed.
+    if let Some(bracket_pos) = tail.rfind('[') {
+        let after_bracket = &tail[bracket_pos + 1..];
+        if !after_bracket.starts_with('<')
+            && !after_bracket.is_empty()
+            && after_bracket
+                .chars()
+                .all(|ch| ch.is_ascii_digit() || ch == ';')
+            && matches!(c, '0'..='9' | ';' | 'M' | 'm')
+        {
+            return true;
+        }
+    }
+
+    // `[` at the end of tail = CSI just started; the next char picks the
+    // mode (`<` for SGR, digit for URXVT, letter for other CSI) or
+    // continues a sequence whose intermediate bytes were already
+    // suppressed (which leaves `;` or `M`/`m` showing up here too).
+    // Any of those after a stray `[` is garbage.
+    if tail.ends_with('[') && matches!(c, '<' | 'A'..='Z' | 'a'..='z' | '0'..='9' | ';') {
         return true;
     }
 
@@ -71,38 +97,68 @@ fn byte_offset_at_display_col(text: &str, target_col: usize) -> usize {
 impl App {
     /// Remove mouse tracking / CSI escape fragments from `input_buffer`.
     ///
-    /// When tmux pane-switches while mouse capture is active, raw SGR mouse
-    /// sequences (`\x1b[<35;116;77M`) get split across reads and crossterm
-    /// delivers them as individual `Key(Char(...))` events — digits, `;`,
-    /// `[`, `<`, `M`, etc.  On `FocusGained` we scrub anything that looks
-    /// like these fragments so the user doesn't see garbage.
+    /// When tmux pane-switches while mouse capture is active, raw mouse
+    /// sequences get split across reads and crossterm delivers them as
+    /// individual `Key(Char(...))` events. Both formats leak this way:
+    ///
+    /// - SGR mode (1006): `\x1b[<35;116;77M` → `[`, `<`, digits, `;`, `M`
+    /// - URXVT mode (1015): `\x1b[35;116;77M` → `[`, digits, `;`, `M`
+    ///
+    /// On `FocusGained` we scrub anything that looks like these fragments
+    /// so the user doesn't see garbage.
     pub fn clear_escape_garbage(&mut self) {
         if self.input_buffer.is_empty() {
             return;
         }
-        // Fast path: if the buffer only contains chars that could be part of
-        // normal text AND doesn't contain the telltale `[<` or `;` + digit
-        // patterns of SGR mouse sequences, skip the work.
+        // Fast path: detect dominance by either of the leak signatures.
+        // The SGR set (`\x1b`, `[`, `<`, `M`, `m`, `^`) was the original
+        // trigger; URXVT motion bursts produce mostly digits and `;` so
+        // a separate "lots of `[NN;` clusters" check catches them too.
         let dominated_by_garbage = {
             let total = self.input_buffer.len();
-            let garbage_chars = self
+            let sgr_chars = self
                 .input_buffer
                 .chars()
                 .filter(|c| matches!(c, '\x1b' | '[' | '<' | 'M' | 'm' | '^'))
                 .count();
-            // If >30% of chars are escape-related, the buffer is garbled
-            total > 5 && garbage_chars * 100 / total > 30
+            let urxvt_chars = self
+                .input_buffer
+                .chars()
+                .filter(|c| c.is_ascii_digit() || matches!(c, ';' | '[' | 'M' | 'm'))
+                .count();
+            // 30% threshold for SGR (small alphabet, harder to false-fire),
+            // 80% for URXVT (digits + `;` + `[` cover so much of normal
+            // typing that we need to be confident before scrubbing).
+            total > 5 && (sgr_chars * 100 / total > 30 || urxvt_chars * 100 / total > 80)
         };
         if !dominated_by_garbage {
             return;
         }
         // Strip escape sequences via the same helper used for paste events
         let cleaned = Self::strip_terminal_escapes(&self.input_buffer);
-        // Also remove leftover mouse-sequence fragment chars (digits, semicolons,
-        // M, m, [, <, ^) that arrived as individual key events
+        // Also remove leftover mouse-sequence fragment chars that arrived as
+        // individual key events. Digits and `;` are added when the buffer
+        // is dominated by URXVT-style fragments — otherwise we'd nuke any
+        // legit text the user mixed in (e.g. "5; ").
+        let strip_urxvt_chars = {
+            let total = cleaned.chars().count().max(1);
+            let urxvt_run = cleaned
+                .chars()
+                .filter(|c| c.is_ascii_digit() || matches!(c, ';' | '[' | 'M' | 'm'))
+                .count();
+            urxvt_run * 100 / total > 80
+        };
         let cleaned: String = cleaned
             .chars()
-            .filter(|c| !matches!(c, '[' | '<' | '>' | 'M' | 'm' | '^'))
+            .filter(|c| {
+                if matches!(c, '[' | '<' | '>' | 'M' | 'm' | '^') {
+                    return false;
+                }
+                if strip_urxvt_chars && (c.is_ascii_digit() || *c == ';') {
+                    return false;
+                }
+                true
+            })
             .collect();
         if cleaned.trim().is_empty() {
             tracing::debug!(
