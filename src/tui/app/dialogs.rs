@@ -200,7 +200,7 @@ impl App {
         let sender = self.event_sender();
         tokio::spawn(async move {
             let models =
-                super::onboarding::fetch_provider_models(provider_idx, api_key.as_deref(), None)
+                super::onboarding::fetch_provider_models(provider_idx, api_key.as_deref(), None, None)
                     .await;
             let _ = sender.send(TuiEvent::ModelSelectorModelsFetched(provider_idx, models));
         });
@@ -360,6 +360,7 @@ impl App {
                         provider_idx,
                         api_key.as_deref(),
                         zhipu_et.as_deref(),
+                        None,
                     )
                     .await;
                     let _ = sender.send(TuiEvent::ModelSelectorModelsFetched(provider_idx, models));
@@ -592,6 +593,7 @@ impl App {
                             provider_idx,
                             api_key.as_deref(),
                             zhipu_et,
+                            None,
                         )
                         .await;
                     }
@@ -1676,6 +1678,7 @@ impl App {
                             provider_idx,
                             api_key.as_deref(),
                             zhipu_et.as_deref(),
+                            None,
                         )
                         .await;
                         let _ = sender.send(TuiEvent::OnboardingModelsFetched(models));

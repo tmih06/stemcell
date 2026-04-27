@@ -24,6 +24,7 @@ pub mod custom_openai_compatible;
 pub mod factory;
 pub mod fallback;
 pub mod gemini;
+pub mod model_fetch;
 pub(crate) mod nonstream_compat;
 pub mod opencode_cli;
 pub mod qwen;

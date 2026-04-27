@@ -475,7 +475,7 @@ fn test_supports_model_fetch() {
 #[test]
 fn test_fetch_models_unsupported_provider_returns_empty() {
     let rt = tokio::runtime::Runtime::new().unwrap();
-    let result = rt.block_on(fetch_provider_models(99, None, None));
+    let result = rt.block_on(fetch_provider_models(99, None, None, None));
     assert!(result.is_empty());
 }
 
@@ -488,7 +488,7 @@ fn test_fetch_anthropic_models_with_api_key() {
         _ => return, // ANTHROPIC_API_KEY not set, skip
     };
     let rt = tokio::runtime::Runtime::new().unwrap();
-    let models = rt.block_on(fetch_provider_models(0, Some(&key), None));
+    let models = rt.block_on(fetch_provider_models(0, Some(&key), None, None));
     assert!(
         !models.is_empty(),
         "Anthropic should return models with API key"
@@ -508,7 +508,7 @@ fn test_fetch_anthropic_models_with_setup_token() {
         _ => return, // ANTHROPIC_MAX_SETUP_TOKEN not set, skip
     };
     let rt = tokio::runtime::Runtime::new().unwrap();
-    let models = rt.block_on(fetch_provider_models(0, Some(&key), None));
+    let models = rt.block_on(fetch_provider_models(0, Some(&key), None, None));
     assert!(
         !models.is_empty(),
         "Anthropic should return models with setup token"
@@ -527,7 +527,7 @@ fn test_fetch_openai_models_with_api_key() {
         _ => return, // OPENAI_API_KEY not set, skip
     };
     let rt = tokio::runtime::Runtime::new().unwrap();
-    let models = rt.block_on(fetch_provider_models(1, Some(&key), None));
+    let models = rt.block_on(fetch_provider_models(1, Some(&key), None, None));
     assert!(
         !models.is_empty(),
         "OpenAI should return models with API key"
@@ -546,7 +546,7 @@ fn test_fetch_openrouter_models_with_api_key() {
         _ => return, // OPENROUTER_API_KEY not set, skip
     };
     let rt = tokio::runtime::Runtime::new().unwrap();
-    let models = rt.block_on(fetch_provider_models(4, Some(&key), None));
+    let models = rt.block_on(fetch_provider_models(4, Some(&key), None, None));
     assert!(!models.is_empty(), "OpenRouter should return models");
     // OpenRouter has 400+ models
     assert!(
@@ -563,6 +563,7 @@ fn test_fetch_models_bad_key_returns_empty() {
     let models = rt.block_on(fetch_provider_models(
         0,
         Some("sk-bad-key-definitely-invalid"),
+        None,
         None,
     ));
     assert!(

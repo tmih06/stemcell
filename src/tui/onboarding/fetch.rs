@@ -159,11 +159,13 @@ pub fn is_first_time() -> bool {
 
 /// Fetch models from provider API. No API key needed for most providers.
 /// If api_key is provided, includes it (some endpoints filter by access level).
+/// For custom providers, pass base_url to fetch from the endpoint.
 /// Returns empty vec on failure (callers fall back to static list).
 pub async fn fetch_provider_models(
     provider_index: usize,
     api_key: Option<&str>,
     zhipu_endpoint_type: Option<&str>,
+    base_url: Option<&str>,
 ) -> Vec<String> {
     use crate::tui::onboarding::PROVIDERS;
     let provider_id = PROVIDERS.get(provider_index).map(|p| p.id).unwrap_or("");
@@ -399,7 +401,18 @@ pub async fn fetch_provider_models(
             }
             req.send().await
         }
-        _ => return Vec::new(),
+        _ => {
+            // Custom provider: try fetching from base_url if provided
+            if let Some(url) = base_url
+                && !url.is_empty()
+            {
+                return crate::brain::provider::model_fetch::fetch_models_from_endpoint(
+                    url, api_key,
+                )
+                .await;
+            }
+            return Vec::new();
+        }
     };
 
     match result {

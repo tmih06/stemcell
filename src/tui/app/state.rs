@@ -1287,6 +1287,7 @@ impl App {
                                     provider_idx,
                                     Some(&api_key),
                                     None,
+                                    None,
                                 )
                                 .await;
                                 let _ = sender.send(TuiEvent::OnboardingModelsFetched(models));
@@ -1310,6 +1311,7 @@ impl App {
                                     provider_idx,
                                     Some(&api_key),
                                     zhipu_et.as_deref(),
+                                    None,
                                 )
                                 .await;
                                 let _ = sender.send(TuiEvent::ModelSelectorModelsFetched(
@@ -1333,6 +1335,7 @@ impl App {
                                     provider_idx,
                                     Some(&api_key),
                                     zhipu_et.as_deref(),
+                                    None,
                                 )
                                 .await;
                                 let _ = sender.send(TuiEvent::ModelSelectorModelsFetched(
@@ -1356,6 +1359,7 @@ impl App {
                                 let models = super::onboarding::fetch_provider_models(
                                     provider_idx,
                                     Some(&api_key),
+                                    None,
                                     None,
                                 )
                                 .await;
@@ -2111,7 +2115,7 @@ impl App {
                     let sender = self.event_sender();
                     tokio::spawn(async move {
                         let models =
-                            super::onboarding::fetch_provider_models(2, Some(&token), None).await;
+                            super::onboarding::fetch_provider_models(2, Some(&token), None, None).await;
                         let _ = sender.send(TuiEvent::OnboardingModelsFetched(models));
                     });
                 }
