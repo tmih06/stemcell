@@ -35,6 +35,7 @@ fn config_with_provider(name: &str) -> Config {
         "openrouter" => providers.openrouter = Some(cfg),
         "minimax" => providers.minimax = Some(cfg),
         "zhipu" => providers.zhipu = Some(cfg),
+        "ollama" => providers.ollama = Some(cfg),
         _ => {}
     }
     Config {
@@ -101,6 +102,15 @@ async fn by_name_qwen() {
     let config = config_with_provider("qwen");
     let result = create_provider_by_name(&config, "qwen").await;
     assert!(result.is_ok());
+    assert_eq!(result.unwrap().name(), "qwen");
+}
+
+#[tokio::test]
+async fn by_name_ollama() {
+    let config = config_with_provider("ollama");
+    let result = create_provider_by_name(&config, "ollama").await;
+    assert!(result.is_ok());
+    assert_eq!(result.unwrap().name(), "ollama");
 }
 
 // ── create_provider_by_name: alias resolution ───────────────────
@@ -326,6 +336,29 @@ async fn no_provider_returns_placeholder() {
     assert!(result.is_ok());
     // PlaceholderProvider::name() returns "none"
     assert_eq!(result.unwrap().name(), "none");
+}
+
+// ── TUI / Factory consistency ──────────────────────────────────
+
+#[test]
+fn tui_providers_match_factory_session_ids() {
+    // Every static PROVIDER id in the TUI must have a matching session_id
+    // in the factory's REGISTRATIONS. The last entry (Custom, id="") is excluded.
+    // This catches cases where a provider is added to one layer but not the other.
+    use crate::tui::onboarding::PROVIDERS;
+    let session_ids = crate::brain::provider::factory::provider_session_ids();
+
+    for p in PROVIDERS.iter() {
+        if p.id.is_empty() {
+            continue; // Custom sentinel — dynamic name, skip
+        }
+        assert!(
+            session_ids.contains(&p.id),
+            "TUI provider id '{}' not found in factory session_ids: {:?}",
+            p.id,
+            session_ids
+        );
+    }
 }
 
 // ── active_provider_vision ──────────────────────────────────────

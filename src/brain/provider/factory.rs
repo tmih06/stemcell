@@ -190,6 +190,12 @@ fn provider_enabled(config: &Config, idx: usize) -> bool {
         .is_some_and(|reg| (reg.is_enabled)(config))
 }
 
+/// All built-in provider session_ids in priority order.
+/// Used for cross-checking TUI provider ids against the factory registry.
+pub fn provider_session_ids() -> Vec<&'static str> {
+    REGISTRATIONS.iter().map(|r| r.session_id).collect()
+}
+
 // ── Local URL detection & thinking transform ────────────────────
 
 /// Detect whether a base URL points to a local inference server

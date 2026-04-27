@@ -14,6 +14,19 @@
 
 [providers]
 # ========================================
+# Ollama Provider (Local + Cloud)
+# ========================================
+# Local: runs on localhost:11434 — no API key needed
+# Cloud: set base_url to your Ollama Cloud endpoint + optional API key
+# Models are fetched automatically from /api/tags
+# Requires: ollama serve (local) or a cloud endpoint
+[providers.ollama]
+enabled = false
+base_url = "http://localhost:11434/v1/chat/completions"
+# default_model = "llama3.1"  # Optional: override default
+# api_key = ""  # Optional: only needed for Ollama Cloud
+
+# ========================================
 # Custom: OpenAI-Compatible Provider (Local LLMs, and any OpenAI Compatible model)
 # ========================================
 # Use this for LM Studio, Ollama, LocalAI, etc.

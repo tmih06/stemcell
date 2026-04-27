@@ -113,7 +113,14 @@ impl ProviderSelectorState {
     pub fn supports_model_fetch(&self) -> bool {
         matches!(
             self.provider_id(),
-            "anthropic" | "openai" | "github" | "gemini" | "openrouter" | "zhipu" | "opencode-cli"
+            "anthropic"
+                | "openai"
+                | "github"
+                | "gemini"
+                | "openrouter"
+                | "zhipu"
+                | "opencode-cli"
+                | "ollama"
         )
     }
 

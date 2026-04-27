@@ -401,6 +401,56 @@ pub async fn fetch_provider_models(
             }
             req.send().await
         }
+        "ollama" => {
+            // Ollama — fetch from /api/tags (local or cloud)
+            let base = if let Some(url) = base_url
+                && !url.is_empty()
+            {
+                url.to_string()
+            } else {
+                "http://localhost:11434".to_string()
+            };
+            let base = base.trim_end_matches('/');
+            #[derive(serde::Deserialize)]
+            struct OllamaModel {
+                name: String,
+            }
+            #[derive(serde::Deserialize)]
+            struct OllamaModelsResponse {
+                models: Vec<OllamaModel>,
+            }
+            let mut req = client.get(format!("{}/api/tags", base));
+            if let Some(key) = api_key
+                && !key.is_empty()
+            {
+                req = req.header("Authorization", format!("Bearer {}", key));
+            }
+            match req.send().await {
+                Ok(resp) if resp.status().is_success() => {
+                    match resp.json::<OllamaModelsResponse>().await {
+                        Ok(body) => {
+                            let mut models: Vec<String> = body.models.into_iter().map(|m| m.name).collect();
+                            models.sort();
+                            models.reverse();
+                            tracing::info!("[fetch_provider_models] Ollama: fetched {} models", models.len());
+                            return models;
+                        }
+                        Err(e) => {
+                            tracing::warn!("Ollama models parse error: {}", e);
+                            return Vec::new();
+                        }
+                    }
+                }
+                Ok(resp) => {
+                    tracing::warn!("Ollama models API returned {}", resp.status());
+                    return Vec::new();
+                }
+                Err(e) => {
+                    tracing::warn!("Ollama models fetch failed: {}", e);
+                    return Vec::new();
+                }
+            }
+        }
         _ => {
             // Custom provider: try fetching from base_url if provided
             if let Some(url) = base_url

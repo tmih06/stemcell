@@ -236,6 +236,17 @@ pub const PROVIDERS: &[ProviderInfo] = &[
         ],
     },
     ProviderInfo {
+        id: "ollama",
+        name: "Ollama",
+        models: &[], // Fetched from /api/tags
+        key_label: "API Key",
+        help_lines: &[
+            "Local: runs on localhost:11434 — no key needed",
+            "Cloud: set base_url + optional API key",
+            "Requires: ollama serve (local) or cloud endpoint",
+        ],
+    },
+    ProviderInfo {
         id: "", // dynamic — custom providers use runtime names
         name: "Custom OpenAI-Compatible",
         models: &[],
