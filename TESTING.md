@@ -83,6 +83,10 @@ cargo test --all-features
 | **Utils — Install** | 6 | `src/utils/install.rs` |
 | **Utils — Config Watcher** | 2 | `src/utils/config_watcher.rs` |
 | **Logging** | 4 | `src/logging/logger.rs` |
+| Tests — RSI Template Sync | 12 | `src/tests/rsi_sync_test.rs` |
+| Tests — Model Fetching | 10 | `src/tests/model_fetch_test.rs` |
+| Tests — Provider Factory Regression | 26 | `src/tests/provider_factory_regression_test.rs` |
+| Tests — Onboarding Welcome | 10 | `src/tests/onboarding_welcome_test.rs` |
 | Tests — Voice STT Dispatch | 21 | `src/tests/voice_stt_dispatch_test.rs` |
 | Tests — Voice Onboarding | 65 | `src/tests/voice_onboarding_test.rs` |
 | Tests — Voice OpenAI Compatible | 12 | `src/tests/voice_openai_compatible_test.rs` |
@@ -150,7 +154,7 @@ cargo test --all-features
 | **Usage — Categorizer** | 4 | `src/usage/categorizer.rs` |
 | **Usage — Dashboard** | 6 | `src/usage/dashboard.rs` |
 | **Usage — Data** | 7 | `src/usage/data.rs` |
-| **Total** | **2,131** | 7 new phantom detection tests (5 investigative intent + 2 gerund patterns) |
+| **Total** | **2,346** | +215 since last update: RSI sync (12), model fetch (10), provider factory regression (26), onboarding welcome (10), Ollama/TUI fixes, browser tests, and more |
 
 ---
 
