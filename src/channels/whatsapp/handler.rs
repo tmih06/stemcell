@@ -154,41 +154,31 @@ async fn download_audio(msg: &Message, client: &Client) -> Option<Vec<u8>> {
     }
 }
 
-/// Download image from WhatsApp and save to a temp file.
-/// Returns the file path on success.
-async fn download_image(msg: &Message, client: &Client) -> Option<String> {
+/// Download image from WhatsApp. Returns (bytes, mime, filename) on success.
+async fn download_image(msg: &Message, client: &Client) -> Option<(Vec<u8>, String, String)> {
     let msg = unwrap_message(msg);
     let img = msg.image_message.as_ref()?;
 
-    let mime = img.mimetype.as_deref().unwrap_or("image/jpeg");
-    let ext = match mime {
+    let mime = img.mimetype.as_deref().unwrap_or("image/jpeg").to_string();
+    let ext = match mime.as_str() {
         "image/png" => "png",
         "image/webp" => "webp",
         "image/gif" => "gif",
         _ => "jpg",
     };
+    let fname = format!("image.{ext}");
 
     match client.download(img.as_ref()).await {
         Ok(bytes) => {
-            let path =
-                std::env::temp_dir().join(format!("wa_img_{}.{}", uuid::Uuid::new_v4(), ext));
-            match std::fs::write(&path, &bytes) {
-                Ok(()) => {
-                    tracing::debug!(
-                        "WhatsApp: downloaded image ({} bytes) to {}",
-                        bytes.len(),
-                        path.display()
-                    );
-                    Some(path.to_string_lossy().to_string())
-                }
-                Err(e) => {
-                    tracing::error!("WhatsApp: failed to save image: {}", e);
-                    None
-                }
-            }
+            tracing::debug!(
+                "WhatsApp: downloaded image ({} bytes, mime={})",
+                bytes.len(),
+                mime
+            );
+            Some((bytes, mime, fname))
         }
         Err(e) => {
-            tracing::error!("WhatsApp: failed to download image: {}", e);
+            tracing::error!("WhatsApp: failed to download image: {e}");
             None
         }
     }
@@ -437,15 +427,24 @@ pub(crate) async fn handle_message(
         content = text.unwrap_or_default();
     }
 
-    // Download image if present, append <<IMG:path>> marker
+    // Download image if present, route through shared vision pipeline
     if has_img
         && !has_aud
-        && let Some(img_path) = download_image(&msg, &client).await
+        && let Some((img_bytes, img_mime, img_fname)) = download_image(&msg, &client).await
     {
-        if content.is_empty() {
-            content = "Describe this image.".to_string();
+        use crate::utils::{inject_file_content, process_file_with_vision};
+        let cfg = crate::config::Config::load();
+        if let Ok(cfg) = cfg {
+            let fc = process_file_with_vision(&img_bytes, &img_mime, &img_fname, &cfg);
+            let injected = inject_file_content(&fc).0;
+            if !injected.is_empty() {
+                if content.is_empty() {
+                    content = injected;
+                } else {
+                    content.push_str(&format!("\n\n{injected}"));
+                }
+            }
         }
-        content.push_str(&format!(" <<IMG:{}>>", img_path));
     }
 
     // Handle document attachment

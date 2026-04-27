@@ -457,29 +457,18 @@ pub(crate) async fn handle_message(
             }
         };
 
-        // Save to temp file so the agent's <<IMG:path>> pipeline can handle it
-        let tmp_path = std::env::temp_dir().join(format!("tg_photo_{}.jpg", Uuid::new_v4()));
-        if let Err(e) = tokio::fs::write(&tmp_path, &photo_bytes).await {
-            tracing::error!("Telegram: failed to write temp photo: {}", e);
-            bot.send_message(msg.chat.id, "Failed to process photo.")
-                .await?;
-            return Ok(());
-        }
-
-        // Use caption if provided, otherwise generic prompt
-        let caption = msg.caption().unwrap_or("Analyze this image");
-        let text_with_img = format!("<<IMG:{}>> {}", tmp_path.display(), caption);
-
-        // Clean up temp file after 24h — the agent and follow-up tool calls may
-        // need to re-read the file long after the initial message was processed.
-        // The OS temp reaper handles orphaned files if the daemon is killed.
-        let cleanup_path = tmp_path.clone();
-        tokio::spawn(async move {
-            tokio::time::sleep(std::time::Duration::from_secs(24 * 3600)).await;
-            let _ = tokio::fs::remove_file(cleanup_path).await;
-        });
-
-        (text_with_img, false)
+        // Route through the shared vision pipeline — saves to ~/.opencrabs/tmp/files/
+        // and returns a <<IMG:path>> marker. Centralized temp management, single cleanup.
+        use crate::utils::{inject_file_content, process_file_with_vision};
+        let fc = process_file_with_vision(&photo_bytes, "image/jpeg", "photo.jpg", &cfg);
+        let injected = inject_file_content(&fc).0;
+        let caption = msg.caption().unwrap_or("");
+        let result = if caption.is_empty() || injected.contains("<<IMG:") {
+            injected
+        } else {
+            format!("{caption}\n\n{injected}")
+        };
+        (result, false)
     } else if let Some(doc) = msg.document() {
         let fname = doc.file_name.as_deref().unwrap_or("file");
         let mime = doc.mime_type.as_ref().map(|m| m.as_ref()).unwrap_or("");
