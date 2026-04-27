@@ -51,6 +51,7 @@ pub mod nonstream_compat_test;
 pub mod onboarding_brain_test;
 pub mod onboarding_field_nav_test;
 pub mod onboarding_keys_test;
+pub mod provider_factory_regression_test;
 pub mod onboarding_navigation_test;
 pub mod onboarding_types_test;
 pub mod onboarding_welcome_test;
