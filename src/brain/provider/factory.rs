@@ -149,6 +149,14 @@ static REGISTRATIONS: LazyLock<Vec<ProviderRegistration>> = LazyLock::new(|| {
             config_field: |c| c.providers.zhipu.as_ref(),
         },
         ProviderRegistration {
+            display_name: "Ollama",
+            session_id: "ollama",
+            aliases: &[],
+            is_enabled: |c| c.providers.ollama.as_ref().is_some_and(|p| p.enabled),
+            factory: sync_factory(try_create_ollama),
+            config_field: |c| c.providers.ollama.as_ref(),
+        },
+        ProviderRegistration {
             display_name: "Custom",
             session_id: "custom",
             aliases: &[],
@@ -171,6 +179,7 @@ pub const PROVIDER_NAMES: &[&str] = &[
     "OpenRouter",
     "Minimax",
     "z.ai GLM",
+    "Ollama",
     "Custom",
 ];
 
@@ -805,6 +814,41 @@ fn try_create_zhipu(config: &Config) -> Result<Option<Arc<dyn Provider>>> {
         OpenAIProvider::with_base_url(api_key.clone(), base_url.to_string()).with_name("zhipu"),
         zhipu_config,
     );
+    Ok(Some(Arc::new(provider)))
+}
+
+/// Try to create Ollama provider if configured.
+/// Supports both local (localhost:11434, no API key) and cloud (api.ollama.com, optional key).
+fn try_create_ollama(config: &Config) -> Result<Option<Arc<dyn Provider>>> {
+    let ollama_config = match &config.providers.ollama {
+        Some(cfg) => cfg,
+        None => return Ok(None),
+    };
+
+    // Default to local Ollama if no base_url specified
+    let base_url = ollama_config
+        .base_url
+        .clone()
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| "http://localhost:11434/v1/chat/completions".to_string());
+
+    let base_url = if base_url.contains("/chat/completions") {
+        base_url
+    } else {
+        format!("{}/chat/completions", base_url.trim_end_matches('/'))
+    };
+
+    // API key is optional for local Ollama
+    let api_key = ollama_config.api_key.clone().unwrap_or_default();
+
+    tracing::info!("Using Ollama at: {} (has_key={})", base_url, !api_key.is_empty());
+
+    let mut builder = OpenAIProvider::with_base_url(api_key, base_url.clone()).with_name("ollama");
+    if is_local_base_url(&base_url) {
+        let enable = ollama_config.enable_thinking.unwrap_or(true);
+        builder = builder.with_body_transform(local_thinking_body_transform(enable));
+    }
+    let provider = configure_openai_compatible(builder, ollama_config);
     Ok(Some(Arc::new(provider)))
 }
 

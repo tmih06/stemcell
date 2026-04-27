@@ -635,6 +635,10 @@ pub struct ProviderConfigs {
     #[serde(default)]
     pub qwen: Option<ProviderConfig>,
 
+    /// Ollama — local or cloud (api.ollama.com). Auto-detects local models via /api/tags.
+    #[serde(default)]
+    pub ollama: Option<ProviderConfig>,
+
     /// AWS Bedrock configuration
     #[serde(default)]
     pub bedrock: Option<ProviderConfig>,
