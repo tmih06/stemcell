@@ -281,6 +281,45 @@ pub fn cleanup_old_logs(max_age_days: u64) -> Result<usize, Box<dyn std::error::
     Ok(removed)
 }
 
+/// Clean up orphaned temp files from ~/.opencrabs/tmp/files/ older than max_age_days.
+/// All channel image uploads (Telegram, WhatsApp, Slack, Trello) are saved here
+/// via process_file_with_vision. This single purge replaces per-channel cleanup spawns.
+pub fn cleanup_old_temp_files(max_age_days: u64) -> Result<usize, Box<dyn std::error::Error>> {
+    let home = match dirs::home_dir() {
+        Some(h) => h,
+        None => return Ok(0),
+    };
+    let tmp_dir = home.join(".opencrabs").join("tmp").join("files");
+    if !tmp_dir.exists() {
+        return Ok(0);
+    }
+
+    let max_age = std::time::Duration::from_secs(max_age_days * 24 * 60 * 60);
+    let now = std::time::SystemTime::now();
+    let mut removed = 0;
+
+    for entry in std::fs::read_dir(&tmp_dir)? {
+        let entry = entry?;
+        let path = entry.path();
+
+        // Clean all files in our temp directory (images, PDFs, etc.)
+        if !path.is_file() {
+            continue;
+        }
+
+        if let Ok(metadata) = entry.metadata()
+            && let Ok(modified) = metadata.modified()
+            && let Ok(age) = now.duration_since(modified)
+            && age > max_age
+            && std::fs::remove_file(&path).is_ok()
+        {
+            removed += 1;
+        }
+    }
+
+    Ok(removed)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

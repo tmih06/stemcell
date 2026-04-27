@@ -34,6 +34,13 @@ async fn main() -> Result<()> {
         tracing::info!("🧹 Cleaned up {} old log file(s)", removed);
     }
 
+    // Clean up orphaned channel temp files (tg_photo_*, wa_img_*) older than 3 days
+    if let Ok(removed) = logging::cleanup_old_temp_files(3)
+        && removed > 0
+    {
+        tracing::info!("🧹 Cleaned up {} orphaned temp file(s)", removed);
+    }
+
     // Run CLI application
     let result = cli::run().await;
 
