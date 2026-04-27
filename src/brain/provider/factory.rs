@@ -1,6 +1,18 @@
 //! Provider Factory
 //!
 //! Creates providers based on config.toml settings.
+//!
+//! ## Registry Pattern
+//!
+//! All built-in providers are registered in the `REGISTRATIONS` array below.
+//! Adding a new provider requires only:
+//! 1. Adding a `ProviderRegistration` entry to `REGISTRATIONS`
+//! 2. Adding the corresponding field to `ProviderConfigs` in `config/types.rs`
+//! 3. Writing a `try_create_*` function
+//!
+//! The factory functions (`provider_enabled`,
+//! `create_provider_by_name`, `create_fallback`, `active_provider_vision`)
+//! all iterate the registry automatically.
 
 use super::qwen::{qwen_body_transform, qwen_extra_headers};
 use super::{
@@ -13,7 +25,163 @@ use super::{
 };
 use crate::config::{Config, ProviderConfig};
 use anyhow::Result;
-use std::sync::Arc;
+use std::future::Future;
+use std::pin::Pin;
+use std::sync::{Arc, LazyLock};
+
+// ── Provider Registry ───────────────────────────────────────────
+
+/// Type alias for async factory functions stored in the registry.
+type ProviderFactoryFn = Box<
+    dyn Fn(&Config) -> Pin<Box<dyn Future<Output = Result<Option<Arc<dyn Provider>>>> + Send + '_>>
+        + Send
+        + Sync,
+>;
+
+/// Type alias for sync factory functions (used by `sync_factory`).
+type SyncProviderFactoryFn = fn(&Config) -> Result<Option<Arc<dyn Provider>>>;
+
+/// Wrap a synchronous factory function into the async registry type.
+fn sync_factory(f: SyncProviderFactoryFn) -> ProviderFactoryFn {
+    Box::new(move |config| Box::pin(async move { f(config) }))
+}
+
+/// Registration entry for a built-in provider.
+struct ProviderRegistration {
+    /// Display name shown in pickers and logs (e.g. "Anthropic").
+    display_name: &'static str,
+    /// Session ID used for restoration (e.g. "anthropic").
+    session_id: &'static str,
+    /// Alternative session IDs (e.g. ["claude-cli", "claude_cli"]).
+    aliases: &'static [&'static str],
+    /// Check if this provider is enabled in config.
+    is_enabled: fn(&Config) -> bool,
+    /// Try to create the provider instance.
+    factory: ProviderFactoryFn,
+    /// Extract the provider config for vision/model lookups.
+    config_field: fn(&Config) -> Option<&ProviderConfig>,
+}
+
+/// All built-in providers in priority order.
+///
+/// **IMPORTANT:** This array must stay in sync with `PROVIDER_NAMES`.
+/// The index is used by `provider_enabled()`.
+static REGISTRATIONS: LazyLock<Vec<ProviderRegistration>> = LazyLock::new(|| {
+    vec![
+        ProviderRegistration {
+            display_name: "Claude CLI",
+            session_id: "claude-cli",
+            aliases: &["claude_cli"],
+            is_enabled: |c| c.providers.claude_cli.as_ref().is_some_and(|p| p.enabled),
+            factory: sync_factory(try_create_claude_cli),
+            config_field: |c| c.providers.claude_cli.as_ref(),
+        },
+        ProviderRegistration {
+            display_name: "OpenCode CLI",
+            session_id: "opencode-cli",
+            aliases: &["opencode_cli", "opencode"],
+            is_enabled: |c| c.providers.opencode_cli.as_ref().is_some_and(|p| p.enabled),
+            factory: sync_factory(try_create_opencode_cli),
+            config_field: |c| c.providers.opencode_cli.as_ref(),
+        },
+        ProviderRegistration {
+            display_name: "Qwen",
+            session_id: "qwen",
+            aliases: &[],
+            is_enabled: |c| c.providers.qwen.as_ref().is_some_and(|p| p.enabled),
+            factory: Box::new(|config| Box::pin(try_create_qwen(config))),
+            config_field: |c| c.providers.qwen.as_ref(),
+        },
+        ProviderRegistration {
+            display_name: "Anthropic",
+            session_id: "anthropic",
+            aliases: &[],
+            is_enabled: |c| c.providers.anthropic.as_ref().is_some_and(|p| p.enabled),
+            factory: sync_factory(try_create_anthropic),
+            config_field: |c| c.providers.anthropic.as_ref(),
+        },
+        ProviderRegistration {
+            display_name: "OpenAI",
+            session_id: "openai",
+            aliases: &[],
+            is_enabled: |c| c.providers.openai.as_ref().is_some_and(|p| p.enabled),
+            factory: sync_factory(try_create_openai),
+            config_field: |c| c.providers.openai.as_ref(),
+        },
+        ProviderRegistration {
+            display_name: "GitHub Copilot",
+            session_id: "github",
+            aliases: &[],
+            is_enabled: |c| c.providers.github.as_ref().is_some_and(|p| p.enabled),
+            factory: sync_factory(try_create_github),
+            config_field: |c| c.providers.github.as_ref(),
+        },
+        ProviderRegistration {
+            display_name: "Google Gemini",
+            session_id: "gemini",
+            aliases: &[],
+            is_enabled: |c| c.providers.gemini.as_ref().is_some_and(|p| p.enabled),
+            factory: sync_factory(try_create_gemini),
+            config_field: |c| c.providers.gemini.as_ref(),
+        },
+        ProviderRegistration {
+            display_name: "OpenRouter",
+            session_id: "openrouter",
+            aliases: &[],
+            is_enabled: |c| c.providers.openrouter.as_ref().is_some_and(|p| p.enabled),
+            factory: sync_factory(try_create_openrouter),
+            config_field: |c| c.providers.openrouter.as_ref(),
+        },
+        ProviderRegistration {
+            display_name: "Minimax",
+            session_id: "minimax",
+            aliases: &[],
+            is_enabled: |c| c.providers.minimax.as_ref().is_some_and(|p| p.enabled),
+            factory: sync_factory(try_create_minimax),
+            config_field: |c| c.providers.minimax.as_ref(),
+        },
+        ProviderRegistration {
+            display_name: "z.ai GLM",
+            session_id: "zhipu",
+            aliases: &[],
+            is_enabled: |c| c.providers.zhipu.as_ref().is_some_and(|p| p.enabled),
+            factory: sync_factory(try_create_zhipu),
+            config_field: |c| c.providers.zhipu.as_ref(),
+        },
+        ProviderRegistration {
+            display_name: "Custom",
+            session_id: "custom",
+            aliases: &[],
+            is_enabled: |c| c.providers.active_custom().is_some(),
+            factory: sync_factory(try_create_custom),
+            config_field: |_| None, // Custom uses active_custom() instead
+        },
+    ]
+});
+
+/// Provider names in priority order, derived from REGISTRATIONS.
+pub const PROVIDER_NAMES: &[&str] = &[
+    "Claude CLI",
+    "OpenCode CLI",
+    "Qwen",
+    "Anthropic",
+    "OpenAI",
+    "GitHub Copilot",
+    "Google Gemini",
+    "OpenRouter",
+    "Minimax",
+    "z.ai GLM",
+    "Custom",
+];
+
+/// Whether a provider is enabled in config, by index matching PROVIDER_NAMES.
+fn provider_enabled(config: &Config, idx: usize) -> bool {
+    REGISTRATIONS
+        .get(idx)
+        .is_some_and(|reg| (reg.is_enabled)(config))
+}
+
+// ── Local URL detection & thinking transform ────────────────────
 
 /// Detect whether a base URL points to a local inference server
 /// (llama.cpp, MLX, LM Studio, Ollama, etc.). Used to gate behaviours
@@ -93,73 +261,7 @@ fn local_thinking_body_transform(enable: bool) -> BodyTransformFn {
     })
 }
 
-/// Try a single provider by name. Qwen is async (OAuth refresh),
-/// everything else is sync but wrapped in the same async signature.
-async fn try_create_by_name(config: &Config, name: &str) -> Result<Option<Arc<dyn Provider>>> {
-    match name {
-        "Claude CLI" => try_create_claude_cli(config),
-        "OpenCode CLI" => try_create_opencode_cli(config),
-        "Qwen" => try_create_qwen(config).await,
-        "Anthropic" => try_create_anthropic(config),
-        "OpenAI" => try_create_openai(config),
-        "GitHub Copilot" => try_create_github(config),
-        "Google Gemini" => try_create_gemini(config),
-        "OpenRouter" => try_create_openrouter(config),
-        "Minimax" => try_create_minimax(config),
-        "z.ai GLM" => try_create_zhipu(config),
-        "Custom" => try_create_custom(config),
-        _ => Ok(None),
-    }
-}
-
-/// Provider names in priority order.
-const PROVIDER_NAMES: &[&str] = &[
-    "Claude CLI",
-    "OpenCode CLI",
-    "Qwen",
-    "Anthropic",
-    "OpenAI",
-    "GitHub Copilot",
-    "Google Gemini",
-    "OpenRouter",
-    "Minimax",
-    "z.ai GLM",
-    "Custom",
-];
-
-/// Whether a provider is enabled in config, by index matching PROVIDER_NAMES.
-fn provider_enabled(config: &Config, idx: usize) -> bool {
-    match idx {
-        0 => config
-            .providers
-            .claude_cli
-            .as_ref()
-            .is_some_and(|p| p.enabled),
-        1 => config
-            .providers
-            .opencode_cli
-            .as_ref()
-            .is_some_and(|p| p.enabled),
-        2 => config.providers.qwen.as_ref().is_some_and(|p| p.enabled),
-        3 => config
-            .providers
-            .anthropic
-            .as_ref()
-            .is_some_and(|p| p.enabled),
-        4 => config.providers.openai.as_ref().is_some_and(|p| p.enabled),
-        5 => config.providers.github.as_ref().is_some_and(|p| p.enabled),
-        6 => config.providers.gemini.as_ref().is_some_and(|p| p.enabled),
-        7 => config
-            .providers
-            .openrouter
-            .as_ref()
-            .is_some_and(|p| p.enabled),
-        8 => config.providers.minimax.as_ref().is_some_and(|p| p.enabled),
-        9 => config.providers.zhipu.as_ref().is_some_and(|p| p.enabled),
-        10 => config.providers.active_custom().is_some(),
-        _ => false,
-    }
-}
+// ── Public factory functions ────────────────────────────────────
 
 /// Create a provider based on config.toml
 /// No hardcoded priority - providers are enabled/disabled in config
@@ -181,38 +283,38 @@ pub async fn create_provider_with_warning(
     let mut warning: Option<String> = None;
 
     // Try enabled providers in priority order
-    for (i, &name) in PROVIDER_NAMES.iter().enumerate() {
+    for (i, reg) in REGISTRATIONS.iter().enumerate() {
         if !provider_enabled(config, i) {
             continue;
         }
 
-        match try_create_by_name(config, name).await {
+        match (reg.factory)(config).await {
             Ok(Some(provider)) => {
                 if let Some(failed) = failed_name {
                     let msg = format!(
                         "{} failed to initialize — fell back to {}. Run /onboard:provider to reconfigure.",
-                        failed, name
+                        failed, reg.display_name
                     );
                     tracing::warn!("{}", msg);
                     warning = Some(msg);
                 }
-                tracing::info!("Using enabled provider: {}", name);
+                tracing::info!("Using enabled provider: {}", reg.display_name);
                 primary = Some(provider);
                 break;
             }
             Ok(None) => {
                 tracing::warn!(
                     "{} enabled but could not be created (missing API key?)",
-                    name
+                    reg.display_name
                 );
                 if failed_name.is_none() {
-                    failed_name = Some(name);
+                    failed_name = Some(reg.display_name);
                 }
             }
             Err(e) => {
-                tracing::error!("{} provider error: {}", name, e);
+                tracing::error!("{} provider error: {}", reg.display_name, e);
                 if failed_name.is_none() {
-                    failed_name = Some(name);
+                    failed_name = Some(reg.display_name);
                 }
             }
         }
@@ -275,11 +377,6 @@ pub async fn create_provider_by_name(config: &Config, name: &str) -> Result<Arc<
     // Custom entries take precedence over built-in names. If the user
     // created a custom provider literally named "opencode" / "anthropic"
     // / anything that collides with a built-in id, the custom entry wins.
-    // Without this, a session with provider_name="opencode" and a
-    // `providers.custom.opencode` entry pointing at opencode.ai HTTP
-    // would silently spawn an OpenCodeCliProvider subprocess instead
-    // (2026-04-18 bug). `custom:` prefix still routes below for
-    // sessions that stored the disambiguated form.
     if !name.starts_with("custom:")
         && config
             .providers
@@ -290,69 +387,26 @@ pub async fn create_provider_by_name(config: &Config, name: &str) -> Result<Arc<
     {
         return Ok(p);
     }
-    match name {
-        "claude-cli" | "claude_cli" => {
-            // Bypass enabled check — session explicitly requested this provider
-            let model = config
-                .providers
-                .claude_cli
-                .as_ref()
-                .and_then(|c| c.default_model.clone());
-            match ClaudeCliProvider::new() {
-                Ok(mut provider) => {
-                    if let Some(m) = model {
-                        provider = provider.with_default_model(m);
-                    }
-                    Ok(Arc::new(provider))
-                }
-                Err(e) => Err(anyhow::anyhow!("Claude CLI binary not found: {}", e)),
-            }
+
+    // Try built-in registry by session_id or alias
+    for reg in REGISTRATIONS.iter() {
+        if reg.session_id == name || reg.aliases.contains(&name) {
+            let provider = (reg.factory)(config)
+                .await?
+                .ok_or_else(|| anyhow::anyhow!("{} not configured (missing API key)", reg.display_name))?;
+            return Ok(provider);
         }
-        "opencode-cli" | "opencode_cli" => {
-            // Bypass enabled check — session explicitly requested this provider.
-            // Bare "opencode" is NOT aliased here: it's a valid custom provider
-            // name (opencode.ai HTTP endpoint) and must never route to the CLI.
-            let model = config
-                .providers
-                .opencode_cli
-                .as_ref()
-                .and_then(|c| c.default_model.clone());
-            match OpenCodeCliProvider::new() {
-                Ok(mut provider) => {
-                    if let Some(m) = model {
-                        provider = provider.with_default_model(m);
-                    }
-                    Ok(Arc::new(provider))
-                }
-                Err(e) => Err(anyhow::anyhow!("OpenCode CLI binary not found: {}", e)),
-            }
-        }
-        "anthropic" => try_create_anthropic(config)?
-            .ok_or_else(|| anyhow::anyhow!("Anthropic not configured (missing API key)")),
-        "openai" => try_create_openai(config)?
-            .ok_or_else(|| anyhow::anyhow!("OpenAI not configured (missing API key)")),
-        "minimax" => try_create_minimax(config)?
-            .ok_or_else(|| anyhow::anyhow!("Minimax not configured (missing API key)")),
-        "zhipu" => try_create_zhipu(config)?
-            .ok_or_else(|| anyhow::anyhow!("z.ai GLM not configured (missing API key)")),
-        "openrouter" => try_create_openrouter(config)?
-            .ok_or_else(|| anyhow::anyhow!("OpenRouter not configured (missing API key)")),
-        "github" => try_create_github(config)?
-            .ok_or_else(|| anyhow::anyhow!("GitHub not configured (missing token)")),
-        "gemini" => try_create_gemini(config)?
-            .ok_or_else(|| anyhow::anyhow!("Gemini not configured (missing API key)")),
-        "qwen" => try_create_qwen(config)
-            .await?
-            .ok_or_else(|| anyhow::anyhow!("Qwen not configured (run /onboard:provider)")),
-        n if n.starts_with("custom:") => {
-            let custom_name = &n["custom:".len()..];
-            try_create_custom_by_name(config, custom_name)?
-                .ok_or_else(|| anyhow::anyhow!("Custom provider '{}' not configured", custom_name))
-        }
-        // Try as a custom provider name directly (legacy sessions)
-        other => try_create_custom_by_name(config, other)?
-            .ok_or_else(|| anyhow::anyhow!("Unknown provider: {}", other)),
     }
+
+    // Try custom: prefix
+    if let Some(custom_name) = name.strip_prefix("custom:") {
+        return try_create_custom_by_name(config, custom_name)?
+            .ok_or_else(|| anyhow::anyhow!("Custom provider '{}' not configured", custom_name));
+    }
+
+    // Try as a custom provider name directly (legacy sessions)
+    try_create_custom_by_name(config, name)?
+        .ok_or_else(|| anyhow::anyhow!("Unknown provider: {}", name))
 }
 
 /// Try to create a specific named custom provider (ignores enabled flag).
@@ -443,69 +497,72 @@ pub(crate) fn fallback_chain(fallback: &crate::config::FallbackProviderConfig) -
 
 /// Create fallback provider
 async fn create_fallback(config: &Config, fallback_type: &str) -> Result<Arc<dyn Provider>> {
-    match fallback_type {
-        "claude-cli" | "claude_cli" => {
-            tracing::info!("Using fallback: Claude CLI");
-            try_create_claude_cli(config)?
-                .ok_or_else(|| anyhow::anyhow!("Claude CLI not available"))
-        }
-        "opencode" | "opencode-cli" | "opencode_cli" => {
-            tracing::info!("Using fallback: OpenCode CLI");
-            try_create_opencode_cli(config)?
-                .ok_or_else(|| anyhow::anyhow!("OpenCode CLI not available"))
-        }
-        "openrouter" => {
-            tracing::info!("Using fallback: OpenRouter");
-            try_create_openrouter(config)?
-                .ok_or_else(|| anyhow::anyhow!("OpenRouter not configured"))
-        }
-        "minimax" => {
-            tracing::info!("Using fallback: Minimax");
-            try_create_minimax(config)?.ok_or_else(|| anyhow::anyhow!("Minimax not configured"))
-        }
-        "zhipu" => {
-            tracing::info!("Using fallback: z.ai GLM");
-            try_create_zhipu(config)?.ok_or_else(|| anyhow::anyhow!("z.ai GLM not configured"))
-        }
-        "anthropic" => {
-            tracing::info!("Using fallback: Anthropic");
-            try_create_anthropic(config)?.ok_or_else(|| anyhow::anyhow!("Anthropic not configured"))
-        }
-        "openai" => {
-            tracing::info!("Using fallback: OpenAI");
-            try_create_openai(config)?.ok_or_else(|| anyhow::anyhow!("OpenAI not configured"))
-        }
-        "github" => {
-            tracing::info!("Using fallback: GitHub Copilot");
-            try_create_github(config)?.ok_or_else(|| anyhow::anyhow!("GitHub not configured"))
-        }
-        "gemini" => {
-            tracing::info!("Using fallback: Gemini");
-            try_create_gemini(config)?.ok_or_else(|| anyhow::anyhow!("Gemini not configured"))
-        }
-        "qwen" => {
-            tracing::info!("Using fallback: Qwen native");
-            try_create_qwen(config)
+    // Try custom: prefix first
+    if let Some(custom_name) = fallback_type.strip_prefix("custom:") {
+        tracing::info!("Using fallback: Custom '{}'", custom_name);
+        return try_create_custom_by_name(config, custom_name)?
+            .ok_or_else(|| anyhow::anyhow!("Custom provider '{}' not configured", custom_name));
+    }
+
+    // Try built-in registry
+    for reg in REGISTRATIONS.iter() {
+        if reg.session_id == fallback_type || reg.aliases.contains(&fallback_type) {
+            tracing::info!("Using fallback: {}", reg.display_name);
+            return (reg.factory)(config)
                 .await?
-                .ok_or_else(|| anyhow::anyhow!("Qwen native not configured"))
-        }
-        "custom" => {
-            tracing::info!("Using fallback: Custom OpenAI-Compatible");
-            try_create_custom(config)?
-                .ok_or_else(|| anyhow::anyhow!("Custom provider not configured"))
-        }
-        other => {
-            // Try as a named custom provider (e.g. "custom:mylocal")
-            if let Some(name) = other.strip_prefix("custom:") {
-                tracing::info!("Using fallback: Custom '{}'", name);
-                try_create_custom_by_name(config, name)?
-                    .ok_or_else(|| anyhow::anyhow!("Custom provider '{}' not configured", name))
-            } else {
-                Err(anyhow::anyhow!("Unknown fallback provider: {}", other))
-            }
+                .ok_or_else(|| anyhow::anyhow!("{} not configured", reg.display_name));
         }
     }
+
+    Err(anyhow::anyhow!("Unknown fallback provider: {}", fallback_type))
 }
+
+/// Returns `(api_key, base_url, vision_model)` for the first active provider
+/// that has a `vision_model` configured. Used to register the provider-native
+/// `analyze_image` tool when Gemini vision isn't set up.
+pub fn active_provider_vision(config: &Config) -> Option<(String, String, String)> {
+    // Get the ACTUAL active provider — don't iterate all providers,
+    // otherwise MiniMax wins just because it's listed before OpenRouter.
+    let (name, _) = config.providers.active_provider_and_model();
+
+    // Try built-in registry
+    let active_cfg: Option<&ProviderConfig> = REGISTRATIONS
+        .iter()
+        .find(|reg| reg.session_id == name || reg.aliases.contains(&name.as_str()))
+        .and_then(|reg| (reg.config_field)(config));
+
+    // Fall back to custom provider lookup
+    let active_cfg = active_cfg.or_else(|| {
+        if let Some(custom_name) = name.strip_prefix("custom:") {
+            config
+                .providers
+                .custom
+                .as_ref()
+                .and_then(|m| m.get(custom_name))
+        } else {
+            None
+        }
+    });
+
+    if let Some(cfg) = active_cfg
+        && let (Some(api_key), Some(vision_model)) = (&cfg.api_key, &cfg.vision_model)
+    {
+        let base_url = cfg
+            .base_url
+            .clone()
+            .unwrap_or_else(|| "https://api.openai.com/v1/chat/completions".to_string());
+        let base_url = if base_url.contains("/chat/completions") {
+            base_url
+        } else {
+            format!("{}/chat/completions", base_url.trim_end_matches('/'))
+        };
+        return Some((api_key.clone(), base_url, vision_model.clone()));
+    }
+    // No provider-native vision — let cli/ui.rs fall back to Gemini if configured
+    None
+}
+
+// ── Individual provider factory functions ───────────────────────
 
 /// Try to create GitHub Copilot provider if configured.
 /// Uses OAuth token to exchange for short-lived Copilot API tokens.
@@ -950,51 +1007,6 @@ fn try_create_anthropic(config: &Config) -> Result<Option<Arc<dyn Provider>>> {
     tracing::info!("Using Anthropic provider");
 
     Ok(Some(Arc::new(provider)))
-}
-
-/// Returns `(api_key, base_url, vision_model)` for the first active provider
-/// that has a `vision_model` configured. Used to register the provider-native
-/// `analyze_image` tool when Gemini vision isn't set up.
-pub fn active_provider_vision(config: &Config) -> Option<(String, String, String)> {
-    // Get the ACTUAL active provider — don't iterate all providers,
-    // otherwise MiniMax wins just because it's listed before OpenRouter.
-    let (name, _) = config.providers.active_provider_and_model();
-
-    let active_cfg: Option<&ProviderConfig> = match name.as_str() {
-        "minimax" => config.providers.minimax.as_ref(),
-        "zhipu" => config.providers.zhipu.as_ref(),
-        "openrouter" => config.providers.openrouter.as_ref(),
-        "anthropic" => config.providers.anthropic.as_ref(),
-        "openai" => config.providers.openai.as_ref(),
-        "github" => config.providers.github.as_ref(),
-        "gemini" => config.providers.gemini.as_ref(),
-        "claude-cli" | "claude_cli" => config.providers.claude_cli.as_ref(),
-        "opencode" | "opencode-cli" | "opencode_cli" => config.providers.opencode_cli.as_ref(),
-        "qwen" => config.providers.qwen.as_ref(),
-        cn if cn.starts_with("custom:") => config
-            .providers
-            .custom
-            .as_ref()
-            .and_then(|m| m.get(&cn["custom:".len()..])),
-        _ => None,
-    };
-
-    if let Some(cfg) = active_cfg
-        && let (Some(api_key), Some(vision_model)) = (&cfg.api_key, &cfg.vision_model)
-    {
-        let base_url = cfg
-            .base_url
-            .clone()
-            .unwrap_or_else(|| "https://api.openai.com/v1/chat/completions".to_string());
-        let base_url = if base_url.contains("/chat/completions") {
-            base_url
-        } else {
-            format!("{}/chat/completions", base_url.trim_end_matches('/'))
-        };
-        return Some((api_key.clone(), base_url, vision_model.clone()));
-    }
-    // No provider-native vision — let cli/ui.rs fall back to Gemini if configured
-    None
 }
 
 #[cfg(test)]
