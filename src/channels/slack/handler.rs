@@ -15,7 +15,7 @@ use crate::services::SessionService;
 use crate::utils::sanitize::redact_secrets;
 use crate::utils::truncate_str;
 use slack_morphism::prelude::*;
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::{Arc, OnceLock};
 use tokio::sync::Mutex;
 use uuid::Uuid;
@@ -342,8 +342,9 @@ pub struct HandlerState {
     pub config_rx: tokio::sync::watch::Receiver<Config>,
     pub channel_msg_repo: ChannelMessageRepository,
     /// Dedup: recently seen message timestamps (Slack retries if ack is slow).
-    /// Entries are pruned when they exceed 200.
-    pub seen_ts: Mutex<HashSet<String>>,
+    /// Uses VecDeque for FIFO eviction — oldest entries are dropped when limit
+    /// is reached, preserving the rest so retries never slip through a full clear.
+    pub seen_ts: Mutex<VecDeque<String>>,
 }
 
 impl HandlerState {
@@ -470,21 +471,22 @@ pub async fn on_push_event(
 
 /// Returns `true` if this is the first time we see this timestamp (proceed).
 /// Returns `false` if it's a duplicate (skip).
+/// Uses FIFO eviction (VecDeque) so the dedup window is never fully wiped.
 async fn dedup_ts(ts: &str) -> bool {
     let state = match HANDLER_STATE.get() {
         Some(s) => s,
         None => return true,
     };
     let mut seen = state.seen_ts.lock().await;
-    if !seen.insert(ts.to_string()) {
+    if seen.contains(&ts.to_string()) {
         tracing::debug!("Slack: dropping duplicate event ts={}", ts);
         return false;
     }
-    // Prune if too large to avoid unbounded growth
-    if seen.len() > 200 {
-        seen.clear();
-        seen.insert(ts.to_string());
+    // FIFO eviction: drop oldest when limit reached, never clear the whole window
+    if seen.len() >= 500 {
+        seen.pop_front();
     }
+    seen.push_back(ts.to_string());
     true
 }
 
