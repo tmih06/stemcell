@@ -56,8 +56,9 @@ impl Tool for SelfImproveTool {
                         - 'read': Read a brain file BEFORE modifying it. ALWAYS do this first.\n\
                         - 'apply': Append NEW content to a brain file (only for genuinely new instructions).\n\
                         - 'update': Surgically replace an existing section/paragraph. Use when an existing instruction needs refinement rather than a new one added.\n\
-                        - 'list': Show previously applied improvements.",
-                    "enum": ["read", "apply", "update", "list"]
+                        - 'list': Show previously applied improvements.\n\
+                        - 'sync_templates': Fetch upstream brain file templates from the repo and append new sections.",
+                    "enum": ["read", "apply", "update", "list", "sync_templates"]
                 },
                 "target_file": {
                     "type": "string",
@@ -480,6 +481,39 @@ impl Tool for SelfImproveTool {
                 Ok(ToolResult::success(format!(
                     "Improvement applied to {target_file} and logged to rsi/improvements.md: {description}"
                 )))
+            }
+
+            "sync_templates" => {
+                // Run the upstream template sync
+                let results = crate::brain::rsi_sync::sync_templates().await;
+
+                if results.is_empty() {
+                    return Ok(ToolResult::success(
+                        "No new release since last sync. Skipping template sync.".to_string(),
+                    ));
+                }
+
+                let synced = results.iter().filter(|r| r.synced).count();
+                let failed = results.iter().filter(|r| r.error.is_some()).count();
+                let total_sections: usize = results.iter().map(|r| r.sections_added).sum();
+
+                let mut summary = format!(
+                    "Template sync complete: {} files synced, {} failed, {} new sections added.",
+                    synced, failed, total_sections
+                );
+
+                for r in &results {
+                    if let Some(ref err) = r.error {
+                        summary.push_str(&format!("\n  - {}: FAILED ({})", r.filename, err));
+                    } else if r.sections_added > 0 {
+                        summary.push_str(&format!(
+                            "\n  - {}: +{} sections",
+                            r.filename, r.sections_added
+                        ));
+                    }
+                }
+
+                Ok(ToolResult::success(summary))
             }
 
             other => Ok(ToolResult::error(format!(

@@ -168,6 +168,10 @@ pub enum RsiNotification {
     CycleStarted,
     /// Digest written at startup
     DigestWritten { total_events: i64 },
+    /// Template sync completed (upstream brain files updated)
+    TemplateSyncComplete { summary: String },
+    /// Template sync failed
+    TemplateSyncFailed { error: String },
     /// An improvement was identified and needs agent execution
     ImprovementOpportunity { description: String },
     /// Autonomous agent completed an improvement cycle
@@ -359,7 +363,41 @@ pub fn spawn_rsi_engine(
         // Delay to let the app fully start
         tokio::time::sleep(std::time::Duration::from_secs(5)).await;
 
-        // 1. Write startup digest
+        // 1. Check for upstream template sync (version gate)
+        let sync_state = crate::brain::rsi_sync::SyncState::load();
+        if crate::brain::rsi_sync::needs_sync(&sync_state) {
+            tracing::info!(
+                "RSI: version changed ({} -> {}), running template sync",
+                sync_state.last_synced_version,
+                crate::VERSION
+            );
+            let results = crate::brain::rsi_sync::sync_templates().await;
+            if results.is_empty() {
+                tracing::info!("RSI template sync: no files to sync");
+            } else {
+                let synced = results.iter().filter(|r| r.synced).count();
+                let failed = results.iter().filter(|r| r.error.is_some()).count();
+                let sections: usize = results.iter().map(|r| r.sections_added).sum();
+                let summary = format!(
+                    "{} files synced, {} failed, {} new sections (v{})",
+                    synced, failed, sections, crate::VERSION
+                );
+                if failed > 0 {
+                    let errors: Vec<_> = results
+                        .iter()
+                        .filter_map(|r| r.error.as_ref().map(|e| format!("{}: {}", r.filename, e)))
+                        .collect();
+                    let _ = notification_tx.send(RsiNotification::TemplateSyncFailed {
+                        error: errors.join("; "),
+                    });
+                }
+                if synced > 0 {
+                    let _ = notification_tx.send(RsiNotification::TemplateSyncComplete { summary });
+                }
+            }
+        }
+
+        // 2. Write startup digest
         write_startup_digest(pool_clone.clone()).await;
         let repo = FeedbackLedgerRepository::new(pool_clone.clone());
         if let Ok(total) = repo.total_count().await {

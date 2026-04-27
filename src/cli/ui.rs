@@ -381,6 +381,12 @@ async fn cmd_chat_inner(
                     crate::brain::rsi::RsiNotification::AgentCycleFailed { error } => {
                         format!("RSI: agent cycle failed — {error}")
                     }
+                    crate::brain::rsi::RsiNotification::TemplateSyncComplete { summary } => {
+                        format!("RSI: template sync complete — {summary}")
+                    }
+                    crate::brain::rsi::RsiNotification::TemplateSyncFailed { error } => {
+                        format!("RSI: template sync failed — {error}")
+                    }
                 };
                 let _ = rsi_event_sender.send(TuiEvent::SystemMessage(msg));
             }
