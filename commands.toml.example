@@ -68,3 +68,13 @@ name = "/history"
 description = "Show recent messages from a channel chat"
 action = "prompt"
 prompt = "Ask me which channel and chat to show history for, then use channel_search with operation recent to show the last 20 messages."
+
+# ========================================
+# Parallel Agent Commands
+# ========================================
+
+[[commands]]
+name = "/btw"
+description = "Spawn a parallel agent for a side task"
+action = "prompt"
+prompt = "Spawn an isolated sub-agent to handle this task in parallel while the main conversation continues. Use the spawn_agent tool with agent_type 'general' and a descriptive label. The user's input after /btw is the task for the sub-agent. After spawning, confirm the agent is running and provide its label for reference."
