@@ -1,5 +1,11 @@
-use super::*;
+use crate::brain::agent::service::{AgentService, ApprovalCallback};
+use crate::brain::tools::ToolRegistry;
+use crate::db::Database;
+use crate::services::{ServiceContext, SessionService};
+use crate::tests::agent_service_mocks::*;
+use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use uuid::Uuid;
 
 #[tokio::test]
 async fn test_auto_approve_skips_callback() {

@@ -55,13 +55,18 @@ pub fn render(f: &mut Frame, app: &mut App) {
 
     use input::render_queue;
 
-    // Compute queue height (1 row if current session has queued message)
+    // Compute queue height (2 rows if current session has queued message)
     let queue_height: u16 = {
-        let has_queue = app.current_session.as_ref().is_some_and(|s| {
-            app.queued_messages
-                .get(&s.id)
-                .is_some_and(|v| !v.is_empty())
-        });
+        let has_queue = app
+            .current_session
+            .as_ref()
+            .and_then(|s| {
+                app.queued_messages
+                    .lock()
+                    .ok()
+                    .map(|q| q.get(&s.id).is_some_and(|v| !v.is_empty()))
+            })
+            .unwrap_or(false);
         if has_queue { 2 } else { 0 }
     };
 

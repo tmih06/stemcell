@@ -1731,26 +1731,16 @@ impl App {
                 session.id
             );
 
-            // Stack queued messages — multiple sends accumulate.
-            if let Some(sid) = self.current_session.as_ref().map(|s| s.id) {
-                self.queued_messages
-                    .entry(sid)
-                    .or_default()
-                    .push(content.clone());
+            // Stack queued messages — multiple sends accumulate. The same
+            // map serves the UI's "Queued" indicator AND the agent's
+            // mid-tool inject callback (keyed by session id), so we only
+            // need to write here once.
+            if let Some(sid) = self.current_session.as_ref().map(|s| s.id)
+                && let Ok(mut q) = self.queued_messages.lock()
+            {
+                q.entry(sid).or_default().push(content);
             }
             self.cursor_position = self.input_buffer.len();
-
-            // Queue for injection between tool calls — join all stacked messages
-            {
-                let mut lock = self.message_queue.lock().await;
-                match lock.as_mut() {
-                    Some(existing) => {
-                        existing.push('\n');
-                        existing.push_str(&content);
-                    }
-                    None => *lock = Some(content),
-                }
-            }
             return Ok(());
         }
         if let Some(session) = &self.current_session {
@@ -1969,11 +1959,11 @@ impl App {
         }
 
         // Clear any unconsumed queued message (tool loop may have already drained it)
-        if self.message_queue.lock().await.take().is_some() {
+        if let Some(sid) = self.current_session.as_ref().map(|s| s.id)
+            && let Ok(mut q) = self.queued_messages.lock()
+            && q.remove(&sid).is_some()
+        {
             tracing::info!("[TUI] Discarding unconsumed queued message at response complete");
-        }
-        if let Some(sid) = self.current_session.as_ref().map(|s| s.id) {
-            self.queued_messages.remove(&sid);
         }
 
         // Reload user commands (agent may have written new ones to commands.json)

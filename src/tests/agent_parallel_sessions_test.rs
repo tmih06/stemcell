@@ -1,4 +1,9 @@
-use super::*;
+use crate::brain::agent::service::AgentService;
+use crate::brain::tools::ToolRegistry;
+use crate::db::Database;
+use crate::services::{MessageService, ServiceContext, SessionService};
+use crate::tests::agent_service_mocks::*;
+use std::sync::Arc;
 
 #[tokio::test]
 async fn test_concurrent_sessions_independent() {

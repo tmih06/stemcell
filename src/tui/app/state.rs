@@ -396,13 +396,24 @@ pub struct App {
     /// Abort handle for the active agent task — hard-kills the tokio task on cancel
     pub(crate) task_abort_handle: Option<tokio::task::AbortHandle>,
 
-    /// Queued message — shared with agent so it can be injected between tool calls
-    pub(crate) message_queue: Arc<tokio::sync::Mutex<Option<String>>>,
-
-    /// Per-session queued message stack.
-    /// Key: session_id, Value: stacked messages. Multiple sends while processing
-    /// accumulate and get joined with newlines when injected.
-    pub(crate) queued_messages: HashMap<Uuid, Vec<String>>,
+    /// Per-session queued message stack — single source of truth for both
+    /// the UI's "Queued" indicator AND the agent's mid-tool injection
+    /// callback. Wrapped in `Arc<std::sync::Mutex<...>>` so the agent task
+    /// (in a separate tokio task, only holding a callback closure) can
+    /// read/drain the same map the TUI writes into.
+    ///
+    /// Per-session keying is load-bearing: prior to 2026-04-27 the agent
+    /// inject path used a separate `Arc<Mutex<Option<String>>>` slot
+    /// shared across ALL sessions, so a message queued in pane A could
+    /// be consumed by pane B's agent loop and end up in the wrong
+    /// session's chat. Keying by session id makes that impossible — a
+    /// callback for session B can't see session A's queue because the
+    /// lookup key is the caller's own session id.
+    ///
+    /// Lock is std::sync (not tokio): held only for HashMap read/write,
+    /// never across an `.await`. The `!Send` guard makes "hold across
+    /// await" a compile error, not a deadlock at runtime.
+    pub(crate) queued_messages: Arc<std::sync::Mutex<HashMap<Uuid, Vec<String>>>>,
 
     /// Shared session ID — channels (Telegram, WhatsApp) read this to use the same session
     pub(crate) shared_session_id: Arc<tokio::sync::Mutex<Option<Uuid>>>,
@@ -596,8 +607,7 @@ impl App {
             provider_cache: HashMap::new(),
             cancel_token: None,
             task_abort_handle: None,
-            message_queue: Arc::new(tokio::sync::Mutex::new(None)),
-            queued_messages: HashMap::new(),
+            queued_messages: Arc::new(std::sync::Mutex::new(HashMap::new())),
             shared_session_id: Arc::new(tokio::sync::Mutex::new(None)),
             default_model_name: agent_service.provider_model(),
             session_input_tokens: HashMap::new(),
@@ -1775,8 +1785,10 @@ impl App {
                 });
 
                 // Clear the preview and input buffer — message is now in the chat
-                if let Some(sid) = self.current_session.as_ref().map(|s| s.id) {
-                    self.queued_messages.remove(&sid);
+                if let Some(sid) = self.current_session.as_ref().map(|s| s.id)
+                    && let Ok(mut q) = self.queued_messages.lock()
+                {
+                    q.remove(&sid);
                 }
                 if !self.input_buffer.is_empty() {
                     self.input_buffer.clear();
@@ -2115,7 +2127,8 @@ impl App {
                     let sender = self.event_sender();
                     tokio::spawn(async move {
                         let models =
-                            super::onboarding::fetch_provider_models(2, Some(&token), None, None).await;
+                            super::onboarding::fetch_provider_models(2, Some(&token), None, None)
+                                .await;
                         let _ = sender.send(TuiEvent::OnboardingModelsFetched(models));
                     });
                 }

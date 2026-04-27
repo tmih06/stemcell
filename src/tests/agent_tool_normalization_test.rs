@@ -4,7 +4,7 @@
 //! instead of sending tool="plan" with operation="complete_task". The normalizer
 //! recovers the intended call so it doesn't fail with "Tool not found".
 
-use super::*;
+use crate::brain::agent::service::AgentService;
 
 #[test]
 fn plan_complete_task_normalized() {

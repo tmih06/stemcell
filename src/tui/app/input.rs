@@ -1315,9 +1315,10 @@ impl App {
                         // Drop any queued user message — otherwise it would
                         // survive the cancel and get injected into the NEXT
                         // unrelated turn, appearing as a duplicate in chat.
-                        *self.message_queue.lock().await = None;
-                        if let Some(sid) = self.current_session.as_ref().map(|s| s.id) {
-                            self.queued_messages.remove(&sid);
+                        if let Some(sid) = self.current_session.as_ref().map(|s| s.id)
+                            && let Ok(mut q) = self.queued_messages.lock()
+                        {
+                            q.remove(&sid);
                         }
                         // Deny any pending approvals so agent callbacks don't hang
                         for msg in &mut self.messages {
@@ -1577,17 +1578,23 @@ impl App {
             && !self.slash_suggestions_active
             && {
                 let sid = self.current_session.as_ref().map(|s| s.id);
-                sid.is_some() && self.queued_messages.contains_key(&sid.unwrap())
+                sid.is_some()
+                    && self
+                        .queued_messages
+                        .lock()
+                        .map(|q| q.contains_key(&sid.unwrap()))
+                        .unwrap_or(false)
             }
             && self.input_history_index.is_none()
         {
             // Arrow Up while a message is queued — dequeue it for editing.
-            // The queued message is stored in queued_messages (per-session HashMap).
-            // Moves it into the input_buffer for editing, removing from the queue.
+            // Moves it into the input_buffer for editing, removing from the
+            // per-session queue map.
             if let Some(sid) = self.current_session.as_ref().map(|s| s.id)
-                && let Some(msgs) = self.queued_messages.remove(&sid)
+                && let Ok(mut q) = self.queued_messages.lock()
+                && let Some(msgs) = q.remove(&sid)
             {
-                *self.message_queue.lock().await = None;
+                drop(q); // release lock before touching self.input_buffer
                 self.input_buffer = msgs.join("\n");
                 self.cursor_position = self.input_buffer.len();
             }
@@ -1862,7 +1869,9 @@ impl App {
                 self.session_service.delete_session(session_id).await?;
                 // Clean up all cached state for this session
                 self.pane_message_cache.remove(&session_id);
-                self.queued_messages.remove(&session_id);
+                if let Ok(mut q) = self.queued_messages.lock() {
+                    q.remove(&session_id);
+                }
                 self.session_cancel_tokens.remove(&session_id);
                 self.processing_sessions.remove(&session_id);
                 if is_current {

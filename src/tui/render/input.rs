@@ -81,17 +81,25 @@ pub(super) fn render_queue(f: &mut Frame, app: &App, area: Rect) -> u16 {
     let Some(session) = &app.current_session else {
         return 0;
     };
-    let Some(msgs) = app.queued_messages.get(&session.id) else {
-        return 0;
+    // Snapshot the relevant entry under the lock, then drop the guard
+    // before doing any rendering — keeps the critical section short and
+    // avoids holding the mutex across render work.
+    let (msgs_count, last_msg) = {
+        let Ok(map) = app.queued_messages.lock() else {
+            return 0;
+        };
+        let Some(msgs) = map.get(&session.id) else {
+            return 0;
+        };
+        if msgs.is_empty() {
+            return 0;
+        }
+        (msgs.len(), msgs.last().cloned().unwrap_or_default())
     };
-    if msgs.is_empty() {
-        return 0;
-    }
 
     let dim_style = Style::default().fg(Color::Rgb(100, 100, 100));
     // Show the last queued message as preview
-    let last = msgs.last().unwrap();
-    let flat = last.replace('\n', " ");
+    let flat = last_msg.replace('\n', " ");
     let content_width = area.width.saturating_sub(2) as usize; // borders
     let max_preview = content_width.saturating_sub(30);
     let preview: String = if flat.chars().count() > max_preview {
@@ -101,8 +109,8 @@ pub(super) fn render_queue(f: &mut Frame, app: &App, area: Rect) -> u16 {
         flat
     };
 
-    let count_label = if msgs.len() > 1 {
-        format!("⏳ queued ({}): ", msgs.len())
+    let count_label = if msgs_count > 1 {
+        format!("⏳ queued ({}): ", msgs_count)
     } else {
         "⏳ queued: ".to_string()
     };
@@ -143,7 +151,13 @@ pub(super) fn render_input(f: &mut Frame, app: &App, area: Rect) {
     let has_queue = app
         .current_session
         .as_ref()
-        .is_some_and(|s| app.queued_messages.contains_key(&s.id));
+        .and_then(|s| {
+            app.queued_messages
+                .lock()
+                .ok()
+                .map(|q| q.contains_key(&s.id))
+        })
+        .unwrap_or(false);
 
     let cursor_style = Style::default()
         .fg(Color::Black)

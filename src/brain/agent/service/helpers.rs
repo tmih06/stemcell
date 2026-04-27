@@ -55,7 +55,7 @@ impl AgentService {
     /// is consumed mid-stream at a tool boundary, it is written to `queued_out`
     /// so the caller can inject it into context after the stream ends.
     #[allow(clippy::too_many_arguments)]
-    pub(super) async fn stream_complete(
+    pub(crate) async fn stream_complete(
         &self,
         session_id: Uuid,
         request: LLMRequest,
@@ -441,7 +441,7 @@ impl AgentService {
                                 // tool execution. Consume it and break the stream
                                 // so tool_loop can inject it into context.
                                 if let Some(qcb) = queue_cb
-                                    && let Some(queued) = qcb().await
+                                    && let Some(queued) = qcb(session_id).await
                                 {
                                     tracing::info!(
                                         "Queued user message at CLI tool boundary — storing for tool_loop"
@@ -857,7 +857,7 @@ impl AgentService {
     /// Some models (e.g. MiniMax) send tool names like `"Plan: complete_task"`
     /// instead of `tool="plan"` with `operation="complete_task"` in the input.
     /// This recovers the intended call so it doesn't fail with "Tool not found".
-    pub(super) fn normalize_tool_call(
+    pub(crate) fn normalize_tool_call(
         name: String,
         mut input: serde_json::Value,
     ) -> (String, serde_json::Value) {

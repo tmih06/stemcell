@@ -1,4 +1,14 @@
-use super::*;
+use crate::brain::agent::service::{
+    AgentService, MessageQueueCallback, ProgressCallback, ProgressEvent,
+};
+use crate::brain::provider::{ContentBlock, LLMRequest, Message, StopReason};
+use crate::brain::tools::ToolRegistry;
+use crate::db::Database;
+use crate::services::{MessageService, ServiceContext, SessionService};
+use crate::tests::agent_service_mocks::*;
+use std::collections::HashMap;
+use std::sync::Arc;
+use uuid::Uuid;
 
 #[tokio::test]
 async fn test_agent_service_creation() {
@@ -81,13 +91,23 @@ async fn test_message_queue_injection_between_tool_calls() {
     let registry = ToolRegistry::new();
     registry.register(Arc::new(MockTool));
 
-    let queue: Arc<tokio::sync::Mutex<Option<String>>> =
-        Arc::new(tokio::sync::Mutex::new(Some("user follow-up".to_string())));
+    // Per-session queue keyed by session_id. The callback now takes a session_id
+    // and looks up the queued message for that specific session.
+    let session_service = SessionService::new(context.clone());
+    let session = session_service
+        .create_session(Some("Queue Test".to_string()))
+        .await
+        .unwrap();
+    let session_id_for_queue = session.id;
 
-    let queue_clone = queue.clone();
-    let message_queue_callback: MessageQueueCallback = Arc::new(move || {
-        let q = queue_clone.clone();
-        Box::pin(async move { q.lock().await.take() })
+    let queues: Arc<tokio::sync::Mutex<HashMap<Uuid, String>>> = Arc::new(tokio::sync::Mutex::new(
+        HashMap::from([(session_id_for_queue, "user follow-up".to_string())]),
+    ));
+
+    let queues_clone = queues.clone();
+    let message_queue_callback: MessageQueueCallback = Arc::new(move |session_id: Uuid| {
+        let q = queues_clone.clone();
+        Box::pin(async move { q.lock().await.remove(&session_id) })
     });
 
     let agent_service = AgentService::new_for_test(provider, context.clone())
@@ -96,12 +116,6 @@ async fn test_message_queue_injection_between_tool_calls() {
         .with_auto_approve_tools(true)
         .with_message_queue_callback(Some(message_queue_callback));
 
-    let session_service = SessionService::new(context.clone());
-    let session = session_service
-        .create_session(Some("Queue Test".to_string()))
-        .await
-        .unwrap();
-
     let response = agent_service
         .send_message_with_tools(session.id, "Use the test tool".to_string(), None)
         .await
@@ -109,8 +123,8 @@ async fn test_message_queue_injection_between_tool_calls() {
 
     assert!(!response.content.is_empty());
 
-    // Verify the queue was drained
-    assert!(queue.lock().await.is_none());
+    // Verify the queue was drained for this session
+    assert!(queues.lock().await.get(&session_id_for_queue).is_none());
 
     // Verify the injected message was saved to database
     let message_service = MessageService::new(context);
@@ -146,12 +160,13 @@ async fn test_message_queue_empty_no_injection() {
     let registry = ToolRegistry::new();
     registry.register(Arc::new(MockTool));
 
-    let queue: Arc<tokio::sync::Mutex<Option<String>>> = Arc::new(tokio::sync::Mutex::new(None));
+    let queues: Arc<tokio::sync::Mutex<HashMap<Uuid, String>>> =
+        Arc::new(tokio::sync::Mutex::new(HashMap::new()));
 
-    let queue_clone = queue.clone();
-    let message_queue_callback: MessageQueueCallback = Arc::new(move || {
-        let q = queue_clone.clone();
-        Box::pin(async move { q.lock().await.take() })
+    let queues_clone = queues.clone();
+    let message_queue_callback: MessageQueueCallback = Arc::new(move |session_id: Uuid| {
+        let q = queues_clone.clone();
+        Box::pin(async move { q.lock().await.remove(&session_id) })
     });
 
     let agent_service = AgentService::new_for_test(provider, context.clone())
@@ -185,6 +200,106 @@ async fn test_message_queue_empty_no_injection() {
         user_messages.len(),
         1,
         "should only have original user message"
+    );
+}
+
+/// Verifies that a message queued for session A is NOT delivered to session B,
+/// proving the per-session callback signature actually isolates queues.
+#[tokio::test]
+async fn test_message_queue_isolated_per_session() {
+    let db = Database::connect_in_memory().await.unwrap();
+    db.run_migrations().await.unwrap();
+    let pool = db.pool().clone();
+
+    let context = ServiceContext::new(pool);
+
+    let session_service = SessionService::new(context.clone());
+    let session_a = session_service
+        .create_session(Some("Session A".to_string()))
+        .await
+        .unwrap();
+    let session_b = session_service
+        .create_session(Some("Session B".to_string()))
+        .await
+        .unwrap();
+
+    // Queue contains a message ONLY for session A
+    let queues: Arc<tokio::sync::Mutex<HashMap<Uuid, String>>> = Arc::new(tokio::sync::Mutex::new(
+        HashMap::from([(session_a.id, "message for A only".to_string())]),
+    ));
+
+    let queues_clone = queues.clone();
+    let message_queue_callback: MessageQueueCallback = Arc::new(move |session_id: Uuid| {
+        let q = queues_clone.clone();
+        Box::pin(async move { q.lock().await.remove(&session_id) })
+    });
+
+    let provider = Arc::new(MockProviderWithTools::new());
+    let registry = ToolRegistry::new();
+    registry.register(Arc::new(MockTool));
+
+    let agent_service = AgentService::new_for_test(provider, context.clone())
+        .await
+        .with_tool_registry(Arc::new(registry))
+        .with_auto_approve_tools(true)
+        .with_message_queue_callback(Some(message_queue_callback));
+
+    // Run session B first — its callback should see no queued message because
+    // the queue only has an entry for session A.
+    let response_b = agent_service
+        .send_message_with_tools(session_b.id, "Run tool in B".to_string(), None)
+        .await
+        .unwrap();
+    assert!(!response_b.content.is_empty());
+
+    // Confirm session A's queued message is still present (B did not steal it)
+    {
+        let q = queues.lock().await;
+        assert_eq!(
+            q.get(&session_a.id).map(String::as_str),
+            Some("message for A only"),
+            "session B must NOT consume session A's queued message"
+        );
+    }
+
+    let message_service = MessageService::new(context.clone());
+    let msgs_b = message_service
+        .list_messages_for_session(session_b.id)
+        .await
+        .unwrap();
+    let user_msgs_b: Vec<_> = msgs_b.iter().filter(|m| m.role == "user").collect();
+    assert_eq!(
+        user_msgs_b.len(),
+        1,
+        "session B should only have its original user message — got {}",
+        user_msgs_b.len()
+    );
+    let has_leaked = user_msgs_b
+        .iter()
+        .any(|m| m.content == "message for A only");
+    assert!(
+        !has_leaked,
+        "session A's queued message must not appear in session B's history"
+    );
+
+    // Now run session A — its callback should pull its own queued message.
+    let response_a = agent_service
+        .send_message_with_tools(session_a.id, "Run tool in A".to_string(), None)
+        .await
+        .unwrap();
+    assert!(!response_a.content.is_empty());
+
+    let msgs_a = message_service
+        .list_messages_for_session(session_a.id)
+        .await
+        .unwrap();
+    let user_msgs_a: Vec<_> = msgs_a.iter().filter(|m| m.role == "user").collect();
+    let has_followup = user_msgs_a
+        .iter()
+        .any(|m| m.content == "message for A only");
+    assert!(
+        has_followup,
+        "session A should receive its own queued follow-up message"
     );
 }
 

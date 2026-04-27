@@ -1,25 +1,21 @@
-mod approval_policies;
-mod basic;
-mod context_tracking;
-mod model_selection;
-mod parallel_sessions;
-mod streaming_usage;
-mod tool_normalization;
+//! Shared mock providers, mock tools, and helpers for agent-service tests.
+//!
+//! Moved out of the inline `src/brain/agent/service/tests/` module so all tests
+//! live under `src/tests/`. Items are `pub(crate)` so the standalone test
+//! modules can import them.
 
-use super::*;
+use crate::brain::agent::service::AgentService;
 use crate::brain::provider::{
-    ContentBlock, LLMRequest, LLMResponse, Message, Provider, ProviderStream, Role, StopReason,
-    TokenUsage,
+    ContentBlock, LLMRequest, LLMResponse, Provider, ProviderStream, Role, StopReason, TokenUsage,
 };
-use crate::brain::tools::ToolRegistry;
 use crate::db::Database;
-use crate::services::{MessageService, ServiceContext, SessionService};
+use crate::services::{ServiceContext, SessionService};
 use async_trait::async_trait;
 use std::sync::Arc;
 use uuid::Uuid;
 
 /// Mock provider for testing — returns simple text-only responses
-struct MockProvider;
+pub(crate) struct MockProvider;
 
 #[async_trait]
 impl Provider for MockProvider {
@@ -99,12 +95,12 @@ impl Provider for MockProvider {
 }
 
 /// Mock provider that simulates tool use — first call returns tool_use, second returns text
-struct MockProviderWithTools {
+pub(crate) struct MockProviderWithTools {
     call_count: std::sync::Mutex<usize>,
 }
 
 impl MockProviderWithTools {
-    fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             call_count: std::sync::Mutex::new(0),
         }
@@ -243,7 +239,7 @@ impl Provider for MockProviderWithTools {
 }
 
 /// Mock tool that always succeeds, does NOT require approval
-struct MockTool;
+pub(crate) struct MockTool;
 
 #[async_trait]
 impl crate::brain::tools::Tool for MockTool {
@@ -284,7 +280,7 @@ impl crate::brain::tools::Tool for MockTool {
 }
 
 /// Mock tool that requires approval before execution
-struct MockToolRequiresApproval;
+pub(crate) struct MockToolRequiresApproval;
 
 #[async_trait]
 impl crate::brain::tools::Tool for MockToolRequiresApproval {
@@ -325,13 +321,13 @@ impl crate::brain::tools::Tool for MockToolRequiresApproval {
 }
 
 /// Mock provider with configurable name and model — tracks requested model in responses
-struct MockProviderWithModel {
+pub(crate) struct MockProviderWithModel {
     provider_name: String,
     model_name: String,
 }
 
 impl MockProviderWithModel {
-    fn new(provider_name: &str, model_name: &str) -> Self {
+    pub(crate) fn new(provider_name: &str, model_name: &str) -> Self {
         Self {
             provider_name: provider_name.to_string(),
             model_name: model_name.to_string(),
@@ -424,13 +420,13 @@ impl Provider for MockProviderWithModel {
 }
 
 /// Mock provider that returns tool calls for a named tool (configurable)
-struct MockProviderWithNamedTool {
+pub(crate) struct MockProviderWithNamedTool {
     tool_name: String,
     call_count: std::sync::Mutex<usize>,
 }
 
 impl MockProviderWithNamedTool {
-    fn new(tool_name: &str) -> Self {
+    pub(crate) fn new(tool_name: &str) -> Self {
         Self {
             tool_name: tool_name.to_string(),
             call_count: std::sync::Mutex::new(0),
@@ -567,14 +563,14 @@ impl Provider for MockProviderWithNamedTool {
 }
 
 /// Mock provider that returns two tool calls in a single response (for mixed approval tests)
-struct MockProviderWithTwoToolCalls {
+pub(crate) struct MockProviderWithTwoToolCalls {
     tool_a: String,
     tool_b: String,
     call_count: std::sync::Mutex<usize>,
 }
 
 impl MockProviderWithTwoToolCalls {
-    fn new(tool_a: &str, tool_b: &str) -> Self {
+    pub(crate) fn new(tool_a: &str, tool_b: &str) -> Self {
         Self {
             tool_a: tool_a.to_string(),
             tool_b: tool_b.to_string(),
@@ -718,11 +714,15 @@ impl Provider for MockProviderWithTwoToolCalls {
 
 // === Shared helpers ===
 
-async fn create_test_service() -> (AgentService, Uuid) {
+#[allow(dead_code)]
+pub(crate) async fn create_test_service() -> (AgentService, Uuid) {
     create_test_service_with_provider(Arc::new(MockProvider)).await
 }
 
-async fn create_test_service_with_provider(provider: Arc<dyn Provider>) -> (AgentService, Uuid) {
+#[allow(dead_code)]
+pub(crate) async fn create_test_service_with_provider(
+    provider: Arc<dyn Provider>,
+) -> (AgentService, Uuid) {
     let db = Database::connect_in_memory().await.unwrap();
     db.run_migrations().await.unwrap();
     let pool = db.pool().clone();

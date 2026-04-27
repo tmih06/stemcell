@@ -10,9 +10,6 @@ mod messaging;
 pub(crate) mod tool_loop;
 mod types;
 
-#[cfg(test)]
-mod tests;
-
 pub use builder::AgentService;
 pub use helpers::{
     detect_text_repetition, has_investigative_intent, has_phantom_tool_intent,

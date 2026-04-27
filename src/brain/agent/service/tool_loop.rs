@@ -2594,7 +2594,7 @@ impl AgentService {
                     if buffered.is_some() {
                         (buffered, true)
                     } else if let Some(ref queue_cb) = self.message_queue_callback {
-                        (queue_cb().await, false)
+                        (queue_cb(session_id).await, false)
                     } else {
                         (None, false)
                     }
@@ -3613,7 +3613,7 @@ impl AgentService {
             // Check for queued user messages to inject between tool iterations.
             // This lets the user provide follow-up feedback mid-execution (like Claude Code).
             if let Some(ref queue_cb) = self.message_queue_callback
-                && let Some(queued_msg) = queue_cb().await
+                && let Some(queued_msg) = queue_cb(session_id).await
             {
                 tracing::info!("Injecting queued user message between tool iterations");
 

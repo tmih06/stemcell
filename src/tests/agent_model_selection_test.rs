@@ -1,4 +1,8 @@
-use super::*;
+use crate::brain::agent::service::AgentService;
+use crate::db::Database;
+use crate::services::{ServiceContext, SessionService};
+use crate::tests::agent_service_mocks::*;
+use std::sync::Arc;
 
 #[tokio::test]
 async fn test_explicit_model_override() {

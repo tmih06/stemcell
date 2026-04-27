@@ -1,4 +1,15 @@
-use super::*;
+use crate::brain::agent::service::AgentService;
+use crate::brain::provider::{
+    ContentBlock, LLMRequest, LLMResponse, Message, Provider, ProviderStream, Role, StopReason,
+    TokenUsage,
+};
+use crate::brain::tools::ToolRegistry;
+use crate::db::Database;
+use crate::services::{ServiceContext, SessionService};
+use crate::tests::agent_service_mocks::*;
+use async_trait::async_trait;
+use std::sync::Arc;
+use uuid::Uuid;
 
 /// Mock provider that mimics MiniMax/OpenAI deferred-usage streaming:
 /// - MessageStart with usage(0, 0)

@@ -1,5 +1,12 @@
-use super::*;
 use crate::brain::agent::context::AgentContext;
+use crate::brain::agent::service::AgentService;
+use crate::brain::provider::Message;
+use crate::brain::tools::ToolRegistry;
+use crate::db::Database;
+use crate::services::{ServiceContext, SessionService};
+use crate::tests::agent_service_mocks::*;
+use std::sync::Arc;
+use uuid::Uuid;
 
 // === System brain token counting ===
 

@@ -39,10 +39,7 @@ struct OllamaModelEntry {
 ///
 /// Returns sorted model names (newest first by `created` timestamp for OpenAI,
 /// alphabetical for Ollama). Returns empty vec on failure.
-pub async fn fetch_models_from_endpoint(
-    base_url: &str,
-    api_key: Option<&str>,
-) -> Vec<String> {
+pub async fn fetch_models_from_endpoint(base_url: &str, api_key: Option<&str>) -> Vec<String> {
     // Normalize base_url: strip trailing slash and any path suffix
     let base = base_url.trim_end_matches('/');
     let base = base
@@ -74,27 +71,25 @@ pub async fn fetch_models_from_endpoint(
     }
 
     match req.send().await {
-        Ok(resp) if resp.status().is_success() => {
-            match resp.json::<OpenAIModelsResponse>().await {
-                Ok(body) if !body.data.is_empty() => {
-                    let mut entries = body.data;
-                    entries.sort_by_key(|e| std::cmp::Reverse(e.created));
-                    let models: Vec<String> = entries.into_iter().map(|m| m.id).collect();
-                    tracing::info!(
-                        "[model_fetch] fetched {} models from {}",
-                        models.len(),
-                        models_url
-                    );
-                    return models;
-                }
-                Ok(_) => {
-                    tracing::debug!("[model_fetch] /v1/models returned empty list");
-                }
-                Err(e) => {
-                    tracing::debug!("[model_fetch] /v1/models parse error: {}", e);
-                }
+        Ok(resp) if resp.status().is_success() => match resp.json::<OpenAIModelsResponse>().await {
+            Ok(body) if !body.data.is_empty() => {
+                let mut entries = body.data;
+                entries.sort_by_key(|e| std::cmp::Reverse(e.created));
+                let models: Vec<String> = entries.into_iter().map(|m| m.id).collect();
+                tracing::info!(
+                    "[model_fetch] fetched {} models from {}",
+                    models.len(),
+                    models_url
+                );
+                return models;
             }
-        }
+            Ok(_) => {
+                tracing::debug!("[model_fetch] /v1/models returned empty list");
+            }
+            Err(e) => {
+                tracing::debug!("[model_fetch] /v1/models parse error: {}", e);
+            }
+        },
         Ok(resp) => {
             tracing::debug!(
                 "[model_fetch] /v1/models returned {} — trying Ollama",
@@ -102,7 +97,10 @@ pub async fn fetch_models_from_endpoint(
             );
         }
         Err(e) => {
-            tracing::debug!("[model_fetch] /v1/models fetch failed: {} — trying Ollama", e);
+            tracing::debug!(
+                "[model_fetch] /v1/models fetch failed: {} — trying Ollama",
+                e
+            );
         }
     }
 
@@ -118,27 +116,24 @@ pub async fn fetch_models_from_endpoint(
     }
 
     match req.send().await {
-        Ok(resp) if resp.status().is_success() => {
-            match resp.json::<OllamaModelsResponse>().await {
-                Ok(body) if !body.models.is_empty() => {
-                    let mut models: Vec<String> =
-                        body.models.into_iter().map(|m| m.name).collect();
-                    models.sort();
-                    tracing::info!(
-                        "[model_fetch] fetched {} models from {}",
-                        models.len(),
-                        ollama_url
-                    );
-                    return models;
-                }
-                Ok(_) => {
-                    tracing::debug!("[model_fetch] /api/tags returned empty list");
-                }
-                Err(e) => {
-                    tracing::debug!("[model_fetch] /api/tags parse error: {}", e);
-                }
+        Ok(resp) if resp.status().is_success() => match resp.json::<OllamaModelsResponse>().await {
+            Ok(body) if !body.models.is_empty() => {
+                let mut models: Vec<String> = body.models.into_iter().map(|m| m.name).collect();
+                models.sort();
+                tracing::info!(
+                    "[model_fetch] fetched {} models from {}",
+                    models.len(),
+                    ollama_url
+                );
+                return models;
             }
-        }
+            Ok(_) => {
+                tracing::debug!("[model_fetch] /api/tags returned empty list");
+            }
+            Err(e) => {
+                tracing::debug!("[model_fetch] /api/tags parse error: {}", e);
+            }
+        },
         Ok(resp) => {
             tracing::debug!("[model_fetch] /api/tags returned {}", resp.status());
         }
@@ -159,7 +154,10 @@ mod tests {
         // These are unit tests for the normalization logic.
         // We can't test actual HTTP calls without a mock server.
         let cases = [
-            ("http://localhost:11434/v1/chat/completions", "http://localhost:11434"),
+            (
+                "http://localhost:11434/v1/chat/completions",
+                "http://localhost:11434",
+            ),
             ("http://localhost:11434/v1", "http://localhost:11434"),
             ("http://localhost:11434/", "http://localhost:11434"),
             ("http://localhost:11434", "http://localhost:11434"),

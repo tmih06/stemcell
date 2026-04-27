@@ -199,9 +199,13 @@ impl App {
         // Spawn async model fetch — dialog opens immediately, models arrive via event
         let sender = self.event_sender();
         tokio::spawn(async move {
-            let models =
-                super::onboarding::fetch_provider_models(provider_idx, api_key.as_deref(), None, None)
-                    .await;
+            let models = super::onboarding::fetch_provider_models(
+                provider_idx,
+                api_key.as_deref(),
+                None,
+                None,
+            )
+            .await;
             let _ = sender.send(TuiEvent::ModelSelectorModelsFetched(provider_idx, models));
         });
 

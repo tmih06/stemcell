@@ -38,7 +38,7 @@ pub struct AgentService {
     pub(super) tool_registry: Arc<ToolRegistry>,
 
     /// Maximum tool execution iterations (0 = unlimited, relies on loop detection)
-    pub(super) max_tool_iterations: usize,
+    pub(crate) max_tool_iterations: usize,
 
     /// System brain template
     pub(super) default_system_brain: Option<String>,

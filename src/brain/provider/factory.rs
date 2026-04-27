@@ -400,9 +400,9 @@ pub async fn create_provider_by_name(config: &Config, name: &str) -> Result<Arc<
     // Try built-in registry by session_id or alias
     for reg in REGISTRATIONS.iter() {
         if reg.session_id == name || reg.aliases.contains(&name) {
-            let provider = (reg.factory)(config)
-                .await?
-                .ok_or_else(|| anyhow::anyhow!("{} not configured (missing API key)", reg.display_name))?;
+            let provider = (reg.factory)(config).await?.ok_or_else(|| {
+                anyhow::anyhow!("{} not configured (missing API key)", reg.display_name)
+            })?;
             return Ok(provider);
         }
     }
@@ -523,7 +523,10 @@ async fn create_fallback(config: &Config, fallback_type: &str) -> Result<Arc<dyn
         }
     }
 
-    Err(anyhow::anyhow!("Unknown fallback provider: {}", fallback_type))
+    Err(anyhow::anyhow!(
+        "Unknown fallback provider: {}",
+        fallback_type
+    ))
 }
 
 /// Returns `(api_key, base_url, vision_model)` for the first active provider
@@ -841,7 +844,11 @@ fn try_create_ollama(config: &Config) -> Result<Option<Arc<dyn Provider>>> {
     // API key is optional for local Ollama
     let api_key = ollama_config.api_key.clone().unwrap_or_default();
 
-    tracing::info!("Using Ollama at: {} (has_key={})", base_url, !api_key.is_empty());
+    tracing::info!(
+        "Using Ollama at: {} (has_key={})",
+        base_url,
+        !api_key.is_empty()
+    );
 
     let mut builder = OpenAIProvider::with_base_url(api_key, base_url.clone()).with_name("ollama");
     if is_local_base_url(&base_url) {

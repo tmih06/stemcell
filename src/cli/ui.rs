@@ -535,11 +535,31 @@ async fn cmd_chat_inner(
         });
 
     // Create message queue callback that checks for queued user messages
-    let message_queue = app.message_queue.clone();
-    let message_queue_callback: crate::brain::agent::MessageQueueCallback = Arc::new(move || {
-        let queue = message_queue.clone();
-        Box::pin(async move { queue.lock().await.take() })
-    });
+    // FOR THE CALLER'S session_id specifically — the agent task in pane B
+    // can't accidentally drain pane A's queue because the lookup key is
+    // the caller's own session id (the bug fix from 2026-04-27).
+    let queued_messages = app.queued_messages.clone();
+    let message_queue_callback: crate::brain::agent::MessageQueueCallback =
+        Arc::new(move |session_id| {
+            let queued_messages = queued_messages.clone();
+            Box::pin(async move {
+                let mut map = match queued_messages.lock() {
+                    Ok(g) => g,
+                    Err(_) => return None,
+                };
+                let entry = map.get_mut(&session_id)?;
+                if entry.is_empty() {
+                    map.remove(&session_id);
+                    return None;
+                }
+                // Drain the entire stack and join with newlines — same
+                // semantics as the prior shared-slot implementation,
+                // which also joined accumulated sends.
+                let joined = std::mem::take(entry).join("\n");
+                map.remove(&session_id);
+                Some(joined)
+            })
+        });
 
     // Register rebuild tool (needs the progress callback for restart signaling)
     tool_registry.register(Arc::new(crate::brain::tools::rebuild::RebuildTool::new(

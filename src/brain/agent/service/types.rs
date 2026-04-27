@@ -130,10 +130,16 @@ pub type SudoCallback = Arc<
     dyn Fn(String) -> Pin<Box<dyn Future<Output = Result<Option<String>>> + Send>> + Send + Sync,
 >;
 
-/// Callback for checking if a user message has been queued during tool execution.
-/// Returns Some(message) if a message is waiting, None otherwise. Must not block.
+/// Callback for checking if a user message has been queued for THIS session
+/// during tool execution. Returns Some(message) if one is waiting for the
+/// given `session_id`, None otherwise. Must not block.
+///
+/// The `session_id` parameter is required: prior to 2026-04-27 this callback
+/// was nullary and read from a single process-wide slot, so when two panes
+/// (or two channels) had concurrent agent loops, a message queued in pane A
+/// could be drained by pane B's agent and injected into the wrong session.
 pub type MessageQueueCallback =
-    Arc<dyn Fn() -> Pin<Box<dyn Future<Output = Option<String>> + Send>> + Send + Sync>;
+    Arc<dyn Fn(Uuid) -> Pin<Box<dyn Future<Output = Option<String>> + Send>> + Send + Sync>;
 
 /// Response from the agent
 #[derive(Debug, Clone)]
