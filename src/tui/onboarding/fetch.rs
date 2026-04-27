@@ -429,10 +429,14 @@ pub async fn fetch_provider_models(
                 Ok(resp) if resp.status().is_success() => {
                     match resp.json::<OllamaModelsResponse>().await {
                         Ok(body) => {
-                            let mut models: Vec<String> = body.models.into_iter().map(|m| m.name).collect();
+                            let mut models: Vec<String> =
+                                body.models.into_iter().map(|m| m.name).collect();
                             models.sort();
                             models.reverse();
-                            tracing::info!("[fetch_provider_models] Ollama: fetched {} models", models.len());
+                            tracing::info!(
+                                "[fetch_provider_models] Ollama: fetched {} models",
+                                models.len()
+                            );
                             return models;
                         }
                         Err(e) => {
