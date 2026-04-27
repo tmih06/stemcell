@@ -1162,7 +1162,7 @@ impl AgentService {
                     ) || matches!(
                         &e,
                         crate::brain::provider::ProviderError::ApiError { status, .. }
-                            if *status == 401 || *status == 403
+                            if *status == 401 || *status == 403 || *status == 402
                     ) || matches!(&e, crate::brain::provider::ProviderError::InvalidApiKey) =>
                 {
                     // 401/403 auth failures and missing-key errors are
@@ -1187,8 +1187,20 @@ impl AgentService {
                     //     thinking keys were wrong.
                     //   • rate/account limits: 429 / RateLimitExceeded.
                     let is_model_mismatch = e.is_model_unsupported();
+                    let is_payment_required = matches!(
+                        &e,
+                        crate::brain::provider::ProviderError::ApiError { status, .. }
+                            if *status == 402
+                    );
                     let (is_auth, reason) = if is_model_mismatch {
                         (false, "model_unsupported")
+                    } else if is_payment_required {
+                        // 402 means the upstream account has run out of
+                        // credit / hit a hard billing cap. Same fallback
+                        // path as auth/rate, but reported distinctly so
+                        // the user knows it's a quota issue, not a key
+                        // misconfiguration or temporary throttle.
+                        (false, "payment_required")
                     } else if matches!(
                         &e,
                         crate::brain::provider::ProviderError::ApiError { status, .. }
@@ -1203,6 +1215,8 @@ impl AgentService {
                     };
                     let flavour_label = if is_model_mismatch {
                         "Model not supported by provider"
+                    } else if is_payment_required {
+                        "Quota/payment limit"
                     } else if is_auth {
                         "Auth error"
                     } else {
@@ -1238,6 +1252,11 @@ impl AgentService {
                             format!(
                                 "Model '{}' not supported by '{}'",
                                 model_name, primary_from_name
+                            )
+                        } else if is_payment_required {
+                            format!(
+                                "Quota/payment limit on '{}/{}'",
+                                primary_from_name, model_name
                             )
                         } else if is_auth {
                             format!("Auth error on '{}/{}'", primary_from_name, model_name)
