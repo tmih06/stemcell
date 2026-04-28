@@ -1860,6 +1860,33 @@ impl App {
                 if self.auto_scroll {
                     self.scroll_offset = 0;
                 }
+
+                // Flush the active tool group immediately when all calls are done
+                // instead of waiting for the next IntermediateText event
+                let all_done = self
+                    .active_tool_group
+                    .as_ref()
+                    .is_some_and(|g| g.calls.iter().all(|c| c.completed));
+                if all_done && let Some(group) = self.active_tool_group.take() {
+                    let count = group.calls.len();
+                    self.messages.push(DisplayMessage {
+                        id: Uuid::new_v4(),
+                        role: "tool_group".to_string(),
+                        content: format!(
+                            "{} tool call{}",
+                            count,
+                            if count == 1 { "" } else { "s" }
+                        ),
+                        timestamp: chrono::Utc::now(),
+                        token_count: None,
+                        cost: None,
+                        approval: None,
+                        approve_menu: None,
+                        details: None,
+                        expanded: false,
+                        tool_group: Some(group),
+                    });
+                }
             }
             TuiEvent::CompactionSummary {
                 session_id,

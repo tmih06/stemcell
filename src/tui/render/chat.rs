@@ -524,7 +524,13 @@ pub(super) fn render_chat(f: &mut Frame, app: &mut App, area: Rect) {
         && let Some(ref group) = app.active_tool_group
     {
         let is_active = group.calls.iter().any(|c| !c.completed);
-        render_tool_group(&mut lines, group, is_active, app.animation_frame, content_width);
+        render_tool_group(
+            &mut lines,
+            group,
+            is_active,
+            app.animation_frame,
+            content_width,
+        );
     }
 
     // Show error message if present

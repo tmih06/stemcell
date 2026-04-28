@@ -2060,49 +2060,6 @@ impl App {
             self.messages.push(assistant_msg);
         }
 
-        // Update session model if not already set
-        if let Some(session) = &mut self.current_session
-            && session.model.is_none()
-        {
-            session.model = Some(response.model.clone());
-            // Save the updated session to database
-            if let Err(e) = self.session_service.update_session(session).await {
-                tracing::warn!("Failed to update session model: {}", e);
-            }
-        }
-
-        // Refresh plan widget: reload from disk, then clear if the exchange is done.
-        // This catches plans that completed (status=Completed) or got stuck mid-execution
-        // due to tool errors (status still InProgress but agent has moved on).
-        self.reload_plan();
-        if let Some(ref plan) = self.plan_document {
-            use crate::tui::plan::PlanStatus;
-            match plan.status {
-                PlanStatus::Completed | PlanStatus::Rejected | PlanStatus::Cancelled => {
-                    self.discard_plan_file();
-                    self.plan_document = None;
-                }
-                PlanStatus::InProgress => {
-                    // Agent finished responding but plan is still "in progress" —
-                    // either all tasks completed (tool wrote status wrong) or a tool
-                    // call failed silently. Either way, clear the stale widget.
-                    let all_done = plan.tasks.iter().all(|t| {
-                        matches!(
-                            t.status,
-                            crate::tui::plan::TaskStatus::Completed
-                                | crate::tui::plan::TaskStatus::Skipped
-                                | crate::tui::plan::TaskStatus::Failed
-                        )
-                    });
-                    if all_done {
-                        self.discard_plan_file();
-                        self.plan_document = None;
-                    }
-                }
-                _ => {}
-            }
-        }
-
         // Auto-scroll to bottom
         self.scroll_offset = 0;
 
@@ -2113,6 +2070,49 @@ impl App {
             self.pane_message_cache
                 .insert(session.id, self.messages.clone());
         }
+
+        // Spawn slow post-completion work in the background so the render loop
+        // can draw the next frame immediately (is_processing is already false).
+        // DB writes and file reads here were causing 5+ second spinner delays.
+        let session_service = self.session_service.clone();
+        let session_for_bg = self.current_session.clone();
+        let response_model = response.model.clone();
+        let plan_path = self.plan_file_path.clone();
+        let is_processing = self.is_processing;
+
+        tokio::spawn(async move {
+            // Update session model in DB
+            if let Some(mut session) = session_for_bg {
+                if session.model.is_none() {
+                    session.model = Some(response_model);
+                    if let Err(e) = session_service.update_session(&session).await {
+                        tracing::warn!("Failed to update session model: {}", e);
+                    }
+                }
+            }
+
+            // Reload user commands (agent may have written new ones to commands.json)
+            // This is synchronous but fast — just a file read + parse.
+            // We can't call self.reload_user_commands() from a spawned task,
+            // so we skip it here. The next send_message will pick up new commands.
+
+            // Reload plan from disk and clear if done
+            if let Some(ref path) = plan_path {
+                if let Ok(content) = std::fs::read_to_string(path) {
+                    if let Ok(plan) = serde_json::from_str::<crate::tui::plan::PlanDocument>(&content) {
+                        use crate::tui::plan::PlanStatus;
+                        let should_discard = match plan.status {
+                            PlanStatus::Completed | PlanStatus::Rejected | PlanStatus::Cancelled => true,
+                            PlanStatus::InProgress => !is_processing,
+                            _ => false,
+                        };
+                        if should_discard {
+                            let _ = std::fs::remove_file(path);
+                        }
+                    }
+                }
+            }
+        });
 
         Ok(())
     }
