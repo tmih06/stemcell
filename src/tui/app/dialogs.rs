@@ -708,6 +708,15 @@ impl App {
         if let Some(ref mut p) = config.providers.opencode_cli {
             p.enabled = false;
         }
+        if let Some(ref mut p) = config.providers.opencode {
+            p.enabled = false;
+        }
+        if let Some(ref mut p) = config.providers.qwen {
+            p.enabled = false;
+        }
+        if let Some(ref mut p) = config.providers.ollama {
+            p.enabled = false;
+        }
 
         // Get existing key from config if not changing. Routes by provider
         // id so reordering PROVIDERS doesn't break the match.
@@ -790,12 +799,10 @@ impl App {
                 .map(|s| s.to_string())
                 .unwrap_or_default()
         };
-        // Indices: 0=Anthropic, 1=OpenAI, 2=GitHub, 3=Gemini, 4=OpenRouter,
-        // 5=Minimax, 6=z.ai GLM, 7=Claude CLI, 8=OpenCode CLI, 9=Qwen (native),
-        // 10=Custom (CUSTOM_PROVIDER_IDX). Keep this in sync with PROVIDERS.
-        match provider_idx {
-            0 => {
-                // Anthropic
+        // Route by provider.id so reordering PROVIDERS or adding new
+        // built-ins never breaks the save logic again.
+        match provider.id {
+            "anthropic" => {
                 config.providers.anthropic = Some(ProviderConfig {
                     enabled: true,
                     api_key: api_key.clone(),
@@ -806,8 +813,7 @@ impl App {
                     ..Default::default()
                 });
             }
-            1 => {
-                // OpenAI
+            "openai" => {
                 config.providers.openai = Some(ProviderConfig {
                     enabled: true,
                     api_key: api_key.clone(),
@@ -818,8 +824,7 @@ impl App {
                     ..Default::default()
                 });
             }
-            2 => {
-                // GitHub Copilot
+            "github" => {
                 config.providers.github = Some(ProviderConfig {
                     enabled: true,
                     api_key: api_key.clone(),
@@ -830,8 +835,7 @@ impl App {
                     ..Default::default()
                 });
             }
-            3 => {
-                // Gemini
+            "gemini" => {
                 config.providers.gemini = Some(ProviderConfig {
                     enabled: true,
                     api_key: api_key.clone(),
@@ -842,8 +846,7 @@ impl App {
                     ..Default::default()
                 });
             }
-            4 => {
-                // OpenRouter
+            "openrouter" => {
                 config.providers.openrouter = Some(ProviderConfig {
                     enabled: true,
                     api_key: api_key.clone(),
@@ -854,8 +857,7 @@ impl App {
                     ..Default::default()
                 });
             }
-            5 => {
-                // Minimax
+            "minimax" => {
                 config.providers.minimax = Some(ProviderConfig {
                     enabled: true,
                     api_key: api_key.clone(),
@@ -866,8 +868,7 @@ impl App {
                     ..Default::default()
                 });
             }
-            6 => {
-                // z.ai GLM — use endpoint type from model selector state
+            "zhipu" => {
                 let endpoint_type = Some(
                     if self.ps.zhipu_endpoint_type == 1 {
                         "coding"
@@ -887,8 +888,7 @@ impl App {
                     ..Default::default()
                 });
             }
-            7 => {
-                // Claude CLI (Max subscription) — no API key needed
+            "claude_cli" => {
                 config.providers.claude_cli = Some(ProviderConfig {
                     enabled: true,
                     api_key: None,
@@ -899,8 +899,7 @@ impl App {
                     ..Default::default()
                 });
             }
-            8 => {
-                // OpenCode CLI — no API key needed
+            "opencode_cli" => {
                 config.providers.opencode_cli = Some(ProviderConfig {
                     enabled: true,
                     api_key: None,
@@ -911,10 +910,19 @@ impl App {
                     ..Default::default()
                 });
             }
-            9 => {
-                // Qwen (DashScope API key) — factory reads keys.toml for the
-                // secret. Here we just ensure the config section exists and
-                // is enabled with the chosen default model.
+            "opencode" => {
+                // OpenCode native API provider
+                config.providers.opencode = Some(ProviderConfig {
+                    enabled: true,
+                    api_key: api_key.clone(),
+                    base_url: None,
+                    default_model: Some(default_model.to_string()),
+                    models: vec![],
+                    vision_model: None,
+                    ..Default::default()
+                });
+            }
+            "qwen" => {
                 let merged = config.providers.qwen.clone().unwrap_or_default();
                 config.providers.qwen = Some(ProviderConfig {
                     enabled: true,
@@ -922,24 +930,24 @@ impl App {
                     ..merged
                 });
             }
-            10 if !self.ps.custom_name.is_empty() => {
-                // Edit-in-place semantics: if we're editing an existing
-                // entry (`editing_custom_key`), write back to that key —
-                // even when the user renamed the name field. Rename is a
-                // table-key move: take the old entry intact, remove the
-                // old key, insert under the new key with merged fields
-                // (api_key preserved unless the user typed a new one).
-                // Only when there's no anchor (pure "+ New Custom"
-                // flow) do we insert a fresh entry.
+            "ollama" => {
+                let merged = config.providers.ollama.clone().unwrap_or_default();
+                config.providers.ollama = Some(ProviderConfig {
+                    enabled: true,
+                    api_key: api_key.clone(),
+                    default_model: Some(default_model.to_string()),
+                    ..merged
+                });
+            }
+            "" if !self.ps.custom_name.is_empty() => {
+                // Custom provider: edit-in-place semantics. If editing an
+                // existing entry, write back to that key (even on rename).
                 let custom_model = self.ps.custom_model.clone();
                 let new_name = self.ps.custom_name.clone();
                 let editing = self.ps.editing_custom_key.clone();
                 let mut customs = config.providers.custom.unwrap_or_default();
                 let context_window = self.ps.context_window.parse::<u32>().ok();
 
-                // Base = existing entry we're editing (if any). Preserves
-                // fields the dialog doesn't surface (vision_model, custom
-                // headers, etc.) across saves.
                 let existing = editing
                     .as_ref()
                     .and_then(|k| customs.get(k).cloned())
@@ -956,9 +964,6 @@ impl App {
                     ..existing
                 };
 
-                // Rename: remove the old table key first, then insert
-                // the merged entry under the new name. If the name
-                // didn't change, this is a straight in-place update.
                 if let Some(old_key) = editing.as_ref()
                     && old_key != &new_name
                 {
@@ -970,34 +975,40 @@ impl App {
             _ => {}
         }
 
-        // Save provider config via merge (write_key) — never overwrite entire config.toml
+        // Resolve the TOML section to write. Routes by provider.id so
+        // adding or reordering built-ins never corrupts config again.
         let custom_section;
-        let section = match provider_idx {
-            0 => "providers.anthropic",
-            1 => "providers.openai",
-            2 => "providers.github",
-            3 => "providers.gemini",
-            4 => "providers.openrouter",
-            5 => "providers.minimax",
-            6 => "providers.zhipu",
-            7 => "providers.claude_cli",
-            8 => "providers.opencode_cli",
-            9 => "providers.qwen",
-            10 => {
-                // Resolve custom provider name: UI field > config active
+        let section = match provider.id {
+            "anthropic" => "providers.anthropic",
+            "openai" => "providers.openai",
+            "github" => "providers.github",
+            "gemini" => "providers.gemini",
+            "openrouter" => "providers.openrouter",
+            "minimax" => "providers.minimax",
+            "zhipu" => "providers.zhipu",
+            "claude_cli" => "providers.claude_cli",
+            "opencode_cli" => "providers.opencode_cli",
+            "opencode" => "providers.opencode",
+            "qwen" => "providers.qwen",
+            "ollama" => "providers.ollama",
+            "" => {
+                // Custom provider: resolve name from UI field or active config
                 let cname = if !self.ps.custom_name.is_empty() {
                     self.ps.custom_name.clone()
                 } else if let Some((name, _)) = config.providers.active_custom() {
                     name.to_string()
                 } else {
-                    // No name → can't save; fall through to anthropic
-                    // (cleanup_empty_custom_providers will remove ghosts)
+                    // No name → can't save; skip silently
                     return Ok(());
                 };
                 custom_section = format!("providers.custom.{}", cname);
                 &custom_section
             }
-            _ => "providers.anthropic",
+            _ => {
+                // Unknown provider — don't corrupt a random section
+                tracing::warn!("save_provider: unknown provider.id '{}', skipping config write", provider.id);
+                return Ok(());
+            }
         };
 
         // Disable ALL other providers on disk before enabling the selected one.
@@ -1020,7 +1031,9 @@ impl App {
             "providers.zhipu",
             "providers.claude_cli",
             "providers.opencode_cli",
+            "providers.opencode",
             "providers.qwen",
+            "providers.ollama",
         ] {
             if s != section {
                 try_write(s, "enabled", "false");
@@ -1044,7 +1057,7 @@ impl App {
         // it was a rename-duplicate. `api_key` here already comes from
         // the merged config (Config::load merges keys.toml into
         // api_key), so we just re-write it under the new section.
-        if provider_idx == CUSTOM_PROVIDER_IDX
+        if provider.id.is_empty()
             && let Some(ref old_key) = self.ps.editing_custom_key
             && old_key != &self.ps.custom_name
             && !old_key.is_empty()
@@ -1104,7 +1117,9 @@ impl App {
                 "providers.zhipu" => cfg.providers.zhipu.map(|p| p.enabled),
                 "providers.claude_cli" => cfg.providers.claude_cli.map(|p| p.enabled),
                 "providers.opencode_cli" => cfg.providers.opencode_cli.map(|p| p.enabled),
+                "providers.opencode" => cfg.providers.opencode.map(|p| p.enabled),
                 "providers.qwen" => cfg.providers.qwen.map(|p| p.enabled),
+                "providers.ollama" => cfg.providers.ollama.map(|p| p.enabled),
                 s if s.starts_with("providers.custom.") => {
                     let name = s.trim_start_matches("providers.custom.");
                     cfg.providers
@@ -1132,27 +1147,27 @@ impl App {
             );
         }
 
-        // Write base_url if applicable (indices match PROVIDERS)
-        match provider_idx {
-            2 => {
+        // Write base_url if applicable. Routes by provider.id so indices
+        // never matter.
+        match provider.id {
+            "github" => {
                 try_write(
                     section,
                     "base_url",
                     "https://api.githubcopilot.com/chat/completions",
                 );
             }
-            4 => {
+            "openrouter" => {
                 try_write(
                     section,
                     "base_url",
                     "https://openrouter.ai/api/v1/chat/completions",
                 );
             }
-            5 => {
+            "minimax" => {
                 try_write(section, "base_url", "https://api.minimax.io/v1");
             }
-            6 => {
-                // z.ai GLM — write endpoint_type from model selector state
+            "zhipu" => {
                 let endpoint_type = if self.ps.zhipu_endpoint_type == 1 {
                     "coding"
                 } else {
@@ -1160,7 +1175,8 @@ impl App {
                 };
                 try_write(section, "endpoint_type", endpoint_type);
             }
-            idx if idx == CUSTOM_PROVIDER_IDX && !self.ps.base_url.is_empty() => {
+            "" if !self.ps.base_url.is_empty() => {
+                // Custom provider
                 try_write(section, "base_url", &self.ps.base_url);
                 if !self.ps.context_window.is_empty() {
                     try_write(section, "context_window", &self.ps.context_window);
@@ -1185,7 +1201,7 @@ impl App {
         }
 
         // Refresh custom provider names list after saving (so new entries appear immediately)
-        if provider_idx == CUSTOM_PROVIDER_IDX
+        if provider.id.is_empty()
             && let Ok(fresh) = crate::config::Config::load()
         {
             self.ps.custom_names = fresh
