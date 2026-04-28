@@ -466,11 +466,13 @@ fn test_supports_model_fetch() {
     assert!(!wizard.ps.supports_model_fetch());
     wizard.ps.selected_provider = 8; // OpenCode CLI (supports fetch)
     assert!(wizard.ps.supports_model_fetch());
-    wizard.ps.selected_provider = 9; // Qwen — DashScope has no /v1/models
-    assert!(!wizard.ps.supports_model_fetch());
-    wizard.ps.selected_provider = 10; // Ollama (supports fetch via /api/tags)
+    wizard.ps.selected_provider = 9; // OpenCode API (supports fetch)
     assert!(wizard.ps.supports_model_fetch());
-    wizard.ps.selected_provider = 11; // Custom
+    wizard.ps.selected_provider = 10; // Qwen — DashScope has no /v1/models
+    assert!(!wizard.ps.supports_model_fetch());
+    wizard.ps.selected_provider = 11; // Ollama (supports fetch via /api/tags)
+    assert!(wizard.ps.supports_model_fetch());
+    wizard.ps.selected_provider = 12; // Custom
     assert!(!wizard.ps.supports_model_fetch());
 }
 

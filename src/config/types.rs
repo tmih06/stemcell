@@ -631,6 +631,10 @@ pub struct ProviderConfigs {
     #[serde(default)]
     pub opencode_cli: Option<ProviderConfig>,
 
+    /// OpenCode API — native provider for Go and Zen plans (opencode.ai)
+    #[serde(default)]
+    pub opencode: Option<ProviderConfig>,
+
     /// Qwen (DashScope OpenAI-compatible) — standard API-key provider.
     #[serde(default)]
     pub qwen: Option<ProviderConfig>,

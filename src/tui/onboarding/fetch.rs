@@ -375,6 +375,16 @@ pub async fn fetch_provider_models(
             }
             req.send().await
         }
+        "opencode" => {
+            // OpenCode API — /zen/go/v1/models (Go and Zen plans)
+            let mut req = client.get("https://opencode.ai/zen/go/v1/models");
+            if let Some(key) = api_key
+                && !key.is_empty()
+            {
+                req = req.header("Authorization", format!("Bearer {}", key));
+            }
+            req.send().await
+        }
         "zhipu" => {
             // z.ai GLM — /api/paas/v4/models or /api/coding/paas/v4/models
             // Use passed endpoint_type (from wizard state), fall back to config, then default "api"

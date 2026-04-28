@@ -120,6 +120,7 @@ impl ProviderSelectorState {
                 | "openrouter"
                 | "zhipu"
                 | "opencode-cli"
+                | "opencode"
                 | "ollama"
         )
     }
