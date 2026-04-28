@@ -49,7 +49,7 @@ const TRACKED_FILES: &[&str] = &[
 ];
 
 /// Parsed state from `rsi/state.toml`.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct SyncState {
     pub last_synced_version: String,
     pub last_sync_date: String,
@@ -235,7 +235,7 @@ pub fn extract_new_sections(local: &str, upstream: &str) -> String {
 }
 
 /// Extract all ## and ### heading lines from markdown.
-fn extract_section_headers(content: &str) -> Vec<String> {
+pub(crate) fn extract_section_headers(content: &str) -> Vec<String> {
     content
         .lines()
         .filter(|line| line.starts_with("## ") || line.starts_with("### "))
@@ -433,123 +433,3 @@ async fn sync_single_file(
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_extract_section_headers() {
-        let md = "# Title\n\n## Section A\nContent A\n\n### Sub A1\nSub content\n\n## Section B\nContent B";
-        let headers = extract_section_headers(md);
-        assert_eq!(
-            headers,
-            vec![
-                "## Section A".to_string(),
-                "### Sub A1".to_string(),
-                "## Section B".to_string(),
-            ]
-        );
-    }
-
-    #[test]
-    fn test_extract_new_sections_all_new() {
-        let local = "# Title\n\n## Existing\nOld content";
-        let upstream = "# Title\n\n## Existing\nOld content\n\n## New Section\nNew content here";
-        let new = extract_new_sections(local, upstream);
-        assert!(new.contains("## New Section"));
-        assert!(new.contains("New content here"));
-        assert!(!new.contains("## Existing"));
-    }
-
-    #[test]
-    fn test_extract_new_sections_none_new() {
-        let local = "# Title\n\n## Section A\nContent";
-        let upstream = "# Title\n\n## Section A\nContent";
-        let new = extract_new_sections(local, upstream);
-        assert!(new.trim().is_empty());
-    }
-
-    #[test]
-    fn test_extract_new_sections_partial_overlap() {
-        let local = "# Title\n\n## Shared\nLocal version\n\n## Local Only\nStuff";
-        let upstream =
-            "# Title\n\n## Shared\nUpstream version\n\n## Upstream Only\nNew stuff\n\n### Sub Detail\nMore";
-        let new = extract_new_sections(local, upstream);
-        // Shared exists locally, should not be included
-        assert!(!new.contains("## Shared"));
-        // Upstream Only is new, should be included
-        assert!(new.contains("## Upstream Only"));
-        assert!(new.contains("### Sub Detail"));
-    }
-
-    #[test]
-    fn test_needs_sync() {
-        let state = SyncState {
-            last_synced_version: "0.3.13".to_string(),
-            ..Default::default()
-        };
-        assert!(needs_sync(&state));
-
-        let state = SyncState {
-            last_synced_version: crate::VERSION.to_string(),
-            ..Default::default()
-        };
-        assert!(!needs_sync(&state));
-    }
-
-    #[test]
-    fn test_sync_state_parse() {
-        let toml = r#"
-last_synced_version = "0.3.14"
-last_sync_date = "2026-04-27T21:00:00Z"
-
-[files]
-SOUL.md = "2026-04-27T21:00:00Z"
-TOOLS.md = "2026-04-27T21:00:00Z"
-"#;
-        // Write to temp dir and parse
-        let dir = std::env::temp_dir().join("opencrabs_rsi_sync_test");
-        std::fs::create_dir_all(&dir).unwrap();
-        let rsi_dir = dir.join("rsi");
-        std::fs::create_dir_all(&rsi_dir).unwrap();
-        std::fs::write(rsi_dir.join("state.toml"), toml).unwrap();
-
-        // We can't easily test load() since it uses opencrabs_home(),
-        // but we can verify the parsing logic inline
-        let mut state = SyncState::default();
-        let mut in_files = false;
-        for line in toml.lines() {
-            let trimmed = line.trim();
-            if trimmed.is_empty() || trimmed.starts_with('#') {
-                continue;
-            }
-            if trimmed == "[files]" {
-                in_files = true;
-                continue;
-            }
-            if trimmed.starts_with('[') {
-                in_files = false;
-                continue;
-            }
-            if let Some((k, v)) = trimmed.split_once('=') {
-                let key = k.trim();
-                let val = v.trim().trim_matches('"');
-                if in_files {
-                    state.file_dates.insert(key.to_string(), val.to_string());
-                } else if key == "last_synced_version" {
-                    state.last_synced_version = val.to_string();
-                } else if key == "last_sync_date" {
-                    state.last_sync_date = val.to_string();
-                }
-            }
-        }
-
-        assert_eq!(state.last_synced_version, "0.3.14");
-        assert_eq!(state.last_sync_date, "2026-04-27T21:00:00Z");
-        assert_eq!(state.file_dates.len(), 2);
-        assert_eq!(
-            state.file_dates.get("SOUL.md").unwrap(),
-            "2026-04-27T21:00:00Z"
-        );
-    }
-}

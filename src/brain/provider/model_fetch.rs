@@ -9,26 +9,37 @@ use std::time::Duration;
 
 /// Response shape for OpenAI-compatible `/v1/models` endpoint.
 #[derive(serde::Deserialize)]
-struct OpenAIModelsResponse {
-    data: Vec<OpenAIModelEntry>,
+pub(crate) struct OpenAIModelsResponse {
+    pub data: Vec<OpenAIModelEntry>,
 }
 
 #[derive(serde::Deserialize)]
-struct OpenAIModelEntry {
-    id: String,
+pub(crate) struct OpenAIModelEntry {
+    pub id: String,
     #[serde(default)]
-    created: i64,
+    pub created: i64,
 }
 
 /// Response shape for Ollama `/api/tags` endpoint.
 #[derive(serde::Deserialize)]
-struct OllamaModelsResponse {
-    models: Vec<OllamaModelEntry>,
+pub(crate) struct OllamaModelsResponse {
+    pub models: Vec<OllamaModelEntry>,
 }
 
 #[derive(serde::Deserialize)]
-struct OllamaModelEntry {
-    name: String,
+pub(crate) struct OllamaModelEntry {
+    pub name: String,
+}
+
+/// Normalize a base URL by stripping trailing slashes and common API path suffixes.
+pub(crate) fn normalize_base_url(base_url: &str) -> String {
+    let base = base_url.trim_end_matches('/');
+    base
+        .strip_suffix("/v1/chat/completions")
+        .or_else(|| base.strip_suffix("/chat/completions"))
+        .or_else(|| base.strip_suffix("/v1"))
+        .unwrap_or(base)
+        .to_string()
 }
 
 /// Fetch model names from an OpenAI-compatible endpoint.
@@ -40,13 +51,7 @@ struct OllamaModelEntry {
 /// Returns sorted model names (newest first by `created` timestamp for OpenAI,
 /// alphabetical for Ollama). Returns empty vec on failure.
 pub async fn fetch_models_from_endpoint(base_url: &str, api_key: Option<&str>) -> Vec<String> {
-    // Normalize base_url: strip trailing slash and any path suffix
-    let base = base_url.trim_end_matches('/');
-    let base = base
-        .strip_suffix("/v1/chat/completions")
-        .or_else(|| base.strip_suffix("/chat/completions"))
-        .or_else(|| base.strip_suffix("/v1"))
-        .unwrap_or(base);
+    let base = normalize_base_url(base_url);
 
     let client = Client::builder()
         .timeout(Duration::from_secs(15))
@@ -145,56 +150,3 @@ pub async fn fetch_models_from_endpoint(base_url: &str, api_key: Option<&str>) -
     Vec::new()
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_base_url_normalization() {
-        // These are unit tests for the normalization logic.
-        // We can't test actual HTTP calls without a mock server.
-        let cases = [
-            (
-                "http://localhost:11434/v1/chat/completions",
-                "http://localhost:11434",
-            ),
-            ("http://localhost:11434/v1", "http://localhost:11434"),
-            ("http://localhost:11434/", "http://localhost:11434"),
-            ("http://localhost:11434", "http://localhost:11434"),
-            (
-                "https://api.openai.com/v1/chat/completions",
-                "https://api.openai.com",
-            ),
-            (
-                "https://openrouter.ai/api/v1/chat/completions",
-                "https://openrouter.ai/api",
-            ),
-        ];
-
-        for (input, expected) in cases {
-            let base = input.trim_end_matches('/');
-            let base = base
-                .strip_suffix("/v1/chat/completions")
-                .or_else(|| base.strip_suffix("/chat/completions"))
-                .or_else(|| base.strip_suffix("/v1"))
-                .unwrap_or(base);
-            assert_eq!(base, expected, "Failed for input: {}", input);
-        }
-    }
-
-    #[test]
-    fn test_ollama_response_deserialization() {
-        let json = r#"{"models":[{"name":"llama3.1:8b"},{"name":"qwen2.5:7b"}]}"#;
-        let resp: OllamaModelsResponse = serde_json::from_str(json).unwrap();
-        assert_eq!(resp.models.len(), 2);
-        assert_eq!(resp.models[0].name, "llama3.1:8b");
-    }
-
-    #[test]
-    fn test_openai_response_deserialization() {
-        let json = r#"{"data":[{"id":"gpt-4o","created":1700000000},{"id":"gpt-3.5-turbo","created":1690000000}]}"#;
-        let resp: OpenAIModelsResponse = serde_json::from_str(json).unwrap();
-        assert_eq!(resp.data.len(), 2);
-        assert_eq!(resp.data[0].id, "gpt-4o");
-    }
-}
