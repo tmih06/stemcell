@@ -88,6 +88,18 @@ base_url = "https://openrouter.ai/api/v1/chat/completions"
 default_model = "qwen/qwen3-coder-next"  # Many options at openrouter.ai/models
 
 # ========================================
+# OpenCode Provider (Go and Zen plans)
+# ========================================
+# Native API provider — no CLI subprocess needed.
+# Models are fetched live from opencode.ai/zen/go/v1/models
+# API key goes in keys.toml: [providers.opencode] api_key = "..."
+# Get key from: opencode.ai/settings
+[providers.opencode]
+enabled = false
+base_url = "https://opencode.ai/zen/go/v1/chat/completions"
+# default_model = "qwen3.6-plus"  # Optional: override default
+
+# ========================================
 # Google Gemini Provider
 # ========================================
 # Models fetched live from the Gemini API during onboarding and /models
