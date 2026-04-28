@@ -1966,9 +1966,6 @@ impl App {
             tracing::info!("[TUI] Discarding unconsumed queued message at response complete");
         }
 
-        // Reload user commands (agent may have written new ones to commands.json)
-        self.reload_user_commands();
-
         // Track context usage from latest response. Write to the
         // per-session cache first; only mirror into the focused-view
         // fields if THIS response belongs to the focused session,

@@ -676,13 +676,17 @@ pub async fn models_for_provider(provider_name: &str) -> ModelsResponse {
     if provider_name == "openrouter" || provider_name.starts_with("custom:") {
         let config_default = crate::utils::providers::config_for(&config.providers, provider_name)
             .and_then(|c| c.default_model.clone());
-        let current_model = config_models.first().cloned().or(config_default).unwrap_or_else(|| {
-            if provider_name.starts_with("custom:") {
-                "unknown (no models configured)".to_string()
-            } else {
-                "openrouter-default".to_string()
-            }
-        });
+        let current_model = config_models
+            .first()
+            .cloned()
+            .or(config_default)
+            .unwrap_or_else(|| {
+                if provider_name.starts_with("custom:") {
+                    "unknown (no models configured)".to_string()
+                } else {
+                    "openrouter-default".to_string()
+                }
+            });
 
         let models = if !config_models.is_empty() {
             config_models
