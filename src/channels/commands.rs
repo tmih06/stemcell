@@ -616,7 +616,97 @@ pub async fn models_for_provider(provider_name: &str) -> ModelsResponse {
         }
     };
 
-    // Create a temporary provider to fetch its models
+    let display_name = provider_display_name(provider_name);
+    let config_models = provider_config_models(&config, provider_name);
+
+    // CLI providers (Claude CLI, OpenCode CLI) don't need the binary to list models.
+    // They have hardcoded supported_models() and don't require API keys.
+    // If the binary isn't installed on the server, create_provider_by_name would fail,
+    // but we can still show models from config or hardcoded defaults.
+    let is_cli_provider = matches!(
+        provider_name,
+        "claude-cli" | "claude_cli" | "opencode-cli" | "opencode_cli"
+    );
+
+    if is_cli_provider {
+        // Get default model from config or use hardcoded fallback
+        let current_model = config_models.first().cloned().unwrap_or_else(|| {
+            if provider_name.starts_with("claude") {
+                "opus-4-7".to_string()
+            } else {
+                "sonnet-4.5".to_string()
+            }
+        });
+
+        // Hardcoded supported models for CLI providers (no binary needed)
+        let models = if !config_models.is_empty() {
+            config_models
+        } else if provider_name.starts_with("claude") {
+            vec![
+                "opus-4-7".to_string(),
+                "sonnet-4-6".to_string(),
+                "haiku-4-5".to_string(),
+            ]
+        } else {
+            vec!["sonnet-4.5".to_string(), "opus-4.1".to_string()]
+        };
+
+        let mut text_lines = vec![
+            format!("🤖 *{} Models*", display_name),
+            format!("Current: `{}`", current_model),
+            String::new(),
+        ];
+        for (i, m) in models.iter().enumerate() {
+            let marker = if *m == current_model { " ✓" } else { "" };
+            text_lines.push(format!("{}. `{}`{}", i + 1, m, marker));
+        }
+
+        return ModelsResponse {
+            provider_name: provider_name.to_string(),
+            current_model,
+            models,
+            text: text_lines.join("\n"),
+            agent_handled: false,
+        };
+    }
+
+    // OpenRouter (300+ models) and custom providers skip live fetch on channels.
+    // Show config models if available, otherwise fall back to default model.
+    if provider_name == "openrouter" || provider_name.starts_with("custom:") {
+        let current_model = config_models.first().cloned().unwrap_or_else(|| {
+            if provider_name.starts_with("custom:") {
+                format!("{}-default", provider_name.strip_prefix("custom:").unwrap_or("custom"))
+            } else {
+                "openrouter-default".to_string()
+            }
+        });
+
+        let models = if !config_models.is_empty() {
+            config_models
+        } else {
+            vec![current_model.clone()]
+        };
+
+        let mut text_lines = vec![
+            format!("🤖 *{} Models*", display_name),
+            format!("Current: `{}`", current_model),
+            String::new(),
+        ];
+        for (i, m) in models.iter().enumerate() {
+            let marker = if *m == current_model { " ✓" } else { "" };
+            text_lines.push(format!("{}. `{}`{}", i + 1, m, marker));
+        }
+
+        return ModelsResponse {
+            provider_name: provider_name.to_string(),
+            current_model,
+            models,
+            text: text_lines.join("\n"),
+            agent_handled: false,
+        };
+    }
+
+    // Standard API providers: create provider and fetch models
     let provider = match crate::brain::provider::factory::create_provider_by_name(
         &config,
         provider_name,
@@ -637,20 +727,7 @@ pub async fn models_for_provider(provider_name: &str) -> ModelsResponse {
 
     let current_model = provider.default_model().to_string();
 
-    // OpenRouter (300+ models) and custom providers skip live fetch on channels.
-    // Switch to default immediately; the agent handles follow-up via config_manager tool.
-    if provider_name == "openrouter" || provider_name.starts_with("custom:") {
-        return ModelsResponse {
-            provider_name: provider_name.to_string(),
-            current_model,
-            models: vec![],
-            text: String::new(),
-            agent_handled: true,
-        };
-    }
-
     // Standard providers: config models first (instant), then live fetch with timeout.
-    let config_models = provider_config_models(&config, provider_name);
     let mut models = if !config_models.is_empty() {
         config_models
     } else {
@@ -671,7 +748,6 @@ pub async fn models_for_provider(provider_name: &str) -> ModelsResponse {
         models.insert(0, current_model.clone());
     }
 
-    let display_name = provider_display_name(provider_name);
     let mut text_lines = vec![
         format!("🤖 *{} Models*", display_name),
         format!("Current: `{}`", current_model),
