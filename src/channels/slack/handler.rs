@@ -345,6 +345,10 @@ pub struct HandlerState {
     /// Uses VecDeque for FIFO eviction — oldest entries are dropped when limit
     /// is reached, preserving the rest so retries never slip through a full clear.
     pub seen_ts: Mutex<VecDeque<String>>,
+    /// Dedup: recently sent message content hashes per channel.
+    /// Prevents the bot from posting identical responses to the same channel.
+    /// Key: "channel_id:hash", Value: message timestamp (for deletion).
+    pub seen_responses: Mutex<HashMap<String, (SlackTs, std::time::Instant)>>,
 }
 
 impl HandlerState {
@@ -1433,6 +1437,29 @@ async fn handle_message(
 
             let token = SlackApiToken::new(SlackApiTokenValue::from(state.current_bot_token()));
             let session = client.open_session(&token);
+
+            // Content-level dedup: hash the response text and check if we already
+            // sent this exact content to this channel. If yes, delete the previous
+            // copy and skip (prevents duplicate responses from Slack retries).
+            use std::collections::hash_map::DefaultHasher;
+            use std::hash::{Hash, Hasher};
+            let mut hasher = DefaultHasher::new();
+            text_only.hash(&mut hasher);
+            let content_hash = format!("{}:{}", channel_id, hasher.finish());
+            let mut seen = state.seen_responses.lock().await;
+            // Evict entries older than 5 minutes
+            seen.retain(|_, (_, instant)| instant.elapsed() < std::time::Duration::from_secs(300));
+            if let Some((old_ts, _)) = seen.get(&content_hash) {
+                tracing::info!("Slack: dropping duplicate response (hash={})", content_hash);
+                let del =
+                    SlackApiChatDeleteRequest::new(SlackChannelId::new(channel_id.clone()), old_ts.clone());
+                let _ = session.chat_delete(&del).await;
+                return;
+            }
+            // Record this hash so future duplicates are caught
+            // We'll update with the actual ts after sending
+            let now = std::time::Instant::now();
+            seen.insert(content_hash.clone(), (SlackTs::new("0".to_string()), now));
 
             for img_path in img_paths {
                 match tokio::fs::read(&img_path).await {
