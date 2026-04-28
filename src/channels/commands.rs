@@ -671,14 +671,14 @@ pub async fn models_for_provider(provider_name: &str) -> ModelsResponse {
     }
 
     // OpenRouter (300+ models) and custom providers skip live fetch on channels.
-    // Show config models if available, otherwise fall back to default model.
+    // Show config models if available, otherwise fall back to the provider's
+    // actual default_model from config (never invent fake '-default' names).
     if provider_name == "openrouter" || provider_name.starts_with("custom:") {
-        let current_model = config_models.first().cloned().unwrap_or_else(|| {
+        let config_default = crate::utils::providers::config_for(&config.providers, provider_name)
+            .and_then(|c| c.default_model.clone());
+        let current_model = config_models.first().cloned().or(config_default).unwrap_or_else(|| {
             if provider_name.starts_with("custom:") {
-                format!(
-                    "{}-default",
-                    provider_name.strip_prefix("custom:").unwrap_or("custom")
-                )
+                "unknown (no models configured)".to_string()
             } else {
                 "openrouter-default".to_string()
             }
