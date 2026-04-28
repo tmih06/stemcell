@@ -56,6 +56,18 @@ pub const KNOWN_PROVIDERS: &[ProviderMeta] = &[
         needs_api_key: true,
     },
     ProviderMeta {
+        id: "ollama",
+        display_name: "Ollama",
+        config_section: "providers.ollama",
+        needs_api_key: false,
+    },
+    ProviderMeta {
+        id: "opencode",
+        display_name: "OpenCode",
+        config_section: "providers.opencode",
+        needs_api_key: true,
+    },
+    ProviderMeta {
         id: "opencode-cli",
         display_name: "OpenCode CLI",
         config_section: "providers.opencode_cli",
@@ -98,6 +110,8 @@ pub fn find_provider_meta(name: &str) -> Option<&'static ProviderMeta> {
                 // built-in CLI alias. Sessions that reference "opencode" are
                 // the custom entry, not the CLI.
                 "opencode-cli" => n == "opencode_cli",
+                "opencode" => n == "opencode_api" || n == "opencode-ai",
+                "ollama" => n == "ollama_local" || n == "ollama-cloud",
                 _ => false,
             }
     })
@@ -157,6 +171,8 @@ pub fn config_for<'a>(providers: &'a ProviderConfigs, name: &str) -> Option<&'a 
         Some("zhipu") => providers.zhipu.as_ref(),
         Some("claude-cli") => providers.claude_cli.as_ref(),
         Some("opencode-cli") => providers.opencode_cli.as_ref(),
+        Some("opencode") => providers.opencode.as_ref(),
+        Some("ollama") => providers.ollama.as_ref(),
         Some("qwen") => providers.qwen.as_ref(),
         _ => {
             let custom_name = name.strip_prefix("custom:")?;
