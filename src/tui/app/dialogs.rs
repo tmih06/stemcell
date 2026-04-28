@@ -1006,7 +1006,10 @@ impl App {
             }
             _ => {
                 // Unknown provider — don't corrupt a random section
-                tracing::warn!("save_provider: unknown provider.id '{}', skipping config write", provider.id);
+                tracing::warn!(
+                    "save_provider: unknown provider.id '{}', skipping config write",
+                    provider.id
+                );
                 return Ok(());
             }
         };

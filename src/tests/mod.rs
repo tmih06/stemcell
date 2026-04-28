@@ -64,6 +64,7 @@ pub mod onboarding_types_test;
 pub mod onboarding_welcome_test;
 pub mod plan_document_test;
 pub mod post_evolve_test;
+pub mod provider_config_regression_test;
 pub mod provider_error_proxy_test;
 pub mod provider_factory_regression_test;
 pub mod provider_sync_test;

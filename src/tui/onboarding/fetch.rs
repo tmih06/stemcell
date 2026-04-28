@@ -147,6 +147,12 @@ pub fn is_first_time() -> bool {
             .as_ref()
             .is_some_and(|p| p.enabled)
         || config.providers.qwen.as_ref().is_some_and(|p| p.enabled)
+        || config.providers.ollama.as_ref().is_some_and(|p| p.enabled)
+        || config
+            .providers
+            .opencode
+            .as_ref()
+            .is_some_and(|p| p.enabled)
         || config.providers.active_custom().is_some();
 
     tracing::debug!(
