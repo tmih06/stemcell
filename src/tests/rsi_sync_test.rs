@@ -3,7 +3,9 @@
 //! Tests for the upstream brain file template synchronization feature.
 //! Verifies version gating, section extraction, state persistence, and backup safety.
 
-use crate::brain::rsi_sync::{extract_new_sections, extract_section_headers, needs_sync, SyncState};
+use crate::brain::rsi_sync::{
+    SyncState, extract_new_sections, extract_section_headers, needs_sync,
+};
 use std::collections::HashMap;
 
 // --- Section Extraction Tests ---
@@ -19,7 +21,10 @@ fn extracts_top_level_sections() {
 fn extracts_subsections() {
     let content = "## Section A\n### Sub A1\n### Sub A2\n## Section B\n";
     let headers = extract_section_headers(content);
-    assert_eq!(headers, vec!["## Section A", "### Sub A1", "### Sub A2", "## Section B"]);
+    assert_eq!(
+        headers,
+        vec!["## Section A", "### Sub A1", "### Sub A2", "## Section B"]
+    );
 }
 
 #[test]
@@ -56,8 +61,7 @@ fn extract_new_sections_none_new() {
 #[test]
 fn extract_new_sections_partial_overlap() {
     let local = "# Title\n\n## Shared\nLocal version\n\n## Local Only\nStuff";
-    let upstream =
-        "# Title\n\n## Shared\nUpstream version\n\n## Upstream Only\nNew stuff\n\n### Sub Detail\nMore";
+    let upstream = "# Title\n\n## Shared\nUpstream version\n\n## Upstream Only\nNew stuff\n\n### Sub Detail\nMore";
     let new = extract_new_sections(local, upstream);
     assert!(!new.contains("## Shared"));
     assert!(new.contains("## Upstream Only"));

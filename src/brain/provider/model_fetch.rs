@@ -34,8 +34,7 @@ pub(crate) struct OllamaModelEntry {
 /// Normalize a base URL by stripping trailing slashes and common API path suffixes.
 pub(crate) fn normalize_base_url(base_url: &str) -> String {
     let base = base_url.trim_end_matches('/');
-    base
-        .strip_suffix("/v1/chat/completions")
+    base.strip_suffix("/v1/chat/completions")
         .or_else(|| base.strip_suffix("/chat/completions"))
         .or_else(|| base.strip_suffix("/v1"))
         .unwrap_or(base)
@@ -149,4 +148,3 @@ pub async fn fetch_models_from_endpoint(base_url: &str, api_key: Option<&str>) -
 
     Vec::new()
 }
-

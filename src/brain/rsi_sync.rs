@@ -196,7 +196,11 @@ pub fn extract_new_sections(local: &str, upstream: &str) -> String {
         if level >= 2 {
             // Flush previous block
             if !current_header.is_empty() {
-                blocks.push((current_level, current_header.clone(), current_content.clone()));
+                blocks.push((
+                    current_level,
+                    current_header.clone(),
+                    current_content.clone(),
+                ));
             }
             current_level = level;
             current_header = line.to_string();
@@ -299,9 +303,7 @@ pub async fn sync_templates() -> Vec<FileSyncResult> {
 
         let result = sync_single_file(&local_path, filename, &now).await;
         if result.synced {
-            state
-                .file_dates
-                .insert(filename.to_string(), now.clone());
+            state.file_dates.insert(filename.to_string(), now.clone());
         }
         results.push(result);
     }
@@ -317,11 +319,7 @@ pub async fn sync_templates() -> Vec<FileSyncResult> {
 }
 
 /// Sync a single brain file.
-async fn sync_single_file(
-    local_path: &Path,
-    filename: &str,
-    _timestamp: &str,
-) -> FileSyncResult {
+async fn sync_single_file(local_path: &Path, filename: &str, _timestamp: &str) -> FileSyncResult {
     // 1. Read local content
     let local_content = match std::fs::read_to_string(local_path) {
         Ok(c) => c,
@@ -360,7 +358,10 @@ async fn sync_single_file(
         };
     }
 
-    let sections_count = new_sections.lines().filter(|l| l.starts_with("## ")).count();
+    let sections_count = new_sections
+        .lines()
+        .filter(|l| l.starts_with("## "))
+        .count();
 
     // 4. Backup before writing
     match brain_file_safety::backup_before_write(local_path) {
@@ -432,4 +433,3 @@ async fn sync_single_file(
         error: None,
     }
 }
-

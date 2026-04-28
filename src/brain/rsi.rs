@@ -380,7 +380,10 @@ pub fn spawn_rsi_engine(
                 let sections: usize = results.iter().map(|r| r.sections_added).sum();
                 let summary = format!(
                     "{} files synced, {} failed, {} new sections (v{})",
-                    synced, failed, sections, crate::VERSION
+                    synced,
+                    failed,
+                    sections,
+                    crate::VERSION
                 );
                 if failed > 0 {
                     let errors: Vec<_> = results

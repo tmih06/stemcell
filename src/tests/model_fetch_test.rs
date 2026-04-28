@@ -4,7 +4,7 @@
 //! Verifies URL normalization, response parsing, and endpoint fallback.
 
 use crate::brain::provider::model_fetch::{
-    normalize_base_url, OllamaModelsResponse, OpenAIModelsResponse,
+    OllamaModelsResponse, OpenAIModelsResponse, normalize_base_url,
 };
 
 // --- URL Normalization Tests ---

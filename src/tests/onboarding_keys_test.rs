@@ -7,8 +7,8 @@ use crate::tui::onboarding::{OnboardingWizard, PROVIDERS};
 
 #[test]
 fn test_provider_count_matches() {
-    // Verify PROVIDERS array has 12 entries
-    assert_eq!(PROVIDERS.len(), 12);
+    // Verify PROVIDERS array has 13 entries
+    assert_eq!(PROVIDERS.len(), 13);
 
     // Verify provider names
     assert_eq!(PROVIDERS[0].name, "Anthropic Claude");
@@ -20,17 +20,18 @@ fn test_provider_count_matches() {
     assert_eq!(PROVIDERS[6].name, "z.ai GLM");
     assert_eq!(PROVIDERS[7].name, "Claude CLI");
     assert_eq!(PROVIDERS[8].name, "OpenCode CLI");
-    assert_eq!(PROVIDERS[9].name, "Qwen");
-    assert_eq!(PROVIDERS[10].name, "Ollama");
-    assert_eq!(PROVIDERS[11].name, "Custom OpenAI-Compatible");
+    assert_eq!(PROVIDERS[9].name, "OpenCode");
+    assert_eq!(PROVIDERS[10].name, "Qwen");
+    assert_eq!(PROVIDERS[11].name, "Ollama");
+    assert_eq!(PROVIDERS[12].name, "Custom OpenAI-Compatible");
 }
 
 #[test]
 fn test_is_custom_provider() {
     let mut wizard = OnboardingWizard::new();
 
-    // Index 11 is Custom (last)
-    wizard.ps.selected_provider = 11;
+    // Index 12 is Custom (last)
+    wizard.ps.selected_provider = 12;
     assert!(wizard.ps.is_custom());
 
     // Other indices are not Custom
@@ -40,7 +41,7 @@ fn test_is_custom_provider() {
     assert!(!wizard.ps.is_custom());
     wizard.ps.selected_provider = 2;
     assert!(!wizard.ps.is_custom());
-    wizard.ps.selected_provider = 8;
+    wizard.ps.selected_provider = 9;
     assert!(!wizard.ps.is_custom());
 }
 

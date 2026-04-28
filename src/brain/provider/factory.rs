@@ -79,7 +79,7 @@ static REGISTRATIONS: LazyLock<Vec<ProviderRegistration>> = LazyLock::new(|| {
         ProviderRegistration {
             display_name: "OpenCode CLI",
             session_id: "opencode-cli",
-            aliases: &["opencode_cli", "opencode"],
+            aliases: &["opencode_cli"],
             is_enabled: |c| c.providers.opencode_cli.as_ref().is_some_and(|p| p.enabled),
             factory: sync_factory(try_create_opencode_cli),
             config_field: |c| c.providers.opencode_cli.as_ref(),
@@ -521,7 +521,23 @@ pub(crate) fn fallback_chain(fallback: &crate::config::FallbackProviderConfig) -
 
 /// Create fallback provider
 async fn create_fallback(config: &Config, fallback_type: &str) -> Result<Arc<dyn Provider>> {
-    // Try custom: prefix first
+    // Custom entries take precedence over built-in names. If the user
+    // created a custom provider literally named "opencode" / "ollama" /
+    // anything that collides with a built-in id, the custom entry wins.
+    // (Same priority as create_provider_by_name.)
+    if !fallback_type.starts_with("custom:")
+        && config
+            .providers
+            .custom
+            .as_ref()
+            .is_some_and(|m| m.contains_key(fallback_type))
+    {
+        tracing::info!("Using fallback: Custom '{}'", fallback_type);
+        return try_create_custom_by_name(config, fallback_type)?
+            .ok_or_else(|| anyhow::anyhow!("Custom provider '{}' not configured", fallback_type));
+    }
+
+    // Try custom: prefix
     if let Some(custom_name) = fallback_type.strip_prefix("custom:") {
         tracing::info!("Using fallback: Custom '{}'", custom_name);
         return try_create_custom_by_name(config, custom_name)?
@@ -552,24 +568,41 @@ pub fn active_provider_vision(config: &Config) -> Option<(String, String, String
     // otherwise MiniMax wins just because it's listed before OpenRouter.
     let (name, _) = config.providers.active_provider_and_model();
 
+    // Custom entries take precedence over built-in names. If the user
+    // created a custom provider literally named "opencode" / "ollama" /
+    // anything that collides with a built-in id, the custom entry wins.
+    let custom_cfg = if !name.starts_with("custom:")
+        && config
+            .providers
+            .custom
+            .as_ref()
+            .is_some_and(|m| m.contains_key(name.as_str()))
+    {
+        config
+            .providers
+            .custom
+            .as_ref()
+            .and_then(|m| m.get(&name))
+            .cloned()
+    } else if let Some(custom_name) = name.strip_prefix("custom:") {
+        config
+            .providers
+            .custom
+            .as_ref()
+            .and_then(|m| m.get(custom_name))
+            .cloned()
+    } else {
+        None
+    };
+
     // Try built-in registry
-    let active_cfg: Option<&ProviderConfig> = REGISTRATIONS
+    let native_cfg: Option<&ProviderConfig> = REGISTRATIONS
         .iter()
         .find(|reg| reg.session_id == name || reg.aliases.contains(&name.as_str()))
         .and_then(|reg| (reg.config_field)(config));
 
-    // Fall back to custom provider lookup
-    let active_cfg = active_cfg.or_else(|| {
-        if let Some(custom_name) = name.strip_prefix("custom:") {
-            config
-                .providers
-                .custom
-                .as_ref()
-                .and_then(|m| m.get(custom_name))
-        } else {
-            None
-        }
-    });
+    // Custom wins if it exists (same priority as create_provider_by_name)
+    let active_cfg = custom_cfg.as_ref().or(native_cfg);
 
     if let Some(cfg) = active_cfg
         && let (Some(api_key), Some(vision_model)) = (&cfg.api_key, &cfg.vision_model)
