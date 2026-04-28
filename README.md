@@ -171,6 +171,8 @@ Images are passed to the active model's vision pipeline if it supports multimoda
 | **Split Panes** | Horizontal (`\|` in sessions) and vertical (`_` in sessions) pane splitting — tmux-style. Each pane runs its own session with independent provider, model, and context. Run 10 sessions side by side, all processing in parallel. `Tab` to cycle focus, `Ctrl+X` to close pane |
 | **Parallel Sessions** | Multiple sessions can have in-flight requests to different providers simultaneously. Send a message in one session, switch to another, send another — both process in parallel. Background sessions auto-approve tool calls; you'll see results when you switch back |
 | **Scroll While Streaming** | Scroll up during streaming without being yanked back to bottom; auto-scroll re-enables when you scroll back down or send a message |
+| **Path Normalization** | Home paths (`/home/user/...`) automatically collapsed to `~` in system prompt, tool call display, and brain files — keeps context lean and readable |
+| **Recent File Memory** | Agent remembers recently accessed file paths across sessions — no need to re-specify paths you were just working on |
 | **Compaction Summary** | Auto-compaction shows the full summary in chat as a system message — see exactly what the agent remembered |
 | **Syntax Highlighting** | 100+ languages with line numbers via syntect |
 | **Markdown Rendering** | Rich text formatting with code blocks, headings, lists, and inline styles |
@@ -185,6 +187,7 @@ Images are passed to the active model's vision pipeline if it supports multimoda
 |---------|-------------|
 | **Full Terminal Access** | 30+ built-in tools (file I/O, glob, grep, web search, code execution, image gen/analysis, memory search, cron jobs) plus **any CLI tool on your system** via `bash` — GitHub CLI, Docker, SSH, Python, Node, ffmpeg, curl, and everything else just work |
 | **Per-Session Isolation** | Each session is an independent agent with its own provider, model, context, and tool state. Sessions can run tasks in parallel against different providers — ask Claude a question in one session while Kimi works on code in another |
+| **Self-Healing** | Detects and recovers from phantom tool calls, gaslighting preambles, text repetition loops, XML tool call failures, and provider errors. Short-circuits repeated failing bash commands and rejects interactive commands that would hang. Automatic context compaction at 65% (soft) and 90% (hard). Sticky fallback promotion when primary recovers |
 | **Self-Sustaining** | Agent can modify its own source, build, test, and hot-restart via Unix `exec()` |
 | **Self-Improving** | Learns from experience — saves reusable workflows as custom commands, writes lessons learned to memory, updates its own brain files. All local, no data leaves your machine |
 | **Dynamic Tools** | Define custom tools at runtime via `~/.opencrabs/tools.toml` — the agent can call them autonomously like built-in tools. HTTP and shell executors, template parameters (`{{param}}`), enable/disable without restart. The `tool_manage` meta-tool lets the agent create, remove, and reload tools on the fly |
@@ -305,7 +308,8 @@ Multiple profiles can run as simultaneous daemon services with full isolation.
 | [OpenCode CLI](#opencode-cli) | None | Free models (Mimo, etc.) | ✅ | ✅ | Free — no API key or subscription needed |
 | [Qwen (Native)](#qwen-native) | OAuth | Qwen3.6-Plus, Qwen3.5-Plus, Qwen3-Max | ✅ | ✅ | Free tier (60 req/min, 1k/day). Multi-account rotation multiplies quota |
 | [Qwen Code CLI](#qwen-code-cli) | OAuth / API key | Qwen3-Coder-Plus, Qwen3.5-Plus, Qwen3.6-Plus | ✅ | ✅ | 1k free req/day via Qwen OAuth — no API key needed |
-| [Custom](#custom-openai-compatible) | Optional | Any | ✅ | ✅ | Ollama, LM Studio, Groq, NVIDIA, any OpenAI-compatible API |
+| [Ollama](#ollama) | Optional | Any pulled model | ✅ | ✅ | Local-first, zero API cost. Auto-detects localhost:11434 |
+| [Custom](#custom-openai-compatible) | Optional | Any | ✅ | ✅ | LM Studio, Groq, NVIDIA, any OpenAI-compatible API |
 
 ### Anthropic Claude
 
@@ -509,9 +513,24 @@ default_model = "qwen3-coder-plus"
 
 **Features:** Streaming, tools, 256K context window, NDJSON event protocol (Gemini CLI fork)
 
+### Ollama
+
+Native built-in provider for [Ollama](https://ollama.com/) — no custom config needed. OpenCrabs auto-detects `localhost:11434` and lists your pulled models via `/models`.
+
+**Setup:**
+1. Install Ollama and pull a model: `ollama pull qwen2.5-coder:7b`
+2. Enable in `config.toml`:
+```toml
+[providers.ollama]
+enabled = true
+default_model = "qwen2.5-coder:7b"
+```
+
+**Features:** Streaming, tools, zero API cost, local-first. Optional `api_key` for cloud Ollama (`api.ollama.com`). Models fetched live from Ollama API.
+
 ### Custom (OpenAI-Compatible)
 
-**Use for:** Ollama, LM Studio, LocalAI, Groq, or any OpenAI-compatible API.
+**Use for:** LM Studio, Groq, or any OpenAI-compatible API.
 
 **Setup** in `config.toml` — every custom provider needs a name (the label after `custom.`):
 
@@ -2706,7 +2725,7 @@ opencrabs/
 │   │   └── runner.rs     # TUI event loop
 │   ├── utils/            # Utilities (retry, etc.)
 │   ├── migrations/       # SQLite migrations
-│   ├── tests/            # 2,346 tests (see TESTING.md)
+│   ├── tests/            # 2,479 tests (see TESTING.md)
 │   ├── benches/          # Criterion benchmarks
 │   ├── assets/           # Icons, screenshots, visual assets
 │   ├── scripts/          # Build and setup scripts
@@ -2733,7 +2752,7 @@ cargo build --release
 # Small release build
 cargo build --profile release-small
 
-# Run tests (2,346 tests across 60+ modules; 13 filesystem-touching
+# Run tests (2,479 tests across 60+ modules; 13 filesystem-touching
 # profile tests are #[ignore]d to keep the default run fast — opt in
 # with `cargo test --all-features -- --ignored` when needed)
 cargo test --all-features

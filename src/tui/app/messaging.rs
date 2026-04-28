@@ -2082,14 +2082,13 @@ impl App {
 
         tokio::spawn(async move {
             // Update session model in DB
-            if let Some(mut session) = session_for_bg {
-                if session.model.is_none() {
+            if let Some(mut session) = session_for_bg
+                && session.model.is_none() {
                     session.model = Some(response_model);
                     if let Err(e) = session_service.update_session(&session).await {
                         tracing::warn!("Failed to update session model: {}", e);
                     }
                 }
-            }
 
             // Reload user commands (agent may have written new ones to commands.json)
             // This is synchronous but fast — just a file read + parse.
@@ -2097,9 +2096,9 @@ impl App {
             // so we skip it here. The next send_message will pick up new commands.
 
             // Reload plan from disk and clear if done
-            if let Some(ref path) = plan_path {
-                if let Ok(content) = std::fs::read_to_string(path) {
-                    if let Ok(plan) = serde_json::from_str::<crate::tui::plan::PlanDocument>(&content) {
+            if let Some(ref path) = plan_path
+                && let Ok(content) = std::fs::read_to_string(path)
+                    && let Ok(plan) = serde_json::from_str::<crate::tui::plan::PlanDocument>(&content) {
                         use crate::tui::plan::PlanStatus;
                         let should_discard = match plan.status {
                             PlanStatus::Completed | PlanStatus::Rejected | PlanStatus::Cancelled => true,
@@ -2110,8 +2109,6 @@ impl App {
                             let _ = std::fs::remove_file(path);
                         }
                     }
-                }
-            }
         });
 
         Ok(())
