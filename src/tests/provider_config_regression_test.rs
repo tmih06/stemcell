@@ -10,6 +10,8 @@
 //! - config_section() returns correct values for built-ins and customs
 //! - is_first_time() checks all providers including new ones
 
+use crate::utils::providers::{config_section, find_provider_meta, KNOWN_PROVIDERS, normalize_provider_name};
+
 // ── KNOWN_PROVIDERS section mapping ─────────────────────────────────
 
 #[test]

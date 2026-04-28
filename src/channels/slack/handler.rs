@@ -403,7 +403,14 @@ pub async fn on_push_event(
     match event.event {
         SlackEventCallbackBody::Message(msg) => {
             let ts = msg.origin.ts.to_string();
-            if !dedup_ts(&ts).await {
+            let channel = msg
+                .origin
+                .channel
+                .as_ref()
+                .map(|c| c.0.as_str())
+                .unwrap_or("");
+            let user = msg.sender.user.as_ref().map(|u| u.0.as_str()).unwrap_or("");
+            if !dedup_ts(channel, user, &ts).await {
                 return Ok(());
             }
             tracing::debug!(
@@ -418,7 +425,9 @@ pub async fn on_push_event(
         }
         SlackEventCallbackBody::AppMention(mention) => {
             let ts = mention.origin.ts.to_string();
-            if !dedup_ts(&ts).await {
+            let channel = mention.channel.0.as_str();
+            let user = mention.user.0.as_str();
+            if !dedup_ts(channel, user, &ts).await {
                 return Ok(());
             }
             tracing::info!(
@@ -469,24 +478,28 @@ pub async fn on_push_event(
     Ok(())
 }
 
-/// Returns `true` if this is the first time we see this timestamp (proceed).
+/// Returns `true` if this is the first time we see this message (proceed).
 /// Returns `false` if it's a duplicate (skip).
-/// Uses FIFO eviction (VecDeque) so the dedup window is never fully wiped.
-async fn dedup_ts(ts: &str) -> bool {
+/// Uses composite key (channel + user + ts) to catch Slack retries that
+/// arrive through different event types or with slightly different metadata.
+/// FIFO eviction (VecDeque) so the dedup window is never fully wiped.
+async fn dedup_ts(channel: &str, user: &str, ts: &str) -> bool {
     let state = match HANDLER_STATE.get() {
         Some(s) => s,
         None => return true,
     };
+    // Composite key catches retries across event types
+    let key = format!("{}:{}:{}", channel, user, ts);
     let mut seen = state.seen_ts.lock().await;
-    if seen.contains(&ts.to_string()) {
-        tracing::debug!("Slack: dropping duplicate event ts={}", ts);
+    if seen.contains(&key) {
+        tracing::debug!("Slack: dropping duplicate event key={}", key);
         return false;
     }
     // FIFO eviction: drop oldest when limit reached, never clear the whole window
     if seen.len() >= 500 {
         seen.pop_front();
     }
-    seen.push_back(ts.to_string());
+    seen.push_back(key);
     true
 }
 
