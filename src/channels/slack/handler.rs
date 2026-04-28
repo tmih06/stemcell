@@ -1451,8 +1451,10 @@ async fn handle_message(
             seen.retain(|_, (_, instant)| instant.elapsed() < std::time::Duration::from_secs(300));
             if let Some((old_ts, _)) = seen.get(&content_hash) {
                 tracing::info!("Slack: dropping duplicate response (hash={})", content_hash);
-                let del =
-                    SlackApiChatDeleteRequest::new(SlackChannelId::new(channel_id.clone()), old_ts.clone());
+                let del = SlackApiChatDeleteRequest::new(
+                    SlackChannelId::new(channel_id.clone()),
+                    old_ts.clone(),
+                );
                 let _ = session.chat_delete(&del).await;
                 return;
             }
