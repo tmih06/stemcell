@@ -257,6 +257,10 @@ pub struct App {
     /// Index into `attachments`. None means input text is focused.
     pub focused_attachment: Option<usize>,
     pub scroll_offset: usize,
+    /// Previous frame's total rendered line count — used to adjust scroll_offset
+    /// when streaming adds lines while user is scrolled up, preventing the view
+    /// from drifting downward one line per chunk.
+    pub prev_rendered_lines: usize,
     /// When true, new streaming content auto-scrolls to bottom.
     /// Set to false when user scrolls up; re-enabled when they scroll back to bottom or send a message.
     pub auto_scroll: bool,
@@ -547,6 +551,7 @@ impl App {
             attachments: Vec::new(),
             focused_attachment: None,
             scroll_offset: 0,
+            prev_rendered_lines: 0,
             auto_scroll: true,
             mouse_capture_enabled: true,
             selected_session_index: 0,

@@ -630,6 +630,16 @@ pub(super) fn render_chat(f: &mut Frame, app: &mut App, area: Rect) {
 
     // Calculate scroll offset — lines are pre-wrapped so count is accurate
     let total_lines = lines.len();
+
+    // When user is scrolled up (auto_scroll=false), compensate for new lines
+    // added during streaming so the view stays on the same content instead of
+    // drifting downward one line per chunk.
+    if !app.auto_scroll {
+        let new_lines = total_lines.saturating_sub(app.prev_rendered_lines);
+        app.scroll_offset += new_lines;
+    }
+    app.prev_rendered_lines = total_lines;
+
     // Only 1 row of top padding (Borders::NONE + Padding::new(1,1,1,0)); no border rows
     let visible_height = area.height.saturating_sub(1) as usize;
     let max_scroll = total_lines.saturating_sub(visible_height);
