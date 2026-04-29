@@ -888,7 +888,7 @@ impl App {
                     ..Default::default()
                 });
             }
-            "claude_cli" => {
+            "claude-cli" => {
                 config.providers.claude_cli = Some(ProviderConfig {
                     enabled: true,
                     api_key: None,
@@ -899,7 +899,7 @@ impl App {
                     ..Default::default()
                 });
             }
-            "opencode_cli" => {
+            "opencode-cli" => {
                 config.providers.opencode_cli = Some(ProviderConfig {
                     enabled: true,
                     api_key: None,
@@ -986,8 +986,8 @@ impl App {
             "openrouter" => "providers.openrouter",
             "minimax" => "providers.minimax",
             "zhipu" => "providers.zhipu",
-            "claude_cli" => "providers.claude_cli",
-            "opencode_cli" => "providers.opencode_cli",
+            "claude-cli" => "providers.claude_cli",
+            "opencode-cli" => "providers.opencode_cli",
             "opencode" => "providers.opencode",
             "qwen" => "providers.qwen",
             "ollama" => "providers.ollama",

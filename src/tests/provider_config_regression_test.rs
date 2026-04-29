@@ -285,7 +285,9 @@ fn save_provider_section_routing_covers_all_providers() {
     // for every known provider id. This prevents the index-based corruption bug.
     let source = include_str!("../tui/app/dialogs.rs");
 
-    // Every provider id must appear as a match arm in the section resolution
+    // Every provider id must appear as a match arm in the section resolution.
+    // Note: provider IDs use hyphens (e.g. "claude-cli") but the match arms
+    // must match the PROVIDERS[].id field, which also uses hyphens.
     let required_ids = [
         "anthropic",
         "openai",
@@ -294,8 +296,8 @@ fn save_provider_section_routing_covers_all_providers() {
         "openrouter",
         "minimax",
         "zhipu",
-        "claude_cli",
-        "opencode_cli",
+        "claude-cli",
+        "opencode-cli",
         "opencode",
         "qwen",
         "ollama",
