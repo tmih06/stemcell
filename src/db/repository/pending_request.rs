@@ -79,16 +79,24 @@ impl PendingRequestRepository {
         Ok(())
     }
 
-    /// Get all surviving rows (process crashed while these were in-flight)
+    /// Get surviving rows from the last 10 minutes (process crashed while these were in-flight).
+    /// Older rows are stale leftovers from prior restarts where delete() never ran — they've
+    /// already been handled and must NOT be replayed.
     pub async fn get_interrupted(&self) -> Result<Vec<PendingRequest>> {
         self.pool
             .get()
             .await
             .context("Failed to get connection")?
             .interact(|conn| {
+                // Purge stale rows first (>10 min old) so they don't accumulate forever
+                let _ = conn.execute(
+                    "DELETE FROM pending_requests WHERE created_at < unixepoch() - 600",
+                    [],
+                );
                 let mut stmt = conn.prepare(
                     "SELECT id, session_id, user_message, channel, channel_chat_id \
-                     FROM pending_requests ORDER BY created_at ASC",
+                     FROM pending_requests WHERE created_at >= unixepoch() - 600 \
+                     ORDER BY created_at ASC",
                 )?;
                 let rows = stmt.query_map([], |row| {
                     Ok(PendingRequest {
@@ -106,7 +114,7 @@ impl PendingRequestRepository {
             .context("Failed to get interrupted requests")
     }
 
-    /// Get interrupted requests for a specific channel
+    /// Get interrupted requests for a specific channel (last 10 minutes only).
     pub async fn get_interrupted_for_channel(&self, channel: &str) -> Result<Vec<PendingRequest>> {
         let ch = channel.to_string();
         self.pool
@@ -114,9 +122,14 @@ impl PendingRequestRepository {
             .await
             .context("Failed to get connection")?
             .interact(move |conn| {
+                let _ = conn.execute(
+                    "DELETE FROM pending_requests WHERE channel = ?1 AND created_at < unixepoch() - 600",
+                    params![ch],
+                );
                 let mut stmt = conn.prepare(
                     "SELECT id, session_id, user_message, channel, channel_chat_id \
-                     FROM pending_requests WHERE channel = ?1 ORDER BY created_at ASC",
+                     FROM pending_requests WHERE channel = ?1 AND created_at >= unixepoch() - 600 \
+                     ORDER BY created_at ASC",
                 )?;
                 let rows = stmt.query_map(params![ch], |row| {
                     Ok(PendingRequest {
