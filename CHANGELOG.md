@@ -5,6 +5,105 @@ All notable changes to OpenCrabs will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.15] - 2026-04-28
+
+### New Providers & Model Fetching
+
+| Type | Area | Change | Why / Impact |
+|------|------|--------|-------------|
+| add | provider | **OpenCode as native built-in provider** — Go + Zen plans supported | No API key needed, free local completions via OpenCode binary |
+| add | provider | **Ollama as native built-in provider** — local models via Ollama API | Run any Ollama model natively without custom provider setup |
+| refactor | provider | **Provider factory refactored to registry pattern** — all providers registered centrally | Cleaner architecture, easier to add new providers |
+| fix | provider | **Generic model fetching for custom providers** (solves #63) | Custom providers can now fetch their model list via `/models` |
+| fix | provider | **Show models for custom and CLI providers** in `/models` dialog | All provider types now support live model listing |
+| fix | provider | **Remove opencode alias collision** — fix custom provider resolution | Custom providers with built-in names no longer spawn wrong subprocess |
+
+### Provider Resilience
+
+| Type | Area | Change | Why / Impact |
+|------|------|--------|-------------|
+| fix | provider | **HTTP 402 fallback chain** — quota/payment exhausted walks to next provider | No more terminal errors when a provider's quota runs out |
+| fix | provider | **Stream-handshake timeout tightened to 30s** for cloud providers | Faster failure detection on unresponsive upstreams |
+
+### TUI & Display
+
+| Type | Area | Change | Why / Impact |
+|------|------|--------|-------------|
+| fix | tui | **Processing spinner clears immediately** on response complete — DB write and plan reload spawned in background | Spinner no longer stuck for 5+ seconds after agent finishes |
+| fix | tui | **Tool call group flushes immediately** when all calls complete — no longer waits for next text chunk | "Processing:" label disappears as soon as tools finish |
+| fix | tui | **Path normalization across the board** — `$HOME` collapsed to `~` in system prompt, tool display, and brain files | Cleaner display, less token waste on long paths |
+| fix | tui | **Viewport freeze during streaming** — scroll up while streaming without being yanked back | Read earlier messages while the agent is still responding |
+| fix | tui | **Usage "By Activity" columns sized by max(header, data)** | Dashboard columns no longer clip on narrow terminals |
+| fix | tui | **Simplified model change message** to provider/model format | Cleaner status messages when switching models |
+
+### Self-Healing / RSI
+
+| Type | Area | Change | Why / Impact |
+|------|------|--------|-------------|
+| fix | rsi | **Brain files are now append-only** with backup-before-write | Prevents accidental overwrites and corruption of brain files |
+| fix | rsi | **Suppress RSI alerts** whose dimension already has a fix commit | No more noise from already-resolved failure patterns |
+| fix | rsi | **Window tool failure stats** so stale alerts age out | Old failures stop triggering alerts after they're no longer relevant |
+| add | rsi | **Upstream template sync** with version gate and append-only diff | Brain templates auto-sync from repo without duplicating existing content |
+
+### Bash Hardening
+
+| Type | Area | Change | Why / Impact |
+|------|------|--------|-------------|
+| fix | bash | **Short-circuit same-command retries** — agent stops looping on identical failing commands | Prevents infinite retry loops that waste tokens and time |
+| fix | bash | **Reject interactive commands up-front** instead of looping | Interactive commands (vim, git add -p) fail immediately with helpful hint |
+
+### Session & Channels
+
+| Type | Area | Change | Why / Impact |
+|------|------|--------|-------------|
+| fix | slack | **Slack dedup overhaul** — content-level dedup, composite-key catches retries, VecDeque FIFO eviction | Eliminates duplicate responses from Slack retry storms |
+| fix | telegram | **Key channel sessions by stable chat_id** instead of title | Sessions survive group name changes |
+| fix | channels | **Per-session message queue** with isolated display | Queued messages no longer cross between sessions |
+| fix | channels | **Prevent crossed provider/model pairs** in channel model switching | Each channel session keeps its own provider correctly |
+
+### Onboarding
+
+| Type | Area | Change | Why / Impact |
+|------|------|--------|-------------|
+| add | onboard | **Personalized welcome message** with first-time detection | New users get a tailored greeting on first launch |
+
+### Agent Features
+
+| Type | Area | Change | Why / Impact |
+|------|------|--------|-------------|
+| add | agent | **Persist recent file paths** across sessions to anchor the agent | Agent remembers which files it was working on after restart |
+| add | agent | **Centralized temp file cleanup** on startup | Stale temp files from crashed sessions cleaned automatically |
+
+### Voice / TTS
+
+| Type | Area | Change | Why / Impact |
+|------|------|--------|-------------|
+| fix | voice | **5-minute timeout + two-stage fallback** for TTS opus conversion | TTS no longer hangs indefinitely on conversion failures |
+| fix | voice | **ffmpeg timeout + fallback** for Telegram TTS | Telegram voice replies more resilient |
+
+### Browser
+
+| Type | Area | Change | Why / Impact |
+|------|------|--------|-------------|
+| fix | browser | **Name actual browser in launch errors** and bump timeout | Clearer error messages when Chrome/Chromium fails to start |
+
+### Docs
+
+| Type | Area | Change | Why / Impact |
+|------|------|--------|-------------|
+| add | docs | **README updated** with Ollama native provider, path normalization, recent file memory, bash loop prevention | Docs reflect all new features |
+| add | docs | **Onboard video** added to README | Visual setup guide for new users |
+
+### Tests & CI
+
+| Type | Area | Change | Why / Impact |
+|------|------|--------|-------------|
+| add | tests | **Provider factory regression suite** — 26 tests covering all provider creation paths | Prevents provider wiring regressions |
+| add | tests | **RSI sync and model fetching regression tests** | Template sync and custom provider model fetching covered |
+| fix | ci | **Pricing fallback for token tracking tests** in CI | Tests pass even without live pricing data |
+
+**2,479 tests passing** (+133 since v0.3.14)
+
 ## [0.3.14] - 2026-04-24
 
 ### Provider & API Resilience
@@ -439,6 +538,8 @@ provider and context budget.
 - **Raise think-tag safety valve** — long Qwen reasoning blocks no longer
   get partially stripped by the tag filter.
 
+[0.3.15]: https://github.com/adolfousier/opencrabs/compare/v0.3.14...v0.3.15
+[0.3.14]: https://github.com/adolfousier/opencrabs/compare/v0.3.13...v0.3.14
 [0.3.12]: https://github.com/adolfousier/opencrabs/compare/v0.3.11...v0.3.12
 [0.3.11]: https://github.com/adolfousier/opencrabs/compare/v0.3.10...v0.3.11
 
