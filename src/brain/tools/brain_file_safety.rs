@@ -185,12 +185,8 @@ fn paragraph_exists(paragraph: &str, existing: &str) -> bool {
     }
 
     // Line-level overlap for longer paragraphs: if >70% of lines exist, consider it duplicate
-    let existing_lines: std::collections::HashSet<&str> =
-        existing.lines().map(str::trim).collect();
-    let para_lines: Vec<&str> = trimmed
-        .lines()
-        .filter(|l| !l.trim().is_empty())
-        .collect();
+    let existing_lines: std::collections::HashSet<&str> = existing.lines().map(str::trim).collect();
+    let para_lines: Vec<&str> = trimmed.lines().filter(|l| !l.trim().is_empty()).collect();
     if para_lines.len() >= 3 {
         let overlap = para_lines
             .iter()
@@ -255,7 +251,10 @@ pub fn filter_duplicate_append(existing: &str, new_content: &str) -> AppendDedup
 /// Legacy alias for backward compatibility with existing tests.
 /// Returns true when the entire append should be skipped.
 pub fn is_duplicate_append(existing: &str, new_content: &str) -> bool {
-    matches!(filter_duplicate_append(existing, new_content), AppendDedup::AllDuplicate)
+    matches!(
+        filter_duplicate_append(existing, new_content),
+        AppendDedup::AllDuplicate
+    )
 }
 
 /// Verifies the shrink really is a dedup: every line that was in

@@ -183,14 +183,19 @@ impl Tool for WriteOpenCrabsFileTool {
                     Some(c) => c,
                     None => return Ok(ToolResult::error("content is required for append".into())),
                 };
-                use crate::brain::tools::brain_file_safety::{self, filter_duplicate_append, AppendDedup};
+                use crate::brain::tools::brain_file_safety::{
+                    self, AppendDedup, filter_duplicate_append,
+                };
                 // Dedup check for protected brain files: extract only genuinely
                 // new paragraphs instead of blindly appending everything.
                 let effective_content = if brain_file_safety::is_protected_path(&full_path) {
                     let existing = std::fs::read_to_string(&full_path).unwrap_or_default();
                     match filter_duplicate_append(&existing, content) {
                         AppendDedup::AllNew => content.to_string(),
-                        AppendDedup::Filtered { filtered_content, skipped_paragraphs } => {
+                        AppendDedup::Filtered {
+                            filtered_content,
+                            skipped_paragraphs,
+                        } => {
                             tracing::info!(
                                 "write_opencrabs_file: filtered {skipped_paragraphs} duplicate paragraph(s) from append to {path_str}"
                             );

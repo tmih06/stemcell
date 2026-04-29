@@ -8,8 +8,7 @@
 //! disappearing are duplicates that survive elsewhere in the result.
 
 use crate::brain::tools::brain_file_safety::{
-    ShrinkCheck, backup_before_write, check_no_shrink,
-    is_protected_brain_file, is_protected_path,
+    ShrinkCheck, backup_before_write, check_no_shrink, is_protected_brain_file, is_protected_path,
 };
 use std::path::Path;
 
@@ -212,7 +211,10 @@ mod dedup_append {
     #[test]
     fn exact_match_is_duplicate() {
         let existing = "## Server Info\nHost: localhost\nPort: 8080\n";
-        assert!(is_duplicate_append(existing, "## Server Info\nHost: localhost\nPort: 8080\n"));
+        assert!(is_duplicate_append(
+            existing,
+            "## Server Info\nHost: localhost\nPort: 8080\n"
+        ));
     }
 
     #[test]
@@ -224,25 +226,37 @@ mod dedup_append {
     #[test]
     fn new_content_is_not_duplicate() {
         let existing = "## Server Info\nHost: localhost\n";
-        assert!(!is_duplicate_append(existing, "## Database\nHost: db.example.com\n"));
+        assert!(!is_duplicate_append(
+            existing,
+            "## Database\nHost: db.example.com\n"
+        ));
     }
 
     #[test]
     fn same_section_header_is_duplicate() {
         let existing = "## Server Info\nOld content here\n";
-        assert!(is_duplicate_append(existing, "## Server Info\nNew content here\n"));
+        assert!(is_duplicate_append(
+            existing,
+            "## Server Info\nNew content here\n"
+        ));
     }
 
     #[test]
     fn same_subsection_header_is_duplicate() {
         let existing = "## Servers\n### Web Server\nDetails here\n";
-        assert!(is_duplicate_append(existing, "### Web Server\nUpdated details\n"));
+        assert!(is_duplicate_append(
+            existing,
+            "### Web Server\nUpdated details\n"
+        ));
     }
 
     #[test]
     fn different_subsection_is_not_duplicate() {
         let existing = "## Servers\n### Web Server\nDetails here\n";
-        assert!(!is_duplicate_append(existing, "### DB Server\nNew details\n"));
+        assert!(!is_duplicate_append(
+            existing,
+            "### DB Server\nNew details\n"
+        ));
     }
 
     #[test]
@@ -269,12 +283,15 @@ mod dedup_append {
     #[test]
     fn whitespace_trimmed_for_comparison() {
         let existing = "## Server\nHost: localhost\n";
-        assert!(is_duplicate_append(existing, "  ## Server\nHost: localhost\n  "));
+        assert!(is_duplicate_append(
+            existing,
+            "  ## Server\nHost: localhost\n  "
+        ));
     }
 }
 
 mod filter_duplicate_append {
-    use crate::brain::tools::brain_file_safety::{filter_duplicate_append, AppendDedup};
+    use crate::brain::tools::brain_file_safety::{AppendDedup, filter_duplicate_append};
 
     #[test]
     fn all_new_content_passes_through() {
@@ -296,7 +313,10 @@ mod filter_duplicate_append {
         // First paragraph already exists, second is new
         let new_content = "## Servers\nWeb: localhost\n\n## Database\nHost: db.local\n";
         match filter_duplicate_append(existing, new_content) {
-            AppendDedup::Filtered { filtered_content, skipped_paragraphs } => {
+            AppendDedup::Filtered {
+                filtered_content,
+                skipped_paragraphs,
+            } => {
                 assert_eq!(skipped_paragraphs, 1);
                 assert!(filtered_content.contains("## Database"));
                 assert!(!filtered_content.contains("## Servers"));
@@ -309,9 +329,13 @@ mod filter_duplicate_append {
     fn three_paragraphs_two_existing() {
         let existing = "## Alpha\nalpha content\n\n## Bravo\nbravo content\n";
         // Alpha and Bravo exist, Charlie is new
-        let new_content = "## Alpha\nalpha content\n\n## Bravo\nbravo content\n\n## Charlie\ncharlie content\n";
+        let new_content =
+            "## Alpha\nalpha content\n\n## Bravo\nbravo content\n\n## Charlie\ncharlie content\n";
         match filter_duplicate_append(existing, new_content) {
-            AppendDedup::Filtered { filtered_content, skipped_paragraphs } => {
+            AppendDedup::Filtered {
+                filtered_content,
+                skipped_paragraphs,
+            } => {
                 assert_eq!(skipped_paragraphs, 2);
                 assert!(filtered_content.contains("## Charlie"));
                 assert!(!filtered_content.contains("## Alpha"));
@@ -323,7 +347,10 @@ mod filter_duplicate_append {
 
     #[test]
     fn empty_existing_file_allows_everything() {
-        let result = filter_duplicate_append("", "## New Section\nFresh content\n\n## Another\nMore content\n");
+        let result = filter_duplicate_append(
+            "",
+            "## New Section\nFresh content\n\n## Another\nMore content\n",
+        );
         assert!(matches!(result, AppendDedup::AllNew));
     }
 
