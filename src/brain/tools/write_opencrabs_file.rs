@@ -183,6 +183,30 @@ impl Tool for WriteOpenCrabsFileTool {
                     Some(c) => c,
                     None => return Ok(ToolResult::error("content is required for append".into())),
                 };
+                use crate::brain::tools::brain_file_safety::{self, filter_duplicate_append, AppendDedup};
+                // Dedup check for protected brain files: extract only genuinely
+                // new paragraphs instead of blindly appending everything.
+                let effective_content = if brain_file_safety::is_protected_path(&full_path) {
+                    let existing = std::fs::read_to_string(&full_path).unwrap_or_default();
+                    match filter_duplicate_append(&existing, content) {
+                        AppendDedup::AllNew => content.to_string(),
+                        AppendDedup::Filtered { filtered_content, skipped_paragraphs } => {
+                            tracing::info!(
+                                "write_opencrabs_file: filtered {skipped_paragraphs} duplicate paragraph(s) from append to {path_str}"
+                            );
+                            filtered_content
+                        }
+                        AppendDedup::AllDuplicate => {
+                            return Ok(ToolResult::error(format!(
+                                "Content already exists in {}. Skipping duplicate append. \
+                                 Use replace if you want to update existing content.",
+                                path_str
+                            )));
+                        }
+                    }
+                } else {
+                    content.to_string()
+                };
                 if let Some(parent) = full_path.parent()
                     && let Err(e) = std::fs::create_dir_all(parent)
                 {
@@ -191,16 +215,19 @@ impl Tool for WriteOpenCrabsFileTool {
                         e
                     )));
                 }
+                if let Err(e) = brain_file_safety::backup_before_write(&full_path) {
+                    tracing::warn!("write_opencrabs_file: backup failed for {path_str}: {e}");
+                }
                 use std::io::Write;
                 match std::fs::OpenOptions::new()
                     .create(true)
                     .append(true)
                     .open(&full_path)
                 {
-                    Ok(mut f) => match f.write_all(content.as_bytes()) {
+                    Ok(mut f) => match f.write_all(effective_content.as_bytes()) {
                         Ok(()) => Ok(ToolResult::success(format!(
                             "Appended {} bytes to ~/.opencrabs/{}",
-                            content.len(),
+                            effective_content.len(),
                             path_str
                         ))),
                         Err(e) => Ok(ToolResult::error(format!(

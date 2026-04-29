@@ -8,7 +8,8 @@
 //! disappearing are duplicates that survive elsewhere in the result.
 
 use crate::brain::tools::brain_file_safety::{
-    ShrinkCheck, backup_before_write, check_no_shrink, is_protected_brain_file, is_protected_path,
+    ShrinkCheck, backup_before_write, check_no_shrink,
+    is_protected_brain_file, is_protected_path,
 };
 use std::path::Path;
 
@@ -196,5 +197,155 @@ mod backup {
         // Original is untouched
         let original = std::fs::read_to_string(&path).expect("read original");
         assert_eq!(original, "important content");
+    }
+}
+
+mod dedup_append {
+    use crate::brain::tools::brain_file_safety::is_duplicate_append;
+
+    #[test]
+    fn empty_content_is_duplicate() {
+        assert!(is_duplicate_append("existing content", ""));
+        assert!(is_duplicate_append("existing content", "   "));
+    }
+
+    #[test]
+    fn exact_match_is_duplicate() {
+        let existing = "## Server Info\nHost: localhost\nPort: 8080\n";
+        assert!(is_duplicate_append(existing, "## Server Info\nHost: localhost\nPort: 8080\n"));
+    }
+
+    #[test]
+    fn substring_match_is_duplicate() {
+        let existing = "alpha\nbeta\ngamma\ndelta\n";
+        assert!(is_duplicate_append(existing, "beta\ngamma\n"));
+    }
+
+    #[test]
+    fn new_content_is_not_duplicate() {
+        let existing = "## Server Info\nHost: localhost\n";
+        assert!(!is_duplicate_append(existing, "## Database\nHost: db.example.com\n"));
+    }
+
+    #[test]
+    fn same_section_header_is_duplicate() {
+        let existing = "## Server Info\nOld content here\n";
+        assert!(is_duplicate_append(existing, "## Server Info\nNew content here\n"));
+    }
+
+    #[test]
+    fn same_subsection_header_is_duplicate() {
+        let existing = "## Servers\n### Web Server\nDetails here\n";
+        assert!(is_duplicate_append(existing, "### Web Server\nUpdated details\n"));
+    }
+
+    #[test]
+    fn different_subsection_is_not_duplicate() {
+        let existing = "## Servers\n### Web Server\nDetails here\n";
+        assert!(!is_duplicate_append(existing, "### DB Server\nNew details\n"));
+    }
+
+    #[test]
+    fn high_line_overlap_is_duplicate() {
+        let existing = "line one\nline two\nline three\nline four\nline five\n";
+        let new_content = "line one\nline two\nline three\nline six\n";
+        // 3 out of 4 non-empty lines overlap = 75% > 60%
+        assert!(is_duplicate_append(existing, new_content));
+    }
+
+    #[test]
+    fn low_line_overlap_is_not_duplicate() {
+        let existing = "line one\nline two\nline three\n";
+        let new_content = "line one\nnew alpha\nnew beta\nnew gamma\n";
+        // 1 out of 4 = 25% < 60%
+        assert!(!is_duplicate_append(existing, new_content));
+    }
+
+    #[test]
+    fn empty_existing_file_is_not_duplicate() {
+        assert!(!is_duplicate_append("", "## New Section\nFresh content\n"));
+    }
+
+    #[test]
+    fn whitespace_trimmed_for_comparison() {
+        let existing = "## Server\nHost: localhost\n";
+        assert!(is_duplicate_append(existing, "  ## Server\nHost: localhost\n  "));
+    }
+}
+
+mod filter_duplicate_append {
+    use crate::brain::tools::brain_file_safety::{filter_duplicate_append, AppendDedup};
+
+    #[test]
+    fn all_new_content_passes_through() {
+        let existing = "## Servers\nWeb: localhost\n";
+        let result = filter_duplicate_append(existing, "## Database\nHost: db.local\nPort: 5432\n");
+        assert!(matches!(result, AppendDedup::AllNew));
+    }
+
+    #[test]
+    fn fully_duplicate_content_is_blocked() {
+        let existing = "## Servers\nWeb: localhost\n";
+        let result = filter_duplicate_append(existing, "## Servers\nWeb: localhost\n");
+        assert!(matches!(result, AppendDedup::AllDuplicate));
+    }
+
+    #[test]
+    fn partially_new_filters_correctly() {
+        let existing = "## Servers\nWeb: localhost\n\n## Ports\nHTTP: 80\n";
+        // First paragraph already exists, second is new
+        let new_content = "## Servers\nWeb: localhost\n\n## Database\nHost: db.local\n";
+        match filter_duplicate_append(existing, new_content) {
+            AppendDedup::Filtered { filtered_content, skipped_paragraphs } => {
+                assert_eq!(skipped_paragraphs, 1);
+                assert!(filtered_content.contains("## Database"));
+                assert!(!filtered_content.contains("## Servers"));
+            }
+            other => panic!("expected Filtered, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn three_paragraphs_two_existing() {
+        let existing = "## Alpha\nalpha content\n\n## Bravo\nbravo content\n";
+        // Alpha and Bravo exist, Charlie is new
+        let new_content = "## Alpha\nalpha content\n\n## Bravo\nbravo content\n\n## Charlie\ncharlie content\n";
+        match filter_duplicate_append(existing, new_content) {
+            AppendDedup::Filtered { filtered_content, skipped_paragraphs } => {
+                assert_eq!(skipped_paragraphs, 2);
+                assert!(filtered_content.contains("## Charlie"));
+                assert!(!filtered_content.contains("## Alpha"));
+                assert!(!filtered_content.contains("## Bravo"));
+            }
+            other => panic!("expected Filtered, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn empty_existing_file_allows_everything() {
+        let result = filter_duplicate_append("", "## New Section\nFresh content\n\n## Another\nMore content\n");
+        assert!(matches!(result, AppendDedup::AllNew));
+    }
+
+    #[test]
+    fn empty_new_content_is_all_duplicate() {
+        let result = filter_duplicate_append("existing", "");
+        assert!(matches!(result, AppendDedup::AllDuplicate));
+    }
+
+    #[test]
+    fn same_header_different_body_is_filtered() {
+        let existing = "## Config\nold value\n";
+        let new_content = "## Config\nnew value\n";
+        // Same header → paragraph_exists returns true
+        let result = filter_duplicate_append(existing, new_content);
+        assert!(matches!(result, AppendDedup::AllDuplicate));
+    }
+
+    #[test]
+    fn single_paragraph_all_new() {
+        let existing = "## Alpha\nalpha\n";
+        let result = filter_duplicate_append(existing, "## Beta\nbeta\n");
+        assert!(matches!(result, AppendDedup::AllNew));
     }
 }

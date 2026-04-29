@@ -118,6 +118,146 @@ pub fn check_no_shrink(
     }
 }
 
+/// Result of checking an append for duplicate content.
+#[derive(Debug)]
+pub enum AppendDedup {
+    /// All content is new — append as-is.
+    AllNew,
+    /// Some paragraphs were duplicates — append this filtered content instead.
+    /// `skipped_paragraphs` counts how many were removed.
+    Filtered {
+        filtered_content: String,
+        skipped_paragraphs: usize,
+    },
+    /// Everything is already in the file — skip the append entirely.
+    AllDuplicate,
+}
+
+/// Split content into paragraphs (blocks of non-empty lines separated by
+/// one or more blank lines). Preserves the original text of each paragraph.
+fn split_paragraphs(text: &str) -> Vec<String> {
+    let mut paragraphs = Vec::new();
+    let mut current = String::new();
+
+    for line in text.lines() {
+        if line.trim().is_empty() {
+            if !current.is_empty() {
+                paragraphs.push(current.trim_end().to_string());
+                current.clear();
+            }
+        } else {
+            if !current.is_empty() {
+                current.push('\n');
+            }
+            current.push_str(line);
+        }
+    }
+    if !current.is_empty() {
+        paragraphs.push(current.trim_end().to_string());
+    }
+
+    paragraphs
+}
+
+/// Check if a paragraph already exists in the file. Uses two strategies:
+/// 1. Exact substring match (the whole paragraph appears verbatim)
+/// 2. Header match: if the paragraph starts with ## or ###, check if that
+///    header already exists in the file
+fn paragraph_exists(paragraph: &str, existing: &str) -> bool {
+    let trimmed = paragraph.trim();
+    if trimmed.is_empty() {
+        return true;
+    }
+
+    // Exact substring match
+    if existing.contains(trimmed) {
+        return true;
+    }
+
+    // Header match: if paragraph starts with ## or ###, check if header exists
+    if let Some(first_line) = trimmed.lines().next() {
+        let header = first_line.trim();
+        if (header.starts_with("## ") || header.starts_with("### "))
+            && existing.lines().any(|l| l.trim() == header)
+        {
+            return true;
+        }
+    }
+
+    // Line-level overlap for longer paragraphs: if >70% of lines exist, consider it duplicate
+    let existing_lines: std::collections::HashSet<&str> =
+        existing.lines().map(str::trim).collect();
+    let para_lines: Vec<&str> = trimmed
+        .lines()
+        .filter(|l| !l.trim().is_empty())
+        .collect();
+    if para_lines.len() >= 3 {
+        let overlap = para_lines
+            .iter()
+            .filter(|l| existing_lines.contains(l.trim()))
+            .count();
+        let ratio = overlap as f64 / para_lines.len() as f64;
+        if ratio > 0.7 {
+            return true;
+        }
+    }
+
+    false
+}
+
+/// Analyze `new_content` against `existing` and return only the genuinely
+/// new portions. Works at paragraph level to preserve structure.
+///
+/// This replaces the old `is_duplicate_append` boolean check. Instead of
+/// blocking the entire append when overlap is detected, it extracts only
+/// the new paragraphs and lets those through.
+pub fn filter_duplicate_append(existing: &str, new_content: &str) -> AppendDedup {
+    let new_trimmed = new_content.trim();
+    if new_trimmed.is_empty() {
+        return AppendDedup::AllDuplicate;
+    }
+
+    // Quick check: if the entire content is a substring, it's all duplicate
+    if existing.contains(new_trimmed) {
+        return AppendDedup::AllDuplicate;
+    }
+
+    let paragraphs = split_paragraphs(new_trimmed);
+    if paragraphs.is_empty() {
+        return AppendDedup::AllDuplicate;
+    }
+
+    let mut new_paragraphs = Vec::new();
+    let mut skipped = 0;
+
+    for para in &paragraphs {
+        if paragraph_exists(para, existing) {
+            skipped += 1;
+        } else {
+            new_paragraphs.push(para.clone());
+        }
+    }
+
+    if new_paragraphs.is_empty() {
+        return AppendDedup::AllDuplicate;
+    }
+
+    if skipped == 0 {
+        return AppendDedup::AllNew;
+    }
+
+    AppendDedup::Filtered {
+        filtered_content: new_paragraphs.join("\n\n"),
+        skipped_paragraphs: skipped,
+    }
+}
+
+/// Legacy alias for backward compatibility with existing tests.
+/// Returns true when the entire append should be skipped.
+pub fn is_duplicate_append(existing: &str, new_content: &str) -> bool {
+    matches!(filter_duplicate_append(existing, new_content), AppendDedup::AllDuplicate)
+}
+
 /// Verifies the shrink really is a dedup: every line that was in
 /// `existing` must still be present in `updated` (it's allowed to
 /// appear once instead of multiple times). If any line disappears
