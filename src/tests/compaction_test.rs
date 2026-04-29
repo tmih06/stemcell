@@ -439,30 +439,40 @@ mod post_compaction_instruction {
         let pre_loop_instruction = "\
             [SYSTEM: Context was auto-compacted. The summary above includes a snapshot \
              of recent messages before compaction.\n\
-             POST-COMPACTION PROTOCOL:\n\
+             POST-COMPACTION PROTOCOL (follow in order):\n\
              1. Read the compaction summary and the recent message snapshot to understand \
              the current task, tools in use, and what you were doing.\n\
-             2. If you need specific brain context, selectively load ONLY the relevant \
+             2. If the summary references older context you don't have in the snapshot, use \
+             `session_search` with specific keywords to find those messages.\n\
+             3. If you need specific brain context, selectively load ONLY the relevant \
              brain file (e.g. TOOLS.md, SOUL.md, USER.md). NEVER use name=\"all\".\n\
-             3. Continue the task immediately. Do NOT repeat completed work. \
+             4. Continue the task immediately. Do NOT repeat completed work. \
              Do NOT ask the user for instructions — you have everything you need.]";
 
         assert!(!pre_loop_instruction.contains("name=\"all\" to reload"));
         assert!(pre_loop_instruction.contains("NEVER use name=\"all\""));
         assert!(pre_loop_instruction.contains("selectively load ONLY"));
         assert!(pre_loop_instruction.contains("recent message snapshot"));
+        assert!(pre_loop_instruction.contains("session_search"));
+        assert!(!pre_loop_instruction.contains("git status"));
     }
 
     #[test]
     fn mid_loop_instruction_tells_agent_to_continue() {
         let mid_loop_instruction = "\
             [SYSTEM: Context was auto-compacted mid-loop. The summary above includes \
-             a snapshot of recent messages. Review it and continue the task immediately. \
-             Do NOT repeat completed work. Do NOT ask for instructions.]";
+             a snapshot of recent messages. POST-COMPACTION PROTOCOL:\n\
+             1. Review the summary and snapshot to understand current task state.\n\
+             2. Use `session_search` with keywords from the summary if you need older \
+             context not in the snapshot.\n\
+             3. Continue the task immediately. Do NOT repeat completed work. \
+             Do NOT ask for instructions.]";
 
-        assert!(mid_loop_instruction.contains("continue the task immediately"));
+        assert!(mid_loop_instruction.contains("Continue the task immediately"));
         assert!(mid_loop_instruction.contains("Do NOT repeat completed work"));
         assert!(mid_loop_instruction.contains("snapshot of recent messages"));
         assert!(!mid_loop_instruction.contains("name=\"all\""));
+        assert!(mid_loop_instruction.contains("session_search"));
+        assert!(!mid_loop_instruction.contains("git status"));
     }
 }

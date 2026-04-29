@@ -7,198 +7,149 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.3.15] - 2026-04-28
 
-### New Providers & Model Fetching
+### Added
 
-| Type | Area | Change | Why / Impact |
-|------|------|--------|-------------|
-| add | provider | **OpenCode as native built-in provider** — Go + Zen plans supported | No API key needed, free local completions via OpenCode binary |
-| add | provider | **Ollama as native built-in provider** — local models via Ollama API | Run any Ollama model natively without custom provider setup |
-| refactor | provider | **Provider factory refactored to registry pattern** — all providers registered centrally | Cleaner architecture, easier to add new providers |
-| fix | provider | **Generic model fetching for custom providers** (solves #63) | Custom providers can now fetch their model list via `/models` |
-| fix | provider | **Show models for custom and CLI providers** in `/models` dialog | All provider types now support live model listing |
-| fix | provider | **Remove opencode alias collision** — fix custom provider resolution | Custom providers with built-in names no longer spawn wrong subprocess |
+#### Providers
+- **OpenCode as native built-in provider** — Go + Zen plans supported. No API key needed, free local completions via OpenCode binary.
+- **Ollama as native built-in provider** — local models via Ollama API. Run any Ollama model natively without custom provider setup.
 
-### Provider Resilience
+#### Agent
+- **Persist recent file paths** across sessions to anchor the agent — remembers which files it was working on after restart.
+- **Centralized temp file cleanup** on startup — stale temp files from crashed sessions cleaned automatically.
+- **Personalized welcome message** with first-time detection — new users get a tailored greeting on first launch.
 
-| Type | Area | Change | Why / Impact |
-|------|------|--------|-------------|
-| fix | provider | **HTTP 402 fallback chain** — quota/payment exhausted walks to next provider | No more terminal errors when a provider's quota runs out |
-| fix | provider | **Stream-handshake timeout tightened to 30s** for cloud providers | Faster failure detection on unresponsive upstreams |
+#### RSI
+- **Upstream template sync** with version gate and append-only diff — brain templates auto-sync from repo without duplicating existing content.
 
-### TUI & Display
+#### Docs
+- **README updated** with Ollama native provider, path normalization, recent file memory, bash loop prevention.
+- **Onboard video** added to README — visual setup guide for new users.
 
-| Type | Area | Change | Why / Impact |
-|------|------|--------|-------------|
-| fix | tui | **Processing spinner clears immediately** on response complete — DB write and plan reload spawned in background | Spinner no longer stuck for 5+ seconds after agent finishes |
-| fix | tui | **Tool call group flushes immediately** when all calls complete — no longer waits for next text chunk | "Processing:" label disappears as soon as tools finish |
-| fix | tui | **Path normalization across the board** — `$HOME` collapsed to `~` in system prompt, tool display, and brain files | Cleaner display, less token waste on long paths |
-| fix | tui | **Viewport freeze during streaming** — scroll up while streaming without being yanked back | Read earlier messages while the agent is still responding |
-| fix | tui | **Usage "By Activity" columns sized by max(header, data)** | Dashboard columns no longer clip on narrow terminals |
-| fix | tui | **Simplified model change message** to provider/model format | Cleaner status messages when switching models |
+#### Tests
+- **Provider factory regression suite** — 26 tests covering all provider creation paths.
+- **RSI sync and model fetching regression tests** — template sync and custom provider model fetching covered.
 
-### Self-Healing / RSI
+### Changed
 
-| Type | Area | Change | Why / Impact |
-|------|------|--------|-------------|
-| fix | rsi | **Brain files are now append-only** with backup-before-write | Prevents accidental overwrites and corruption of brain files |
-| fix | rsi | **Suppress RSI alerts** whose dimension already has a fix commit | No more noise from already-resolved failure patterns |
-| fix | rsi | **Window tool failure stats** so stale alerts age out | Old failures stop triggering alerts after they're no longer relevant |
-| add | rsi | **Upstream template sync** with version gate and append-only diff | Brain templates auto-sync from repo without duplicating existing content |
+- **Provider factory refactored to registry pattern** — all providers registered centrally. Cleaner architecture, easier to add new providers.
 
-### Bash Hardening
+### Fixed
 
-| Type | Area | Change | Why / Impact |
-|------|------|--------|-------------|
-| fix | bash | **Short-circuit same-command retries** — agent stops looping on identical failing commands | Prevents infinite retry loops that waste tokens and time |
-| fix | bash | **Reject interactive commands up-front** instead of looping | Interactive commands (vim, git add -p) fail immediately with helpful hint |
+#### Providers
+- **Generic model fetching for custom providers** (solves #63) — custom providers can now fetch their model list via `/models`.
+- **Show models for custom and CLI providers** in `/models` dialog — all provider types now support live model listing.
+- **Remove opencode alias collision** — custom providers with built-in names no longer spawn wrong subprocess.
+- **HTTP 402 fallback chain** — quota/payment exhausted walks to next provider. No more terminal errors when a provider's quota runs out.
+- **Stream-handshake timeout tightened to 30s** for cloud providers — faster failure detection on unresponsive upstreams.
 
-### Session & Channels
+#### TUI
+- **Processing spinner clears immediately** on response complete — DB write and plan reload spawned in background. Spinner no longer stuck for 5+ seconds after agent finishes.
+- **Tool call group flushes immediately** when all calls complete — no longer waits for next text chunk. "Processing:" label disappears as soon as tools finish.
+- **Path normalization across the board** — `$HOME` collapsed to `~` in system prompt, tool display, and brain files. Cleaner display, less token waste on long paths.
+- **Viewport freeze during streaming** — scroll up while streaming without being yanked back. Read earlier messages while the agent is still responding.
+- **Usage "By Activity" columns sized by max(header, data)** — dashboard columns no longer clip on narrow terminals.
+- **Simplified model change message** to provider/model format — cleaner status messages when switching models.
 
-| Type | Area | Change | Why / Impact |
-|------|------|--------|-------------|
-| fix | slack | **Slack dedup overhaul** — content-level dedup, composite-key catches retries, VecDeque FIFO eviction | Eliminates duplicate responses from Slack retry storms |
-| fix | telegram | **Key channel sessions by stable chat_id** instead of title | Sessions survive group name changes |
-| fix | channels | **Per-session message queue** with isolated display | Queued messages no longer cross between sessions |
-| fix | channels | **Prevent crossed provider/model pairs** in channel model switching | Each channel session keeps its own provider correctly |
+#### RSI
+- **Brain files are now append-only** with backup-before-write — prevents accidental overwrites and corruption of brain files.
+- **Suppress RSI alerts** whose dimension already has a fix commit — no more noise from already-resolved failure patterns.
+- **Window tool failure stats** so stale alerts age out — old failures stop triggering alerts after they're no longer relevant.
 
-### Onboarding
+#### Bash
+- **Short-circuit same-command retries** — agent stops looping on identical failing commands. Prevents infinite retry loops that waste tokens and time.
+- **Reject interactive commands up-front** instead of looping — interactive commands (vim, git add -p) fail immediately with helpful hint.
 
-| Type | Area | Change | Why / Impact |
-|------|------|--------|-------------|
-| add | onboard | **Personalized welcome message** with first-time detection | New users get a tailored greeting on first launch |
+#### Channels
+- **Slack dedup overhaul** — content-level dedup, composite-key catches retries, VecDeque FIFO eviction. Eliminates duplicate responses from Slack retry storms.
+- **Key channel sessions by stable chat_id** instead of title — sessions survive group name changes.
+- **Per-session message queue** with isolated display — queued messages no longer cross between sessions.
+- **Prevent crossed provider/model pairs** in channel model switching — each channel session keeps its own provider correctly.
 
-### Agent Features
+#### Voice
+- **5-minute timeout + two-stage fallback** for TTS opus conversion — TTS no longer hangs indefinitely on conversion failures.
+- **ffmpeg timeout + fallback** for Telegram TTS — Telegram voice replies more resilient.
 
-| Type | Area | Change | Why / Impact |
-|------|------|--------|-------------|
-| add | agent | **Persist recent file paths** across sessions to anchor the agent | Agent remembers which files it was working on after restart |
-| add | agent | **Centralized temp file cleanup** on startup | Stale temp files from crashed sessions cleaned automatically |
+#### Browser
+- **Name actual browser in launch errors** and bump timeout — clearer error messages when Chrome/Chromium fails to start.
 
-### Voice / TTS
-
-| Type | Area | Change | Why / Impact |
-|------|------|--------|-------------|
-| fix | voice | **5-minute timeout + two-stage fallback** for TTS opus conversion | TTS no longer hangs indefinitely on conversion failures |
-| fix | voice | **ffmpeg timeout + fallback** for Telegram TTS | Telegram voice replies more resilient |
-
-### Browser
-
-| Type | Area | Change | Why / Impact |
-|------|------|--------|-------------|
-| fix | browser | **Name actual browser in launch errors** and bump timeout | Clearer error messages when Chrome/Chromium fails to start |
-
-### Docs
-
-| Type | Area | Change | Why / Impact |
-|------|------|--------|-------------|
-| add | docs | **README updated** with Ollama native provider, path normalization, recent file memory, bash loop prevention | Docs reflect all new features |
-| add | docs | **Onboard video** added to README | Visual setup guide for new users |
-
-### Tests & CI
-
-| Type | Area | Change | Why / Impact |
-|------|------|--------|-------------|
-| add | tests | **Provider factory regression suite** — 26 tests covering all provider creation paths | Prevents provider wiring regressions |
-| add | tests | **RSI sync and model fetching regression tests** | Template sync and custom provider model fetching covered |
-| fix | ci | **Pricing fallback for token tracking tests** in CI | Tests pass even without live pricing data |
+#### CI
+- **Pricing fallback for token tracking tests** in CI — tests pass even without live pricing data.
 
 **2,479 tests passing** (+133 since v0.3.14)
 
 ## [0.3.14] - 2026-04-24
 
-### Provider & API Resilience
+### Added
 
-| Type | Area | Change | Why / Impact |
-|------|------|--------|-------------|
-| fix | provider | **Kimi/Moonshot reasoning_content support** — assistant messages with tool calls now include `reasoning_content` field when thinking mode is enabled | Kimi rejected requests with 400 when thinking was enabled but reasoning_content was missing from assistant tool-call messages |
-| fix | provider | **Proxy error envelope unwrapping** with automatic retry | Proxies sometimes wrap errors in nested JSON envelopes; now unwrapped and retried instead of failing immediately |
-| fix | provider | **HTTP 401 distinction** — model-unsupported vs actual auth failure | 401 responses from "model not supported" no longer trigger auth-error fallback chains |
-| fix | provider | **5xx retry** with exponential backoff and automatic fallback chain | Transient server errors now retry in-place before walking the fallback chain |
-| fix | provider | **Claude CLI opus alias** bumped to 4-7 | Keeps the Claude CLI provider pointing at the latest Opus model |
-| fix | provider | **Gemini analyze_image error logging** for debugging vision failures | Vision errors now log the actual response body instead of generic connection errors |
-| fix | provider | **Custom provider api_key status** displayed in startup logs | Startup logs now show whether custom providers have real API keys loaded |
+#### Voice
+- **Voicebox TTS engine selection** support — Voicebox can now be selected as the TTS engine alongside OpenAI and Local.
+- **Voicebox engine field** added to onboarding flow — onboarding wizard now includes Voicebox as a TTS option.
 
-### Channel & Session Isolation
+#### Database
+- **Thinking column** for non-CLI provider reasoning content storage — new `thinking` column in messages table stores reasoning content separately.
 
-| Type | Area | Change | Why / Impact |
-|------|------|--------|-------------|
-| fix | telegram | **Session isolation from TUI** — Telegram sessions never inherit TUI's provider on restart | Removed fallback to global provider when `create_provider_by_name` fails; sessions keep their stored provider |
-| fix | telegram | **Custom provider key merging** — keys.toml entries merged even when config.toml lacks `[providers.custom]` section | `merge_provider_keys` now creates minimal custom provider entries from keys.toml data instead of silently dropping them |
-| fix | channels | **Per-session provider swap** with per-chat isolation | Each session carries its own provider instance; switching models in one session never affects others |
-| fix | channels | **Pin provider per-session** on /models command | Provider selection persists to the session, not global config |
-| fix | channels | **/models shows actual current provider** instead of stale global | Model switch dialog now reads from the session's own provider |
-| fix | channels | **Restore missing sticky_swap** functionality | Provider swaps now persist across session reloads |
-| fix | telegram | **Duplicate message elimination** | Pre-send dedup prevents the same intermediate from being sent twice during streaming |
-| fix | slack | **Duplicate response fix + multi-image support** | Slack no longer sends duplicate responses; multiple images handled correctly |
+#### Usage Dashboard
+- **Kimi K2.6 pricing** added — Kimi model costs now tracked correctly.
+- **GLM pricing and display labels** — z.ai GLM models now have correct pricing and human-readable labels.
+- **Request count** shown in By Model card — usage dashboard now displays request count per model.
 
-### TUI & Display
+### Changed
 
-| Type | Area | Change | Why / Impact |
-|------|------|--------|-------------|
-| fix | tui | **New sessions use global provider/model pair** — never crossed | `create_new_session` now reads from `agent_service.provider_model()` instead of stale `default_model_name` |
-| fix | tui | **Tool-call tag bleed prevention** in TUI rendering | Removed false-positive markers and `is_local_stream` gate so filtering runs for all providers |
-| fix | tui | **Stop persisting literal "default"** string as default_model | Empty model names no longer get written as the string "default" |
-| fix | tui | **Balanced JSON scanning** for Claude CLI tool-call markers | JSON scanning now handles balanced braces correctly without false positives |
-| fix | tui | **DisplayMessage loads thinking** from dedicated DB column | Thinking content now loads from the `thinking` column instead of being reconstructed from markers |
-| fix | tui | **Strip orphan thinking tags** on session reload | Orphan `<think>` tags from previous sessions are stripped on load |
+- **Removed hardcoded pricing**, moved to usage/pricing.rs — pricing is now centralized in a single module instead of scattered across files.
 
-### Self-Healing Engine
+### Fixed
 
-| Type | Area | Change | Why / Impact |
-|------|------|--------|-------------|
-| fix | self-heal | **49 "let's" contraction variants** added to phantom detection | Models frequently write "let's check the logs" instead of "let me check" — these were slipping through |
+#### Provider & API Resilience
+- **Kimi/Moonshot reasoning_content support** — assistant messages with tool calls now include `reasoning_content` field when thinking mode is enabled. Kimi rejected requests with 400 when thinking was enabled but reasoning_content was missing from assistant tool-call messages.
+- **Proxy error envelope unwrapping** with automatic retry — proxies sometimes wrap errors in nested JSON envelopes; now unwrapped and retried instead of failing immediately.
+- **HTTP 401 distinction** — model-unsupported vs actual auth failure. 401 responses from "model not supported" no longer trigger auth-error fallback chains.
+- **5xx retry** with exponential backoff and automatic fallback chain — transient server errors now retry in-place before walking the fallback chain.
+- **Claude CLI opus alias** bumped to 4-7 — keeps the Claude CLI provider pointing at the latest Opus model.
+- **Gemini analyze_image error logging** for debugging vision failures — vision errors now log the actual response body instead of generic connection errors.
+- **Custom provider api_key status** displayed in startup logs — startup logs now show whether custom providers have real API keys loaded.
 
-### RSI Feedback
+#### Channel & Session Isolation
+- **Session isolation from TUI** — Telegram sessions never inherit TUI's provider on restart. Removed fallback to global provider when `create_provider_by_name` fails; sessions keep their stored provider.
+- **Custom provider key merging** — keys.toml entries merged even when config.toml lacks `[providers.custom]` section. `merge_provider_keys` now creates minimal custom provider entries from keys.toml data instead of silently dropping them.
+- **Per-session provider swap** with per-chat isolation — each session carries its own provider instance; switching models in one session never affects others.
+- **Pin provider per-session** on /models command — provider selection persists to the session, not global config.
+- **/models shows actual current provider** instead of stale global — model switch dialog now reads from the session's own provider.
+- **Restore missing sticky_swap** functionality — provider swaps now persist across session reloads.
+- **Duplicate message elimination** on Telegram — pre-send dedup prevents the same intermediate from being sent twice during streaming.
+- **Duplicate response fix + multi-image support** on Slack — Slack no longer sends duplicate responses; multiple images handled correctly.
 
-| Type | Area | Change | Why / Impact |
-|------|------|--------|-------------|
-| fix | rsi | **Provider name in feedback records** — dimension now includes provider/model pair | RSI logs previously showed only model name (e.g. `qwen-3.6-plus`), making it impossible to identify which provider failed |
+#### TUI & Display
+- **New sessions use global provider/model pair** — never crossed. `create_new_session` now reads from `agent_service.provider_model()` instead of stale `default_model_name`.
+- **Tool-call tag bleed prevention** in TUI rendering — removed false-positive markers and `is_local_stream` gate so filtering runs for all providers.
+- **Stop persisting literal "default"** string as default_model — empty model names no longer get written as the string "default".
+- **Balanced JSON scanning** for Claude CLI tool-call markers — JSON scanning now handles balanced braces correctly without false positives.
+- **DisplayMessage loads thinking** from dedicated DB column — thinking content now loads from the `thinking` column instead of being reconstructed from markers.
+- **Strip orphan thinking tags** on session reload — orphan `<think>` tags from previous sessions are stripped on load.
 
-### Voice
+#### Self-Healing Engine
+- **49 "let's" contraction variants** added to phantom detection — models frequently write "let's check the logs" instead of "let me check"; these were slipping through.
 
-| Type | Area | Change | Why / Impact |
-|------|------|--------|-------------|
-| add | voice | **Voicebox TTS engine selection** support | Voicebox can now be selected as the TTS engine alongside OpenAI and Local |
-| add | voice | **Voicebox engine field** added to onboarding flow | Onboarding wizard now includes Voicebox as a TTS option |
+#### RSI Feedback
+- **Provider name in feedback records** — dimension now includes provider/model pair. RSI logs previously showed only model name (e.g. `qwen-3.6-plus`), making it impossible to identify which provider failed.
 
-### Database
+#### Database
+- **Migration idempotency** for thinking column — migration now handles the case where the column already exists.
 
-| Type | Area | Change | Why / Impact |
-|------|------|--------|-------------|
-| add | db | **Thinking column** for non-CLI provider reasoning content storage | New `thinking` column in messages table stores reasoning content separately |
-| fix | db | **Migration idempotency** for thinking column | Migration now handles the case where the column already exists |
+#### Usage Dashboard & Pricing
+- **Normalized model names** and recalculated all costs — model name variants now merge correctly for accurate cost tracking.
+- **Total cost sums** now use recalculated per-model costs — dashboard totals are accurate after per-model cost recalculation.
+- **GLM 5.1 and GLM 5 Turbo** tracked separately — two GLM variants no longer merge into one cost entry.
 
-### Usage Dashboard & Pricing
+#### Input Handling
+- **Unicode whitespace normalization** on paste — non-breaking spaces and other Unicode whitespace now normalize to regular spaces.
+- **Tab expansion** on paste for consistent input — tabs in pasted content are expanded to spaces.
 
-| Type | Area | Change | Why / Impact |
-|------|------|--------|-------------|
-| refactor | usage | **Removed hardcoded pricing**, moved to usage/pricing.rs | Pricing is now centralized in a single module instead of scattered across files |
-| add | usage | **Kimi K2.6 pricing** added | Kimi model costs now tracked correctly |
-| fix | usage | **Normalized model names** and recalculated all costs | Model name variants now merge correctly for accurate cost tracking |
-| add | usage | **GLM pricing and display labels** | z.ai GLM models now have correct pricing and human-readable labels |
-| fix | usage | **Total cost sums** now use recalculated per-model costs | Dashboard totals are accurate after per-model cost recalculation |
-| fix | usage | **GLM 5.1 and GLM 5 Turbo** tracked separately | Two GLM variants no longer merge into one cost entry |
-| add | usage | **Request count** shown in By Model card | Usage dashboard now displays request count per model |
+#### Tools
+- **Detach subprocess stdin** from TUI's TTY to prevent hangs — subprocesses no longer inherit the TUI's terminal stdin.
 
-### Input Handling
-
-| Type | Area | Change | Why / Impact |
-|------|------|--------|-------------|
-| fix | input | **Unicode whitespace normalization** on paste | Non-breaking spaces and other Unicode whitespace now normalize to regular spaces |
-| fix | input | **Tab expansion** on paste for consistent input | Tabs in pasted content are expanded to spaces |
-
-### Tools
-
-| Type | Area | Change | Why / Impact |
-|------|------|--------|-------------|
-| fix | tools | **Detach subprocess stdin** from TUI's TTY to prevent hangs | Subprocesses no longer inherit the TUI's terminal stdin |
-
-### Tests
-
-| Type | Area | Change | Why / Impact |
-|------|------|--------|-------------|
-| fix | tests | **Migration count** bumped to 19 | Thinking column migration added but count wasn't updated |
-| fix | tests | **Token test model names** corrected to match pricing file | `opus-4-6` changed to `claude-opus-4` to match pricing entries |
+#### Tests
+- **Migration count** bumped to 19 — thinking column migration added but count wasn't updated.
+- **Token test model names** corrected to match pricing file — `opus-4-6` changed to `claude-opus-4` to match pricing entries.
 
 **2,145 tests passing** (+14 since v0.3.13).
 
@@ -206,59 +157,54 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.3.13] - 2026-04-20
 
-### Self-healing — phantom detector expansion
+### Added
 
-| Type | Area | Change | Why / Impact |
-|------|------|--------|--------------|
-| add | self-healing | **14 investigative intent phrases** (`let me hunt/trace/track/look into/check into/find out/dig into` + `i'll` variants) | Catches "Let me hunt down where..." drops where agent announces investigation but never calls tools |
-| add | self-healing | **14 "Now + gerund" patterns** (`now cherry-picking/updating/fixing/committing/pushing/merging/rebasing/deploying/building/testing/checking/applying/restarting`) | Catches status-report-then-action drops like "Now cherry-picking to main..." followed by silence |
-| add | self-healing | **Regex-based gerund detection** with sentence boundary requirement | Prevents false positives like "Are you now checking the logs?" |
-| refactor | self-healing | **Extracted `has_investigative_intent()`** as public helper + re-exported in service mod | Enables test coverage for phantom detection logic |
+#### Self-Healing
+- **14 investigative intent phrases** (`let me hunt/trace/track/look into/check into/find out/dig into` + `i'll` variants) — catches "Let me hunt down where..." drops where agent announces investigation but never calls tools.
+- **14 "Now + gerund" patterns** (`now cherry-picking/updating/fixing/committing/pushing/merging/rebasing/deploying/building/testing/checking/applying/restarting`) — catches status-report-then-action drops like "Now cherry-picking to main..." followed by silence.
+- **Regex-based gerund detection** with sentence boundary requirement — prevents false positives like "Are you now checking the logs?".
 
-### Channel — duplicate response elimination
+#### Browser
+- **`browser_find` tool** — enumerate page elements with stable selectors (CSS/XPath/text/aria modes). Returns selectors passable directly to `browser_click` / `browser_type` without ambiguity.
 
-| Type | Area | Change | Why / Impact |
-|------|------|--------|--------------|
-| fix | slack | **Pre-send intermediate dedup** — checks `sent_intermediates` before sending | Same intermediate emitted twice during streaming no longer sends twice |
-| fix | slack | **Sanitized intermediate storage** — `strip_llm_artifacts` + `redact_secrets` applied before storing | Final response `.replace()` dedup now matches correctly (raw vs sanitized mismatch) |
-| fix | slack | **Image download fallback** — tries `url_private` when `url_private_download` returns HTML | Slack sometimes returns HTML preview page instead of raw bytes; now falls back instead of saving HTML as `.png` |
-| fix | whatsapp | **Pre-send intermediate dedup** with `sent_intermediates` tracking + sanitized storage | Same pattern as Slack/Telegram — prevents duplicate intermediates during streaming |
+### Changed
 
-### Browser tools — new tool + 10 reliability fixes
+- **Extracted `has_investigative_intent()`** as public helper + re-exported in service mod — enables test coverage for phantom detection logic.
 
-| Type | Area | Change | Why / Impact |
-|------|------|--------|--------------|
-| add | browser | **`browser_find` tool** — enumerate page elements with stable selectors (CSS/XPath/text/aria modes) | Returns selectors passable directly to `browser_click` / `browser_type` without ambiguity |
-| fix | browser | **`browser_click` waits for network-idle** instead of fixed 500ms sleep | Pages with async loads stabilize before screenshot |
-| fix | browser | **Screenshot failure surfaced** in tool result instead of swallowed | Users see actual error instead of silent failure |
-| fix | browser | **`browser_eval` caps output at 50 KB** | Prevents massive DOM dumps from blowing up context |
-| fix | browser | **Waits up to 10s for user's Chrome profile** to unlock before fallback | Reduces SingletonLock failures when user's Chrome is running |
-| fix | browser | **Per-session tab isolation** — no more cross-session DOM stomping | Multiple concurrent sessions no longer interfere |
-| fix | browser | **Drop impl aborts CDP handler** + releases Browser properly | Prevents zombie Chrome processes on session end |
-| fix | browser | **Stealth JS registered** via `addScriptToEvaluateOnNewDocument` | Anti-bot detection runs before any page script |
-| fix | browser | **Detects dead CDP handler** and relaunches instead of zombie | Recovers from crashed Chrome automatically |
-| fix | browser | **Sweeps stale SingletonLock** before launch | Fixes launch failures from crashed Chrome leaving lock files |
-| fix | browser | **Detects user's default browser** correctly on macOS | Uses `LSHandlers` from `com.apple.LaunchServices` plist |
+### Fixed
 
-### Other tool fixes
+#### Self-Healing
+- **Pre-send intermediate dedup** on Slack — checks `sent_intermediates` before sending. Same intermediate emitted twice during streaming no longer sends twice.
+- **Sanitized intermediate storage** on Slack — `strip_llm_artifacts` + `redact_secrets` applied before storing. Final response `.replace()` dedup now matches correctly (raw vs sanitized mismatch).
+- **Image download fallback** on Slack — tries `url_private` when `url_private_download` returns HTML. Slack sometimes returns HTML preview page instead of raw bytes; now falls back instead of saving HTML as `.png`.
+- **Pre-send intermediate dedup** on WhatsApp with `sent_intermediates` tracking + sanitized storage — same pattern as Slack/Telegram, prevents duplicate intermediates during streaming.
 
-| Type | Area | Change | Why / Impact |
-|------|------|--------|--------------|
-| fix | tools | **`wait_agent` resolves by prefix or label**, lists actives on miss | No more "No sub-agent found" when using short IDs or labels |
-| fix | tools | **`exa_search` supports stateless MCP servers** (missing session header) | Fixes "MCP server did not return session ID" errors |
-| fix | tools | **`http_request` sets default User-Agent** | Stops GitHub API 403 Forbidden errors |
+#### Browser
+- **`browser_click` waits for network-idle** instead of fixed 500ms sleep — pages with async loads stabilize before screenshot.
+- **Screenshot failure surfaced** in tool result instead of swallowed — users see actual error instead of silent failure.
+- **`browser_eval` caps output at 50 KB** — prevents massive DOM dumps from blowing up context.
+- **Waits up to 10s for user's Chrome profile** to unlock before fallback — reduces SingletonLock failures when user's Chrome is running.
+- **Per-session tab isolation** — no more cross-session DOM stomping. Multiple concurrent sessions no longer interfere.
+- **Drop impl aborts CDP handler** + releases Browser properly — prevents zombie Chrome processes on session end.
+- **Stealth JS registered** via `addScriptToEvaluateOnNewDocument` — anti-bot detection runs before any page script.
+- **Detects dead CDP handler** and relaunches instead of zombie — recovers from crashed Chrome automatically.
+- **Sweeps stale SingletonLock** before launch — fixes launch failures from crashed Chrome leaving lock files.
+- **Detects user's default browser** correctly on macOS — uses `LSHandlers` from `com.apple.LaunchServices` plist.
 
-### Build / test
+#### Tools
+- **`wait_agent` resolves by prefix or label**, lists actives on miss — no more "No sub-agent found" when using short IDs or labels.
+- **`exa_search` supports stateless MCP servers** (missing session header) — fixes "MCP server did not return session ID" errors.
+- **`http_request` sets default User-Agent** — stops GitHub API 403 Forbidden errors.
 
-| Type | Area | Change | Why / Impact |
-|------|------|--------|--------------|
-| test | self-healing | **5 investigative intent tests** in `src/tests/self_healing_test.rs` | Coverage for 14 new phrases + false positive prevention |
-| test | self-healing | **2 gerund pattern tests** with 17 assertions | Coverage for "Now + gerund" detection + false positive prevention |
-| test | tools | **12 tests** for `wait_agent` id resolver and miss-message | |
-| test | browser | **8 tests** for macOS LSHandlers default-browser parser | |
-| test | tools | **3 tests** for `http_request` User-Agent default fix | |
-| test | tools | **4 tests** for `exa_search` stateless-MCP fallback | |
-| test | browser | **Linux xdg + Windows reg** default-browser tests | |
+### Tests
+
+- **5 investigative intent tests** in `src/tests/self_healing_test.rs` — coverage for 14 new phrases + false positive prevention.
+- **2 gerund pattern tests** with 17 assertions — coverage for "Now + gerund" detection + false positive prevention.
+- **12 tests** for `wait_agent` id resolver and miss-message.
+- **8 tests** for macOS LSHandlers default-browser parser.
+- **3 tests** for `http_request` User-Agent default fix.
+- **4 tests** for `exa_search` stateless-MCP fallback.
+- **Linux xdg + Windows reg** default-browser tests.
 
 **2,131 tests passing** (+75 since v0.3.12).
 
@@ -266,83 +212,63 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.3.12] - 2026-04-18
 
-### Voice — new STT/TTS providers
+### Added
 
-| Type | Area | Change | Why / Impact |
-|------|------|--------|--------------|
-| add | voice | **OpenAI-compatible STT** via `stt_base_url` + `stt_model` + `providers.stt.openai_compatible.api_key` | Any Whisper-compatible `/v1/audio/transcriptions` endpoint (self-hosted Whisper, Deepgram-compatible proxies) |
-| add | voice | **OpenAI-compatible TTS** via `tts_base_url` + `tts_model` + `tts_voice` + `providers.tts.openai_compatible.api_key` | Any `/v1/audio/speech` endpoint (self-hosted Coqui/Bark, ElevenLabs-compatible proxies) |
-| add | voice | **Voicebox STT** via `voicebox_stt_enabled=true` + `voicebox_stt_base_url` | Self-hosted open-source voice stack, no API key |
-| add | voice | **Voicebox TTS** via `voicebox_tts_enabled=true` + `voicebox_tts_base_url` + `voicebox_tts_profile_id` | Async `POST /generate` → poll `/generate/{id}/status` → fetch audio from returned path (HTTP(S) URL / server-relative path / local filesystem) |
-| add | voice | **Unified provider dispatch** in `voice::transcribe` / `voice::synthesize` | Priority chain: Voicebox → OpenAI-compatible → (Groq STT / OpenAI TTS) → Local. First match wins. Every TTS output normalised to OGG/Opus via `ensure_opus` before return |
-| add | voice | **`SttProvider` / `TtsProvider` named enums** replace string discriminators | Typed variants (`Off` / `Groq` / `OpenAICompatible` / `Voicebox` / `Local`) prevent mismatched-string bugs at compile time |
+#### Voice
+- **OpenAI-compatible STT** via `stt_base_url` + `stt_model` + `providers.stt.openai_compatible.api_key` — any Whisper-compatible `/v1/audio/transcriptions` endpoint (self-hosted Whisper, Deepgram-compatible proxies).
+- **OpenAI-compatible TTS** via `tts_base_url` + `tts_model` + `tts_voice` + `providers.tts.openai_compatible.api_key` — any `/v1/audio/speech` endpoint (self-hosted Coqui/Bark, ElevenLabs-compatible proxies).
+- **Voicebox STT** via `voicebox_stt_enabled=true` + `voicebox_stt_base_url` — self-hosted open-source voice stack, no API key.
+- **Voicebox TTS** via `voicebox_tts_enabled=true` + `voicebox_tts_base_url` + `voicebox_tts_profile_id` — async `POST /generate` → poll `/generate/{id}/status` → fetch audio from returned path (HTTP(S) URL / server-relative path / local filesystem).
+- **Unified provider dispatch** in `voice::transcribe` / `voice::synthesize` — priority chain: Voicebox → OpenAI-compatible → (Groq STT / OpenAI TTS) → Local. First match wins. Every TTS output normalised to OGG/Opus via `ensure_opus` before return.
+- **`SttProvider` / `TtsProvider` named enums** replace string discriminators — typed variants (`Off` / `Groq` / `OpenAICompatible` / `Voicebox` / `Local`) prevent mismatched-string bugs at compile time.
+- **TTS voice reply** on Slack via `files.upload` (OGG/Opus, inline waveform UI) — was missing entirely; Slack voice-input users got text-only replies.
+- **Full STT/TTS parity** across Telegram / WhatsApp / Discord / Slack — single code path via `crate::channels::voice::{transcribe, synthesize}`; no channel reinvents voice handling.
+- **TTS dispatch logs** (`tracing::info!`) name the provider + its params — failures now point at the right config; previously silent on the happy path.
 
-### Voice — channel parity
+#### Onboarding
+- **Voice screen rewrite** with 5-provider radio selectors per mode — Off / Groq / OpenAI-compatible / Voicebox / Local for STT; Off / OpenAI / OpenAI-compatible / Voicebox / Local for TTS. Fields shown/hidden based on selected provider.
+- **Voice API keys wired to `keys.toml`** — adds `providers.stt.openai_compatible.api_key` + `providers.tts.openai_compatible.api_key`; previously only `config.toml` received the field.
 
-| Type | Area | Change | Why / Impact |
-|------|------|--------|--------------|
-| add | slack | **TTS voice reply** via `files.upload` (OGG/Opus, inline waveform UI) | Was missing entirely — Slack voice-input users got text-only replies |
-| add | channels | **Full STT/TTS parity** across Telegram / WhatsApp / Discord / Slack | Single code path via `crate::channels::voice::{transcribe, synthesize}` — no channel reinvents voice handling |
-| fix | telegram | **`voice_msg_ids: Vec<MessageId>`** tracked in `StreamingState` | Doc-comment-enforced invariant: cleanup paths must never iterate this list. TTS voice notes are the most expensive artefact the bot produces (real synthesis) — losing one to a well-intentioned sweep is a regression we've made hard to introduce |
-| fix | telegram | **Diagnosable voice drop on mid-stream cancellation** | When a new user message cancels a voice-input turn before the TTS block runs, `tracing::warn!` names the session. Previously silent — looked identical to `send_voice` failing |
-| fix | telegram | **`send_voice` error no longer swallowed** | Logs real error + Debug repr instead of a generic "TTS failed" placeholder |
-| fix | channels | **Bot replies recorded in `channel_messages`** table (Telegram/Discord/WhatsApp/Slack) | `channel_msg_repo.recent()` builds group/channel conversation context on every turn. Previously stored only user messages → bot saw a one-sided transcript and responded blind to its own prior replies. Now sender=`bot:opencrabs` / name=`OpenCrabs` (or bot's real ID on Discord) |
+#### Brain
+- **`TOOLS.md` always injected** into core brain — on-demand loading caused the model to guess CLI syntax from training data (duplicate `gdrive` uploads on 2026-04-18). Actual tool syntax now always available.
 
-### Voice — Voicebox + format pipeline
+### Fixed
 
-| Type | Area | Change | Why / Impact |
-|------|------|--------|--------------|
-| fix | voicebox | **Audio fetch supports HTTP(S) + server-relative + filesystem paths** | Fixes silent "audio never arrived" when server returns a URL instead of a local path |
-| fix | voicebox | **Async polling** — `POST /generate` → poll `/generate/{id}/status` every 500 ms up to 120 s | Fixes hang-or-fail on servers that don't synthesise synchronously |
-| fix | voice | **ffmpeg uses `pipe:0`/`pipe:1`** instead of `/dev/stdin`/`/dev/stdout` | The named device paths don't exist on macOS; the pipe syntax works on Linux and macOS |
-| fix | voice | **ffmpeg output uses `-f ogg`** explicitly | Raw Opus without Ogg container was being emitted — Telegram rejects it; every channel now gets a proper Ogg/Opus file |
+#### Voice
+- **Audio fetch supports HTTP(S) + server-relative + filesystem paths** — fixes silent "audio never arrived" when server returns a URL instead of a local path.
+- **Async polling** — `POST /generate` → poll `/generate/{id}/status` every 500 ms up to 120 s. Fixes hang-or-fail on servers that don't synthesise synchronously.
+- **ffmpeg uses `pipe:0`/`pipe:1`** instead of `/dev/stdin`/`/dev/stdout` — the named device paths don't exist on macOS; the pipe syntax works on Linux and macOS.
+- **ffmpeg output uses `-f ogg`** explicitly — raw Opus without Ogg container was being emitted; Telegram rejects it. Every channel now gets a proper Ogg/Opus file.
+- **`voice_msg_ids: Vec<MessageId>`** tracked in `StreamingState` — doc-comment-enforced invariant: cleanup paths must never iterate this list. TTS voice notes are the most expensive artefact the bot produces; losing one to a well-intentioned sweep is a regression we've made hard to introduce.
+- **Diagnosable voice drop on mid-stream cancellation** — when a new user message cancels a voice-input turn before the TTS block runs, `tracing::warn!` names the session. Previously silent.
+- **`send_voice` error no longer swallowed** — logs real error + Debug repr instead of a generic "TTS failed" placeholder.
 
-### Onboarding
+#### Onboarding
+- **Paste routes to the focused voice field** — old handler keyed on field indices that shifted when providers were added; pasting into TTS base URL could land in STT model name.
 
-| Type | Area | Change | Why / Impact |
-|------|------|--------|--------------|
-| add | onboarding | **Voice screen rewrite** with 5-provider radio selectors per mode | Off / Groq / OpenAI-compatible / Voicebox / Local for STT; Off / OpenAI / OpenAI-compatible / Voicebox / Local for TTS. Fields shown/hidden based on selected provider |
-| add | onboarding | **Voice API keys wired to `keys.toml`** | Adds `providers.stt.openai_compatible.api_key` + `providers.tts.openai_compatible.api_key`; previously only `config.toml` received the field |
-| fix | onboarding | **Paste routes to the focused voice field** | Old handler keyed on field indices that shifted when providers were added — pasting into TTS base URL could land in STT model name |
-| add | voice | **TTS dispatch logs** (`tracing::info!`) name the provider + its params | Failures now point at the right config; previously silent on the happy path |
+#### Telegram
+- **Kill duplicate responses at the source** — `ends_with_url` helper in `looks_truncated_mid_sentence` + pre-send dedup. URL-terminated replies were flagged truncated → model re-stated the whole answer → duplicate intermediates.
+- **Keep prior intermediates + tool-call history on follow-up cancel** — cancel path used to delete every prior intermediate + tool bubble. Now only deletes the typing placeholder.
+- **`redact_secrets` applied to intermediates** — consistency with final-response redaction; otherwise a redacted final wouldn't match an un-redacted intermediate and dedup failed.
+- **URL path segments no longer redacted as secrets** — paths like `/api/v1/users/123` were treated as tokens and stripped. Redaction only fires on actual-secret patterns now.
 
-### Telegram delivery / dedup
+#### Provider / Session Resilience
+- **Construct session provider by name on custom pick** — `/models` save calls `create_provider_by_name(&cfg, chosen)` instead of cloning `agent_service.provider()`. Fixes "session says opencode2 but routes to opencode" regression.
+- **Verify `enabled=true` actually lands on disk**, retry via `try_write` on drift — no more silent divergence between dialog state and config.toml.
+- **Sticky fallback on 429 / 401 / 403** — session provider swap holds, `ProviderSwitched` persists to DB, alerts read `'provider/model'`. Users with opencode / opencode2 / opencode3 can now tell which subscription got limited.
+- **Cancellation-safe swap** via `FallbackProviderGuard` Drop — restores on error + future-drop. Fixes "400 Unknown Model" from a mid-fallback cancel.
+- **Hard invariant against mismatched `{provider, model}` pair** in `stream_complete` — remaps to provider default + warns if model not in `supported_models()`. Catches every stale-pin / upstream-bug / cancelled-fallback path.
+- **Custom provider wins name collisions** against built-in ids (`opencode`, `anthropic`, …) — prevents custom entry with a built-in name from silently spawning a CLI subprocess.
+- **Custom edit = update in place; rename = table-key move** with api_key preserved — fixes rename-duplicate that left `opencodeiolo` keyless on 2026-04-18.
+- **401 / 403 trigger fallback chain** instead of terminal error — retry-in-place is pointless when the key is bad; next provider has its own key.
+- **`session.provider_name` not silently overwritten on swap failure** — old code overwrote with fallback's name in DB; next restart loaded the wrong provider.
+- **Bot replies recorded in `channel_messages`** table (Telegram/Discord/WhatsApp/Slack) — `channel_msg_repo.recent()` builds group/channel conversation context on every turn. Previously stored only user messages; bot saw a one-sided transcript.
 
-| Type | Area | Change | Why / Impact |
-|------|------|--------|--------------|
-| fix | telegram | **Kill duplicate responses at the source** (`ends_with_url` helper in `looks_truncated_mid_sentence` + pre-send dedup) | URL-terminated replies ("Done. Uploaded to Drive: https://…/view") were flagged truncated → model re-stated the whole answer → duplicate intermediates. Fixed the heuristic + added defensive pre-send dedup in both `handle_message` and `resume_session` |
-| fix | telegram | **Keep prior intermediates + tool-call history on follow-up cancel** | Cancel path used to delete every prior intermediate + tool bubble. Now only deletes the typing placeholder; history stays visible |
-| fix | telegram | **`redact_secrets` applied to intermediates** | Consistency with final-response redaction — otherwise a redacted final wouldn't match an un-redacted intermediate and dedup failed |
-| fix | sanitize | **URL path segments no longer redacted as secrets** | Paths like `/api/v1/users/123` were treated as tokens and stripped. Redaction only fires on actual-secret patterns now |
-
-### Provider / session resilience
-
-| Type | Area | Change | Why / Impact |
-|------|------|--------|--------------|
-| fix | models | **Construct session provider by name on custom pick** — `/models` save calls `create_provider_by_name(&cfg, chosen)` instead of cloning `agent_service.provider()` | Fixes "session says opencode2 but routes to opencode" regression (per-session isolation lagged one rebuild cycle) |
-| fix | models | **Verify `enabled=true` actually lands on disk**, retry via `try_write` on drift | No more silent divergence between dialog state and config.toml |
-| fix | agent | **Sticky fallback on 429 / 401 / 403** — session provider swap holds, `ProviderSwitched` persists to DB, alerts read `'provider/model'` | Otherwise every turn hit the same rate-limit, walked the chain, bounced back. Users with opencode / opencode2 / opencode3 can now tell which subscription got limited |
-| fix | fallback | **Cancellation-safe swap** via `FallbackProviderGuard` Drop — restores on error + future-drop | Fixes "400 Unknown Model" from a mid-fallback cancel leaving `session_providers` on fallback while `session.model` still pointed at primary |
-| fix | provider | **Hard invariant against mismatched `{provider, model}` pair** in `stream_complete` | Remaps to provider default + warns if model not in `supported_models()`. Catches every stale-pin / upstream-bug / cancelled-fallback path |
-| fix | provider | **Custom provider wins name collisions** against built-in ids (`opencode`, `anthropic`, …) | Prevents custom entry with a built-in name from silently spawning a CLI subprocess |
-| fix | models | **Custom edit = update in place; rename = table-key move** with api_key preserved | Fixes rename-duplicate that left `opencodeiolo` keyless on 2026-04-18 |
-| fix | agent | **401 / 403 trigger fallback chain** instead of terminal error | Retry-in-place is pointless when the key is bad; next provider has its own key |
-| fix | session | **`session.provider_name` not silently overwritten on swap failure** | Old code overwrote with fallback's name in DB → next restart loaded the wrong provider |
-
-### TUI — reasoning renderer + /models + /usage
-
-| Type | Area | Change | Why / Impact |
-|------|------|--------|--------------|
-| fix | tui | **Reasoning renderer double-wrap + double-padding eliminated** (3 sites in `chat.rs`) | Each paragraph was wrapped twice → inconsistent 2-vs-4 space continuation indent + awkward word breaks like `combined like.this.and.this`. Renderer reserves outer indent in wrap budget, skips second pass |
-| fix | tui | **Flush-left reasoning wraps** — continuation padding switched from `"  "` to `""` | Continuations now align with paragraph starts at a consistent 2-space column |
-| fix | tui | **Faster `/models` navigation** — mid-field navigation skips `rebuild_agent_service` | Old flow froze 5–10 s per field move (HTTP health checks + subprocess spawns). Enabled flag / base_url / default_model still persist; full rebuild runs once on final Enter |
-| fix | channels | **Full `/usage` dashboard on Telegram/Discord/Slack/WhatsApp** | Was showing only current-session line + top 5 models; now renders 5 period-grouped cards (Daily / Projects / Models / Tools / Activity) per period (Today + All-Time), within the 4096-char Telegram cap |
-
-### Brain
-
-| Type | Area | Change | Why / Impact |
-|------|------|--------|--------------|
-| add | brain | **`TOOLS.md` always injected** into core brain | On-demand loading caused the model to guess CLI syntax from training data (duplicate `gdrive` uploads on 2026-04-18). Actual tool syntax now always available |
+#### TUI
+- **Reasoning renderer double-wrap + double-padding eliminated** (3 sites in `chat.rs`) — each paragraph was wrapped twice → inconsistent 2-vs-4 space continuation indent + awkward word breaks. Renderer reserves outer indent in wrap budget, skips second pass.
+- **Flush-left reasoning wraps** — continuation padding switched from `"  "` to `""`. Continuations now align with paragraph starts at a consistent 2-space column.
+- **Faster `/models` navigation** — mid-field navigation skips `rebuild_agent_service`. Old flow froze 5–10 s per field move. Full rebuild runs once on final Enter.
+- **Full `/usage` dashboard on Telegram/Discord/Slack/WhatsApp** — was showing only current-session line + top 5 models; now renders 5 period-grouped cards per period, within the 4096-char Telegram cap.
 
 ## [0.3.11] - 2026-04-17
 

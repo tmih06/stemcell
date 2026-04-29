@@ -709,12 +709,16 @@ impl AgentService {
             let mut cont_text =
                 "[SYSTEM: Context was auto-compacted. The summary above includes a snapshot \
                  of recent messages before compaction.\n\
-                 POST-COMPACTION PROTOCOL:\n\
+                 POST-COMPACTION PROTOCOL (follow in order):\n\
                  1. Read the compaction summary and the recent message snapshot to understand \
                  the current task, tools in use, and what you were doing.\n\
-                 2. If you need specific brain context, selectively load ONLY the relevant \
+                 2. If the summary references older context you don't have in the snapshot, use \
+                 `session_search` with specific keywords to find those messages. Example: if the \
+                 summary mentions \"vision fallback investigation\", run session_search with that \
+                 query to recover the details.\n\
+                 3. If you need specific brain context, selectively load ONLY the relevant \
                  brain file (e.g. TOOLS.md, SOUL.md, USER.md). NEVER use name=\"all\".\n\
-                 3. Continue the task immediately. Do NOT repeat completed work. \
+                 4. Continue the task immediately. Do NOT repeat completed work. \
                  Do NOT ask the user for instructions — you have everything you need.]"
                     .to_string();
             if !self.auto_approve_tools {
@@ -895,8 +899,12 @@ impl AgentService {
 
                 let mut cont_text =
                     "[SYSTEM: Context was auto-compacted mid-loop. The summary above includes \
-                     a snapshot of recent messages. Review it and continue the task immediately. \
-                     Do NOT repeat completed work. Do NOT ask for instructions.]"
+                     a snapshot of recent messages. POST-COMPACTION PROTOCOL:\n\
+                     1. Review the summary and snapshot to understand current task state.\n\
+                     2. Use `session_search` with keywords from the summary if you need older \
+                     context not in the snapshot.\n\
+                     3. Continue the task immediately. Do NOT repeat completed work. \
+                     Do NOT ask for instructions.]"
                         .to_string();
                 if !self.auto_approve_tools {
                     cont_text.push_str("\n\nCRITICAL: Tool approval is REQUIRED. You MUST wait for user approval before EVERY tool execution. Do NOT batch tool calls without approval.");
@@ -1016,9 +1024,11 @@ impl AgentService {
 
                             let mut cont_text =
                                 "[SYSTEM: Emergency compaction — provider rejected the prompt as \
-                                 too large. Context has been compacted. Acknowledge the compaction \
-                                 briefly with a fun/cheeky remark, then resume the task from where \
-                                 you left off. Do NOT repeat completed work.]"
+                                 too large. Context has been compacted. POST-COMPACTION PROTOCOL:\n\
+                                 1. Review the summary to understand where you left off.\n\
+                                 2. Use `session_search` with keywords if you need older context.\n\
+                                 3. Briefly acknowledge the compaction with a fun/cheeky remark, \
+                                 then resume the task. Do NOT repeat completed work.]"
                                     .to_string();
                             if !self.auto_approve_tools {
                                 cont_text.push_str("\n\nCRITICAL: Tool approval is REQUIRED. You MUST wait for user approval before EVERY tool execution. Do NOT batch tool calls without approval.");
@@ -3599,10 +3609,12 @@ impl AgentService {
 
                 let mut cont_text =
                     "[SYSTEM: Mid-loop context compaction complete. The summary above has \
-                     full context of everything done so far. Briefly acknowledge the \
-                     compaction to the user with a fun/cheeky remark (be creative, surprise \
-                     them — cursing allowed), then pick up where you left off. Do NOT re-do \
-                     completed work.]"
+                     full context of everything done so far. POST-COMPACTION PROTOCOL:\n\
+                     1. Review the summary to understand current task state.\n\
+                     2. Use `session_search` with keywords if you need older context.\n\
+                     Briefly acknowledge the compaction to the user with a fun/cheeky remark (be \
+                     creative, surprise them — cursing allowed), then pick up where you left off. \
+                     Do NOT re-do completed work.]"
                         .to_string();
                 if !self.auto_approve_tools {
                     cont_text.push_str("\n\nCRITICAL: Tool approval is REQUIRED. You MUST wait for user approval before EVERY tool execution. Do NOT batch tool calls without approval.");
