@@ -1,4 +1,4 @@
-[![Rust](https://img.shields.io/badge/rust-%23000000.svg?style=for-the-badge&logo=rust&logoColor=white)](https://www.rust-lang.org)
+BA[![Rust](https://img.shields.io/badge/rust-%23000000.svg?style=for-the-badge&logo=rust&logoColor=white)](https://www.rust-lang.org)
 [![Rust Edition](https://img.shields.io/badge/rust-2024_edition-orange.svg)](https://www.rust-lang.org/)
 [![Ratatui](https://img.shields.io/badge/ratatui-%23000000.svg?style=for-the-badge&logo=rust&logoColor=white)](https://ratatui.rs)
 [![Docker](https://img.shields.io/badge/docker-%23000000.svg?style=for-the-badge&logo=docker&logoColor=white)](https://docker.com)
@@ -36,7 +36,7 @@ OpenCrabs runs as a **single binary on your terminal** — no server, no gateway
 
 | | **OpenCrabs** (Rust) | **Node.js Frameworks** (e.g. Open Claw) |
 |---|---|---|
-| **Binary size** | **17–22 MB** single binary, zero dependencies | **1 GB+** `node_modules` with hundreds of transitive packages |
+| **Binary size** | **26–29 MB** single binary, zero dependencies | **1 GB+** `node_modules` with hundreds of transitive packages |
 | **Runtime** | None — runs natively | Requires Node.js runtime + npm install |
 | **Attack surface** | Zero network listeners. Outbound HTTPS only | Server infrastructure: open ports, auth layers, middleware |
 | **API key security** | Keys on your machine only. `zeroize` clears them from RAM on drop, `[REDACTED]` in all debug output | Keys in env vars or config. GC doesn't guarantee memory clearing. Heap dumps can leak secrets |
