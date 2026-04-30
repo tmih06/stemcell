@@ -500,11 +500,17 @@ impl OnboardingWizard {
                 }
                 KeyCode::Enter | KeyCode::Tab | KeyCode::Down => {
                     self.auth_field = AuthField::Model;
-                    // Fetch live models when we have a key and provider supports it
-                    if self.ps.supports_model_fetch()
-                        && (!self.ps.api_key_input.is_empty()
-                            || self.ps.has_existing_key_sentinel())
-                    {
+                    // Fetch live models when provider supports it
+                    // Custom providers: always try (local endpoints like Ollama/LM Studio need no key)
+                    // Built-in providers: require a key
+                    let should_fetch = if self.ps.is_custom() {
+                        self.ps.supports_model_fetch()
+                    } else {
+                        self.ps.supports_model_fetch()
+                            && (!self.ps.api_key_input.is_empty()
+                                || self.ps.has_existing_key_sentinel())
+                    };
+                    if should_fetch {
                         self.ps.models.clear();
                         self.ps.selected_model = 0;
                         return WizardAction::FetchModels;
@@ -747,12 +753,14 @@ impl OnboardingWizard {
         WizardAction::None
     }
 
-    /// If we just entered ProviderAuth with an existing key, trigger model fetch
+    /// If we just entered ProviderAuth with an existing key (or custom with base_url), trigger model fetch
     pub(super) fn maybe_fetch_models(&self) -> WizardAction {
-        if self.step == OnboardingStep::ProviderAuth
-            && self.ps.has_existing_key_sentinel()
-            && self.ps.supports_model_fetch()
-        {
+        if self.step != OnboardingStep::ProviderAuth || !self.ps.supports_model_fetch() {
+            return WizardAction::None;
+        }
+        // Custom providers: fetch even without key (local endpoints need none)
+        // Built-in providers: require existing key sentinel
+        if self.ps.is_custom() || self.ps.has_existing_key_sentinel() {
             WizardAction::FetchModels
         } else {
             WizardAction::None

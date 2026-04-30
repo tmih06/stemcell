@@ -472,8 +472,12 @@ fn test_supports_model_fetch() {
     assert!(!wizard.ps.supports_model_fetch());
     wizard.ps.selected_provider = 11; // Ollama (supports fetch via /api/tags)
     assert!(wizard.ps.supports_model_fetch());
-    wizard.ps.selected_provider = 12; // Custom
+    wizard.ps.selected_provider = 12; // Custom — no base_url = no fetch
+    wizard.ps.base_url.clear();
     assert!(!wizard.ps.supports_model_fetch());
+    // Custom with base_url set = supports fetch
+    wizard.ps.base_url = "http://localhost:11434".to_string();
+    assert!(wizard.ps.supports_model_fetch());
 }
 
 #[test]

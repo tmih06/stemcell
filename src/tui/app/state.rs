@@ -1294,17 +1294,33 @@ impl App {
                     // Handle paste in onboarding wizard (for API keys, etc.)
                     if let Some(ref mut wizard) = self.onboarding {
                         wizard.handle_paste(&text);
-                        // Trigger model fetch if provider supports it and key was just pasted
-                        if wizard.ps.supports_model_fetch() && !wizard.ps.api_key_input.is_empty() {
+                        // Trigger model fetch if provider supports it
+                        // Custom providers: fetch if base_url is set (no key needed for local endpoints)
+                        // Built-in providers: require non-empty api_key_input
+                        let should_fetch = if wizard.ps.is_custom() {
+                            wizard.ps.supports_model_fetch()
+                        } else {
+                            wizard.ps.supports_model_fetch() && !wizard.ps.api_key_input.is_empty()
+                        };
+                        if should_fetch {
                             let provider_idx = wizard.ps.selected_provider;
-                            let api_key = wizard.ps.api_key_input.clone();
+                            let api_key = if wizard.ps.api_key_input.is_empty() {
+                                None
+                            } else {
+                                Some(wizard.ps.api_key_input.clone())
+                            };
+                            let base_url = if wizard.ps.is_custom() && !wizard.ps.base_url.is_empty() {
+                                Some(wizard.ps.base_url.clone())
+                            } else {
+                                None
+                            };
                             wizard.ps.models_fetching = true;
                             let sender = self.event_sender();
                             tokio::spawn(async move {
                                 let models = super::onboarding::fetch_provider_models(
                                     provider_idx,
-                                    Some(&api_key),
-                                    None,
+                                    api_key.as_deref(),
+                                    base_url.as_deref(),
                                     None,
                                 )
                                 .await;
@@ -1390,12 +1406,56 @@ impl App {
                         // Custom: field 1 = base URL, field 2 = API key, field 3 = model
                         (1, true, _) => {
                             self.ps.base_url.push_str(&text);
+                            // Pasting base_url → trigger model fetch (local endpoints need no key)
+                            if self.ps.supports_model_fetch() {
+                                let provider_idx = self.ps.selected_provider;
+                                let base_url = self.ps.base_url.clone();
+                                let api_key = if self.ps.api_key_input.is_empty() {
+                                    None
+                                } else {
+                                    Some(self.ps.api_key_input.clone())
+                                };
+                                let sender = self.event_sender();
+                                tokio::spawn(async move {
+                                    let models = super::onboarding::fetch_provider_models(
+                                        provider_idx,
+                                        api_key.as_deref(),
+                                        Some(&base_url),
+                                        None,
+                                    )
+                                    .await;
+                                    let _ = sender.send(TuiEvent::ModelSelectorModelsFetched(
+                                        provider_idx,
+                                        models,
+                                    ));
+                                });
+                            }
                         }
                         (2, true, _) => {
                             if self.ps.has_existing_key_sentinel() {
                                 self.ps.api_key_input.clear();
                             }
                             self.ps.api_key_input.push_str(&text);
+                            // Pasting API key → trigger model fetch if base_url is set
+                            if self.ps.supports_model_fetch() {
+                                let provider_idx = self.ps.selected_provider;
+                                let api_key = self.ps.api_key_input.clone();
+                                let base_url = self.ps.base_url.clone();
+                                let sender = self.event_sender();
+                                tokio::spawn(async move {
+                                    let models = super::onboarding::fetch_provider_models(
+                                        provider_idx,
+                                        Some(&api_key),
+                                        if base_url.is_empty() { None } else { Some(&base_url) },
+                                        None,
+                                    )
+                                    .await;
+                                    let _ = sender.send(TuiEvent::ModelSelectorModelsFetched(
+                                        provider_idx,
+                                        models,
+                                    ));
+                                });
+                            }
                         }
                         (3, true, _) => {
                             self.ps.custom_model.push_str(&text);
@@ -2293,10 +2353,7 @@ impl App {
                 // restart and is visible when the user navigates back, but
                 // only update the live footer + current_session if that
                 // session is the one currently focused.
-                if let Some(target_session) = self
-                    .sessions
-                    .iter_mut()
-                    .find(|s| s.id == session_id)
+                if let Some(target_session) = self.sessions.iter_mut().find(|s| s.id == session_id)
                 {
                     target_session.provider_name = Some(to_name.clone());
                     target_session.model = Some(to_model.clone());

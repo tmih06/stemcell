@@ -156,10 +156,7 @@ pub enum TuiEvent {
     /// id so the TUI only renders the message inside that session and other
     /// open panes don't see leaked self-healing alerts from sessions they
     /// aren't currently focused on.
-    SystemMessage {
-        session_id: Uuid,
-        text: String,
-    },
+    SystemMessage { session_id: Uuid, text: String },
 
     /// Sticky fallback just swapped the active provider/model. Carries the
     /// originating session id so a fallback in session A doesn't update

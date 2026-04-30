@@ -111,6 +111,10 @@ pub fn index_of_provider(id: &str) -> Option<usize> {
 impl ProviderSelectorState {
     /// Whether the current provider supports live model fetching from API.
     pub fn supports_model_fetch(&self) -> bool {
+        // Custom providers: always try /v1/models if base_url is set
+        if self.is_custom() {
+            return !self.base_url.trim().is_empty();
+        }
         matches!(
             self.provider_id(),
             "anthropic"
