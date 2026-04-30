@@ -415,15 +415,48 @@ impl App {
                 _ => {}
             }
         } else if self.ps.focused_field == 3 && self.ps.selected_provider >= CUSTOM_PROVIDER_IDX {
-            // Custom provider: free-text model name input (field 3)
-            match event.code {
-                crossterm::event::KeyCode::Char(c) => {
-                    self.ps.custom_model.push(c);
+            // Custom provider field 3: model selection
+            // If models were fetched, treat as list picker; otherwise free-text
+            if self.ps.models.is_empty() {
+                // No models fetched — free-text input
+                match event.code {
+                    crossterm::event::KeyCode::Char(c) => {
+                        self.ps.custom_model.push(c);
+                    }
+                    crossterm::event::KeyCode::Backspace => {
+                        self.ps.custom_model.pop();
+                    }
+                    _ => {}
                 }
-                crossterm::event::KeyCode::Backspace => {
-                    self.ps.custom_model.pop();
+            } else {
+                // Models fetched — list picker with filter + up/down
+                match event.code {
+                    crossterm::event::KeyCode::Char(c) => {
+                        self.ps.model_filter.push(c);
+                        self.ps.selected_model = 0;
+                    }
+                    crossterm::event::KeyCode::Backspace => {
+                        self.ps.model_filter.pop();
+                        let filter = self.ps.model_filter.to_lowercase();
+                        let count = self.ps.models.iter().filter(|m| m.to_lowercase().contains(&filter)).count();
+                        if self.ps.selected_model >= count && count > 0 {
+                            self.ps.selected_model = count - 1;
+                        }
+                    }
+                    crossterm::event::KeyCode::Esc => {
+                        self.ps.model_filter.clear();
+                        self.ps.selected_model = 0;
+                    }
+                    _ => {
+                        let filter = self.ps.model_filter.to_lowercase();
+                        let filtered: Vec<&String> = self.ps.models.iter().filter(|m| m.to_lowercase().contains(&filter)).collect();
+                        if keys::is_up(&event) {
+                            self.ps.selected_model = self.ps.selected_model.saturating_sub(1);
+                        } else if keys::is_down(&event) && !filtered.is_empty() {
+                            self.ps.selected_model = (self.ps.selected_model + 1).min(filtered.len() - 1);
+                        }
+                    }
                 }
-                _ => {}
             }
         } else if self.ps.focused_field == 4 && self.ps.selected_provider >= CUSTOM_PROVIDER_IDX {
             // Custom provider: name identifier input (field 4)

@@ -582,8 +582,8 @@ pub(super) fn render_model_selector(f: &mut Frame, app: &App, area: Rect) {
         || (focused_field == 3 && (is_custom || is_zhipu_model));
     const MAX_VISIBLE_MODELS: usize = 8;
 
-    if is_custom {
-        // Custom provider: free-text model name input (no filter/search)
+    if is_custom && app.ps.models.is_empty() {
+        // Custom provider with no models fetched: free-text model name input
         let model_cursor = if model_focused { "█" } else { "" };
         let model_display = if app.ps.custom_model.is_empty() {
             format!("enter model name (e.g. gpt-5-nano){}", model_cursor)

@@ -665,24 +665,86 @@ impl OnboardingWizard {
                 }
                 _ => {}
             },
-            AuthField::CustomModel => match event.code {
-                KeyCode::Char(c) => {
-                    self.ps.custom_model.push(c);
+            AuthField::CustomModel => {
+                // If models were fetched, treat as list picker; otherwise free-text
+                if self.ps.models.is_empty() {
+                    match event.code {
+                        KeyCode::Char(c) => {
+                            self.ps.custom_model.push(c);
+                        }
+                        KeyCode::Backspace if is_clear_field(&event) => {
+                            self.ps.custom_model.clear();
+                        }
+                        KeyCode::Backspace => {
+                            self.ps.custom_model.pop();
+                        }
+                        KeyCode::Enter | KeyCode::Tab | KeyCode::Down => {
+                            self.auth_field = AuthField::CustomContextWindow;
+                        }
+                        KeyCode::BackTab | KeyCode::Up => {
+                            self.auth_field = AuthField::CustomApiKey;
+                        }
+                        _ => {}
+                    }
+                } else {
+                    // Models fetched — list picker
+                    match event.code {
+                        KeyCode::Char('k') => {
+                            self.ps.selected_model = self.ps.selected_model.saturating_sub(1);
+                        }
+                        KeyCode::Char('j') => {
+                            let filter = self.ps.model_filter.to_lowercase();
+                            let count = self.ps.models.iter().filter(|m| m.to_lowercase().contains(&filter)).count();
+                            if count > 0 {
+                                self.ps.selected_model = (self.ps.selected_model + 1).min(count - 1);
+                            }
+                        }
+                        KeyCode::Char(c) => {
+                            self.ps.model_filter.push(c);
+                            self.ps.selected_model = 0;
+                        }
+                        KeyCode::Backspace if is_clear_field(&event) => {
+                            self.ps.model_filter.clear();
+                            self.ps.selected_model = 0;
+                        }
+                        KeyCode::Backspace => {
+                            self.ps.model_filter.pop();
+                            let filter = self.ps.model_filter.to_lowercase();
+                            let count = self.ps.models.iter().filter(|m| m.to_lowercase().contains(&filter)).count();
+                            if self.ps.selected_model >= count && count > 0 {
+                                self.ps.selected_model = count - 1;
+                            }
+                        }
+                        KeyCode::Esc => {
+                            self.ps.model_filter.clear();
+                            self.ps.selected_model = 0;
+                        }
+                        KeyCode::Up => {
+                            self.ps.selected_model = self.ps.selected_model.saturating_sub(1);
+                        }
+                        KeyCode::Down => {
+                            let filter = self.ps.model_filter.to_lowercase();
+                            let count = self.ps.models.iter().filter(|m| m.to_lowercase().contains(&filter)).count();
+                            if count > 0 {
+                                self.ps.selected_model = (self.ps.selected_model + 1).min(count - 1);
+                            }
+                        }
+                        KeyCode::Enter | KeyCode::Tab => {
+                            // Select the current model into custom_model then advance
+                            let filter = self.ps.model_filter.to_lowercase();
+                            let filtered: Vec<&String> = self.ps.models.iter().filter(|m| m.to_lowercase().contains(&filter)).collect();
+                            if let Some(m) = filtered.get(self.ps.selected_model) {
+                                self.ps.custom_model = (*m).clone();
+                            }
+                            self.auth_field = AuthField::CustomContextWindow;
+                        }
+                        KeyCode::BackTab => {
+                            self.auth_field = AuthField::CustomApiKey;
+                        }
+                        _ => {}
+                    }
                 }
-                KeyCode::Backspace if is_clear_field(&event) => {
-                    self.ps.custom_model.clear();
-                }
-                KeyCode::Backspace => {
-                    self.ps.custom_model.pop();
-                }
-                KeyCode::Enter | KeyCode::Tab | KeyCode::Down => {
-                    self.auth_field = AuthField::CustomContextWindow;
-                }
-                KeyCode::BackTab | KeyCode::Up => {
-                    self.auth_field = AuthField::CustomApiKey;
-                }
-                _ => {}
-            },
+            }
             AuthField::ZhipuEndpointType => match event.code {
                 KeyCode::Up | KeyCode::Down | KeyCode::Char('j') | KeyCode::Char('k') => {
                     // Toggle between 0 (api) and 1 (coding)

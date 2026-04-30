@@ -680,30 +680,68 @@ fn render_provider_auth(lines: &mut Vec<Line<'static>>, wizard: &OnboardingWizar
             ),
         ]));
 
-        let model_display = if wizard.ps.custom_model.is_empty() {
-            "model-name".to_string()
+        // Custom provider: show model list if fetched, otherwise free-text
+        if wizard.ps.models.is_empty() {
+            let model_display = if wizard.ps.custom_model.is_empty() {
+                "model-name".to_string()
+            } else {
+                wizard.ps.custom_model.clone()
+            };
+            let cursor = if model_focused { "█" } else { "" };
+            lines.push(Line::from(vec![
+                Span::styled(
+                    "  Model:    ",
+                    Style::default().fg(if model_focused {
+                        BRAND_BLUE
+                    } else {
+                        Color::DarkGray
+                    }),
+                ),
+                Span::styled(
+                    format!("{}{}", model_display, cursor),
+                    Style::default().fg(if model_focused {
+                        Color::White
+                    } else {
+                        Color::DarkGray
+                    }),
+                ),
+            ]));
         } else {
-            wizard.ps.custom_model.clone()
-        };
-        let cursor = if model_focused { "█" } else { "" };
-        lines.push(Line::from(vec![
-            Span::styled(
-                "  Model:    ",
-                Style::default().fg(if model_focused {
-                    BRAND_BLUE
+            // Models fetched — show scrollable list picker
+            const MAX_VISIBLE: usize = 6;
+            let total = wizard.ps.models.len();
+            let safe_sel = wizard.ps.selected_model.min(total.saturating_sub(1));
+            let half = MAX_VISIBLE / 2;
+            let start = safe_sel.saturating_sub(half).min(total.saturating_sub(MAX_VISIBLE));
+            let end = (start + MAX_VISIBLE).min(total);
+
+            if start > 0 {
+                lines.push(Line::from(Span::styled(
+                    format!("  ↑ {} more", start),
+                    Style::default().fg(Color::DarkGray),
+                )));
+            }
+            for (off, m) in wizard.ps.models[start..end].iter().enumerate() {
+                let idx = start + off;
+                let sel = idx == safe_sel;
+                let prefix = if sel && model_focused { " > " } else { "   " };
+                let style = if sel && model_focused {
+                    Style::default().fg(Color::Black).bg(BRAND_BLUE).add_modifier(Modifier::BOLD)
                 } else {
-                    Color::DarkGray
-                }),
-            ),
-            Span::styled(
-                format!("{}{}", model_display, cursor),
-                Style::default().fg(if model_focused {
-                    Color::White
-                } else {
-                    Color::DarkGray
-                }),
-            ),
-        ]));
+                    Style::default().fg(Color::Reset)
+                };
+                lines.push(Line::from(vec![
+                    Span::styled(prefix, style),
+                    Span::styled(m.clone(), style),
+                ]));
+            }
+            if end < total {
+                lines.push(Line::from(Span::styled(
+                    format!("  ↓ {} more", total - end),
+                    Style::default().fg(Color::DarkGray),
+                )));
+            }
+        }
 
         // Context Window field
         let cw_focused = wizard.auth_field == AuthField::CustomContextWindow;
