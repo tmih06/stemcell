@@ -255,6 +255,62 @@ impl MessageRepository {
         self.find_by_session(session_id).await
     }
 
+    /// Search messages by text content using SQL LIKE.
+    /// `session_ids = None` searches all sessions; `Some(&[..])` restricts to the listed ids.
+    /// Returns up to `limit` matches, most recent first. Case-insensitive.
+    pub async fn search_by_content(
+        &self,
+        session_ids: Option<&[Uuid]>,
+        query: &str,
+        limit: usize,
+    ) -> Result<Vec<Message>> {
+        let pattern = format!("%{}%", query.replace('%', "\\%").replace('_', "\\_"));
+        let limit_i = limit as i64;
+        let id_strs: Option<Vec<String>> =
+            session_ids.map(|ids| ids.iter().map(|i| i.to_string()).collect());
+
+        self.pool
+            .get()
+            .await
+            .context("Failed to get connection")?
+            .interact(move |conn| {
+                if let Some(ids) = id_strs {
+                    if ids.is_empty() {
+                        return Ok::<Vec<Message>, rusqlite::Error>(Vec::new());
+                    }
+                    let placeholders = vec!["?"; ids.len()].join(",");
+                    let sql = format!(
+                        "SELECT * FROM messages \
+                         WHERE session_id IN ({}) AND content LIKE ? ESCAPE '\\' \
+                         COLLATE NOCASE \
+                         ORDER BY created_at DESC LIMIT ?",
+                        placeholders
+                    );
+                    let mut stmt = conn.prepare(&sql)?;
+                    let mut params_vec: Vec<&dyn rusqlite::ToSql> =
+                        Vec::with_capacity(ids.len() + 2);
+                    for id in &ids {
+                        params_vec.push(id);
+                    }
+                    params_vec.push(&pattern);
+                    params_vec.push(&limit_i);
+                    let rows = stmt.query_map(params_vec.as_slice(), Message::from_row)?;
+                    rows.collect::<std::result::Result<Vec<_>, _>>()
+                } else {
+                    let mut stmt = conn.prepare_cached(
+                        "SELECT * FROM messages \
+                         WHERE content LIKE ?1 ESCAPE '\\' COLLATE NOCASE \
+                         ORDER BY created_at DESC LIMIT ?2",
+                    )?;
+                    let rows = stmt.query_map(params![pattern, limit_i], Message::from_row)?;
+                    rows.collect::<std::result::Result<Vec<_>, _>>()
+                }
+            })
+            .await
+            .map_err(interact_err)?
+            .context("Failed to search messages by content")
+    }
+
     /// Count messages in a session
     pub async fn count_by_session(&self, session_id: Uuid) -> Result<i64> {
         let sid = session_id.to_string();
