@@ -388,7 +388,13 @@ async fn cmd_chat_inner(
                         format!("RSI: template sync failed — {error}")
                     }
                 };
-                let _ = rsi_event_sender.send(TuiEvent::SystemMessage(msg));
+                // RSI alerts apply to the whole agent (not any single
+                // session) — Uuid::nil() bypasses the session-scope filter
+                // so the alert renders in whichever pane the user is on.
+                let _ = rsi_event_sender.send(TuiEvent::SystemMessage {
+                    session_id: uuid::Uuid::nil(),
+                    text: msg,
+                });
             }
         });
     }
@@ -515,7 +521,10 @@ async fn cmd_chat_inner(
                     progress_sender.send(TuiEvent::QueuedUserMessage { session_id, text })
                 }
                 ProgressEvent::SelfHealingAlert { message } => {
-                    progress_sender.send(TuiEvent::SystemMessage(format!("🔧 {}", message)))
+                    progress_sender.send(TuiEvent::SystemMessage {
+                        session_id,
+                        text: format!("🔧 {}", message),
+                    })
                 }
                 ProgressEvent::StripStreamedContent { bytes, reason } => {
                     progress_sender.send(TuiEvent::StripStreamedContent {
@@ -530,6 +539,7 @@ async fn cmd_chat_inner(
                     reason,
                     ..
                 } => progress_sender.send(TuiEvent::ProviderSwitched {
+                    session_id,
                     to_name,
                     to_model,
                     reason,

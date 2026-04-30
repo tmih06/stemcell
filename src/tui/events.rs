@@ -152,12 +152,22 @@ pub enum TuiEvent {
     /// GitHub Copilot device flow: failed
     GitHubOAuthError(String),
 
-    /// A system message to display in chat
-    SystemMessage(String),
+    /// A system message to display in chat. Carries the originating session
+    /// id so the TUI only renders the message inside that session and other
+    /// open panes don't see leaked self-healing alerts from sessions they
+    /// aren't currently focused on.
+    SystemMessage {
+        session_id: Uuid,
+        text: String,
+    },
 
-    /// Sticky fallback just swapped the active provider/model.
-    /// The TUI should update the session + footer to reflect the new choice.
+    /// Sticky fallback just swapped the active provider/model. Carries the
+    /// originating session id so a fallback in session A doesn't update
+    /// the footer or current session record while the user is looking at
+    /// session B; the swap is always persisted to the originating session's
+    /// DB record so it shows correctly when the user navigates back.
     ProviderSwitched {
+        session_id: Uuid,
         to_name: String,
         to_model: String,
         reason: String,

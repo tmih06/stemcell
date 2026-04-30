@@ -599,7 +599,10 @@ impl App {
                     match SelfUpdater::auto_detect() {
                         Ok(updater) => {
                             let root = updater.project_root().display().to_string();
-                            let _ = sender.send(TuiEvent::SystemMessage(format!("📁 {}", root)));
+                            let _ = sender.send(TuiEvent::SystemMessage {
+                                session_id: sid,
+                                text: format!("📁 {}", root),
+                            });
                             let tx = sender.clone();
                             match updater
                                 .build_streaming(move |line| {
@@ -670,11 +673,12 @@ impl App {
                                 .spawn()
                             {
                                 Ok(_) => {
-                                    let _ = sender.send(TuiEvent::SystemMessage(
-                                        "WhisperCrabs is running! A floating mic button is now on your screen.\n\n\
-                                         Speak from any app — transcription is auto-copied to your clipboard. Just paste wherever you need.\n\n\
-                                         To change settings, right-click the button or just ask me here.".to_string()
-                                    ));
+                                    let _ = sender.send(TuiEvent::SystemMessage {
+                                        session_id: sid,
+                                        text: "WhisperCrabs is running! A floating mic button is now on your screen.\n\n\
+                                            Speak from any app — transcription is auto-copied to your clipboard. Just paste wherever you need.\n\n\
+                                            To change settings, right-click the button or just ask me here.".to_string(),
+                                    });
                                 }
                                 Err(e) => {
                                     let _ = sender.send(TuiEvent::Error {
@@ -2212,11 +2216,18 @@ pub(crate) async fn run_evolve_directly(
     use std::sync::Arc;
 
     // Translate ProgressEvent into TUI events so the user sees live status.
+    // All evolve messages are tied to the session that triggered /evolve so
+    // they don't leak into a parallel pane that happens to be focused when
+    // a build line streams in.
     let tx = sender.clone();
+    let origin = session_id;
     let progress: crate::brain::agent::ProgressCallback =
         Arc::new(move |_sid, event| match event {
             ProgressEvent::IntermediateText { text, .. } => {
-                let _ = tx.send(TuiEvent::SystemMessage(text));
+                let _ = tx.send(TuiEvent::SystemMessage {
+                    session_id: origin,
+                    text,
+                });
             }
             ProgressEvent::RestartReady { status } => {
                 let _ = tx.send(TuiEvent::RestartReady(status));
@@ -2230,19 +2241,29 @@ pub(crate) async fn run_evolve_directly(
         Ok(result) => {
             if !result.success {
                 if let Some(err) = result.error {
-                    let _ = sender.send(TuiEvent::SystemMessage(format!("Evolve failed: {}", err)));
+                    let _ = sender.send(TuiEvent::SystemMessage {
+                        session_id,
+                        text: format!("Evolve failed: {}", err),
+                    });
                 } else {
-                    let _ = sender.send(TuiEvent::SystemMessage(
-                        "Evolve failed (unknown error)".to_string(),
-                    ));
+                    let _ = sender.send(TuiEvent::SystemMessage {
+                        session_id,
+                        text: "Evolve failed (unknown error)".to_string(),
+                    });
                 }
             } else if !result.output.is_empty() {
                 // Already on latest, or non-restart success path — surface message.
-                let _ = sender.send(TuiEvent::SystemMessage(result.output));
+                let _ = sender.send(TuiEvent::SystemMessage {
+                    session_id,
+                    text: result.output,
+                });
             }
         }
         Err(e) => {
-            let _ = sender.send(TuiEvent::SystemMessage(format!("Evolve error: {}", e)));
+            let _ = sender.send(TuiEvent::SystemMessage {
+                session_id,
+                text: format!("Evolve error: {}", e),
+            });
         }
     }
 }

@@ -1123,6 +1123,14 @@ impl App {
                     self.push_system_message(format!("$ {}", shell_cmd));
                     let cwd = self.working_directory.clone();
                     let sender = self.event_sender();
+                    // Capture the session id at submit time so the output
+                    // lands in the same session that fired the command —
+                    // even if the user Tabs to another pane while sh runs.
+                    let origin_session = self
+                        .current_session
+                        .as_ref()
+                        .map(|s| s.id)
+                        .unwrap_or_else(uuid::Uuid::nil);
                     tokio::spawn(async move {
                         let output = tokio::process::Command::new("sh")
                             .arg("-c")
@@ -1158,7 +1166,10 @@ impl App {
                             }
                             Err(e) => format!("Failed to run command: {}", e),
                         };
-                        let _ = sender.send(TuiEvent::SystemMessage(msg));
+                        let _ = sender.send(TuiEvent::SystemMessage {
+                            session_id: origin_session,
+                            text: msg,
+                        });
                     });
                 }
                 self.input_buffer.clear();

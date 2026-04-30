@@ -894,10 +894,13 @@ impl App {
                 loop {
                     if let Some(latest) = crate::brain::tools::evolve::check_for_update().await {
                         if auto_update {
-                            let _ = tx.send(TuiEvent::SystemMessage(format!(
-                                "Auto-updating to v{}...",
-                                latest
-                            )));
+                            // Auto-update notice is global (not tied to any
+                            // session) — Uuid::nil() bypasses the session
+                            // filter in the SystemMessage handler.
+                            let _ = tx.send(TuiEvent::SystemMessage {
+                                session_id: Uuid::nil(),
+                                text: format!("Auto-updating to v{}...", latest),
+                            });
                             super::messaging::run_evolve_directly(Uuid::nil(), tx.clone()).await;
                         } else {
                             let _ = tx.send(TuiEvent::UpdateAvailable(latest));
@@ -2267,23 +2270,50 @@ impl App {
                 self.sudo_pending = Some(request);
                 self.sudo_input.clear();
             }
-            TuiEvent::SystemMessage(msg) => {
-                self.push_system_message(msg);
+            TuiEvent::SystemMessage { session_id, text } => {
+                // Self-healing alerts and other session-scoped system
+                // messages must stay in the session that triggered them so
+                // other open sessions never see a 🔧 alert that belongs to a
+                // different chat. `Uuid::nil()` is a sentinel for global
+                // notices (e.g. auto-update banner) that always show in the
+                // currently focused session.
+                if session_id == Uuid::nil() || self.is_current_session(session_id) {
+                    self.push_system_message(text);
+                }
             }
             TuiEvent::ProviderSwitched {
+                session_id,
                 to_name,
                 to_model,
                 reason: _,
             } => {
-                // Sticky fallback happened mid-request. Update the footer +
-                // session record so the user sees which provider is now live.
-                self.default_model_name = to_model.clone();
-                if let Some(ref mut session) = self.current_session {
-                    session.provider_name = Some(to_name.clone());
-                    session.model = Some(to_model.clone());
-                    let session_copy = session.clone();
-                    if let Err(e) = self.session_service.update_session(&session_copy).await {
-                        tracing::warn!("Failed to persist provider swap to session: {}", e);
+                // A fallback in one session must never leak into another
+                // pane's footer. Always persist the swap to the originating
+                // session's DB record so the new provider/model survives a
+                // restart and is visible when the user navigates back, but
+                // only update the live footer + current_session if that
+                // session is the one currently focused.
+                if let Some(target_session) = self
+                    .sessions
+                    .iter_mut()
+                    .find(|s| s.id == session_id)
+                {
+                    target_session.provider_name = Some(to_name.clone());
+                    target_session.model = Some(to_model.clone());
+                    let target_copy = target_session.clone();
+                    if let Err(e) = self.session_service.update_session(&target_copy).await {
+                        tracing::warn!(
+                            "Failed to persist provider swap to session {}: {}",
+                            session_id,
+                            e
+                        );
+                    }
+                }
+                if self.is_current_session(session_id) {
+                    self.default_model_name = to_model.clone();
+                    if let Some(ref mut session) = self.current_session {
+                        session.provider_name = Some(to_name);
+                        session.model = Some(to_model);
                     }
                 }
             }
