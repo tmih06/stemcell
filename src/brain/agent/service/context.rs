@@ -631,7 +631,7 @@ The summary above is NOT sufficient for implementation work.
             .unwrap()
             .insert(session_id, pending);
 
-        tracing::info!(
+        tracing::debug!(
             "Spawned async compaction for session {} ({} msgs / {} tokens / {:.1}%)",
             session_id,
             snapshot_msg_count,
@@ -697,7 +697,7 @@ The summary above is NOT sufficient for implementation work.
 
         Self::apply_compaction_summary(context, &summary);
 
-        tracing::info!(
+        tracing::debug!(
             "Swapped async compaction summary for session {} (compaction took {:?}, {} bytes)",
             session_id,
             elapsed,

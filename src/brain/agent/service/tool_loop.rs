@@ -183,7 +183,7 @@ impl AgentService {
             .try_swap_pending_compaction(session_id, context)
             .await;
         if let Some(ref summary) = swap_summary {
-            tracing::info!(
+            tracing::debug!(
                 "Context post-swap: now at {:.0}% ({} tokens)",
                 usage_pct(context),
                 context.token_count,
@@ -239,7 +239,7 @@ impl AgentService {
         //    is already in flight, so it's safe to call this from every
         //    trigger site without worrying about duplicate spawns.
         if usage_pct(context) > 65.0 {
-            tracing::warn!(
+            tracing::debug!(
                 "Context at {:.0}% (>65%) — spawning background compaction",
                 usage_pct(context),
             );
