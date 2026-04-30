@@ -541,6 +541,18 @@ impl App {
                 self.ps.focused_field = 2;
             } else if self.ps.focused_field == 1 && is_custom {
                 // Custom provider: field 1 is base_url, move to field 2 (api_key)
+                // Trigger model fetch if base_url is set
+                if !self.ps.base_url.is_empty() {
+                    self.ps.models.clear();
+                    self.ps.selected_model = 0;
+                    self.ps.models = super::onboarding::fetch_provider_models(
+                        self.ps.selected_provider.min(CUSTOM_PROVIDER_IDX),
+                        None,
+                        None,
+                        Some(&self.ps.base_url),
+                    )
+                    .await;
+                }
                 self.ps.focused_field = 2;
             } else if (self.ps.focused_field == 1 && !is_custom && !is_zhipu)
                 || (self.ps.focused_field == 2 && (is_custom || is_zhipu))
@@ -582,8 +594,18 @@ impl App {
                 {
                     self.push_system_message(format!("Error: {}", e));
                 } else {
-                    // Fetch live models from the provider (for non-Custom)
-                    if !is_custom {
+                    // Fetch live models from the provider
+                    self.ps.models.clear();
+                    self.ps.selected_model = 0;
+                    if is_custom {
+                        self.ps.models = super::onboarding::fetch_provider_models(
+                            provider_idx,
+                            api_key.as_deref(),
+                            None,
+                            Some(&self.ps.base_url),
+                        )
+                        .await;
+                    } else {
                         let zhipu_et = if is_zhipu {
                             Some(if self.ps.zhipu_endpoint_type == 1 {
                                 "coding"
@@ -601,7 +623,6 @@ impl App {
                         )
                         .await;
                     }
-                    self.ps.selected_model = 0;
 
                     // Move to model field (field 2 for non-Custom, field 3 for Custom/zhipu)
                     self.ps.focused_field = if is_custom || is_zhipu { 3 } else { 2 };

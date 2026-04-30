@@ -49,7 +49,7 @@ impl OnboardingWizard {
     }
 
     /// Handle paste event - inserts text at current cursor position
-    pub fn handle_paste(&mut self, text: &str) {
+    pub fn handle_paste(&mut self, text: &str) -> WizardAction {
         // Brain setup accepts full multi-line markdown paste — handle it
         // before the single-line sanitizer so the user can dump a whole
         // markdown document (or raw prose) into the About fields.
@@ -58,7 +58,7 @@ impl OnboardingWizard {
             let normalized = text.replace("\r\n", "\n").replace('\r', "\n");
             let trimmed = normalized.trim();
             if trimmed.is_empty() {
-                return;
+                return WizardAction::None;
             }
             // Paste replaces untouched template, appends to edited field
             let field = match self.brain_field {
@@ -81,7 +81,7 @@ impl OnboardingWizard {
                 BrainField::AboutMe => self.brain_me_edited = true,
                 BrainField::AboutAgent => self.brain_agent_edited = true,
             }
-            return;
+            return WizardAction::None;
         }
 
         // All other steps expect single-line input (API keys, channel IDs,
@@ -89,7 +89,7 @@ impl OnboardingWizard {
         // surrounding whitespace to defend against trailing newlines.
         let clean = text.split(['\r', '\n']).next().unwrap_or("").trim();
         if clean.is_empty() {
-            return;
+            return WizardAction::None;
         }
 
         // Dispatch paste based on current step first, then auth_field
@@ -346,12 +346,23 @@ impl OnboardingWizard {
                     }
                     self.ps.api_key_input.push_str(clean);
                     self.ps.api_key_cursor = self.ps.api_key_input.len();
+                    // Custom provider: if base_url is already set, fetch models after key paste
+                    if self.ps.is_custom() && !self.ps.base_url.is_empty() {
+                        self.ps.models.clear();
+                        self.ps.selected_model = 0;
+                        return WizardAction::FetchModels;
+                    }
                 }
                 AuthField::CustomName => {
                     self.ps.custom_name.push_str(clean);
                 }
                 AuthField::CustomBaseUrl => {
                     self.ps.base_url.push_str(clean);
+                    if !self.ps.base_url.is_empty() {
+                        self.ps.models.clear();
+                        self.ps.selected_model = 0;
+                        return WizardAction::FetchModels;
+                    }
                 }
                 AuthField::CustomModel => {
                     self.ps.custom_model.push_str(clean);
@@ -369,6 +380,7 @@ impl OnboardingWizard {
             },
             _ => {}
         }
+        WizardAction::None
     }
 
     // --- Step-specific key handlers ---
@@ -612,6 +624,11 @@ impl OnboardingWizard {
                 }
                 KeyCode::Enter | KeyCode::Tab | KeyCode::Down => {
                     self.auth_field = AuthField::CustomApiKey;
+                    if !self.ps.base_url.is_empty() {
+                        self.ps.models.clear();
+                        self.ps.selected_model = 0;
+                        return WizardAction::FetchModels;
+                    }
                 }
                 KeyCode::BackTab | KeyCode::Up => {
                     self.auth_field = AuthField::CustomName;
@@ -637,6 +654,11 @@ impl OnboardingWizard {
                 }
                 KeyCode::Enter | KeyCode::Tab | KeyCode::Down => {
                     self.auth_field = AuthField::CustomModel;
+                    if !self.ps.base_url.is_empty() {
+                        self.ps.models.clear();
+                        self.ps.selected_model = 0;
+                        return WizardAction::FetchModels;
+                    }
                 }
                 KeyCode::BackTab | KeyCode::Up => {
                     self.auth_field = AuthField::CustomBaseUrl;

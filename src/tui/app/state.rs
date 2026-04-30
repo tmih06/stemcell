@@ -1309,11 +1309,12 @@ impl App {
                             } else {
                                 Some(wizard.ps.api_key_input.clone())
                             };
-                            let base_url = if wizard.ps.is_custom() && !wizard.ps.base_url.is_empty() {
-                                Some(wizard.ps.base_url.clone())
-                            } else {
-                                None
-                            };
+                            let base_url =
+                                if wizard.ps.is_custom() && !wizard.ps.base_url.is_empty() {
+                                    Some(wizard.ps.base_url.clone())
+                                } else {
+                                    None
+                                };
                             wizard.ps.models_fetching = true;
                             let sender = self.event_sender();
                             tokio::spawn(async move {
@@ -1446,7 +1447,11 @@ impl App {
                                     let models = super::onboarding::fetch_provider_models(
                                         provider_idx,
                                         Some(&api_key),
-                                        if base_url.is_empty() { None } else { Some(&base_url) },
+                                        if base_url.is_empty() {
+                                            None
+                                        } else {
+                                            Some(&base_url)
+                                        },
                                         None,
                                     )
                                     .await;
