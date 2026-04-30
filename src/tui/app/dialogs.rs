@@ -438,7 +438,12 @@ impl App {
                     crossterm::event::KeyCode::Backspace => {
                         self.ps.model_filter.pop();
                         let filter = self.ps.model_filter.to_lowercase();
-                        let count = self.ps.models.iter().filter(|m| m.to_lowercase().contains(&filter)).count();
+                        let count = self
+                            .ps
+                            .models
+                            .iter()
+                            .filter(|m| m.to_lowercase().contains(&filter))
+                            .count();
                         if self.ps.selected_model >= count && count > 0 {
                             self.ps.selected_model = count - 1;
                         }
@@ -449,11 +454,17 @@ impl App {
                     }
                     _ => {
                         let filter = self.ps.model_filter.to_lowercase();
-                        let filtered: Vec<&String> = self.ps.models.iter().filter(|m| m.to_lowercase().contains(&filter)).collect();
+                        let filtered: Vec<&String> = self
+                            .ps
+                            .models
+                            .iter()
+                            .filter(|m| m.to_lowercase().contains(&filter))
+                            .collect();
                         if keys::is_up(&event) {
                             self.ps.selected_model = self.ps.selected_model.saturating_sub(1);
                         } else if keys::is_down(&event) && !filtered.is_empty() {
-                            self.ps.selected_model = (self.ps.selected_model + 1).min(filtered.len() - 1);
+                            self.ps.selected_model =
+                                (self.ps.selected_model + 1).min(filtered.len() - 1);
                         }
                     }
                 }

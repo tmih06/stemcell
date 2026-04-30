@@ -694,9 +694,15 @@ impl OnboardingWizard {
                         }
                         KeyCode::Char('j') => {
                             let filter = self.ps.model_filter.to_lowercase();
-                            let count = self.ps.models.iter().filter(|m| m.to_lowercase().contains(&filter)).count();
+                            let count = self
+                                .ps
+                                .models
+                                .iter()
+                                .filter(|m| m.to_lowercase().contains(&filter))
+                                .count();
                             if count > 0 {
-                                self.ps.selected_model = (self.ps.selected_model + 1).min(count - 1);
+                                self.ps.selected_model =
+                                    (self.ps.selected_model + 1).min(count - 1);
                             }
                         }
                         KeyCode::Char(c) => {
@@ -710,7 +716,12 @@ impl OnboardingWizard {
                         KeyCode::Backspace => {
                             self.ps.model_filter.pop();
                             let filter = self.ps.model_filter.to_lowercase();
-                            let count = self.ps.models.iter().filter(|m| m.to_lowercase().contains(&filter)).count();
+                            let count = self
+                                .ps
+                                .models
+                                .iter()
+                                .filter(|m| m.to_lowercase().contains(&filter))
+                                .count();
                             if self.ps.selected_model >= count && count > 0 {
                                 self.ps.selected_model = count - 1;
                             }
@@ -724,15 +735,26 @@ impl OnboardingWizard {
                         }
                         KeyCode::Down => {
                             let filter = self.ps.model_filter.to_lowercase();
-                            let count = self.ps.models.iter().filter(|m| m.to_lowercase().contains(&filter)).count();
+                            let count = self
+                                .ps
+                                .models
+                                .iter()
+                                .filter(|m| m.to_lowercase().contains(&filter))
+                                .count();
                             if count > 0 {
-                                self.ps.selected_model = (self.ps.selected_model + 1).min(count - 1);
+                                self.ps.selected_model =
+                                    (self.ps.selected_model + 1).min(count - 1);
                             }
                         }
                         KeyCode::Enter | KeyCode::Tab => {
                             // Select the current model into custom_model then advance
                             let filter = self.ps.model_filter.to_lowercase();
-                            let filtered: Vec<&String> = self.ps.models.iter().filter(|m| m.to_lowercase().contains(&filter)).collect();
+                            let filtered: Vec<&String> = self
+                                .ps
+                                .models
+                                .iter()
+                                .filter(|m| m.to_lowercase().contains(&filter))
+                                .collect();
                             if let Some(m) = filtered.get(self.ps.selected_model) {
                                 self.ps.custom_model = (*m).clone();
                             }

@@ -361,8 +361,7 @@ The summary above is NOT sufficient for implementation work.
             output_reserve,
         );
 
-        let mut summary_messages: Vec<Message> =
-            msgs_to_include.into_iter().cloned().collect();
+        let mut summary_messages: Vec<Message> = msgs_to_include.into_iter().cloned().collect();
 
         let compaction_prompt = format!(
             "CRITICAL: The context window is at {:.0}% capacity ({} / {} tokens, {} tokens remaining). \
@@ -713,11 +712,7 @@ The summary above is NOT sufficient for implementation work.
     /// hard-truncate path so a stale snapshot summary cannot land on top of
     /// a freshly-truncated message list.
     pub(super) fn cancel_pending_compaction(&self, session_id: Uuid) {
-        let removed = self
-            .pending_compactions
-            .lock()
-            .unwrap()
-            .remove(&session_id);
+        let removed = self.pending_compactions.lock().unwrap().remove(&session_id);
         if let Some(pending) = removed {
             pending.cancel.cancel();
             pending.handle.abort();

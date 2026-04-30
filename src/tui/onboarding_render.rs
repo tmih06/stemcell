@@ -712,7 +712,9 @@ fn render_provider_auth(lines: &mut Vec<Line<'static>>, wizard: &OnboardingWizar
             let total = wizard.ps.models.len();
             let safe_sel = wizard.ps.selected_model.min(total.saturating_sub(1));
             let half = MAX_VISIBLE / 2;
-            let start = safe_sel.saturating_sub(half).min(total.saturating_sub(MAX_VISIBLE));
+            let start = safe_sel
+                .saturating_sub(half)
+                .min(total.saturating_sub(MAX_VISIBLE));
             let end = (start + MAX_VISIBLE).min(total);
 
             if start > 0 {
@@ -726,7 +728,10 @@ fn render_provider_auth(lines: &mut Vec<Line<'static>>, wizard: &OnboardingWizar
                 let sel = idx == safe_sel;
                 let prefix = if sel && model_focused { " > " } else { "   " };
                 let style = if sel && model_focused {
-                    Style::default().fg(Color::Black).bg(BRAND_BLUE).add_modifier(Modifier::BOLD)
+                    Style::default()
+                        .fg(Color::Black)
+                        .bg(BRAND_BLUE)
+                        .add_modifier(Modifier::BOLD)
                 } else {
                     Style::default().fg(Color::Reset)
                 };

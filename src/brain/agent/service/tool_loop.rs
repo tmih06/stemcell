@@ -179,9 +179,7 @@ impl AgentService {
         // 1. Try to swap any completed pending-compaction result first. If a
         //    swap lands, usage drops immediately and the rest of this function
         //    sees the post-swap numbers.
-        let swap_summary = self
-            .try_swap_pending_compaction(session_id, context)
-            .await;
+        let swap_summary = self.try_swap_pending_compaction(session_id, context).await;
         if let Some(ref summary) = swap_summary {
             tracing::debug!(
                 "Context post-swap: now at {:.0}% ({} tokens)",
