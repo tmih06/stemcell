@@ -1,8 +1,10 @@
 use super::builder::AgentService;
 use crate::brain::agent::context::AgentContext;
 use crate::brain::agent::error::{AgentError, Result};
-use crate::brain::provider::{ContentBlock, LLMRequest, Message};
+use crate::brain::provider::{ContentBlock, LLMRequest, Message, Provider};
 use crate::services::{MessageService, SessionService};
+use std::path::PathBuf;
+use std::sync::Arc;
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
@@ -249,12 +251,12 @@ The summary above is NOT sufficient for implementation work.
         }
     }
 
-    /// Auto-compact the context when usage is too high.
-    ///
-    /// Before compaction, calculates the remaining context budget and sends
-    /// the last portion of the conversation to the LLM with a request for a
-    /// structured breakdown. This breakdown serves as a "wake-up" summary so
-    /// OpenCrabs can continue working seamlessly after compaction.
+    /// Synchronous compaction: compute a summary and apply it to `context` in place.
+    /// Used by the manual `/compact` command and the two emergency callsites that
+    /// recover from "context too large" provider errors. The async path used by
+    /// `enforce_context_budget` does NOT go through here — it spawns
+    /// `compute_compaction_summary` directly and applies the result via
+    /// `apply_compaction_summary` once the LLM call finishes.
     pub(super) async fn compact_context(
         &self,
         session_id: Uuid,
@@ -262,17 +264,57 @@ The summary above is NOT sufficient for implementation work.
         model_name: &str,
         cancel_token: Option<&CancellationToken>,
     ) -> Result<String> {
-        let remaining_budget = context.max_tokens.saturating_sub(context.token_count);
+        let provider = self.provider_for_session(session_id);
+        let cancel = cancel_token.cloned().unwrap_or_default();
 
-        // Build a summarization request with the full conversation
-        let mut summary_messages = Vec::new();
+        let summary = Self::compute_compaction_summary(
+            provider,
+            session_id,
+            context.messages.clone(),
+            context.token_count,
+            context.max_tokens,
+            context.usage_percentage(),
+            model_name.to_string(),
+            self.max_tokens,
+            self.get_working_directory(),
+            self.auto_approve_tools,
+            cancel,
+        )
+        .await?;
 
-        // Include all conversation messages so the LLM sees the full context.
+        Self::apply_compaction_summary(context, &summary);
+        Ok(summary)
+    }
+
+    /// Compute a compaction summary from a snapshot of messages.
+    ///
+    /// This is the LLM-facing half of compaction. It does not touch any live
+    /// session state — it operates entirely on the cloned snapshot — so it
+    /// is safe to call from a background `tokio::spawn` task while the agent
+    /// keeps appending new messages to the live context.
+    ///
+    /// Returns the raw summary text. Callers that want to apply it to a live
+    /// context should call `apply_compaction_summary` once the future resolves.
+    #[allow(clippy::too_many_arguments)]
+    pub(super) async fn compute_compaction_summary(
+        provider: Arc<dyn Provider>,
+        session_id: Uuid,
+        snapshot_messages: Vec<Message>,
+        snapshot_token_count: usize,
+        snapshot_max_tokens: usize,
+        snapshot_usage_pct: f64,
+        model_name: String,
+        max_output_tokens: u32,
+        working_directory: PathBuf,
+        auto_approve_tools: bool,
+        cancel: CancellationToken,
+    ) -> Result<String> {
+        let remaining_budget = snapshot_max_tokens.saturating_sub(snapshot_token_count);
+
         // Skip any leading user messages that consist only of ToolResult blocks —
         // they are orphaned (their tool_use was removed by a prior trim) and would
         // cause the API to reject the request with a 400.
-        let start = context
-            .messages
+        let start = snapshot_messages
             .iter()
             .position(|m| {
                 !(m.role == crate::brain::provider::Role::User
@@ -281,16 +323,12 @@ The summary above is NOT sufficient for implementation work.
                         matches!(b, crate::brain::provider::ContentBlock::ToolResult { .. })
                     }))
             })
-            .unwrap_or(context.messages.len());
+            .unwrap_or(snapshot_messages.len());
 
-        // Send EVERY message since the last compaction. Compaction should
-        // see exactly what the agent was running under, not a trimmed slice
-        // — otherwise the summary silently loses the oldest turns whenever
-        // the budget was smaller than the window. Reserve room only for
-        // the summarizer's OUTPUT budget (8k) + compaction prompt (~1k).
+        // Reserve room for the summarizer's OUTPUT budget (8k) + prompt (~1k).
         let output_reserve = 8_000usize + 1_000usize;
-        let max_input_budget = context.max_tokens.saturating_sub(output_reserve);
-        let all_msgs = &context.messages[start..];
+        let max_input_budget = snapshot_max_tokens.saturating_sub(output_reserve);
+        let all_msgs = &snapshot_messages[start..];
         let mut running_tokens = 0usize;
         let msgs_to_include: Vec<&Message> = all_msgs
             .iter()
@@ -319,15 +357,13 @@ The summary above is NOT sufficient for implementation work.
             msgs_to_include.len(),
             all_msgs.len(),
             running_tokens,
-            context.max_tokens,
+            snapshot_max_tokens,
             output_reserve,
         );
 
-        for msg in msgs_to_include {
-            summary_messages.push(msg.clone());
-        }
+        let mut summary_messages: Vec<Message> =
+            msgs_to_include.into_iter().cloned().collect();
 
-        // Add the compaction instruction as a user message
         let compaction_prompt = format!(
             "CRITICAL: The context window is at {:.0}% capacity ({} / {} tokens, {} tokens remaining). \
              The conversation must be compacted NOW.\n\n\
@@ -406,11 +442,11 @@ The summary above is NOT sufficient for implementation work.
              BE EXHAUSTIVE. This is not a summary — it is a complete knowledge transfer. \
              Include code snippets, exact paths, user quotes, error messages. \
              The fresh agent has ZERO context beyond what you write here.",
-            context.usage_percentage(),
-            context.token_count,
-            context.max_tokens,
+            snapshot_usage_pct,
+            snapshot_token_count,
+            snapshot_max_tokens,
             remaining_budget,
-            if self.auto_approve_tools {
+            if auto_approve_tools {
                 "AUTO-APPROVE ON (tools run freely)"
             } else {
                 "AUTO-APPROVE OFF — tool approval is REQUIRED for every tool call"
@@ -419,33 +455,55 @@ The summary above is NOT sufficient for implementation work.
 
         summary_messages.push(Message::user(compaction_prompt));
 
-        let mut request = LLMRequest::new(model_name.to_string(), summary_messages)
-            .with_max_tokens(self.max_tokens)
-            .with_system("You are a continuation document generator. Your job is to create an exhaustive, \
-             detailed knowledge transfer document from a conversation so that a fresh AI agent can \
-             continue the work seamlessly. You must capture every file path, code snippet, user preference, \
-             error, and pending task. The agent reading your output will have ZERO prior context — \
-             your document is its entire memory. Be thorough to the point of being verbose. \
-             Missing a single detail could cause the agent to repeat mistakes or violate user preferences.".to_string());
-        request.working_directory =
-            Some(self.get_working_directory().to_string_lossy().to_string());
+        // Never send a {provider, model} pair the user didn't configure.
+        // If the requested model isn't supported by this provider, remap to
+        // the provider's own default — same invariant `stream_complete` enforces.
+        let mut effective_model = model_name;
+        let supported = provider.supported_models();
+        if !supported.is_empty() && !supported.iter().any(|m| m == &effective_model) {
+            let remapped = provider.default_model().to_string();
+            tracing::warn!(
+                "compute_compaction_summary: provider '{}' does not support model '{}' — remapping to '{}'",
+                provider.name(),
+                effective_model,
+                remapped,
+            );
+            effective_model = remapped;
+        }
+
+        let mut request = LLMRequest::new(effective_model, summary_messages)
+            .with_max_tokens(max_output_tokens)
+            .with_system(
+                "You are a continuation document generator. Your job is to create an exhaustive, \
+                 detailed knowledge transfer document from a conversation so that a fresh AI agent can \
+                 continue the work seamlessly. You must capture every file path, code snippet, user preference, \
+                 error, and pending task. The agent reading your output will have ZERO prior context — \
+                 your document is its entire memory. Be thorough to the point of being verbose. \
+                 Missing a single detail could cause the agent to repeat mistakes or violate user preferences."
+                    .to_string(),
+            );
+        request.working_directory = Some(working_directory.to_string_lossy().to_string());
         request.session_id = Some(session_id);
 
-        // Use streaming so the TUI shows the summary being written in real-time
-        // instead of freezing silently for 2-5 minutes on large contexts
-        let (response, _reasoning) = self
-            .stream_complete(session_id, request, cancel_token, None, None, None, true)
-            .await
-            .map_err(AgentError::Provider)?;
+        // Non-streaming call so no compaction text leaks to the TUI in the
+        // background-spawn case. `cancel` aborts the request mid-flight if the
+        // caller signals (e.g. 90% hard-truncate firing on the same session).
+        let response = tokio::select! {
+            biased;
+            _ = cancel.cancelled() => {
+                tracing::info!("Compaction cancelled before completion");
+                return Err(AgentError::Cancelled);
+            }
+            r = provider.complete(request) => r.map_err(AgentError::Provider)?,
+        };
 
         let summary = Self::extract_text_from_response(&response);
 
-        // Save to daily memory log
-        if let Err(e) = self.save_to_memory(&summary).await {
+        if let Err(e) = Self::save_compaction_summary_to_memory(&summary).await {
             tracing::warn!("Failed to save compaction summary to daily log: {}", e);
         }
 
-        // Index the updated memory file in the background so memory_search picks it up
+        // Index the updated memory file in the background so memory_search picks it up.
         let memory_path = crate::config::opencrabs_home()
             .join("memory")
             .join(format!("{}.md", chrono::Local::now().format("%Y-%m-%d")));
@@ -455,14 +513,17 @@ The summary above is NOT sufficient for implementation work.
             }
         });
 
-        // Snapshot the last 8 messages as formatted text before compaction.
-        // This gives the agent immediate access to recent context without needing
-        // an extra session_search call after waking up.
-        let recent_snapshot = Self::format_recent_messages(&context.messages, 8);
+        Ok(summary)
+    }
 
-        // Inject recovered brain files — after compaction the agent needs its
-        // identity, user context, tool docs, and coding standards back in full
-        // fidelity, not just a lossy LLM summary.
+    /// Apply a previously-computed compaction summary to a live `AgentContext`.
+    ///
+    /// Builds the recovered-brain preamble plus a snapshot of the most recent
+    /// messages, then calls `AgentContext::compact_with_summary` to do the
+    /// in-place swap (replace older messages with the summary, keep the recent
+    /// tail within 55% of the window).
+    pub(super) fn apply_compaction_summary(context: &mut AgentContext, summary: &str) {
+        let recent_snapshot = Self::format_recent_messages(&context.messages, 8);
         let brain_context = Self::build_recovered_brain_context();
         let summary_with_context = if recent_snapshot.is_empty() {
             format!("{}\n\n{}", brain_context, summary)
@@ -475,8 +536,8 @@ The summary above is NOT sufficient for implementation work.
             )
         };
 
-        // Compact the context: keep recent messages within 55% of max_tokens
-        // (below the 65% budget threshold so hard-truncation never fires after compaction)
+        // Keep recent messages within 55% of max_tokens (below the 65% budget
+        // threshold so hard-truncation never fires immediately after compaction).
         let keep_budget = (context.max_tokens as f64 * 0.55) as usize;
         context.compact_with_summary(summary_with_context, keep_budget);
 
@@ -485,8 +546,187 @@ The summary above is NOT sufficient for implementation work.
             context.usage_percentage(),
             context.token_count
         );
+    }
 
-        Ok(summary)
+    /// Spawn an async compaction task for `session_id`. The agent keeps
+    /// processing turns while the LLM call runs in the background. The
+    /// resulting summary is later swapped in by `try_swap_pending_compaction`
+    /// at any subsequent budget-check point.
+    ///
+    /// No-op if a compaction is already in flight for this session, unless
+    /// it has been running longer than `STUCK_COMPACTION_TIMEOUT_SECS` —
+    /// in which case the stuck task is aborted and a fresh one is started.
+    pub(super) fn spawn_pending_compaction(
+        &self,
+        session_id: Uuid,
+        context: &AgentContext,
+        model_name: &str,
+    ) {
+        const STUCK_COMPACTION_TIMEOUT_SECS: u64 = 600; // 10 minutes
+
+        // Short-lived lock: decide whether to skip, force-restart, or proceed.
+        {
+            let mut map = self.pending_compactions.lock().unwrap();
+            if let Some(existing) = map.get(&session_id) {
+                let age = existing.started_at.elapsed();
+                if age.as_secs() < STUCK_COMPACTION_TIMEOUT_SECS {
+                    tracing::debug!(
+                        "Compaction already in flight for session {} (started {:?} ago) — skipping spawn",
+                        session_id,
+                        age,
+                    );
+                    return;
+                }
+                tracing::warn!(
+                    "Compaction stuck for {:?} on session {} — aborting and restarting",
+                    age,
+                    session_id,
+                );
+                if let Some(stuck) = map.remove(&session_id) {
+                    stuck.cancel.cancel();
+                    stuck.handle.abort();
+                }
+            }
+        }
+
+        let provider = self.provider_for_session(session_id);
+        let snapshot_messages = context.messages.clone();
+        let snapshot_token_count = context.token_count;
+        let snapshot_max_tokens = context.max_tokens;
+        let snapshot_usage_pct = context.usage_percentage();
+        let snapshot_msg_count = context.messages.len();
+        let model_name_owned = model_name.to_string();
+        let max_output_tokens = self.max_tokens;
+        let working_directory = self.get_working_directory();
+        let auto_approve_tools = self.auto_approve_tools;
+
+        let cancel = CancellationToken::new();
+        let cancel_clone = cancel.clone();
+
+        let handle = tokio::spawn(async move {
+            Self::compute_compaction_summary(
+                provider,
+                session_id,
+                snapshot_messages,
+                snapshot_token_count,
+                snapshot_max_tokens,
+                snapshot_usage_pct,
+                model_name_owned,
+                max_output_tokens,
+                working_directory,
+                auto_approve_tools,
+                cancel_clone,
+            )
+            .await
+        });
+
+        let pending = super::types::PendingCompaction {
+            handle,
+            cancel,
+            started_at: std::time::Instant::now(),
+        };
+
+        self.pending_compactions
+            .lock()
+            .unwrap()
+            .insert(session_id, pending);
+
+        tracing::info!(
+            "Spawned async compaction for session {} ({} msgs / {} tokens / {:.1}%)",
+            session_id,
+            snapshot_msg_count,
+            snapshot_token_count,
+            snapshot_usage_pct,
+        );
+    }
+
+    /// Try to swap a completed pending-compaction result into the live context.
+    ///
+    /// Returns `Some(summary)` if a swap happened, `None` otherwise (no entry
+    /// pending, task still running, or task failed/was cancelled). Callers
+    /// (`enforce_context_budget` and the four trigger sites) treat a `Some`
+    /// return exactly like a synchronous-compaction return: persist the
+    /// `[CONTEXT COMPACTION ...]` marker to the DB and inject the
+    /// post-compaction continuation prompt.
+    pub(super) async fn try_swap_pending_compaction(
+        &self,
+        session_id: Uuid,
+        context: &mut AgentContext,
+    ) -> Option<String> {
+        // Peek at the map under a short-lived lock; only take the entry if
+        // the task has finished. We must not hold the std mutex across `.await`.
+        let pending = {
+            let mut map = self.pending_compactions.lock().unwrap();
+            let entry = map.get(&session_id)?;
+            if !entry.handle.is_finished() {
+                return None;
+            }
+            map.remove(&session_id)?
+        };
+
+        let elapsed = pending.started_at.elapsed();
+        let join_result = pending.handle.await;
+        let summary = match join_result {
+            Ok(Ok(s)) => s,
+            Ok(Err(AgentError::Cancelled)) => {
+                tracing::info!(
+                    "Async compaction was cancelled for session {} (after {:?})",
+                    session_id,
+                    elapsed,
+                );
+                return None;
+            }
+            Ok(Err(e)) => {
+                tracing::error!(
+                    "Async compaction failed for session {}: {} (after {:?})",
+                    session_id,
+                    e,
+                    elapsed,
+                );
+                return None;
+            }
+            Err(join_err) => {
+                tracing::error!(
+                    "Async compaction task aborted/panicked for session {}: {}",
+                    session_id,
+                    join_err,
+                );
+                return None;
+            }
+        };
+
+        Self::apply_compaction_summary(context, &summary);
+
+        tracing::info!(
+            "Swapped async compaction summary for session {} (compaction took {:?}, {} bytes)",
+            session_id,
+            elapsed,
+            summary.len(),
+        );
+
+        Some(summary)
+    }
+
+    /// Cancel any in-flight compaction for `session_id`. The spawned task is
+    /// signaled via its `CancellationToken` and aborted, then removed from the
+    /// pending map. Safe no-op when nothing is pending. Used by the 90%
+    /// hard-truncate path so a stale snapshot summary cannot land on top of
+    /// a freshly-truncated message list.
+    pub(super) fn cancel_pending_compaction(&self, session_id: Uuid) {
+        let removed = self
+            .pending_compactions
+            .lock()
+            .unwrap()
+            .remove(&session_id);
+        if let Some(pending) = removed {
+            pending.cancel.cancel();
+            pending.handle.abort();
+            tracing::info!(
+                "Cancelled in-flight compaction for session {} (was running for {:?})",
+                session_id,
+                pending.started_at.elapsed(),
+            );
+        }
     }
 
     /// Format the last N messages into a human-readable snapshot for post-compaction context.
@@ -565,7 +805,9 @@ The summary above is NOT sufficient for implementation work.
     ///
     /// Multiple compactions per day append to the same file. The brain workspace's
     /// `MEMORY.md` is left untouched — it stays as user-curated durable memory.
-    pub(super) async fn save_to_memory(&self, summary: &str) -> std::result::Result<(), String> {
+    pub(super) async fn save_compaction_summary_to_memory(
+        summary: &str,
+    ) -> std::result::Result<(), String> {
         let memory_dir = crate::config::opencrabs_home().join("memory");
 
         std::fs::create_dir_all(&memory_dir)

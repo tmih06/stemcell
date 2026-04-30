@@ -131,170 +131,69 @@ pub fn is_user_correction(msg: &str) -> bool {
 }
 
 impl AgentService {
-    /// Enforce context budget with two-tier enforcement.
+    /// Enforce context budget with non-blocking compaction.
     ///
-    /// Tier 1 — soft trigger at 65%: try LLM compaction (up to 3 retries),
-    /// then re-compact if still over. Preserves context via summaries.
+    /// Tier 1 — soft trigger at 65%: spawns an async LLM compaction task in
+    /// the background and returns immediately. The agent keeps processing
+    /// turns. Subsequent visits to this function check whether the spawned
+    /// task has finished and atomically swap the summary in when it has.
     ///
-    /// Tier 2 — hard floor at 90%: if compaction repeatedly fails and context
-    /// grows to 90%+, emergency truncation kicks in. This path NEVER fails.
-    /// Context is forcibly reduced to ~80% by dropping oldest messages.
+    /// Tier 2 — hard floor at 90%: if context grows past 90% (because growth
+    /// outran compaction or compaction failed), emergency truncation cuts
+    /// older messages back to 80%. This path NEVER fails. It also cancels
+    /// any in-flight async compaction so a stale snapshot summary cannot
+    /// land on top of the freshly-truncated message list.
     ///
     /// NOTE: 65% (~130k of 200k) is chosen because MiniMax (and likely other
     /// models) degrade on function-calling quality well before hitting their
     /// theoretical context limit — tool calls stop around ~133k tokens.
     ///
-    /// Returns the compaction summary if LLM compaction succeeded.
+    /// Returns `Some(summary)` only on the visit where a previously-spawned
+    /// compaction lands; the four call sites use this signal to persist the
+    /// `[CONTEXT COMPACTION ...]` marker to the DB and inject the post-
+    /// compaction continuation prompt.
     async fn enforce_context_budget(
         &self,
         session_id: Uuid,
         context: &mut AgentContext,
         model_name: &str,
-        cancel_token: Option<&tokio_util::sync::CancellationToken>,
+        _cancel_token: Option<&tokio_util::sync::CancellationToken>,
         progress_callback: &Option<ProgressCallback>,
     ) -> Option<String> {
-        // Use the full context window as the budget. Tool schemas are sent
-        // alongside messages but the provider's context_limit already
-        // represents the total window (messages + tools + system). Subtracting
-        // tool overhead here was wrong — it shrank the effective budget by
-        // ~50k tokens and triggered emergency truncation at 140k/200k (70%
-        // real usage) instead of letting the conversation use the full window.
         let effective_max = context.max_tokens;
-        let usage_pct = if effective_max > 0 {
-            (context.token_count as f64 / effective_max as f64) * 100.0
-        } else {
-            100.0
+        let usage_pct = |ctx: &AgentContext| -> f64 {
+            if effective_max > 0 {
+                (ctx.token_count as f64 / effective_max as f64) * 100.0
+            } else {
+                100.0
+            }
         };
 
         tracing::debug!(
             "Context budget: {} tokens / {} max = {:.1}%",
             context.token_count,
             effective_max,
-            usage_pct,
+            usage_pct(context),
         );
 
-        // ── Tier 2: 90% hard floor — truncate to 80%, then fall through to Tier 1 compaction ──
-        if usage_pct >= 90.0 {
-            tracing::warn!(
-                "Context at {:.0}% ({} tokens) — hard truncating to 80%",
-                usage_pct,
-                context.token_count,
-            );
-
-            // Truncate to 80% — keeps last 20 messages minimum (10 pairs)
-            let target = (effective_max as f64 * 0.80) as usize;
-            context.hard_truncate_to(target);
-            context.trim_to_fit(0);
-
-            // Emit updated token count so TUI reflects post-truncation value.
-            if let Some(cb) = progress_callback {
-                cb(session_id, ProgressEvent::TokenCount(context.token_count));
-            }
-
+        // 1. Try to swap any completed pending-compaction result first. If a
+        //    swap lands, usage drops immediately and the rest of this function
+        //    sees the post-swap numbers.
+        let swap_summary = self
+            .try_swap_pending_compaction(session_id, context)
+            .await;
+        if let Some(ref summary) = swap_summary {
             tracing::info!(
-                "Hard truncation complete: {} messages, {} tokens ({:.0}%)",
-                context.messages.len(),
+                "Context post-swap: now at {:.0}% ({} tokens)",
+                usage_pct(context),
                 context.token_count,
-                context.token_count as f64 / effective_max as f64 * 100.0,
             );
-
-            // Recalculate after truncation so Tier 1 sees accurate numbers
-            let usage_pct_now = if effective_max > 0 {
-                (context.token_count as f64 / effective_max as f64) * 100.0
-            } else {
-                100.0
-            };
-            tracing::debug!(
-                "Post-truncation: {:.0}% — falling through to auto-compaction",
-                usage_pct_now,
-            );
-            // Fall through to Tier 1 — auto-compaction will bring it down further
-        }
-
-        // ── Tier 1: soft trigger at 65% — LLM compaction ──
-        // Recalculate usage_pct in case Tier 2 truncated
-        let usage_pct = if effective_max > 0 {
-            (context.token_count as f64 / effective_max as f64) * 100.0
-        } else {
-            100.0
-        };
-        if usage_pct <= 65.0 {
-            return None;
-        }
-
-        tracing::warn!(
-            "Context at {:.0}% (>65%) — triggering LLM compaction",
-            usage_pct
-        );
-        self.record_provider_feedback(
-            session_id,
-            "context_compaction",
-            model_name,
-            Some(&format!("proactive_65pct tokens={}", context.token_count)),
-        );
-
-        // Try LLM compaction first (preserves context via summary)
-        let mut summary_result = None;
-        const MAX_ATTEMPTS: u32 = 3;
-        for attempt in 1..=MAX_ATTEMPTS {
-            match self
-                .compact_context(session_id, context, model_name, cancel_token)
-                .await
-            {
-                Ok(summary) => {
-                    summary_result = Some(summary);
-                    break;
-                }
-                Err(e) => {
-                    tracing::error!(
-                        "LLM compaction failed (attempt {}/{}): {}",
-                        attempt,
-                        MAX_ATTEMPTS,
-                        e
-                    );
-                }
-            }
-        }
-
-        // If still over budget after compaction, re-compact with tighter budget.
-        let target_tokens = (effective_max as f64 * 0.65) as usize;
-        if context.token_count > target_tokens {
-            tracing::warn!(
-                "Still at {} tokens after compaction (target {}), re-compacting",
-                context.token_count,
-                target_tokens,
-            );
-            if let Ok(summary) = self
-                .compact_context(session_id, context, model_name, cancel_token)
-                .await
-            {
-                summary_result = Some(summary);
-            }
-        }
-
-        // If LLM compaction totally failed and we're still over 80%,
-        // do a safety truncation to prevent the 90% nuclear option next time.
-        if summary_result.is_none() {
-            let safety_target = (effective_max as f64 * 0.80) as usize;
-            if context.token_count > safety_target {
-                tracing::warn!(
-                    "Compaction exhausted, context at {} tokens (>{:.0}%) — safety truncation to {:.0}%",
-                    context.token_count,
-                    usage_pct,
-                    80.0f64,
-                );
-                context.hard_truncate_to(safety_target);
-                context.trim_to_fit(0);
-            }
-        }
-
-        // Emit the token count the NEXT request will start with, not the
-        // in-memory count (which includes kept messages that won't survive
-        // reload). On next load, messages_from_last_compaction() picks up
-        // only the compaction marker + messages after it.
-        if let Some(cb) = progress_callback {
-            if let Some(ref summary) = summary_result {
-                let marker_tokens = AgentContext::estimate_tokens(summary) + 100; // marker overhead
+            // Emit the token count the NEXT request will start with, not the
+            // in-memory count (which includes kept messages that won't survive
+            // reload). On next load, messages_from_last_compaction() picks up
+            // only the compaction marker + messages after it.
+            if let Some(cb) = progress_callback {
+                let marker_tokens = AgentContext::estimate_tokens(summary) + 100;
                 let brain_tokens = self
                     .default_system_brain
                     .as_deref()
@@ -304,12 +203,56 @@ impl AgentService {
                     session_id,
                     ProgressEvent::TokenCount(marker_tokens + brain_tokens),
                 );
-            } else {
-                cb(session_id, ProgressEvent::TokenCount(context.token_count));
             }
         }
 
-        summary_result
+        // 2. Tier 2 — 90% hard floor. Cancel any pending compaction (its
+        //    snapshot would no longer match the truncated message list) and
+        //    truncate down to 80%. We then fall through to consider spawning
+        //    a fresh compaction since we're still well above 65%.
+        if usage_pct(context) >= 90.0 {
+            tracing::warn!(
+                "Context at {:.0}% ({} tokens) — hard truncating to 80%",
+                usage_pct(context),
+                context.token_count,
+            );
+            self.cancel_pending_compaction(session_id);
+
+            let target = (effective_max as f64 * 0.80) as usize;
+            context.hard_truncate_to(target);
+            context.trim_to_fit(0);
+
+            if let Some(cb) = progress_callback {
+                cb(session_id, ProgressEvent::TokenCount(context.token_count));
+            }
+
+            tracing::info!(
+                "Hard truncation complete: {} messages, {} tokens ({:.0}%)",
+                context.messages.len(),
+                context.token_count,
+                usage_pct(context),
+            );
+        }
+
+        // 3. Tier 1 — soft trigger at 65%. Spawn a background compaction if
+        //    we're over budget. `spawn_pending_compaction` is a no-op when one
+        //    is already in flight, so it's safe to call this from every
+        //    trigger site without worrying about duplicate spawns.
+        if usage_pct(context) > 65.0 {
+            tracing::warn!(
+                "Context at {:.0}% (>65%) — spawning background compaction",
+                usage_pct(context),
+            );
+            self.record_provider_feedback(
+                session_id,
+                "context_compaction",
+                model_name,
+                Some(&format!("proactive_65pct tokens={}", context.token_count)),
+            );
+            self.spawn_pending_compaction(session_id, context, model_name);
+        }
+
+        swap_summary
     }
 
     /// Fire-and-forget recording of a tool execution to the feedback ledger.
