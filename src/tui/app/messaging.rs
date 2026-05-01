@@ -702,6 +702,10 @@ impl App {
                 self.mode = AppMode::Help;
                 true
             }
+            "/mission-control" | "/mc" => {
+                crate::tui::app::mission_control::actions::open(self);
+                true
+            }
             "/cd" => {
                 let _ = self.open_directory_picker().await;
                 true

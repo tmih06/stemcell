@@ -1,0 +1,132 @@
+//! Tests for `compute` — the pure layout function for Mission Control.
+//!
+//! Contract: the inbox / activity / schedule / help_bar rects must:
+//!   1. Stay strictly inside the outer area.
+//!   2. Not overlap each other.
+//!   3. Reserve exactly 1 row for the help bar when the area can spare it.
+//!   4. Collapse the help bar to 0-height when the area is < 2 rows.
+
+use crate::tui::render::mission_control::{McLayout, compute};
+use ratatui::layout::Rect;
+
+fn rect_inside(child: Rect, parent: Rect) -> bool {
+    child.x >= parent.x
+        && child.y >= parent.y
+        && child.x + child.width <= parent.x + parent.width
+        && child.y + child.height <= parent.y + parent.height
+}
+
+fn rects_overlap(a: Rect, b: Rect) -> bool {
+    let a_right = a.x + a.width;
+    let b_right = b.x + b.width;
+    let a_bottom = a.y + a.height;
+    let b_bottom = b.y + b.height;
+    !(a_right <= b.x || b_right <= a.x || a_bottom <= b.y || b_bottom <= a.y)
+}
+
+#[test]
+fn every_panel_stays_inside_outer_area() {
+    let outer = Rect::new(0, 0, 154, 50);
+    let layout: McLayout = compute(outer);
+    assert!(rect_inside(layout.inbox, outer), "inbox escaped outer");
+    assert!(
+        rect_inside(layout.activity, outer),
+        "activity escaped outer"
+    );
+    assert!(
+        rect_inside(layout.schedule, outer),
+        "schedule escaped outer"
+    );
+    assert!(
+        rect_inside(layout.help_bar, outer),
+        "help_bar escaped outer"
+    );
+}
+
+#[test]
+fn panels_do_not_overlap() {
+    let outer = Rect::new(0, 0, 154, 50);
+    let layout = compute(outer);
+    assert!(
+        !rects_overlap(layout.inbox, layout.activity),
+        "inbox/activity overlap"
+    );
+    assert!(
+        !rects_overlap(layout.inbox, layout.schedule),
+        "inbox/schedule overlap"
+    );
+    assert!(
+        !rects_overlap(layout.activity, layout.schedule),
+        "activity/schedule overlap"
+    );
+    // Panels must not overlap the help bar either.
+    assert!(
+        !rects_overlap(layout.inbox, layout.help_bar),
+        "inbox overlaps help bar"
+    );
+    assert!(
+        !rects_overlap(layout.activity, layout.help_bar),
+        "activity overlaps help bar"
+    );
+    assert!(
+        !rects_overlap(layout.schedule, layout.help_bar),
+        "schedule overlaps help bar"
+    );
+}
+
+#[test]
+fn help_bar_takes_exactly_one_row_when_area_is_tall_enough() {
+    let outer = Rect::new(0, 0, 100, 30);
+    let layout = compute(outer);
+    assert_eq!(layout.help_bar.height, 1);
+    // Help bar sits at the very bottom row.
+    assert_eq!(layout.help_bar.y, outer.y + outer.height - 1);
+    assert_eq!(layout.help_bar.x, outer.x);
+    assert_eq!(layout.help_bar.width, outer.width);
+}
+
+#[test]
+fn help_bar_collapses_to_zero_when_area_is_too_short() {
+    // 1-row area can't spare a help bar — panels take the whole height.
+    let outer = Rect::new(0, 0, 100, 1);
+    let layout = compute(outer);
+    assert_eq!(layout.help_bar.height, 0);
+}
+
+#[test]
+fn inbox_takes_left_40_percent() {
+    let outer = Rect::new(0, 0, 100, 30);
+    let layout = compute(outer);
+    assert_eq!(layout.inbox.x, 0);
+    // Allow 1-cell rounding tolerance from ratatui's percentage split.
+    assert!(
+        (layout.inbox.width as i32 - 40).abs() <= 1,
+        "inbox width was {}, expected ~40",
+        layout.inbox.width
+    );
+}
+
+#[test]
+fn activity_and_schedule_split_right_60_percent_50_50() {
+    let outer = Rect::new(0, 0, 100, 30);
+    let layout = compute(outer);
+    // Combined right column = activity + schedule.
+    let right_height = layout.activity.height + layout.schedule.height;
+    let panel_height = outer.height - layout.help_bar.height;
+    assert_eq!(right_height, panel_height);
+    // Activity and schedule are roughly equal height (rounding tolerance).
+    let diff = (layout.activity.height as i32 - layout.schedule.height as i32).abs();
+    assert!(
+        diff <= 1,
+        "activity / schedule heights differ by more than 1: {} vs {}",
+        layout.activity.height,
+        layout.schedule.height
+    );
+}
+
+#[test]
+fn handles_zero_area_without_panic() {
+    // Pathological case: terminal mid-resize. compute must not panic.
+    let outer = Rect::new(0, 0, 0, 0);
+    let _layout = compute(outer);
+}

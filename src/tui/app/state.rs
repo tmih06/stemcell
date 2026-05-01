@@ -376,6 +376,11 @@ pub struct App {
     /// in the slash autocomplete and dispatched as `action=prompt`.
     pub skills: Vec<crate::brain::skills::Skill>,
 
+    /// Mission Control state — focused panel, selection, scroll, popup.
+    /// Single struct so `AppState` only carries one MC field; everything
+    /// else (input, actions) lives in `tui::app::mission_control`.
+    pub mc: crate::tui::app::mission_control::McState,
+
     /// Onboarding wizard state
     pub onboarding: Option<OnboardingWizard>,
     pub force_onboard: bool,
@@ -611,6 +616,7 @@ impl App {
             brain_path,
             user_commands,
             skills,
+            mc: crate::tui::app::mission_control::McState::default(),
             onboarding: None,
             force_onboard: false,
             processing_sessions: HashSet::new(),
@@ -2790,6 +2796,12 @@ impl App {
                 } else if keys::is_page_down(&event) {
                     self.help_scroll_offset = self.help_scroll_offset.saturating_add(10);
                 }
+            }
+            AppMode::MissionControl => {
+                let _consumed = crate::tui::app::mission_control::input::handle_key(self, event);
+                // C11 will branch on `consumed` — for the C8 stub the
+                // only key wired is Esc, which the handler routes back
+                // to Chat mode by writing `self.mode` directly.
             }
         }
 

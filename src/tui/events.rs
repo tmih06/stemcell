@@ -357,6 +357,8 @@ pub enum AppMode {
     DirectoryPicker,
     /// Onboarding wizard
     Onboarding,
+    /// Mission Control — RSI proposals, activity, schedule (triggered by /mission-control or /mc)
+    MissionControl,
 }
 
 /// Event handler for the TUI

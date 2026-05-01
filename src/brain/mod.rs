@@ -5,6 +5,7 @@
 
 pub mod agent;
 pub mod commands;
+pub mod mission_control;
 pub mod prompt_builder;
 pub mod provider;
 pub mod rsi;

@@ -3,6 +3,7 @@
 mod dialogs;
 pub(crate) mod input;
 mod messaging;
+pub mod mission_control;
 mod state;
 
 pub use state::*;
