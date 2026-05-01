@@ -900,6 +900,22 @@ pub(crate) fn check_interactive_command(command: &str) -> Option<&'static str> {
     None
 }
 
+/// Wrap `s` in POSIX single quotes so it survives /bin/sh expansion verbatim.
+/// `'` inside the input becomes `'\''` (close, escaped quote, reopen).
+pub(crate) fn posix_single_quote(s: &str) -> String {
+    let mut out = String::with_capacity(s.len() + 2);
+    out.push('\'');
+    for ch in s.chars() {
+        if ch == '\'' {
+            out.push_str("'\\''");
+        } else {
+            out.push(ch);
+        }
+    }
+    out.push('\'');
+    out
+}
+
 /// Tempfile-backed `SSH_ASKPASS` script.
 ///
 /// SSH consults `$SSH_ASKPASS` (with `SSH_ASKPASS_REQUIRE=force`) when it
@@ -930,9 +946,13 @@ impl SshAskpass {
 
         // 2. Askpass script (mode 0700, owner-only executable).
         // `cat` is universally available; the script just dumps the
-        // password file. Quoting the path so spaces in $TMPDIR don't break it.
+        // password file. The path goes through POSIX single-quote escaping
+        // so $TMPDIR containing quotes/$/backticks can't break out.
         let pw_path = pw_file.path().to_string_lossy().to_string();
-        let script_body = format!("#!/bin/sh\nexec cat \"{}\"\n", pw_path);
+        let script_body = format!(
+            "#!/bin/sh\nexec cat {}\n",
+            posix_single_quote(&pw_path)
+        );
         let mut script_file = tempfile::Builder::new()
             .prefix("opencrabs-ssh-askpass-")
             .suffix(".sh")

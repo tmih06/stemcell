@@ -8,6 +8,7 @@ pub mod agent_streaming_usage_test;
 pub mod agent_tool_normalization_test;
 pub mod altgr_input_test;
 pub mod bash_interactive_reject_test;
+pub mod bash_posix_quote_test;
 pub mod bash_retry_loop_test;
 pub mod bash_ssh_detection_test;
 pub mod brain_file_safety_test;
