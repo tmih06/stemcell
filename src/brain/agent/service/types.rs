@@ -155,6 +155,15 @@ pub type SudoCallback = Arc<
     dyn Fn(String) -> Pin<Box<dyn Future<Output = Result<Option<String>>> + Send>> + Send + Sync,
 >;
 
+/// Callback for requesting an SSH password from the user.
+///
+/// Same signature as `SudoCallback`; the input is a human-readable target
+/// label (e.g. `"root@1.2.3.4 (ssh)"`) rather than a command string. Wired
+/// up by the TUI to a password dialog and by channels (future) to an
+/// approval card. When `None`, ssh commands that need a password fall back
+/// to returning the raw probe stderr to the agent.
+pub type SshPasswordCallback = SudoCallback;
+
 /// Callback for checking if a user message has been queued for THIS session
 /// during tool execution. Returns Some(message) if one is waiting for the
 /// given `session_id`, None otherwise. Must not block.

@@ -569,6 +569,58 @@ pub(super) fn render_chat(f: &mut Frame, app: &mut App, area: Rect) {
         }
     }
 
+    // Show SSH password dialog inline (like approval dialogs).
+    // Same shape as the sudo dialog, different label.
+    if let Some(ref ssh_req) = app.ssh_pending {
+        lines.push(Line::from(""));
+        lines.push(Line::from(vec![
+            Span::styled(
+                "  \u{1F511} ",
+                Style::default().fg(Color::Rgb(75, 160, 215)),
+            ),
+            Span::styled(
+                "SSH password required",
+                Style::default()
+                    .fg(Color::Rgb(75, 160, 215))
+                    .add_modifier(Modifier::BOLD),
+            ),
+        ]));
+        let target_display = if ssh_req.target.len() > 60 {
+            format!("{}...", ssh_req.target.chars().take(57).collect::<String>())
+        } else {
+            ssh_req.target.clone()
+        };
+        lines.push(Line::from(vec![
+            Span::styled("  Target:   ", Style::default().fg(Color::DarkGray)),
+            Span::styled(target_display, Style::default().fg(Color::Reset)),
+        ]));
+        lines.push(Line::from(vec![
+            Span::styled("  Password: ", Style::default().fg(Color::DarkGray)),
+            Span::styled(
+                "\u{2022}".repeat(app.ssh_input.len()),
+                Style::default().fg(Color::Reset),
+            ),
+            Span::styled("\u{2588}", Style::default().fg(Color::Rgb(120, 120, 120))),
+        ]));
+        lines.push(Line::from(vec![
+            Span::styled(
+                "  [Enter] ",
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled("Submit  ", Style::default().fg(Color::DarkGray)),
+            Span::styled(
+                "[Esc] ",
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled("Cancel", Style::default().fg(Color::DarkGray)),
+        ]));
+        lines.push(Line::from(""));
+    }
+
     // Show sudo password dialog inline (like approval dialogs)
     if let Some(ref sudo_req) = app.sudo_pending {
         lines.push(Line::from(""));

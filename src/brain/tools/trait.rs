@@ -28,6 +28,11 @@ pub struct ToolExecutionContext {
     /// Callback for requesting sudo password from the user (set by TUI)
     pub sudo_callback: Option<crate::brain::agent::SudoCallback>,
 
+    /// Callback for requesting an SSH password from the user (set by TUI).
+    /// Wired to the same dialog plumbing as `sudo_callback` but with a
+    /// different prompt label so the user knows it's an SSH server.
+    pub ssh_callback: Option<crate::brain::agent::SshPasswordCallback>,
+
     /// Shared working directory handle — tools can mutate this to change the
     /// working directory at runtime (e.g. config_manager set_working_directory).
     pub shared_working_directory: Option<Arc<std::sync::RwLock<std::path::PathBuf>>>,
@@ -44,6 +49,7 @@ impl std::fmt::Debug for ToolExecutionContext {
             .field("auto_approve", &self.auto_approve)
             .field("timeout_secs", &self.timeout_secs)
             .field("sudo_callback", &self.sudo_callback.is_some())
+            .field("ssh_callback", &self.ssh_callback.is_some())
             .finish()
     }
 }
@@ -58,6 +64,7 @@ impl ToolExecutionContext {
             auto_approve: false,
             timeout_secs: 120,
             sudo_callback: None,
+            ssh_callback: None,
             shared_working_directory: None,
             service_context: None,
         }

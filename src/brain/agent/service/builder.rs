@@ -64,6 +64,12 @@ pub struct AgentService {
     /// Callback for requesting sudo password from user
     pub(super) sudo_callback: Option<SudoCallback>,
 
+    /// Callback for requesting SSH password from user (for `ssh`, `scp`,
+    /// `rsync` invocations whose key auth fails). Same shape as
+    /// `sudo_callback` — wired by the TUI to a password dialog and by
+    /// channels (future) to an approval card.
+    pub(super) ssh_callback: Option<SshPasswordCallback>,
+
     /// Working directory for tool execution (shared, mutable at runtime via /cd or agent NLP)
     pub(super) working_directory: Arc<std::sync::RwLock<std::path::PathBuf>>,
 
@@ -114,6 +120,7 @@ impl AgentService {
             progress_callback: None,
             message_queue_callback: None,
             sudo_callback: None,
+            ssh_callback: None,
             working_directory: Arc::new(std::sync::RwLock::new(
                 std::env::current_dir().unwrap_or_default(),
             )),
@@ -168,6 +175,11 @@ impl AgentService {
     /// Get the sudo callback (for preserving across rebuilds)
     pub fn sudo_callback(&self) -> &Option<SudoCallback> {
         &self.sudo_callback
+    }
+
+    /// Get the SSH password callback (for preserving across rebuilds)
+    pub fn ssh_callback(&self) -> &Option<SshPasswordCallback> {
+        &self.ssh_callback
     }
 
     /// Get the working directory (for preserving across rebuilds)
@@ -225,6 +237,12 @@ impl AgentService {
     /// Set the sudo password callback for interactive sudo prompts
     pub fn with_sudo_callback(mut self, callback: Option<SudoCallback>) -> Self {
         self.sudo_callback = callback;
+        self
+    }
+
+    /// Set the SSH password callback for interactive ssh/scp/rsync prompts
+    pub fn with_ssh_callback(mut self, callback: Option<SshPasswordCallback>) -> Self {
+        self.ssh_callback = callback;
         self
     }
 

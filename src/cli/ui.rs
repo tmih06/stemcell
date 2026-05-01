@@ -741,6 +741,51 @@ async fn cmd_chat_inner(
         })
     });
 
+    // SSH password callback — same shape as the sudo callback, different
+    // event variant so the dialog can show "SSH password required" instead
+    // of "sudo password required".
+    let ssh_sender = app.event_sender();
+    let ssh_callback: crate::brain::agent::SshPasswordCallback = Arc::new(move |target| {
+        let sender = ssh_sender.clone();
+        Box::pin(async move {
+            use crate::tui::events::{SshPasswordRequest, SshPasswordResponse, TuiEvent};
+            use tokio::sync::mpsc;
+
+            let (response_tx, mut response_rx) = mpsc::unbounded_channel::<SshPasswordResponse>();
+
+            let request = SshPasswordRequest {
+                request_id: uuid::Uuid::new_v4(),
+                target,
+                response_tx,
+            };
+
+            sender
+                .send(TuiEvent::SshPasswordRequested(request))
+                .map_err(|e| {
+                    crate::brain::agent::AgentError::Internal(format!(
+                        "Failed to send SSH password request: {}",
+                        e
+                    ))
+                })?;
+
+            let response =
+                tokio::time::timeout(std::time::Duration::from_secs(120), response_rx.recv())
+                    .await
+                    .map_err(|_| {
+                        crate::brain::agent::AgentError::Internal(
+                            "SSH password request timed out (120s)".to_string(),
+                        )
+                    })?
+                    .ok_or_else(|| {
+                        crate::brain::agent::AgentError::Internal(
+                            "SSH password channel closed".to_string(),
+                        )
+                    })?;
+
+            Ok(response.password)
+        })
+    });
+
     // Create session-updated notification channel — remote channels fire this so the TUI
     // reloads in real-time when Telegram/WhatsApp/Discord/Slack messages are processed.
     let (session_updated_tx, mut session_updated_rx) =
@@ -836,6 +881,7 @@ async fn cmd_chat_inner(
             .with_progress_callback(Some(progress_callback))
             .with_message_queue_callback(Some(message_queue_callback))
             .with_sudo_callback(Some(sudo_callback))
+            .with_ssh_callback(Some(ssh_callback))
             .with_working_directory(working_directory.clone())
             .with_brain_path(brain_path)
             .with_session_updated_tx(session_updated_tx),

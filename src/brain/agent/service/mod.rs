@@ -18,5 +18,6 @@ pub use helpers::{
 };
 pub use types::{
     AgentResponse, AgentStreamResponse, ApprovalCallback, ChannelSessionEvent,
-    MessageQueueCallback, ProgressCallback, ProgressEvent, SudoCallback, ToolApprovalInfo,
+    MessageQueueCallback, ProgressCallback, ProgressEvent, SshPasswordCallback, SudoCallback,
+    ToolApprovalInfo,
 };

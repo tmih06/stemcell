@@ -678,6 +678,7 @@ impl AgentService {
                     .clone(),
             );
         tool_context.sudo_callback = self.sudo_callback.clone();
+        tool_context.ssh_callback = self.ssh_callback.clone();
         tool_context.shared_working_directory = Some(Arc::clone(&self.working_directory));
         tool_context.service_context = Some(self.context.clone());
 
@@ -3067,6 +3068,7 @@ impl AgentService {
                                     auto_approve: true, // User approved this execution
                                     timeout_secs: tool_context.timeout_secs,
                                     sudo_callback: tool_context.sudo_callback.clone(),
+                                    ssh_callback: tool_context.ssh_callback.clone(),
                                     shared_working_directory: tool_context
                                         .shared_working_directory
                                         .clone(),

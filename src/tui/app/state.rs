@@ -3,7 +3,8 @@
 //! Core state management for the terminal user interface.
 
 use super::events::{
-    AppMode, EventHandler, SudoPasswordRequest, SudoPasswordResponse, ToolApprovalRequest,
+    AppMode, EventHandler, SshPasswordRequest, SshPasswordResponse, SudoPasswordRequest,
+    SudoPasswordResponse, ToolApprovalRequest,
     ToolApprovalResponse, TuiEvent,
 };
 use super::onboarding::OnboardingWizard;
@@ -497,6 +498,11 @@ pub struct App {
     /// Raw password text being typed (never displayed, only dots)
     pub sudo_input: String,
 
+    /// Pending SSH password request (shown as inline dialog, same UX as sudo)
+    pub ssh_pending: Option<SshPasswordRequest>,
+    /// Raw SSH password text being typed (never displayed, only dots)
+    pub ssh_input: String,
+
     /// Active plan document for the current session (loaded from disk)
     pub plan_document: Option<crate::tui::plan::PlanDocument>,
     /// Path to the plan JSON file for the current session
@@ -647,6 +653,8 @@ impl App {
             display_token_count: 0,
             sudo_pending: None,
             sudo_input: String::new(),
+            ssh_pending: None,
+            ssh_input: String::new(),
             plan_document: None,
             plan_file_path: None,
             pane_manager: PaneManager::load_layout(),
@@ -1079,6 +1087,7 @@ impl App {
         let progress_callback = self.agent_service.progress_callback().clone();
         let message_queue_callback = self.agent_service.message_queue_callback().clone();
         let sudo_callback = self.agent_service.sudo_callback().clone();
+        let ssh_callback = self.agent_service.ssh_callback().clone();
         let session_updated_tx = self.agent_service.session_updated_tx();
         let working_dir = self
             .agent_service
@@ -1096,6 +1105,7 @@ impl App {
             .with_progress_callback(progress_callback)
             .with_message_queue_callback(message_queue_callback)
             .with_sudo_callback(sudo_callback)
+            .with_ssh_callback(ssh_callback)
             .with_working_directory(working_dir)
             .with_auto_approve_tools(self.approval_auto_always);
 
@@ -2335,6 +2345,10 @@ impl App {
                 self.sudo_pending = Some(request);
                 self.sudo_input.clear();
             }
+            TuiEvent::SshPasswordRequested(request) => {
+                self.ssh_pending = Some(request);
+                self.ssh_input.clear();
+            }
             TuiEvent::SystemMessage { session_id, text } => {
                 // Self-healing alerts and other session-scoped system
                 // messages must stay in the session that triggered them so
@@ -2445,6 +2459,36 @@ impl App {
                 }
                 KeyCode::Char(c) => {
                     self.sudo_input.push(c);
+                }
+                _ => {}
+            }
+            return Ok(());
+        }
+
+        // SSH password dialog intercepts all keys when active. Same UX as sudo.
+        if self.ssh_pending.is_some() {
+            match event.code {
+                KeyCode::Enter => {
+                    if let Some(request) = self.ssh_pending.take() {
+                        let password = std::mem::take(&mut self.ssh_input);
+                        let _ = request.response_tx.send(SshPasswordResponse {
+                            password: Some(password),
+                        });
+                    }
+                }
+                KeyCode::Esc => {
+                    if let Some(request) = self.ssh_pending.take() {
+                        let _ = request
+                            .response_tx
+                            .send(SshPasswordResponse { password: None });
+                    }
+                    self.ssh_input.clear();
+                }
+                KeyCode::Backspace => {
+                    self.ssh_input.pop();
+                }
+                KeyCode::Char(c) => {
+                    self.ssh_input.push(c);
                 }
                 _ => {}
             }

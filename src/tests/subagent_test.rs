@@ -364,6 +364,7 @@ mod send_input_tool {
             auto_approve: true,
             timeout_secs: 30,
             sudo_callback: None,
+            ssh_callback: None,
             shared_working_directory: None,
             service_context: None,
         }
@@ -515,6 +516,7 @@ mod close_agent_tool {
             auto_approve: true,
             timeout_secs: 30,
             sudo_callback: None,
+            ssh_callback: None,
             shared_working_directory: None,
             service_context: None,
         }
@@ -639,6 +641,7 @@ mod wait_agent_tool {
             auto_approve: true,
             timeout_secs: 30,
             sudo_callback: None,
+            ssh_callback: None,
             shared_working_directory: None,
             service_context: None,
         }
@@ -1253,6 +1256,7 @@ mod team_delete_tool {
             auto_approve: true,
             timeout_secs: 30,
             sudo_callback: None,
+            ssh_callback: None,
             shared_working_directory: None,
             service_context: None,
         }
@@ -1377,6 +1381,7 @@ mod team_broadcast_tool {
             auto_approve: true,
             timeout_secs: 30,
             sudo_callback: None,
+            ssh_callback: None,
             shared_working_directory: None,
             service_context: None,
         }

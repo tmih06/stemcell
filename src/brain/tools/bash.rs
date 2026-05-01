@@ -14,6 +14,136 @@ use tokio::process::Command;
 use tokio::time::{Duration, timeout};
 use uuid::Uuid;
 
+/// Detach a child from the controlling terminal before `exec`.
+///
+/// Without this, programs that bypass `stdin` and open `/dev/tty` directly
+/// (ssh password prompt, sudo's getpass fallback, gnu readline) steal the
+/// parent's TTY — when the parent is the OpenCrabs TUI, that means the
+/// child reads the user's keystrokes, switches the terminal into no-echo
+/// mode, and emits escape sequences into the rendered chat (cursor keys
+/// turn into `[[[[[`). Restart fixes it because the TTY mode is reset.
+///
+/// `setsid()` puts the child in a brand-new session with no controlling
+/// TTY, so `open("/dev/tty")` inside the child returns `ENXIO` and the
+/// program either errors out cleanly or falls back to a non-TTY path
+/// (e.g. SSH consults `SSH_ASKPASS`). The TUI is never touched.
+#[cfg(unix)]
+fn detach_session_pre_exec(cmd: &mut Command) {
+    unsafe {
+        cmd.pre_exec(|| {
+            if libc::setsid() == -1 {
+                return Err(std::io::Error::last_os_error());
+            }
+            Ok(())
+        });
+    }
+}
+
+#[cfg(not(unix))]
+fn detach_session_pre_exec(_cmd: &mut Command) {
+    // No-op on Windows — the TTY-bleed problem doesn't apply (different
+    // console model) and pre_exec is a Unix-only API.
+}
+
+/// First-token of a shell command, normalized for SSH detection.
+fn first_token(cmd: &str) -> &str {
+    cmd.split([';', '|', '&'])
+        .next()
+        .unwrap_or(cmd)
+        .split_whitespace()
+        .find(|tok| !tok.contains('='))
+        .unwrap_or("")
+}
+
+/// Pretty-print the SSH/scp/rsync target so the password dialog has a
+/// recognisable hostname. Returns `None` for non-SSH commands and for
+/// any SSH invocation that already carries a non-interactive auth
+/// hint (`-o BatchMode=yes`, `-o PreferredAuthentications=publickey`)
+/// — in those cases we let the command fail naturally rather than
+/// prompting.
+pub(crate) fn parse_ssh_invocation(command: &str) -> Option<String> {
+    let cmd = command.trim();
+    let first = first_token(cmd);
+    let is_ssh_like = matches!(first, "ssh" | "scp" | "sftp" | "rsync");
+    if !is_ssh_like {
+        return None;
+    }
+
+    // ssh-keygen / ssh-keyscan / ssh-add never prompt for a remote
+    // password — skip them.
+    if first == "ssh" {
+        let second = cmd.split_whitespace().nth(1).unwrap_or("");
+        if second.is_empty() || second.starts_with('-') {
+            // ok
+        } else if second.contains('@') || !second.contains('-') {
+            // looks like a host
+        }
+    }
+
+    let lower = cmd.to_lowercase();
+    if lower.contains("batchmode=yes")
+        || lower.contains("preferredauthentications=publickey")
+        || lower.contains("passwordauthentication=no")
+    {
+        return None;
+    }
+
+    // Best-effort host extraction: first token that contains '@' or
+    // looks like host:path (scp/rsync) and isn't a flag.
+    for tok in cmd.split_whitespace().skip(1) {
+        if tok.starts_with('-') {
+            continue;
+        }
+        if tok.contains('@') {
+            return Some(tok.to_string());
+        }
+        if tok.contains(':') && !tok.starts_with('/') {
+            return Some(tok.to_string());
+        }
+    }
+    // Fallback: just the bare hostname after `ssh`
+    if first == "ssh" {
+        for tok in cmd.split_whitespace().skip(1) {
+            if !tok.starts_with('-') {
+                return Some(tok.to_string());
+            }
+        }
+    }
+    Some(format!("(unknown {} target)", first))
+}
+
+/// Inject `-o BatchMode=yes -o ConnectTimeout=15` after the leading
+/// `ssh`/`scp`/`sftp`/`rsync` token so we can probe whether key auth
+/// works without ever blocking on a TTY prompt. Returns the rewritten
+/// command, leaving the rest of the args untouched.
+fn inject_batch_mode(command: &str) -> String {
+    let trimmed_start = command.trim_start();
+    let leading_ws = &command[..command.len() - trimmed_start.len()];
+
+    // Find the end of the first token (the binary name).
+    let first_end = trimmed_start
+        .find(char::is_whitespace)
+        .unwrap_or(trimmed_start.len());
+    let (head, tail) = trimmed_start.split_at(first_end);
+
+    let probe_opts = " -o BatchMode=yes -o ConnectTimeout=15 -o StrictHostKeyChecking=accept-new";
+    format!("{}{}{}{}", leading_ws, head, probe_opts, tail)
+}
+
+/// Heuristic: did this stderr come from an SSH/scp/rsync auth failure
+/// (vs. a network or hostname error)? We only retry the password flow
+/// for genuine auth-rejected cases.
+fn ssh_stderr_is_auth_failure(stderr: &str) -> bool {
+    let s = stderr.to_lowercase();
+    s.contains("permission denied")
+        || s.contains("password:")
+        || s.contains("host key verification failed")
+        || s.contains("publickey,password")
+        || s.contains("publickey,keyboard-interactive")
+        || s.contains("no supported authentication methods")
+        || (s.contains("ssh:") && s.contains("authentication"))
+}
+
 /// Bash execution tool
 pub struct BashTool;
 
@@ -188,14 +318,15 @@ impl Tool for BashTool {
             };
 
             let command_future = async {
-                let mut child = Command::new(shell)
-                    .arg(shell_arg)
+                let mut cmd = Command::new(shell);
+                cmd.arg(shell_arg)
                     .arg(&sudo_cmd)
                     .current_dir(&working_dir)
                     .stdin(std::process::Stdio::piped())
                     .stdout(std::process::Stdio::piped())
-                    .stderr(std::process::Stdio::piped())
-                    .spawn()?;
+                    .stderr(std::process::Stdio::piped());
+                detach_session_pre_exec(&mut cmd);
+                let mut child = cmd.spawn()?;
 
                 // Write password to stdin and close it
                 if let Some(mut stdin) = child.stdin.take() {
@@ -218,6 +349,112 @@ impl Tool for BashTool {
                     return Err(ToolError::Timeout(effective_timeout));
                 }
             }
+        } else if let Some(ssh_target) = parse_ssh_invocation(&input.command) {
+            // SSH-like commands need special handling: pre_exec/setsid means
+            // the child has no TTY, so an interactive password prompt would
+            // exit immediately with "no controlling terminal". We probe with
+            // BatchMode=yes first (key-only auth) and fall back to the
+            // password callback + SSH_ASKPASS if the probe rejects auth.
+            let probe_cmd = inject_batch_mode(&input.command);
+            let probe_future = async {
+                let mut cmd = Command::new(shell);
+                cmd.arg(shell_arg)
+                    .arg(&probe_cmd)
+                    .current_dir(&working_dir)
+                    .stdin(std::process::Stdio::null());
+                detach_session_pre_exec(&mut cmd);
+                cmd.output().await
+            };
+
+            let probe_output =
+                match timeout(Duration::from_secs(effective_timeout), probe_future).await {
+                    Ok(Ok(o)) => o,
+                    Ok(Err(e)) => {
+                        return Ok(ToolResult::error(format!(
+                            "Command execution failed: {}",
+                            e
+                        )));
+                    }
+                    Err(_) => {
+                        return Err(ToolError::Timeout(effective_timeout));
+                    }
+                };
+
+            let probe_stderr = String::from_utf8_lossy(&probe_output.stderr).to_string();
+            let probe_succeeded = probe_output.status.success();
+            let auth_failed = !probe_succeeded && ssh_stderr_is_auth_failure(&probe_stderr);
+
+            if probe_succeeded || !auth_failed {
+                probe_output
+            } else if let Some(ref callback) = context.ssh_callback {
+                // Auth failed and a password callback is wired — request the
+                // password from the user, then retry with SSH_ASKPASS pointing
+                // at a script that emits the password to stdout.
+                let prompt = format!(
+                    "{} ({})",
+                    ssh_target,
+                    input.command.split_whitespace().next().unwrap_or("ssh")
+                );
+                let password = match callback(prompt).await {
+                    Ok(Some(p)) => p,
+                    Ok(None) => {
+                        return Ok(ToolResult::error(
+                            "SSH password cancelled by user".to_string(),
+                        ));
+                    }
+                    Err(e) => {
+                        return Ok(ToolResult::error(format!(
+                            "SSH password prompt failed: {}",
+                            e
+                        )));
+                    }
+                };
+
+                let askpass = match SshAskpass::new(&password) {
+                    Ok(a) => a,
+                    Err(e) => {
+                        return Ok(ToolResult::error(format!(
+                            "Failed to set up SSH_ASKPASS: {}",
+                            e
+                        )));
+                    }
+                };
+
+                let retry_future = async {
+                    let mut cmd = Command::new(shell);
+                    cmd.arg(shell_arg)
+                        .arg(&input.command)
+                        .current_dir(&working_dir)
+                        .stdin(std::process::Stdio::null())
+                        .env("SSH_ASKPASS", askpass.script_path())
+                        .env("SSH_ASKPASS_REQUIRE", "force")
+                        // SSH_ASKPASS_REQUIRE=force on modern OpenSSH ignores
+                        // DISPLAY, but older builds (Debian 11, macOS preinstalled)
+                        // still gate on it being non-empty. Keep both happy.
+                        .env("DISPLAY", ":0");
+                    detach_session_pre_exec(&mut cmd);
+                    cmd.output().await
+                };
+
+                match timeout(Duration::from_secs(effective_timeout), retry_future).await {
+                    Ok(Ok(output)) => output,
+                    Ok(Err(e)) => {
+                        return Ok(ToolResult::error(format!(
+                            "SSH retry failed: {}",
+                            e
+                        )));
+                    }
+                    Err(_) => {
+                        return Err(ToolError::Timeout(effective_timeout));
+                    }
+                }
+            } else {
+                // No password callback wired (channel session) — return the
+                // probe output as-is so the agent sees the auth-failure
+                // stderr and can either retry with explicit `-i <key>` or
+                // ask the user out of band.
+                probe_output
+            }
         } else {
             // Normal execution (no sudo password needed).
             // stdin is set to /dev/null to detach from the parent TTY — when
@@ -226,12 +463,19 @@ impl Tool for BashTool {
             // mouse-report escape sequences off the terminal and emit them
             // on stdout, where they land in the tool-output buffer and
             // leak into the rendered TUI message.
-            let command_future = Command::new(shell)
-                .arg(shell_arg)
-                .arg(&input.command)
-                .current_dir(&working_dir)
-                .stdin(std::process::Stdio::null())
-                .output();
+            // setsid() additionally puts the child in a fresh session
+            // with no controlling TTY — programs that bypass stdin and
+            // open /dev/tty directly (ssh prompt, sudo getpass) cannot
+            // steal the user's keyboard or corrupt the TUI.
+            let command_future = async {
+                let mut cmd = Command::new(shell);
+                cmd.arg(shell_arg)
+                    .arg(&input.command)
+                    .current_dir(&working_dir)
+                    .stdin(std::process::Stdio::null());
+                detach_session_pre_exec(&mut cmd);
+                cmd.output().await
+            };
 
             match timeout(Duration::from_secs(effective_timeout), command_future).await {
                 Ok(Ok(output)) => output,
@@ -657,6 +901,63 @@ pub(crate) fn check_interactive_command(command: &str) -> Option<&'static str> {
     }
 
     None
+}
+
+/// Tempfile-backed `SSH_ASKPASS` script.
+///
+/// SSH consults `$SSH_ASKPASS` (with `SSH_ASKPASS_REQUIRE=force`) when it
+/// can't open a TTY. The script we point at must be executable and emit
+/// the password on stdout. We materialise both files in the process tempdir,
+/// chmod 0700, and clean up on `Drop` so the secret never lingers.
+struct SshAskpass {
+    _password_file: tempfile::NamedTempFile,
+    script_file: tempfile::NamedTempFile,
+}
+
+impl SshAskpass {
+    fn new(password: &str) -> std::io::Result<Self> {
+        use std::io::Write;
+
+        // 1. Password file (mode 0600, owner-only).
+        let mut pw_file = tempfile::Builder::new()
+            .prefix("opencrabs-ssh-pw-")
+            .tempfile()?;
+        pw_file.write_all(password.as_bytes())?;
+        pw_file.flush()?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let perms = std::fs::Permissions::from_mode(0o600);
+            std::fs::set_permissions(pw_file.path(), perms)?;
+        }
+
+        // 2. Askpass script (mode 0700, owner-only executable).
+        // `cat` is universally available; the script just dumps the
+        // password file. Quoting the path so spaces in $TMPDIR don't break it.
+        let pw_path = pw_file.path().to_string_lossy().to_string();
+        let script_body = format!("#!/bin/sh\nexec cat \"{}\"\n", pw_path);
+        let mut script_file = tempfile::Builder::new()
+            .prefix("opencrabs-ssh-askpass-")
+            .suffix(".sh")
+            .tempfile()?;
+        script_file.write_all(script_body.as_bytes())?;
+        script_file.flush()?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let perms = std::fs::Permissions::from_mode(0o700);
+            std::fs::set_permissions(script_file.path(), perms)?;
+        }
+
+        Ok(Self {
+            _password_file: pw_file,
+            script_file,
+        })
+    }
+
+    fn script_path(&self) -> &std::path::Path {
+        self.script_file.path()
+    }
 }
 
 #[cfg(test)]

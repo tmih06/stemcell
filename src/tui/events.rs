@@ -187,6 +187,11 @@ pub enum TuiEvent {
     /// Sudo password requested by bash tool
     SudoPasswordRequested(SudoPasswordRequest),
 
+    /// SSH password requested by bash tool (used when key auth fails on
+    /// `ssh`/`scp`/`rsync`). Mirrors `SudoPasswordRequested` so the dialog
+    /// plumbing is identical — only the title and prompt label differ.
+    SshPasswordRequested(SshPasswordRequest),
+
     /// Reasoning/thinking content chunk from providers like MiniMax (display-only)
     ReasoningChunk { session_id: Uuid, text: String },
 
@@ -247,6 +252,35 @@ impl Clone for SudoPasswordRequest {
 #[derive(Debug, Clone)]
 pub struct SudoPasswordResponse {
     /// The password (None if cancelled by user)
+    pub password: Option<String>,
+}
+
+/// SSH password request from the bash tool. Same shape as
+/// `SudoPasswordRequest` — `command` carries a human-friendly label
+/// (e.g. `"root@1.2.3.4 (ssh)"`) instead of the literal sudo command,
+/// since the bash tool may have already rewritten the SSH invocation.
+#[derive(Debug)]
+pub struct SshPasswordRequest {
+    pub request_id: Uuid,
+    /// Target description shown to the user (e.g. `"root@1.2.3.4 (ssh)"`).
+    pub target: String,
+    /// Channel to send password back
+    pub response_tx: mpsc::UnboundedSender<SshPasswordResponse>,
+}
+
+impl Clone for SshPasswordRequest {
+    fn clone(&self) -> Self {
+        Self {
+            request_id: self.request_id,
+            target: self.target.clone(),
+            response_tx: self.response_tx.clone(),
+        }
+    }
+}
+
+/// SSH password response from the TUI
+#[derive(Debug, Clone)]
+pub struct SshPasswordResponse {
     pub password: Option<String>,
 }
 
