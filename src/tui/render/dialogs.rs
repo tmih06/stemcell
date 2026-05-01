@@ -337,7 +337,10 @@ pub(super) fn render_model_selector(f: &mut Frame, app: &App, area: Rect) {
     let form_lines: u16 = if is_custom_selected && model_count == 0 {
         12
     } else if is_custom_selected {
-        10 + visible_models as u16 + if has_more_indicators { 2 } else { 0 }
+        // 11 base: Base URL(2) + API Key(2) + filter(1) + empty(1) + Name(1) + CtxWin(1) + empty(1) + help(1) + padding(1)
+        // + visible models (capped at MAX_VISIBLE_MODELS for scrollable list)
+        // + up/down indicators when total exceeds the viewport
+        11 + visible_models as u16 + if has_more_indicators { 2 } else { 0 }
     } else {
         4 + model_count as u16 + 4 // key/filter chrome + model list + footer
     };
