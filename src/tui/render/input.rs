@@ -514,6 +514,80 @@ pub(super) fn render_input(f: &mut Frame, app: &App, area: Rect) {
     f.render_widget(input, area);
 }
 
+/// Sizing math for the slash-autocomplete dropdown.
+///
+/// Pure function pulled out of `render_slash_autocomplete` so the
+/// regression (long skill descriptions overshooting the frame's right
+/// edge and panicking ratatui's buffer write) is unit-testable without
+/// a live `App`.
+///
+/// Behaviour: **responsive**. The dropdown grows to fit the longest row
+/// (name column + description), capped at `input_area_width - 1` so
+/// the right edge stays inside the frame. There is no fixed soft cap —
+/// content shorter than the terminal renders without truncation;
+/// content wider than the terminal is truncated to fit.
+///
+/// `name_col_chars` is the visual width reserved for the name column
+/// across all rows so they line up — caller passes
+/// `max(10, longest_name_chars)`.
+///
+/// Returns `(width, inner_width, desc_budget)`:
+///   - `width`       — final dropdown rect width (incl. 2 borders + 2 pads)
+///   - `inner_width` — usable width inside the borders + pads
+///   - `desc_budget` — char budget for the truncated description portion
+pub(crate) fn dropdown_dimensions(
+    name_col_chars: u16,
+    description_char_counts: &[usize],
+    input_area_width: u16,
+    pad_x: u16,
+) -> (u16, u16, usize) {
+    // Dropdown is anchored at `input_area.x + 1`, so its absolute right
+    // edge must stay within the frame's right edge — the maximum width
+    // is therefore `input_area_width - 1`. Without this clamp, a long
+    // description inflates `width` to `input_area_width` and ratatui
+    // rejects the write at column `input_area_width` with an
+    // "index outside of buffer" panic.
+    let max_dropdown_width = input_area_width.saturating_sub(1).max(1);
+    let chrome = 2 + 2 * pad_x; // 2 borders + 2 pads
+    // Each rendered row is: "  " + name (padded to name_col_chars) +
+    // " " + desc + " ". The leading "  " is part of the name span; the
+    // trailing " " bookends the desc span. Total = 2 + name_col + 1 + desc + 1.
+    let row_overhead: u16 = 2 + name_col_chars + 1 + 1;
+    let max_content_width = description_char_counts
+        .iter()
+        .map(|&desc_len| row_overhead.saturating_add(desc_len as u16))
+        .max()
+        .unwrap_or(40);
+    // Final width = content + chrome, with a 40-col floor for usability,
+    // capped at the terminal-safe maximum.
+    let width = (max_content_width.saturating_add(chrome))
+        .max(40)
+        .min(max_dropdown_width);
+    let inner_width = width.saturating_sub(chrome);
+    let desc_budget = inner_width.saturating_sub(row_overhead) as usize;
+    (width, inner_width, desc_budget)
+}
+
+/// Truncate `s` to at most `max_chars` Unicode scalar values, appending an
+/// ellipsis (`…`) when truncation occurred. Returns a `Cow` so the
+/// allocation is skipped on the common no-truncate path. Char count is
+/// not the same as terminal display width for emoji/CJK, but it's a
+/// close-enough proxy for the dropdown row, and importantly it stops
+/// 200-char skill descriptions from overflowing the soft width cap.
+pub(crate) fn truncate_to_chars(s: &str, max_chars: usize) -> std::borrow::Cow<'_, str> {
+    if max_chars == 0 {
+        return std::borrow::Cow::Borrowed("");
+    }
+    if s.chars().count() <= max_chars {
+        return std::borrow::Cow::Borrowed(s);
+    }
+    // Reserve one char slot for the ellipsis.
+    let keep = max_chars.saturating_sub(1);
+    let mut out: String = s.chars().take(keep).collect();
+    out.push('…');
+    std::borrow::Cow::Owned(out)
+}
+
 /// Render slash command autocomplete dropdown above the input area
 pub(super) fn render_slash_autocomplete(f: &mut Frame, app: &App, input_area: Rect) {
     let count = app.slash_filtered.len() as u16;
@@ -521,23 +595,34 @@ pub(super) fn render_slash_autocomplete(f: &mut Frame, app: &App, input_area: Re
         return;
     }
 
-    // Position dropdown above the input box, auto-sized to fit content
-    // Padding: 1 char each side (left/right inside border), 1 empty line top/bottom
+    // Position dropdown above the input box, auto-sized to fit content.
+    // Padding: 1 char each side (left/right inside border), 1 empty line top/bottom.
     let pad_x: u16 = 1;
     let pad_y: u16 = 1;
     let height = count + 2 + pad_y * 2; // +2 for borders, +2 for top/bottom padding
-    let max_content_width = app
-        .slash_filtered
-        .iter()
-        .map(|&idx| {
-            let desc = app.slash_command_description(idx).unwrap_or("");
-            // pad + " " + 10-char name + " " + desc + " " + pad
-            pad_x + 1 + 10 + 1 + desc.len() as u16 + 1 + pad_x
-        })
-        .max()
-        .unwrap_or(40);
-    // +2 for borders
-    let width = (max_content_width + 2).max(40).min(input_area.width);
+
+    // Sizing math is in `dropdown_dimensions` so the regression (long
+    // skill descriptions overflowing the buffer) is unit-testable without
+    // a live App. The dropdown is responsive — width grows to fit the
+    // longest row, capped at `input_area.width - 1`.
+    let mut name_lengths: Vec<usize> = Vec::with_capacity(app.slash_filtered.len());
+    let mut desc_lengths: Vec<usize> = Vec::with_capacity(app.slash_filtered.len());
+    for &idx in &app.slash_filtered {
+        name_lengths.push(app.slash_command_name(idx).unwrap_or("").chars().count());
+        desc_lengths.push(
+            app.slash_command_description(idx)
+                .unwrap_or("")
+                .chars()
+                .count(),
+        );
+    }
+    // Name column is the longest name across the visible set, with a
+    // 10-char floor so very short names don't make the dropdown look
+    // cramped. The display format `{:<10}` pads short names to 10
+    // automatically; longer names render at their natural width.
+    let name_col_chars = name_lengths.iter().copied().max().unwrap_or(10).max(10) as u16;
+    let (width, _inner_width, desc_budget) =
+        dropdown_dimensions(name_col_chars, &desc_lengths, input_area.width, pad_x);
     let dropdown_area = Rect {
         x: input_area.x + 1,
         y: input_area.y.saturating_sub(height),
@@ -545,14 +630,15 @@ pub(super) fn render_slash_autocomplete(f: &mut Frame, app: &App, input_area: Re
         height,
     };
 
-    // Build dropdown lines (supports both built-in and user-defined commands)
+    // Build dropdown lines (supports built-in commands, user-defined commands, and skills)
     let lines: Vec<Line> = app
         .slash_filtered
         .iter()
         .enumerate()
         .map(|(i, &cmd_idx)| {
             let name = app.slash_command_name(cmd_idx).unwrap_or("???");
-            let desc = app.slash_command_description(cmd_idx).unwrap_or("");
+            let raw_desc = app.slash_command_description(cmd_idx).unwrap_or("");
+            let desc = truncate_to_chars(raw_desc, desc_budget);
             let is_selected = i == app.slash_selected_index;
 
             let style = if is_selected {
@@ -570,9 +656,12 @@ pub(super) fn render_slash_autocomplete(f: &mut Frame, app: &App, input_area: Re
                 Style::default().fg(Color::DarkGray)
             };
 
+            // Pad the name column to `name_col_chars` so descriptions
+            // line up vertically. `format!` width arg has to be `usize`.
+            let name_col = name_col_chars as usize;
             Line::from(vec![
-                Span::styled(format!("  {:<10}", name), style),
-                Span::styled(format!(" {} ", desc), desc_style),
+                Span::styled(format!("  {:<width$}", name, width = name_col), style),
+                Span::styled(format!(" {} ", desc.as_ref()), desc_style),
             ])
         })
         .collect();

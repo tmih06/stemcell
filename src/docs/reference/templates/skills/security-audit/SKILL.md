@@ -1,6 +1,6 @@
 ---
 name: security-audit
-description: Comprehensive security and CVE audit of any codebase. Detects the project type from manifests (Cargo.toml, package.json, go.mod, pyproject.toml, requirements.txt, Gemfile, composer.json, pom.xml, build.gradle, pubspec.yaml, *.csproj, Package.swift), runs the language-appropriate vulnerability scanner, reviews recent diff against main for injection / auth / crypto / deserialization / path-traversal / secrets / weak-TLS / unsafe-FFI patterns, sweeps subprocess hygiene and file-perm hygiene, examines the network surface, and produces a 0-100 score with per-dimension breakdown plus HIGH/MEDIUM findings (file:line, exploit path, fix). Triggers on "/security-audit", "security audit", "security review", "CVE scan", "vulnerability audit", "scan for vulnerabilities", "audit dependencies", "is this code safe", "check for security issues".
+description: Run a comprehensive language-agnostic security & CVE audit, scored 0-100
 ---
 
 You are a senior security engineer performing a comprehensive security audit of the codebase in the current working directory. The audit must be **language-agnostic** — detect the project type and dispatch to the appropriate tooling.

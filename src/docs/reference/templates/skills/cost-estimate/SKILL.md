@@ -1,6 +1,6 @@
 ---
 name: cost-estimate
-description: Scan a codebase and produce a professional cost-to-build estimate, AI-assisted ROI breakdown, and fair-market valuation. Counts files/LOC, rates complexity, estimates human team hours across 4 team sizes, computes annual maintenance burden, and asks the user for business context before producing a blended valuation range. Triggers on "/cost-estimate", "what's this codebase worth", "valuation", "cost to rebuild", "value per AI hour", "is this project worth", "estimate the build cost".
+description: Estimate codebase cost-to-build, AI-assisted ROI, and fair-market valuation
 ---
 
 Scan this entire codebase and produce a professional cost estimate and valuation report. Analyze:
