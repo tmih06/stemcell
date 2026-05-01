@@ -78,7 +78,8 @@ fn unknown_keys_are_ignored_for_forward_compat() {
 
 #[test]
 fn body_preserves_internal_blank_lines_and_markdown() {
-    let raw = "---\nname: foo\ndescription: ok\n---\n\n# Heading\n\nParagraph 1.\n\n- item 1\n- item 2\n";
+    let raw =
+        "---\nname: foo\ndescription: ok\n---\n\n# Heading\n\nParagraph 1.\n\n- item 1\n- item 2\n";
     let skill = Skill::parse("foo", raw, SkillSource::Builtin).unwrap();
     assert!(skill.body.starts_with("# Heading"));
     assert!(skill.body.contains("- item 1\n- item 2"));
@@ -90,10 +91,7 @@ fn builtin_security_audit_loads_via_resolver() {
     let skill = resolve_skill("security-audit").expect("built-in 'security-audit' must exist");
     assert_eq!(skill.source, SkillSource::Builtin);
     assert!(
-        skill
-            .description
-            .to_lowercase()
-            .contains("security"),
+        skill.description.to_lowercase().contains("security"),
         "description should mention security"
     );
     assert!(!skill.body.is_empty());

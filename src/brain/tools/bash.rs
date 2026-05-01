@@ -949,10 +949,7 @@ impl SshAskpass {
         // password file. The path goes through POSIX single-quote escaping
         // so $TMPDIR containing quotes/$/backticks can't break out.
         let pw_path = pw_file.path().to_string_lossy().to_string();
-        let script_body = format!(
-            "#!/bin/sh\nexec cat {}\n",
-            posix_single_quote(&pw_path)
-        );
+        let script_body = format!("#!/bin/sh\nexec cat {}\n", posix_single_quote(&pw_path));
         let mut script_file = tempfile::Builder::new()
             .prefix("opencrabs-ssh-askpass-")
             .suffix(".sh")

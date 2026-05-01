@@ -3052,9 +3052,7 @@ impl App {
             for (i, skill) in self.skills.iter().enumerate() {
                 let lower = skill.slash_name.to_lowercase();
                 if lower.starts_with(&prefix)
-                    && !SLASH_COMMANDS
-                        .iter()
-                        .any(|b| b.name == skill.slash_name)
+                    && !SLASH_COMMANDS.iter().any(|b| b.name == skill.slash_name)
                     && !self
                         .user_commands
                         .iter()
