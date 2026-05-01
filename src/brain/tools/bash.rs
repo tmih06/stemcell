@@ -439,10 +439,7 @@ impl Tool for BashTool {
                 match timeout(Duration::from_secs(effective_timeout), retry_future).await {
                     Ok(Ok(output)) => output,
                     Ok(Err(e)) => {
-                        return Ok(ToolResult::error(format!(
-                            "SSH retry failed: {}",
-                            e
-                        )));
+                        return Ok(ToolResult::error(format!("SSH retry failed: {}", e)));
                     }
                     Err(_) => {
                         return Err(ToolError::Timeout(effective_timeout));

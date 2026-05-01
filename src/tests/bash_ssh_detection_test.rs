@@ -49,10 +49,7 @@ fn detects_rsync_with_ssh_target() {
 fn skips_when_batchmode_yes_already_set() {
     // User-supplied BatchMode means they already opted into key-only
     // — don't intercept and don't prompt.
-    assert_eq!(
-        parse_ssh_invocation("ssh -o BatchMode=yes root@host"),
-        None
-    );
+    assert_eq!(parse_ssh_invocation("ssh -o BatchMode=yes root@host"), None);
 }
 
 #[test]
@@ -81,8 +78,5 @@ fn ignores_non_ssh_commands() {
 
 #[test]
 fn detection_is_case_insensitive_for_options() {
-    assert_eq!(
-        parse_ssh_invocation("ssh -o BATCHMODE=YES host"),
-        None
-    );
+    assert_eq!(parse_ssh_invocation("ssh -o BATCHMODE=YES host"), None);
 }
