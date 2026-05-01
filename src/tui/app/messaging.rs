@@ -707,7 +707,8 @@ impl App {
                 true
             }
             _ if input.starts_with('/') => {
-                // Check user-defined commands
+                // Check user-defined commands first — explicit user definitions
+                // win over auto-registered skills of the same `/<name>`.
                 if let Some(user_cmd) = self.user_commands.iter().find(|c| c.name == cmd) {
                     let prompt = user_cmd.prompt.clone();
                     let action = user_cmd.action.clone();
@@ -721,6 +722,16 @@ impl App {
                             let _ = sender.send(TuiEvent::MessageSubmitted(prompt));
                         }
                     }
+                    return true;
+                }
+                // Fall back to skills: any /<name> that matches a loaded skill's
+                // slash_name dispatches its body as a prompt. Auto-registration
+                // means a user dropping a SKILL.md gets a working slash command
+                // immediately, no commands.toml entry required.
+                if let Some(skill) = self.skills.iter().find(|s| s.slash_name == cmd) {
+                    let prompt = skill.body.clone();
+                    let sender = self.event_sender();
+                    let _ = sender.send(TuiEvent::MessageSubmitted(prompt));
                     return true;
                 }
                 self.push_system_message(format!(

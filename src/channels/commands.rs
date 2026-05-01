@@ -294,12 +294,14 @@ fn match_user_command(text: &str) -> ChannelCommand {
     let brain_path = crate::brain::BrainLoader::resolve_path();
     let loader = crate::brain::CommandLoader::from_brain_path(&brain_path);
     let commands = loader.load();
-    match_user_command_inner(text, &commands)
+    let skills = crate::brain::skills::load_all_skills();
+    match_user_command_inner(text, &commands, &skills)
 }
 
-fn match_user_command_inner(
+pub(crate) fn match_user_command_inner(
     text: &str,
     commands: &[crate::brain::commands::UserCommand],
+    skills: &[crate::brain::skills::Skill],
 ) -> ChannelCommand {
     // Split "/command args" into command name and optional args
     let (cmd_name, args) = text
@@ -307,19 +309,34 @@ fn match_user_command_inner(
         .map(|(c, a)| (c, a.trim()))
         .unwrap_or((text, ""));
 
+    // 1. Explicit user-defined commands win — they're how a user overrides
+    //    a built-in skill (rename, retarget, swap to action=system, etc.).
     if let Some(cmd) = commands.iter().find(|c| c.name == cmd_name) {
         let prompt = if args.is_empty() {
             cmd.prompt.clone()
         } else {
             format!("{} {}", cmd.prompt, args)
         };
-        match cmd.action.as_str() {
+        return match cmd.action.as_str() {
             "system" => ChannelCommand::UserSystem(prompt),
             _ => ChannelCommand::UserPrompt(prompt),
-        }
-    } else {
-        ChannelCommand::NotACommand
+        };
     }
+
+    // 2. Auto-registered skills — `/<name>` matches a SKILL.md slug, the body
+    //    becomes the prompt. Args (anything after the first space) are
+    //    appended so callers can pass extra context without writing a
+    //    custom commands.toml wrapper.
+    if let Some(skill) = skills.iter().find(|s| s.slash_name == cmd_name) {
+        let prompt = if args.is_empty() {
+            skill.body.clone()
+        } else {
+            format!("{}\n\n{}", skill.body, args)
+        };
+        return ChannelCommand::UserPrompt(prompt);
+    }
+
+    ChannelCommand::NotACommand
 }
 
 // ── /help ───────────────────────────────────────────────────────────────────
@@ -1031,7 +1048,7 @@ mod tests {
             "prompt",
             "Check my OpenRouter credits",
         )];
-        match match_user_command_inner("/credits", &cmds) {
+        match match_user_command_inner("/credits", &cmds, &[]) {
             ChannelCommand::UserPrompt(p) => {
                 assert_eq!(p, "Check my OpenRouter credits");
             }
@@ -1042,7 +1059,7 @@ mod tests {
     #[test]
     fn user_command_prompt_with_args() {
         let cmds = vec![make_cmd("/deploy", "prompt", "Deploy the service")];
-        match match_user_command_inner("/deploy staging --dry-run", &cmds) {
+        match match_user_command_inner("/deploy staging --dry-run", &cmds, &[]) {
             ChannelCommand::UserPrompt(p) => {
                 assert_eq!(p, "Deploy the service staging --dry-run");
             }
@@ -1053,7 +1070,7 @@ mod tests {
     #[test]
     fn user_command_system_action() {
         let cmds = vec![make_cmd("/info", "system", "OpenCrabs v0.2")];
-        match match_user_command_inner("/info", &cmds) {
+        match match_user_command_inner("/info", &cmds, &[]) {
             ChannelCommand::UserSystem(t) => assert_eq!(t, "OpenCrabs v0.2"),
             other => panic!("expected UserSystem, got {:?}", variant_name(&other)),
         }
@@ -1063,7 +1080,7 @@ mod tests {
     fn user_command_unknown_falls_through() {
         let cmds = vec![make_cmd("/credits", "prompt", "Check credits")];
         assert!(matches!(
-            match_user_command_inner("/unknown", &cmds),
+            match_user_command_inner("/unknown", &cmds, &[]),
             ChannelCommand::NotACommand
         ));
     }
@@ -1071,7 +1088,7 @@ mod tests {
     #[test]
     fn user_command_empty_list() {
         assert!(matches!(
-            match_user_command_inner("/anything", &[]),
+            match_user_command_inner("/anything", &[], &[]),
             ChannelCommand::NotACommand
         ));
     }
@@ -1080,7 +1097,7 @@ mod tests {
     fn user_command_default_action_is_prompt() {
         let cmds = vec![make_cmd("/test", "whatever", "test prompt")];
         assert!(matches!(
-            match_user_command_inner("/test", &cmds),
+            match_user_command_inner("/test", &cmds, &[]),
             ChannelCommand::UserPrompt(_)
         ));
     }

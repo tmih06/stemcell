@@ -71,6 +71,10 @@ pub enum SkillSource {
 pub struct Skill {
     /// Slug used to invoke the skill (`/security-audit` → `"security-audit"`).
     pub name: String,
+    /// Precomputed `/<name>` form, for autocomplete display and sort
+    /// comparisons against built-in / user-command names that already
+    /// carry the leading slash.
+    pub slash_name: String,
     /// One-line summary the LLM reads to decide when to invoke.
     pub description: String,
     /// Prompt body (everything after the closing `---`, trimmed).
@@ -112,9 +116,11 @@ impl Skill {
         let resolved_name = fm_name.unwrap_or_else(|| name.to_string());
         let description = fm_description
             .ok_or_else(|| format!("skill '{name}': frontmatter missing 'description'"))?;
+        let slash_name = format!("/{resolved_name}");
 
         Ok(Self {
             name: resolved_name,
+            slash_name,
             description,
             body: body.trim().to_string(),
             source,

@@ -372,6 +372,9 @@ pub struct App {
     /// Brain state
     pub brain_path: PathBuf,
     pub user_commands: Vec<UserCommand>,
+    /// Loaded skills (built-in + user overlay) — auto-registered as `/<name>`
+    /// in the slash autocomplete and dispatched as `action=prompt`.
+    pub skills: Vec<crate::brain::skills::Skill>,
 
     /// Onboarding wizard state
     pub onboarding: Option<OnboardingWizard>,
@@ -539,6 +542,7 @@ impl App {
         let brain_path = BrainLoader::resolve_path();
         let command_loader = CommandLoader::from_brain_path(&brain_path);
         let user_commands = command_loader.load();
+        let skills = crate::brain::skills::load_all_skills();
 
         // Load persisted approval policy from config.toml
         let (approval_auto_session, approval_auto_always) =
@@ -606,6 +610,7 @@ impl App {
             pending_context: Vec::new(),
             brain_path,
             user_commands,
+            skills,
             onboarding: None,
             force_onboard: false,
             processing_sessions: HashSet::new(),
@@ -3030,35 +3035,58 @@ impl App {
 
             // User-defined commands: indices starting at SLASH_COMMANDS.len()
             // Skip user commands that shadow a built-in name
-            let base = SLASH_COMMANDS.len();
+            let base_user = SLASH_COMMANDS.len();
             for (i, ucmd) in self.user_commands.iter().enumerate() {
                 if ucmd.name.to_lowercase().starts_with(&prefix)
                     && !SLASH_COMMANDS.iter().any(|b| b.name == ucmd.name)
                 {
-                    self.slash_filtered.push(base + i);
+                    self.slash_filtered.push(base_user + i);
                 }
             }
 
-            // Sort suggestions alphabetically by command name
-            self.slash_filtered.sort_by(|&a, &b| {
-                let name_a = if a < SLASH_COMMANDS.len() {
-                    SLASH_COMMANDS[a].name
-                } else {
+            // Skills: indices starting at SLASH_COMMANDS.len() + user_commands.len()
+            // Skip skills shadowed by a built-in or a user command of the same
+            // `/<name>`. The skill's precomputed `slash_name` already carries
+            // the leading slash for direct comparison.
+            let base_skill = SLASH_COMMANDS.len() + self.user_commands.len();
+            for (i, skill) in self.skills.iter().enumerate() {
+                let lower = skill.slash_name.to_lowercase();
+                if lower.starts_with(&prefix)
+                    && !SLASH_COMMANDS
+                        .iter()
+                        .any(|b| b.name == skill.slash_name)
+                    && !self
+                        .user_commands
+                        .iter()
+                        .any(|c| c.name == skill.slash_name)
+                {
+                    self.slash_filtered.push(base_skill + i);
+                }
+            }
+
+            // Sort suggestions alphabetically by command name. Inline the
+            // index → name resolution to avoid an immutable borrow of self
+            // inside the sort_by closure (which holds a mutable borrow of
+            // self.slash_filtered).
+            let n_builtin = SLASH_COMMANDS.len();
+            let n_user = self.user_commands.len();
+            let name_at = |idx: usize| -> &str {
+                if idx < n_builtin {
+                    SLASH_COMMANDS[idx].name
+                } else if idx < n_builtin + n_user {
                     self.user_commands
-                        .get(a - SLASH_COMMANDS.len())
+                        .get(idx - n_builtin)
                         .map(|c| c.name.as_str())
                         .unwrap_or("")
-                };
-                let name_b = if b < SLASH_COMMANDS.len() {
-                    SLASH_COMMANDS[b].name
                 } else {
-                    self.user_commands
-                        .get(b - SLASH_COMMANDS.len())
-                        .map(|c| c.name.as_str())
+                    self.skills
+                        .get(idx - n_builtin - n_user)
+                        .map(|s| s.slash_name.as_str())
                         .unwrap_or("")
-                };
-                name_a.cmp(name_b)
-            });
+                }
+            };
+            self.slash_filtered
+                .sort_by(|&a, &b| name_at(a).cmp(name_at(b)));
 
             self.slash_suggestions_active = !self.slash_filtered.is_empty();
             // Clamp selected index
@@ -3073,25 +3101,37 @@ impl App {
     }
 
     /// Get the name of a slash command by its combined index
-    /// (built-in indices 0..N, user command indices N..)
+    /// (0..N built-ins, N..M user commands, M.. skills as `/<slug>`).
     pub fn slash_command_name(&self, index: usize) -> Option<&str> {
-        if index < SLASH_COMMANDS.len() {
+        let n_builtin = SLASH_COMMANDS.len();
+        let n_user = self.user_commands.len();
+        if index < n_builtin {
             Some(SLASH_COMMANDS[index].name)
-        } else {
+        } else if index < n_builtin + n_user {
             self.user_commands
-                .get(index - SLASH_COMMANDS.len())
+                .get(index - n_builtin)
                 .map(|c| c.name.as_str())
+        } else {
+            self.skills
+                .get(index - n_builtin - n_user)
+                .map(|s| s.slash_name.as_str())
         }
     }
 
     /// Get the description of a slash command by its combined index
     pub fn slash_command_description(&self, index: usize) -> Option<&str> {
-        if index < SLASH_COMMANDS.len() {
+        let n_builtin = SLASH_COMMANDS.len();
+        let n_user = self.user_commands.len();
+        if index < n_builtin {
             Some(SLASH_COMMANDS[index].description)
-        } else {
+        } else if index < n_builtin + n_user {
             self.user_commands
-                .get(index - SLASH_COMMANDS.len())
+                .get(index - n_builtin)
                 .map(|c| c.description.as_str())
+        } else {
+            self.skills
+                .get(index - n_builtin - n_user)
+                .map(|s| s.description.as_str())
         }
     }
 
@@ -3099,6 +3139,10 @@ impl App {
     pub(crate) fn reload_user_commands(&mut self) {
         let command_loader = CommandLoader::from_brain_path(&self.brain_path);
         self.user_commands = command_loader.load();
+        // Skills can also be edited live (~/.opencrabs/skills/<name>/SKILL.md);
+        // reload alongside user commands so the autocomplete reflects edits
+        // without restart.
+        self.skills = crate::brain::skills::load_all_skills();
     }
 
     /// Update emoji picker based on the text behind the cursor.

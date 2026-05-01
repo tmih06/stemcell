@@ -91,6 +91,7 @@ pub mod rsi_test;
 pub mod runtime_info_home_anchor_test;
 pub mod self_healing_test;
 pub mod session_chat_id_lookup_test;
+pub mod skill_slash_dispatch_test;
 pub mod skills_test;
 pub mod split_pane_test;
 pub mod subagent_test;
