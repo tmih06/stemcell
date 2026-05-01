@@ -134,11 +134,7 @@ impl ProposalsStore {
         match toml::from_str(&contents) {
             Ok(parsed) => Some(parsed),
             Err(e) => {
-                tracing::warn!(
-                    "ProposalsStore: failed to parse {}: {}",
-                    path.display(),
-                    e
-                );
+                tracing::warn!("ProposalsStore: failed to parse {}: {}", path.display(), e);
                 None
             }
         }

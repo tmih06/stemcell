@@ -14,9 +14,7 @@
 use super::error::Result;
 use super::r#trait::{Tool, ToolCapability, ToolExecutionContext, ToolResult};
 use crate::brain::CommandLoader;
-use crate::brain::rsi_proposals::{
-    CommandProposal, ProposalsStore, ToolProposal,
-};
+use crate::brain::rsi_proposals::{CommandProposal, ProposalsStore, ToolProposal};
 use crate::brain::tools::ToolRegistry;
 use crate::brain::tools::dynamic::DynamicToolLoader;
 use async_trait::async_trait;
@@ -124,11 +122,7 @@ impl RsiProposalsTool {
         ))
     }
 
-    fn reject(
-        &self,
-        id: &str,
-        reason: Option<&str>,
-    ) -> std::result::Result<String, String> {
+    fn reject(&self, id: &str, reason: Option<&str>) -> std::result::Result<String, String> {
         let store = self.store();
 
         if let Some(p) = store
@@ -158,11 +152,7 @@ impl RsiProposalsTool {
 fn format_tool_proposal(p: &ToolProposal) -> String {
     let cmd_or_url = match (&p.def.command, &p.def.url) {
         (Some(c), _) => format!("shell: `{}`", c),
-        (_, Some(u)) => format!(
-            "{} {}",
-            p.def.method.as_deref().unwrap_or("GET"),
-            u
-        ),
+        (_, Some(u)) => format!("{} {}", p.def.method.as_deref().unwrap_or("GET"), u),
         _ => "(no command/url)".to_string(),
     };
     format!(

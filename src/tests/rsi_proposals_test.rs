@@ -53,7 +53,11 @@ fn storage_add_and_list_tool_proposal() {
     let store = ProposalsStore::with_dir(dir.path().to_path_buf());
 
     let id = store
-        .add_tool_proposal("rsi-autonomous", "obs: 12 manual gh calls", sample_tool_def())
+        .add_tool_proposal(
+            "rsi-autonomous",
+            "obs: 12 manual gh calls",
+            sample_tool_def(),
+        )
         .unwrap();
     assert!(id.starts_with("prop_tool_"));
 
@@ -70,7 +74,11 @@ fn storage_add_and_list_command_proposal() {
     let store = ProposalsStore::with_dir(dir.path().to_path_buf());
 
     let id = store
-        .add_command_proposal("rsi-autonomous", "user typed /deploy 5 times", sample_command())
+        .add_command_proposal(
+            "rsi-autonomous",
+            "user typed /deploy 5 times",
+            sample_command(),
+        )
         .unwrap();
     assert!(id.starts_with("prop_cmd_"));
 
@@ -89,7 +97,11 @@ fn storage_dedup_by_name() {
         .add_tool_proposal("rsi-autonomous", "first cycle", sample_tool_def())
         .unwrap();
     let id2 = store
-        .add_tool_proposal("rsi-autonomous", "second cycle (refined)", sample_tool_def())
+        .add_tool_proposal(
+            "rsi-autonomous",
+            "second cycle (refined)",
+            sample_tool_def(),
+        )
         .unwrap();
 
     let proposals = store.list_tool_proposals();
@@ -117,7 +129,9 @@ fn storage_take_and_pending_count() {
     assert_eq!(store.pending_count(), 1);
 
     // Take of unknown id returns None, doesn't error.
-    let missing = store.take_tool_proposal("prop_tool_does_not_exist").unwrap();
+    let missing = store
+        .take_tool_proposal("prop_tool_does_not_exist")
+        .unwrap();
     assert!(missing.is_none());
     assert_eq!(store.pending_count(), 1);
 
@@ -221,10 +235,7 @@ async fn apply_installs_tool_into_live_tools_toml_and_archives() {
         .unwrap();
 
     let result = tool
-        .execute(
-            serde_json::json!({"action": "apply", "id": id}),
-            &ctx(),
-        )
+        .execute(serde_json::json!({"action": "apply", "id": id}), &ctx())
         .await
         .unwrap();
     assert!(
@@ -246,10 +257,11 @@ async fn apply_installs_tool_into_live_tools_toml_and_archives() {
 
     // Archived under applied/.
     let date = chrono::Utc::now().format("%Y-%m-%d").to_string();
-    let applied = dir.path().join("rsi").join("applied").join(format!(
-        "{}-tools.toml",
-        date
-    ));
+    let applied = dir
+        .path()
+        .join("rsi")
+        .join("applied")
+        .join(format!("{}-tools.toml", date));
     assert!(applied.exists());
 }
 
@@ -262,10 +274,7 @@ async fn apply_installs_command_into_live_commands_toml() {
         .unwrap();
 
     let result = tool
-        .execute(
-            serde_json::json!({"action": "apply", "id": id}),
-            &ctx(),
-        )
+        .execute(serde_json::json!({"action": "apply", "id": id}), &ctx())
         .await
         .unwrap();
     assert!(
@@ -361,10 +370,7 @@ async fn apply_all_installs_every_pending_proposal() {
     assert_eq!(store.pending_count(), 3);
 
     let result = tool
-        .execute(
-            serde_json::json!({"action": "apply", "id": "all"}),
-            &ctx(),
-        )
+        .execute(serde_json::json!({"action": "apply", "id": "all"}), &ctx())
         .await
         .unwrap();
     assert!(result.success);
@@ -382,10 +388,7 @@ async fn apply_all_installs_every_pending_proposal() {
 async fn unknown_action_errors() {
     let (_dir, tool, _reg) = build_apply_harness();
     let result = tool
-        .execute(
-            serde_json::json!({"action": "delete_everything"}),
-            &ctx(),
-        )
+        .execute(serde_json::json!({"action": "delete_everything"}), &ctx())
         .await
         .unwrap();
     assert!(!result.success);

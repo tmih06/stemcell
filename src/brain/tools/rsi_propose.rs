@@ -190,9 +190,7 @@ impl Tool for RsiProposeTool {
                     .and_then(|v| v.as_object())
                     .map(|obj| {
                         obj.iter()
-                            .filter_map(|(k, v)| {
-                                v.as_str().map(|s| (k.clone(), s.to_string()))
-                            })
+                            .filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.to_string())))
                             .collect()
                     })
                     .unwrap_or_default();
@@ -201,7 +199,10 @@ impl Tool for RsiProposeTool {
                     name: name.clone(),
                     description: description.clone(),
                     executor,
-                    enabled: input.get("enabled").and_then(|v| v.as_bool()).unwrap_or(true),
+                    enabled: input
+                        .get("enabled")
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or(true),
                     requires_approval: input
                         .get("requires_approval")
                         .and_then(|v| v.as_bool())
@@ -239,9 +240,7 @@ impl Tool for RsiProposeTool {
                     Ok(id) => Ok(ToolResult::success(format!(
                         "Tool proposal filed: {id} (name={name}). User will see a banner on next session start, or can list with rsi_proposals."
                     ))),
-                    Err(e) => Ok(ToolResult::error(format!(
-                        "Failed to write proposal: {e}"
-                    ))),
+                    Err(e) => Ok(ToolResult::error(format!("Failed to write proposal: {e}"))),
                 }
             }
             "command" => {
@@ -282,9 +281,7 @@ impl Tool for RsiProposeTool {
                     Ok(id) => Ok(ToolResult::success(format!(
                         "Command proposal filed: {id} (name={normalised_name})."
                     ))),
-                    Err(e) => Ok(ToolResult::error(format!(
-                        "Failed to write proposal: {e}"
-                    ))),
+                    Err(e) => Ok(ToolResult::error(format!("Failed to write proposal: {e}"))),
                 }
             }
             other => Ok(ToolResult::error(format!(
