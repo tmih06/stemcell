@@ -111,6 +111,35 @@ jobs:
         continue-on-error: true
         run: cargo fmt --all -- --check
 
+  audit:
+    name: Cargo Audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust (from rust-toolchain.toml)
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: stable
+
+      - name: Install cargo-audit
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-audit
+
+      - name: Generate Cargo.lock
+        # Cargo.lock is gitignored in this repo; cargo-audit needs one.
+        run: cargo generate-lockfile
+
+      - name: Run cargo audit
+        # Ignored advisory:
+        #   RUSTSEC-2024-0437  protobuf 2.x via prometheus 0.13.4 → crabrace 0.1.0
+        #     DOS-class (uncontrolled recursion). No upstream fix without a
+        #     major-version bump in the prometheus chain we don't control.
+        #     Re-evaluate when crabrace ships a release that drops prometheus
+        #     0.13.x.
+        run: cargo audit --ignore RUSTSEC-2024-0437
+
   coverage:
     name: Code Coverage
     runs-on: ubuntu-latest
