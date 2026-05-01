@@ -109,6 +109,10 @@ pub const SLASH_COMMANDS: &[SlashCommand] = &[
         name: "/cd",
         description: "Change working directory",
     },
+    SlashCommand {
+        name: "/mission-control",
+        description: "RSI proposals, activity, schedule",
+    },
 ];
 
 /// Approval option selected by the user

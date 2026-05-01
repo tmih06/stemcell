@@ -702,7 +702,7 @@ impl App {
                 self.mode = AppMode::Help;
                 true
             }
-            "/mission-control" | "/mc" => {
+            "/mission-control" => {
                 crate::tui::app::mission_control::actions::open(self);
                 true
             }

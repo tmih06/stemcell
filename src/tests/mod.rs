@@ -82,6 +82,7 @@ pub mod system_continuation_test;
 pub mod voice_openai_compatible_test;
 pub mod voice_voicebox_test;
 //pub mod streaming_test;
+pub mod mission_control_inbox_service_test;
 pub mod mission_control_layout_test;
 pub mod model_fetch_test;
 pub mod profile_test;

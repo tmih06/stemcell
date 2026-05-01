@@ -357,7 +357,7 @@ pub enum AppMode {
     DirectoryPicker,
     /// Onboarding wizard
     Onboarding,
-    /// Mission Control — RSI proposals, activity, schedule (triggered by /mission-control or /mc)
+    /// Mission Control — RSI proposals, activity, schedule (triggered by /mission-control)
     MissionControl,
 }
 

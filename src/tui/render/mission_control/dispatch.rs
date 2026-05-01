@@ -10,15 +10,14 @@ use crate::tui::app::App;
 use crate::tui::app::mission_control::McPanel;
 
 use ratatui::Frame;
-use ratatui::layout::{Position, Rect};
-use ratatui::style::{Color, Style};
+use ratatui::layout::Rect;
 use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
 
-/// Render Mission Control over the full content area `area`.
+/// Render Mission Control over the full content area `area`. Inherits
+/// the terminal background — no dark wash — to match the `Sessions`
+/// and `Help` screens.
 pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
-    paint_backdrop(frame, area);
-
     let McLayout {
         inbox,
         activity,
@@ -27,7 +26,7 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
     } = layout::compute(area);
 
     let focus = app.mc.focused_panel;
-    inbox_panel::draw(frame, inbox, focus == McPanel::Inbox);
+    inbox_panel::draw(frame, app, inbox, focus == McPanel::Inbox);
     activity_panel::draw(frame, activity, focus == McPanel::Activity);
     schedule_panel::draw(frame, schedule, focus == McPanel::Schedule);
 
@@ -37,20 +36,6 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
 
     if app.mc.detail_open {
         detail_popup::draw(frame, area);
-    }
-}
-
-/// Wash the entire MC area in the dark backdrop colour. The panels then
-/// paint over this with their own borders + content.
-fn paint_backdrop(frame: &mut Frame, area: Rect) {
-    let buf = frame.buffer_mut();
-    for y in area.y..area.y.saturating_add(area.height) {
-        for x in area.x..area.x.saturating_add(area.width) {
-            if let Some(cell) = buf.cell_mut(Position::new(x, y)) {
-                cell.set_char(' ');
-                cell.set_bg(theme::BACKDROP);
-            }
-        }
     }
 }
 
@@ -69,6 +54,6 @@ fn draw_help_bar(frame: &mut Frame, area: Rect) {
         Span::styled("Esc", theme::help_bar_style()),
         Span::styled(": close", theme::dim()),
     ]);
-    let bar = Paragraph::new(line).style(Style::default().bg(Color::Rgb(12, 12, 16)));
+    let bar = Paragraph::new(line);
     frame.render_widget(bar, area);
 }

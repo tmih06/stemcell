@@ -1,35 +1,44 @@
 //! Mission Control theme — colour and style constants.
 //!
-//! Pulled out so panel-specific renderers don't redefine colours
-//! piecemeal, and so a future light/dark theme switch has one place to
-//! change. Values mirror agentverse's mission control for visual
-//! continuity across the two tools.
+//! Matches the canonical OpenCrabs palette used in `sessions.rs`,
+//! `usage/dashboard.rs`, and `chat.rs`: orange + teal + white,
+//! greys for neutrals, red reserved for destructive signals.
 //!
-//! Only the C8 skeleton's actual usages live here. C9 (inbox cards)
-//! and C10 (activity/schedule badges) bring back the card and
-//! status-colour constants alongside their first concrete callers, so
-//! every name in this file has a live reader.
+//! The MC has no dark backdrop wash — it inherits the terminal
+//! background, same as the Sessions and Help screens. Borders carry
+//! all the visual structure.
 
 use ratatui::style::{Color, Modifier, Style};
 
+// ── Brand palette ──────────────────────────────────────────────────────────
+
+/// Crab orange — primary brand colour, used for titles and the activity
+/// panel's focus accent.
+pub const ORANGE: Color = Color::Rgb(215, 100, 20);
+/// Teal accent — primary action colour, used for the inbox panel's
+/// focus, selected items, and command-kind badges.
+pub const TEAL: Color = Color::Cyan;
+/// Soft white — schedule panel's focus accent. Light enough to register
+/// against a dark terminal background without yelling.
+pub const WHITE: Color = Color::Rgb(220, 220, 220);
+
 // ── Panel chrome ────────────────────────────────────────────────────────────
 
-/// Panel border when not focused.
-pub const BORDER_IDLE: Color = Color::Rgb(50, 50, 70);
-/// Panel border when focused — matches the panel's accent colour.
-pub const BORDER_INBOX_FOCUS: Color = Color::Cyan;
-pub const BORDER_ACTIVITY_FOCUS: Color = Color::Yellow;
-pub const BORDER_SCHEDULE_FOCUS: Color = Color::Green;
-
-/// Backdrop wash drawn behind every panel before content.
-pub const BACKDROP: Color = Color::Rgb(18, 18, 24);
+/// Panel border when not focused — neutral grey, same as `sessions.rs`.
+pub const BORDER_IDLE: Color = Color::Rgb(120, 120, 120);
+/// Per-panel focus accents.
+pub const BORDER_INBOX_FOCUS: Color = TEAL;
+pub const BORDER_ACTIVITY_FOCUS: Color = ORANGE;
+pub const BORDER_SCHEDULE_FOCUS: Color = WHITE;
 
 // ── Text ────────────────────────────────────────────────────────────────────
 
+pub const TEXT_PRIMARY: Color = Color::Rgb(200, 200, 210);
+pub const TEXT_SECONDARY: Color = Color::Rgb(140, 140, 160);
 pub const TEXT_MUTED: Color = Color::Rgb(80, 80, 100);
 pub const TEXT_DIM: Color = Color::Rgb(60, 60, 80);
 
-pub const HELP_BAR: Color = Color::Rgb(100, 100, 120);
+pub const HELP_BAR: Color = Color::Rgb(120, 120, 120);
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
