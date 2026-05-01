@@ -329,10 +329,14 @@ pub(super) fn render_model_selector(f: &mut Frame, app: &App, area: Rect) {
     let is_custom_selected = provider_idx >= CUSTOM_PROVIDER_IDX;
     // static providers + custom_extra + "+ New Custom" + API key line + filter + models + footer + padding
     let provider_lines = CUSTOM_PROVIDER_IDX as u16 + custom_extra + 1; // static + customs + new custom
-    // Custom providers show text fields instead of model list:
-    // Base URL(2) + API Key(2) + Model text(1) + Name(2) + Context Window(1) + spacing(2) + help(2) = 12
-    let form_lines: u16 = if is_custom_selected {
+    // Custom providers: text fields + optional model list when fetched
+    // No models: Base URL(2) + API Key(2) + Model text(1) + Name(2) + Context Window(1) + spacing(2) + help(2) = 12
+    // With models: Base URL(2) + API Key(2) + filter(1) + models + Name(2) + Context Window(1) + spacing(1) + help(1) = 10 + models
+    let visible_models = model_count.min(MAX_VISIBLE_MODELS);
+    let form_lines: u16 = if is_custom_selected && model_count == 0 {
         12
+    } else if is_custom_selected {
+        10 + visible_models as u16
     } else {
         4 + model_count as u16 + 4 // key/filter chrome + model list + footer
     };
