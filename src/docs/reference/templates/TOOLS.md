@@ -18,6 +18,72 @@ This ensures `git pull` on the repo never overwrites your work. See AGENTS.md fo
 ### Rust-First Policy
 When building custom tools or adding dependencies, **always prioritize Rust-based crates** over wrappers, FFI bindings, or other-language alternatives. Native Rust = lean, safe, fast.
 
+## Skills (Built-in & User)
+
+Skills are workflow templates — multi-stage prompts the agent follows to perform a comprehensive task. Each skill is a single `SKILL.md` file with YAML frontmatter at the top followed by the prompt body. Format follows the de-facto convention used by Claude Code, Anthropic managed agents, and OpenClaw — **the same `SKILL.md` works across harnesses**.
+
+### Layout
+
+```
+~/.opencrabs/
+└── skills/
+    └── <skill-name>/
+        └── SKILL.md
+```
+
+Built-in skills ship inside the binary (compiled in via `include_str!` at build time), so they're always version-matched and available even on a fresh install. User skills live at `~/.opencrabs/skills/<name>/SKILL.md` — purely user-owned, the binary never writes there.
+
+### Resolution order
+
+1. **User overlay** — `~/.opencrabs/skills/<name>/SKILL.md` always wins.
+2. **Built-in** — falls back to the embedded copy if no user file exists.
+
+So you can override any built-in skill (rename, retarget, swap to a different prompt body) by simply creating a same-named file in your user dir.
+
+### Auto-registration as slash commands
+
+Every loaded skill is automatically invocable as `/<name>` — no `commands.toml` entry needed. Drop a `SKILL.md` under `~/.opencrabs/skills/foo/` and `/foo` works on the next session start. Works in the TUI input bar **and** in every connected channel (Telegram, Discord, Slack, WhatsApp).
+
+Args after the slash are appended to the skill body, separated by a blank line:
+
+```
+/security-audit focus on the auth code
+```
+
+becomes the skill body + `\n\n` + `focus on the auth code` sent to the agent.
+
+### SKILL.md format
+
+```markdown
+---
+name: my-skill
+description: One-line summary the LLM reads to decide when to auto-invoke. Trigger keywords go here ("/my-skill", "do X", "check Y").
+---
+
+# Body of the skill
+
+Multi-stage instructions the agent follows. Plain markdown, no other frontmatter required.
+
+1. First do X
+2. Then do Y
+3. Output a report with sections A, B, C
+```
+
+Frontmatter rules:
+- `name` and `description` are required. Other keys are preserved for forward-compat but ignored today.
+- `description` is what the LLM reads to decide whether to auto-invoke a skill — keep it tight and trigger-rich.
+- Single-line values, optionally quoted with `"..."` or `'...'`.
+- BOM-tolerant, CRLF-tolerant.
+
+A user file with broken frontmatter is skipped with a warning rather than aborting the load — a bad local edit cannot brick a built-in skill.
+
+### Built-in skills
+
+| Slug | What |
+|---|---|
+| `/security-audit` | Comprehensive language-agnostic security & CVE audit. Detects project type from manifests, runs the right scanner (`cargo audit` / `npm audit` / `govulncheck` / `pip-audit` / etc.), reviews recent diff for injection / auth / crypto / deserialization / path-traversal patterns, scores 0-100. |
+| `/cost-estimate` | Codebase cost-to-build estimate, AI-assisted ROI breakdown, and fair-market valuation. Asks for business context before producing the valuation range. |
+
 ## Tool Parameter Reference
 
 Use these **exact parameter names** when calling tools:
@@ -180,13 +246,15 @@ args = ["-h"]
 
 Dynamic tools appear in the LLM's tool list alongside compiled tools. The agent can call them autonomously.
 
-### Commands vs Tools
+### Commands vs Tools vs Skills
 
-| | `commands.toml` | `tools.toml` |
-|---|---|---|
-| **Triggered by** | User typing `/command` | Agent deciding to call a tool |
-| **Appears in** | Slash command menu | LLM tool list |
-| **Use case** | User shortcuts, macros | Agent-callable external integrations |
+| | `commands.toml` | `tools.toml` | `skills/<name>/SKILL.md` |
+|---|---|---|---|
+| **Triggered by** | User typing `/command` | Agent deciding to call a tool | User typing `/<skill-name>` (auto-registered) or LLM auto-invoking from `description` |
+| **Appears in** | Slash command menu | LLM tool list | Slash menu **and** discoverable by description |
+| **Use case** | User shortcuts, macros, parameterized aliases | Agent-callable external integrations | Multi-stage workflows, language-agnostic prompt templates |
+| **Storage** | `~/.opencrabs/commands.toml` | `~/.opencrabs/tools.toml` | `~/.opencrabs/skills/<name>/SKILL.md` (+ embedded built-ins) |
+| **Cross-harness portable** | OpenCrabs only | OpenCrabs only | Yes — same SKILL.md works on Claude Code, OpenClaw, Anthropic managed agents |
 
 ---
 
