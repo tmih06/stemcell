@@ -331,12 +331,13 @@ pub(super) fn render_model_selector(f: &mut Frame, app: &App, area: Rect) {
     let provider_lines = CUSTOM_PROVIDER_IDX as u16 + custom_extra + 1; // static + customs + new custom
     // Custom providers: text fields + optional model list when fetched
     // No models: Base URL(2) + API Key(2) + Model text(1) + Name(2) + Context Window(1) + spacing(2) + help(2) = 12
-    // With models: Base URL(2) + API Key(2) + filter(1) + models + Name(2) + Context Window(1) + spacing(1) + help(1) = 10 + models
+    // With models: Base URL(2) + API Key(2) + filter(1) + models + ↑↓ indicators(2) + Name(2) + Context Window(1) + spacing(1) + help(1) = 12 + models
     let visible_models = model_count.min(MAX_VISIBLE_MODELS);
+    let has_more_indicators = model_count > MAX_VISIBLE_MODELS;
     let form_lines: u16 = if is_custom_selected && model_count == 0 {
         12
     } else if is_custom_selected {
-        10 + visible_models as u16
+        10 + visible_models as u16 + if has_more_indicators { 2 } else { 0 }
     } else {
         4 + model_count as u16 + 4 // key/filter chrome + model list + footer
     };
