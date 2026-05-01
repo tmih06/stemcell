@@ -44,6 +44,8 @@ pub mod memory_search;
 pub mod plan_tool;
 pub mod provider_vision;
 pub mod rebuild;
+pub mod rsi_propose;
+pub mod rsi_proposals;
 pub mod self_improve;
 pub mod session_search;
 pub mod slash_command;

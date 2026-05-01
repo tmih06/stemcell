@@ -4,8 +4,7 @@
 
 use super::events::{
     AppMode, EventHandler, SshPasswordRequest, SshPasswordResponse, SudoPasswordRequest,
-    SudoPasswordResponse, ToolApprovalRequest,
-    ToolApprovalResponse, TuiEvent,
+    SudoPasswordResponse, ToolApprovalRequest, ToolApprovalResponse, TuiEvent,
 };
 use super::onboarding::OnboardingWizard;
 use super::prompt_analyzer::PromptAnalyzer;
@@ -945,6 +944,18 @@ impl App {
                  Consider backing up and recreating the database."
                     .to_string(),
             );
+        }
+
+        // Notify user if the autonomous RSI loop has filed proposals
+        // they haven't reviewed yet. Surfaces at session start so the
+        // user can ask "show me proposed" / "implement them" without
+        // having to remember to check the inbox manually.
+        let pending = crate::brain::rsi_proposals::ProposalsStore::new().pending_count();
+        if pending > 0 {
+            self.push_system_message(format!(
+                "🔧 RSI proposed {pending} new tool(s)/command(s). \
+                 Ask me to \"show proposed\" or \"implement proposed\" to review."
+            ));
         }
 
         Ok(())

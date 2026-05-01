@@ -1,0 +1,295 @@
+//! RSI-side proposal authoring tool.
+//!
+//! Called only by the autonomous RSI agent. Writes a tool or command
+//! proposal to the inbox in `~/.opencrabs/rsi/`. Never installs anything
+//! live — that's the user-facing `rsi_proposals` tool's job.
+//!
+//! This split is deliberate: RSI's restricted tool whitelist must not
+//! include `tool_manage` / `config_manager` directly, because a
+//! hallucinated shell tool installed at 3am has a much larger blast
+//! radius than a hallucinated paragraph of prose. By forcing every RSI
+//! creation through an inbox, the user always gets to see (and the
+//! agent always gets a chance to triage) what RSI wants to add.
+
+use super::error::Result;
+use super::r#trait::{Tool, ToolCapability, ToolExecutionContext, ToolResult};
+use crate::brain::commands::UserCommand;
+use crate::brain::rsi_proposals::ProposalsStore;
+use crate::brain::tools::dynamic::tool::{DynamicToolDef, ExecutorType, ParamDef};
+use async_trait::async_trait;
+use serde_json::Value;
+
+pub struct RsiProposeTool;
+
+#[async_trait]
+impl Tool for RsiProposeTool {
+    fn name(&self) -> &str {
+        "rsi_propose"
+    }
+
+    fn description(&self) -> &str {
+        "Propose a new dynamic tool or slash command for the user to install. \
+         Proposals are written to the inbox at ~/.opencrabs/rsi/ — they DO NOT \
+         install live. The user (or the user-facing agent on their behalf) reviews \
+         and applies proposals via rsi_proposals. Use this when feedback analysis \
+         shows the agent repeatedly worked around a missing tool/command."
+    }
+
+    fn input_schema(&self) -> Value {
+        serde_json::json!({
+            "type": "object",
+            "properties": {
+                "kind": {
+                    "type": "string",
+                    "enum": ["tool", "command"],
+                    "description": "What to propose: a dynamic tool (tools.toml) or a slash command (commands.toml)"
+                },
+                "rationale": {
+                    "type": "string",
+                    "description": "Why this proposal exists: cite the feedback evidence (failure rate, recurring user pattern) that motivated it. Shown to the user before they apply."
+                },
+                "name": {
+                    "type": "string",
+                    "description": "Tool name (snake_case, no spaces) for kind=tool, or slash command name (with leading /) for kind=command"
+                },
+                "description": {
+                    "type": "string",
+                    "description": "Short user-facing description"
+                },
+                "executor_type": {
+                    "type": "string",
+                    "enum": ["http", "shell"],
+                    "description": "(tool only) Executor: http for API calls, shell for CLI invocations"
+                },
+                "command": {
+                    "type": "string",
+                    "description": "(tool, executor_type=shell) The command line to run. Template variables {{param}} are substituted."
+                },
+                "method": {
+                    "type": "string",
+                    "description": "(tool, executor_type=http) HTTP method, e.g. GET / POST"
+                },
+                "url": {
+                    "type": "string",
+                    "description": "(tool, executor_type=http) Target URL. Template variables {{param}} are substituted."
+                },
+                "headers": {
+                    "type": "object",
+                    "description": "(tool, executor_type=http) HTTP headers as a key/value object"
+                },
+                "params": {
+                    "type": "array",
+                    "description": "(tool) Tool input parameters. Each entry: {name, type, description, required, default}",
+                    "items": { "type": "object" }
+                },
+                "requires_approval": {
+                    "type": "boolean",
+                    "description": "(tool) Whether the user-facing agent should be prompted before each invocation. Defaults to true — keep it true for shell tools.",
+                    "default": true
+                },
+                "enabled": {
+                    "type": "boolean",
+                    "description": "(tool) Whether the tool is enabled when applied. Defaults to true.",
+                    "default": true
+                },
+                "prompt": {
+                    "type": "string",
+                    "description": "(command only) The prompt sent to the LLM when the user types /name"
+                },
+                "action": {
+                    "type": "string",
+                    "enum": ["prompt", "system"],
+                    "description": "(command only) Command kind: 'prompt' sends to LLM, 'system' displays inline. Defaults to 'prompt'.",
+                    "default": "prompt"
+                }
+            },
+            "required": ["kind", "rationale", "name", "description"]
+        })
+    }
+
+    fn capabilities(&self) -> Vec<ToolCapability> {
+        // Pure file-write into the inbox under ~/.opencrabs/rsi/.
+        // No shell exec, no network, no installation.
+        vec![]
+    }
+
+    fn requires_approval(&self) -> bool {
+        false
+    }
+
+    async fn execute(&self, input: Value, _context: &ToolExecutionContext) -> Result<ToolResult> {
+        let kind = input
+            .get("kind")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+        let rationale = input
+            .get("rationale")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .trim()
+            .to_string();
+        let name = input
+            .get("name")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .trim()
+            .to_string();
+        let description = input
+            .get("description")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .trim()
+            .to_string();
+
+        if rationale.is_empty() {
+            return Ok(ToolResult::error(
+                "rationale is required — cite the feedback evidence that motivated this proposal"
+                    .to_string(),
+            ));
+        }
+        if name.is_empty() || description.is_empty() {
+            return Ok(ToolResult::error(
+                "name and description are required".to_string(),
+            ));
+        }
+
+        let store = ProposalsStore::new();
+        let proposer = "rsi-autonomous";
+
+        match kind.as_str() {
+            "tool" => {
+                let executor_type_str = input
+                    .get("executor_type")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
+                let executor = match executor_type_str {
+                    "http" => ExecutorType::Http,
+                    "shell" => ExecutorType::Shell,
+                    other => {
+                        return Ok(ToolResult::error(format!(
+                            "executor_type must be 'http' or 'shell', got '{other}'"
+                        )));
+                    }
+                };
+
+                let params: Vec<ParamDef> = match input.get("params") {
+                    Some(v) if !v.is_null() => match serde_json::from_value(v.clone()) {
+                        Ok(p) => p,
+                        Err(e) => {
+                            return Ok(ToolResult::error(format!(
+                                "params must be an array of {{name, type, description, required, default}}: {e}"
+                            )));
+                        }
+                    },
+                    _ => Vec::new(),
+                };
+
+                let headers = input
+                    .get("headers")
+                    .and_then(|v| v.as_object())
+                    .map(|obj| {
+                        obj.iter()
+                            .filter_map(|(k, v)| {
+                                v.as_str().map(|s| (k.clone(), s.to_string()))
+                            })
+                            .collect()
+                    })
+                    .unwrap_or_default();
+
+                let def = DynamicToolDef {
+                    name: name.clone(),
+                    description: description.clone(),
+                    executor,
+                    enabled: input.get("enabled").and_then(|v| v.as_bool()).unwrap_or(true),
+                    requires_approval: input
+                        .get("requires_approval")
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or(true),
+                    method: input
+                        .get("method")
+                        .and_then(|v| v.as_str())
+                        .map(str::to_string),
+                    url: input
+                        .get("url")
+                        .and_then(|v| v.as_str())
+                        .map(str::to_string),
+                    headers,
+                    timeout_secs: 30,
+                    command: input
+                        .get("command")
+                        .and_then(|v| v.as_str())
+                        .map(str::to_string),
+                    params,
+                };
+
+                // Sanity: shell tools need a command, http tools need a url.
+                if matches!(def.executor, ExecutorType::Shell) && def.command.is_none() {
+                    return Ok(ToolResult::error(
+                        "shell tools require a 'command' field".to_string(),
+                    ));
+                }
+                if matches!(def.executor, ExecutorType::Http) && def.url.is_none() {
+                    return Ok(ToolResult::error(
+                        "http tools require a 'url' field".to_string(),
+                    ));
+                }
+
+                match store.add_tool_proposal(proposer, &rationale, def) {
+                    Ok(id) => Ok(ToolResult::success(format!(
+                        "Tool proposal filed: {id} (name={name}). User will see a banner on next session start, or can list with rsi_proposals."
+                    ))),
+                    Err(e) => Ok(ToolResult::error(format!(
+                        "Failed to write proposal: {e}"
+                    ))),
+                }
+            }
+            "command" => {
+                let prompt = input
+                    .get("prompt")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .trim()
+                    .to_string();
+                if prompt.is_empty() {
+                    return Ok(ToolResult::error(
+                        "prompt is required for command proposals".to_string(),
+                    ));
+                }
+
+                let action = input
+                    .get("action")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("prompt")
+                    .to_string();
+
+                // Normalise the slash: commands.toml stores them with the
+                // leading "/" by convention.
+                let normalised_name = if name.starts_with('/') {
+                    name.clone()
+                } else {
+                    format!("/{}", name)
+                };
+
+                let cmd = UserCommand {
+                    name: normalised_name.clone(),
+                    description,
+                    action,
+                    prompt,
+                };
+
+                match store.add_command_proposal(proposer, &rationale, cmd) {
+                    Ok(id) => Ok(ToolResult::success(format!(
+                        "Command proposal filed: {id} (name={normalised_name})."
+                    ))),
+                    Err(e) => Ok(ToolResult::error(format!(
+                        "Failed to write proposal: {e}"
+                    ))),
+                }
+            }
+            other => Ok(ToolResult::error(format!(
+                "kind must be 'tool' or 'command', got '{other}'"
+            ))),
+        }
+    }
+}

@@ -180,17 +180,21 @@ pub enum RsiNotification {
     AgentCycleFailed { error: String },
 }
 
-/// Build a minimal tool registry containing only the 3 RSI tools.
+/// Build a minimal tool registry containing only the RSI tools.
 fn build_rsi_tool_registry() -> Arc<crate::brain::tools::ToolRegistry> {
     use crate::brain::tools::ToolRegistry;
     use crate::brain::tools::feedback_analyze::FeedbackAnalyzeTool;
     use crate::brain::tools::feedback_record::FeedbackRecordTool;
+    use crate::brain::tools::rsi_propose::RsiProposeTool;
     use crate::brain::tools::self_improve::SelfImproveTool;
 
     let registry = ToolRegistry::new();
     registry.register(Arc::new(FeedbackRecordTool));
     registry.register(Arc::new(FeedbackAnalyzeTool));
     registry.register(Arc::new(SelfImproveTool));
+    // rsi_propose lets the loop file tool/command proposals to the inbox.
+    // Apply path goes through rsi_proposals (user-facing), not RSI.
+    registry.register(Arc::new(RsiProposeTool));
     Arc::new(registry)
 }
 
@@ -255,6 +259,38 @@ Your job is to write improvements that PREVENT these from recurring:
 3. **Never rewrite the whole file**. The 'update' action replaces ONE specific section/paragraph. \
    The 'apply' action appends. Neither should be used to rewrite the entire file. \
    Brain files contain user-written content — you must preserve it and only add/refine specific instructions.
+
+## Proposing New Tools / Commands (rsi_propose)
+
+You can also propose NEW dynamic tools (~/.opencrabs/tools.toml) or NEW slash \
+commands (~/.opencrabs/commands.toml) when feedback shows the agent worked around \
+a missing capability. Use `rsi_propose` for this. You do NOT install — proposals \
+land in an inbox at ~/.opencrabs/rsi/proposed_*.toml. The user (or the user-facing \
+agent on their behalf) reviews and applies via the `rsi_proposals` tool.
+
+When to propose a tool (kind='tool'):
+- A specific bash invocation appears repeatedly across sessions (e.g. `gh issue list`, \
+  `docker ps`, a curl to a private API). Wrap it as a shell tool with named params.
+- The agent calls `http_request` to the same endpoint multiple times with similar \
+  payloads. Wrap it as an http tool.
+- Only propose tools whose execution is safe by default (read-only verbs, \
+  GET requests). Set `requires_approval=true` for anything shell-based.
+
+When to propose a command (kind='command'):
+- The user types `/something` repeatedly that doesn't exist (look at user_correction \
+  events or recent input patterns).
+- A common multi-step prompt the user reuses verbatim — a slash command saves typing.
+
+Strict rules for rsi_propose:
+- The `rationale` MUST cite the feedback evidence (event types and counts) that \
+  drove the proposal. No speculation.
+- One proposal per cycle is plenty. Quality over quantity.
+- Never propose a destructive shell tool (`rm`, `dd`, `mv`, `>`, `|sh`, etc.) — \
+  those should always go through tool_manage with explicit user approval, not \
+  through RSI.
+- Don't repropose: rsi_propose dedups by name, but rapid resubmission still wastes \
+  the user's review time. If a proposal was already filed and not applied, the \
+  user has a reason; don't insist.
 
 ## Rules
 
