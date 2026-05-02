@@ -5,6 +5,71 @@ All notable changes to OpenCrabs will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.16] - 2026-05-02
+
+### Added
+
+#### Mission Control
+- **`/mission-control` full-screen dialog** — three panels in one place: pending RSI proposals (Inbox cards), recent RSI activity (improvements log feed), and the schedule queue (cron jobs + paused/active state).
+- **Apply / reject inbox proposals inline** with `a` / `r` — same machinery as the agent's `rsi_proposals` tool, byte-identical install. Notification surfaces the result; inbox refreshes immediately.
+- **Keyboard navigation** — Tab/Shift-Tab cycle panels, j/k or ↑/↓ within, g/Home and G/End to jump, Enter for the detail popup, Esc to close.
+- **Modular layout** — three parallel module trees (`brain/mission_control/` data services, `tui/render/mission_control/` panel renderers, `tui/app/mission_control/` state + input + actions). Pure layout fn + pure decide fn keep the geometry and keystroke contracts unit-testable without spinning up an `App`.
+
+#### Skills (cross-harness `SKILL.md`)
+- **Cross-harness skill format** — `~/.opencrabs/skills/<name>/SKILL.md` files with YAML frontmatter (`name`, `description`) plus markdown body. Same format works on Claude Code, Anthropic managed agents, and OpenClaw.
+- **Embedded built-in skills** with user-directory overlay — built-ins ship with the binary via `include_str!`; user files at `~/.opencrabs/skills/<name>/SKILL.md` override by file presence.
+- **Auto-registration as `/<name>` slash commands** across the TUI input bar **and** every connected channel (Telegram, Discord, Slack, WhatsApp). No `commands.toml` entry needed.
+- **`/security-audit` skill** — language-agnostic security & CVE audit. Detects project type from manifests (Cargo / npm / Go / Python / Dart / Ruby / PHP / Java / Swift / .NET), runs the appropriate scanner, reviews the diff for injection / auth / crypto / deserialization / path-traversal patterns, and scores 0-100.
+- **`/cost-estimate` skill** — codebase cost-to-build estimate, AI-assisted ROI breakdown, and fair-market valuation.
+- **`/skills` picker dialog** — full-screen filterable browser for every loaded skill. Type-to-narrow (case-insensitive on name + description), Tab/Shift-Tab cycle wraps at edges, Enter runs the selected skill, Esc closes. When the filter narrows to a single match, Enter just fires it.
+
+#### RSI
+- **Autonomous tool & command proposals via inbox** — the RSI background loop now proposes new dynamic tools and slash commands. Lands in `~/.opencrabs/rsi/proposed_*.toml`; user reviews via the `rsi_proposals` tool or Mission Control's Inbox panel. Banner on session start shows pending count.
+
+#### Compaction
+- **Async proactive context compaction** — the 65% soft trigger now spawns the LLM summarization task in the background. The agent keeps processing turns; subsequent visits to `enforce_context_budget` atomically swap the summary in once the spawned task finishes. The 90% hard-truncate path cancels any in-flight compaction so a stale snapshot can't land on top of fresh truncation.
+
+#### CI
+- **`cargo audit` job** for dependency CVE scanning on every push/PR via the prebuilt `taiki-e/install-action`. One advisory ignored: `RUSTSEC-2024-0437` (DOS-class only, transitive via `crabrace → prometheus`, no upstream fix).
+
+#### Security hardening (Bash)
+- **`setsid` `pre_exec` hook** — every bash-tool child detaches from the controlling TTY before exec. Programs that bypass `stdin` and open `/dev/tty` directly (ssh password prompt, sudo getpass fallback, gnu readline) can no longer steal the user's TTY and leak escape sequences into the chat.
+- **SSH password askpass flow** — `ssh` / `scp` / `sftp` / `rsync` go through a probe-then-prompt sequence: probe with `BatchMode=yes -o ConnectTimeout=15`; on a recognisable auth-failure stderr, prompt the user via the existing TUI password dialog and retry with `SSH_ASKPASS` pointing at a 0600-tempfile-backed shell script.
+- **POSIX single-quote askpass tempfile path** — askpass shell script now wraps the tempfile path in POSIX single quotes (with `'\''` escape for embedded quotes), defeating any `$TMPDIR` containing `$` / `` ` `` / `"`.
+
+### Changed
+
+- **Slash autocomplete dropdown is now responsive** — width grows to fit the longest visible row (capped at terminal width − 1). Long skill descriptions no longer panic ratatui's buffer write or get hard-clipped without ellipsis. Description column lines up vertically across rows via a precomputed name-column width.
+- **Skills layer doc + format work** — adopted the de-facto `<name>/SKILL.md` directory layout with YAML frontmatter; documented format + auto-registration + cross-harness portability across the README, TOOLS.md template, and the user brain file.
+- **Paragraph-level dedup for brain-file appends** — RSI sync now dedups at paragraph granularity rather than section, preserving more user content during upstream template merges.
+- **Brand palette lifted into `tui/render/palette.rs`** — orange / teal / white / text shades centralised; mission_control/theme.rs now re-exports from the shared palette and only carries panel-specific aliases. Future dialogs reuse the palette without dipping into MC's namespace.
+
+### Fixed
+
+#### Providers
+- **OpenCode `/models` selection now persists** — `merge_provider_keys` was missing an explicit branch for the `opencode` provider, so the api_key written to `keys.toml` never made it into the runtime config. The factory then reported "OpenCode enabled but API key missing", the rebuilt agent fell back to the previous provider, and the session footer never updated to reflect the user's selection. Added the merge branch (mirroring qwen's auto-enable-on-key pattern) plus 4 regression tests in `merge_provider_keys_test.rs` covering the persistence, sentinel-placeholder rejection, and the disabled-state-preservation invariant.
+
+#### TUI
+- **Custom provider dialog clipping** across three sub-fixes — separators (5029035), `↑↓ more` indicators (ba7fe8d), and base form-line accounting (ed8e2f1). Custom-provider dialogs no longer clip the bottom fields when models are fetched.
+- **Custom providers fetch `/v1/models`** on paste, key entry, and Enter (c5b5b65, e753bde) — model list picker shows fetched models for custom providers when the endpoint responds (196514b).
+- **Scope `ProviderSwitched` and `SystemMessage`** to originating session (3495a8a) — a 429 fallback in session A no longer pushes alerts into session B.
+- **Match provider IDs with hyphens, not underscores** in `save_provider_selection` (480785d).
+- **Prevent scroll drift during streaming** when the user has scrolled up (05e753c) — viewport stays anchored to the same content while streaming continues.
+
+#### Compaction
+- **Demote routine async-compaction logs to debug** (74cb9de) — only the 90% hard-truncate floor / stuck compaction (>10 min) / panics / cancellations remain at warn or error.
+
+#### Session search
+- **Direct SQL `LIKE` query** against the messages table (bd450d6) — replaces the stale QMD-indexed flow that lagged behind for active sessions and large conversations.
+
+#### Pending requests
+- **Purge stale rows on startup** (6624411) — rows older than 10 minutes are deleted before fetching interrupted requests, stopping the "found 23 interrupted request(s) — resuming" replay loop after `cargo run` restarts.
+
+### Tests
+
+- 13 new test files added: `bash_ssh_detection_test` (10), `bash_posix_quote_test` (9), `rsi_proposals_test` (13), `skills_test` (14), `skill_slash_dispatch_test` (7), `slash_autocomplete_dimensions_test` (12), `mission_control_layout_test` (7), `mission_control_inbox_service_test` (6), `mission_control_activity_service_test` (8), `mission_control_schedule_service_test` (5), `mission_control_input_test` (23), `skills_dialog_test` (18), `merge_provider_keys_test` (4).
+- **2,522 tests passing** (+176 since v0.3.15)
+
 ## [0.3.15] - 2026-04-28
 
 ### Added
@@ -464,6 +529,7 @@ provider and context budget.
 - **Raise think-tag safety valve** — long Qwen reasoning blocks no longer
   get partially stripped by the tag filter.
 
+[0.3.16]: https://github.com/adolfousier/opencrabs/compare/v0.3.15...v0.3.16
 [0.3.15]: https://github.com/adolfousier/opencrabs/compare/v0.3.14...v0.3.15
 [0.3.14]: https://github.com/adolfousier/opencrabs/compare/v0.3.13...v0.3.14
 [0.3.12]: https://github.com/adolfousier/opencrabs/compare/v0.3.11...v0.3.12

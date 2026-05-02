@@ -163,10 +163,11 @@ cargo test --all-features
 | Tests — Mission Control Schedule Service | 5 | `src/tests/mission_control_schedule_service_test.rs` |
 | Tests — Mission Control Input | 23 | `src/tests/mission_control_input_test.rs` |
 | Tests — Skills Dialog | 18 | `src/tests/skills_dialog_test.rs` |
+| Tests — merge_provider_keys (OpenCode persistence regression) | 4 | `src/tests/merge_provider_keys_test.rs` |
 | **Usage — Categorizer** | 4 | `src/usage/categorizer.rs` |
 | **Usage — Dashboard** | 6 | `src/usage/dashboard.rs` |
 | **Usage — Data** | 7 | `src/usage/data.rs` |
-| **Total** | **2,518** | +172 since last update: Mission Control (49: layout, services, input, popup), Skills (39: loader, dispatch, dialog), Slash autocomplete responsive fix (12), Bash SSH + POSIX quote hardening (19), RSI proposals inbox (13), and more |
+| **Total** | **2,522** | +176 since last update: Mission Control (49: layout, services, input, popup), Skills (39: loader, dispatch, dialog), Slash autocomplete responsive fix (12), Bash SSH + POSIX quote hardening (19), RSI proposals inbox (13), merge_provider_keys regression (4), and more |
 
 ---
 

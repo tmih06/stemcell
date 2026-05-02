@@ -28,7 +28,7 @@ pub fn list_with_store(store: &ProposalsStore) -> Vec<McInboxItem> {
                 .map(item_from_command),
         )
         .collect();
-    items.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+    items.sort_by_key(|i| std::cmp::Reverse(i.created_at));
     items
 }
 

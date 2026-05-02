@@ -1428,7 +1428,10 @@ fn load_keys_from_file() -> Result<KeysFile> {
 
 /// Merge API keys from keys.toml into existing provider configs
 /// Keys from keys.toml override values in config.toml
-fn merge_provider_keys(mut base: ProviderConfigs, keys: ProviderConfigs) -> ProviderConfigs {
+pub(crate) fn merge_provider_keys(
+    mut base: ProviderConfigs,
+    keys: ProviderConfigs,
+) -> ProviderConfigs {
     // Guard: never merge the sentinel placeholder that /models uses internally
     let is_real_key = |k: &str| !k.is_empty() && k != "__EXISTING_KEY__";
 
@@ -1496,6 +1499,27 @@ fn merge_provider_keys(mut base: ProviderConfigs, keys: ProviderConfigs) -> Prov
         && is_real_key(&key)
     {
         let entry = base.qwen.get_or_insert_with(|| ProviderConfig {
+            enabled: true,
+            ..Default::default()
+        });
+        entry.api_key = Some(key);
+        if entry.default_model.is_none() && k.default_model.is_some() {
+            entry.default_model = k.default_model;
+        }
+        if entry.base_url.is_none() && k.base_url.is_some() {
+            entry.base_url = k.base_url;
+        }
+    }
+    // Merge opencode (Go/Zen plan API key). Same auto-enable logic as
+    // qwen — `/models` writes the key under `[providers.opencode]` in
+    // keys.toml, and without this merge the runtime config never sees
+    // it (factory.rs reports "API key missing" and the picker's
+    // selection silently fails to take effect).
+    if let Some(k) = keys.opencode
+        && let Some(key) = k.api_key
+        && is_real_key(&key)
+    {
+        let entry = base.opencode.get_or_insert_with(|| ProviderConfig {
             enabled: true,
             ..Default::default()
         });

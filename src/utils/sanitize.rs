@@ -798,6 +798,14 @@ mod tests {
 
     // --- Home path shortening tests ---
 
+    // Home-path shrinking tests construct inputs from `$HOME` and assert
+    // the redactor collapses them to `~`. On Windows there's no `HOME`
+    // by default — the redactor reads `%USERPROFILE%` (e.g.
+    // `C:\Users\runneradmin`) while these tests fall back to a fake
+    // `/Users/testuser` Unix path that the redactor never recognises.
+    // Gating the tests to Unix keeps the contract strict on the
+    // platforms where it actually applies.
+    #[cfg(unix)]
     #[test]
     fn shrinks_home_path_in_string() {
         let home = std::env::var("HOME").unwrap_or_else(|_| "/Users/testuser".to_string());
@@ -806,6 +814,7 @@ mod tests {
         assert_eq!(out["path"], "~/srv/rs/opencrabs");
     }
 
+    #[cfg(unix)]
     #[test]
     fn shrinks_home_path_in_nested_object() {
         let home = std::env::var("HOME").unwrap_or_else(|_| "/Users/testuser".to_string());
@@ -820,6 +829,7 @@ mod tests {
         assert_eq!(out["config"]["name"], "test");
     }
 
+    #[cfg(unix)]
     #[test]
     fn shrinks_home_path_in_array() {
         let home = std::env::var("HOME").unwrap_or_else(|_| "/Users/testuser".to_string());
@@ -829,6 +839,7 @@ mod tests {
         assert_eq!(out[1], "~/file2.rs");
     }
 
+    #[cfg(unix)]
     #[test]
     fn shrinks_home_path_in_bash_command() {
         let home = std::env::var("HOME").unwrap_or_else(|_| "/Users/testuser".to_string());
@@ -850,6 +861,7 @@ mod tests {
         assert_eq!(out["other"], "/var/log/syslog");
     }
 
+    #[cfg(unix)]
     #[test]
     fn shrinks_home_path_mid_string() {
         let home = std::env::var("HOME").unwrap_or_else(|_| "/Users/testuser".to_string());
