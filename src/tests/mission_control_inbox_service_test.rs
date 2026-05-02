@@ -126,11 +126,7 @@ fn mixed_tool_and_command_proposals_appear_in_one_list() {
     let dir = TempDir::new().unwrap();
     let store = ProposalsStore::with_dir(dir.path().to_path_buf());
     store
-        .add_tool_proposal(
-            "rsi-autonomous",
-            "ev1",
-            shell_tool_def("a_tool", "echo a"),
-        )
+        .add_tool_proposal("rsi-autonomous", "ev1", shell_tool_def("a_tool", "echo a"))
         .unwrap();
     store
         .add_command_proposal("rsi-autonomous", "ev2", user_cmd("/b_cmd", "run b"))

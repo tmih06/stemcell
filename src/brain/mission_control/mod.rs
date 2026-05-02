@@ -22,7 +22,9 @@
 //!
 //! The skeleton lands in C8; services land in C9/C10.
 
+pub mod activity_service;
 pub mod inbox_service;
+pub mod schedule_service;
 pub mod types;
 
 pub use types::{

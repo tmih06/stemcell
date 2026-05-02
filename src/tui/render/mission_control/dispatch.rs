@@ -27,8 +27,8 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
 
     let focus = app.mc.focused_panel;
     inbox_panel::draw(frame, app, inbox, focus == McPanel::Inbox);
-    activity_panel::draw(frame, activity, focus == McPanel::Activity);
-    schedule_panel::draw(frame, schedule, focus == McPanel::Schedule);
+    activity_panel::draw(frame, app, activity, focus == McPanel::Activity);
+    schedule_panel::draw(frame, app, schedule, focus == McPanel::Schedule);
 
     if help_bar.height > 0 {
         draw_help_bar(frame, help_bar);

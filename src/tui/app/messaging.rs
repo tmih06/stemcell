@@ -703,7 +703,7 @@ impl App {
                 true
             }
             "/mission-control" => {
-                crate::tui::app::mission_control::actions::open(self);
+                crate::tui::app::mission_control::actions::open(self).await;
                 true
             }
             "/cd" => {

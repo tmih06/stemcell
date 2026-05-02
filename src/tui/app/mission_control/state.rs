@@ -26,6 +26,15 @@ pub struct McState {
     pub scroll_offset: u16,
     /// Whether the detail popup overlay is open.
     pub detail_open: bool,
+    /// Cached activity feed entries — populated by `actions::refresh`,
+    /// read by `activity_panel::draw`. Pre-fetched so each render frame
+    /// is just a `&[McActivity]` borrow rather than a fresh disk read.
+    pub activity: Vec<crate::brain::mission_control::McActivity>,
+    /// Cached schedule rows — populated by `actions::refresh`, read by
+    /// `schedule_panel::draw`. Same per-frame cost rationale as
+    /// `activity`; sourced from the cron-jobs DB asynchronously so it
+    /// can't run from inside the synchronous render path.
+    pub schedule: Vec<crate::brain::mission_control::McScheduleItem>,
 }
 
 impl McState {

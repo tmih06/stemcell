@@ -1,20 +1,34 @@
 //! Side-effect actions invoked from Mission Control.
 //!
-//! C8: only `open` is wired — flips the app into MC mode. Apply / reject
-//! / detail-open / detail-close land in C11.
+//! `open` flips the app into MC mode and pre-fetches the data each
+//! panel needs (activity entries from disk, schedule rows from the
+//! cron-jobs DB) so the synchronous render path never has to hit the
+//! filesystem or run a SQL query mid-frame.
 
+use crate::brain::mission_control::{activity_service, schedule_service};
 use crate::tui::app::App;
 use crate::tui::events::AppMode;
 
-/// Enter Mission Control mode. Called by the `/mission-control` slash
-/// command. Idempotent — re-opening from MC is a no-op.
-pub fn open(app: &mut App) {
+/// Maximum activity feed entries cached for the panel. The journal
+/// itself is unbounded, but the panel only ever displays a window —
+/// reading more wastes memory without changing what the user sees.
+const ACTIVITY_LIMIT: usize = 100;
+
+/// Enter Mission Control mode. Idempotent — re-opening from MC is a
+/// no-op (the snapshots stay as they were; call `refresh` explicitly
+/// if a re-fetch is required).
+pub async fn open(app: &mut App) {
     if app.mode == AppMode::MissionControl {
         return;
     }
     app.mode = AppMode::MissionControl;
-    // First open of a fresh session lands on the Inbox panel; subsequent
-    // re-opens preserve focus state so the user resumes where they left
-    // off. The `selected_index` is held by `McState`; we don't reset it
-    // here for that reason.
+    refresh(app).await;
+}
+
+/// Re-fetch every panel's data into the cached snapshots in `McState`.
+/// Called on `open` and (later, in C11) on a refresh keystroke.
+pub async fn refresh(app: &mut App) {
+    app.mc.activity = activity_service::recent(ACTIVITY_LIMIT);
+    let pool = app.agent_service.context().pool();
+    app.mc.schedule = schedule_service::list(pool).await;
 }
