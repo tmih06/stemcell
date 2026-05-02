@@ -84,6 +84,7 @@ pub mod voice_voicebox_test;
 //pub mod streaming_test;
 pub mod mission_control_activity_service_test;
 pub mod mission_control_inbox_service_test;
+pub mod mission_control_input_test;
 pub mod mission_control_layout_test;
 pub mod mission_control_schedule_service_test;
 pub mod model_fetch_test;

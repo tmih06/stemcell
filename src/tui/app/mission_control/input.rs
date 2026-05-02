@@ -1,42 +1,141 @@
 //! Keyboard handling for `AppMode::MissionControl`.
 //!
-//! C8: only Esc is wired (closes MC, returns to Chat). Tab / j / k /
-//! Enter / a / r land in C11 alongside the detail popup and inbox
-//! actions. The handler returns `true` when it consumed the key, so
-//! the dispatcher in `tui/app/input.rs` knows whether to fall through
-//! to the default chat-mode handlers.
+//! Three layers:
+//!
+//!  1. Detail popup open → Esc closes the popup. j/k still scroll the
+//!     selection underneath so the popup updates as the user moves.
+//!  2. Panel focused, no popup → Tab/Shift-Tab cycle panels;
+//!     j/k or ↑/↓ move selection within the focused panel; Enter
+//!     opens the detail popup; Esc closes MC entirely.
+//!  3. Apply / reject (`a` / `r`) land in C12 alongside the
+//!     `rsi_proposals` action plumbing.
+//!
+//! The decision logic is split into a pure `decide` function that takes
+//! a `&mut McState` plus the current panel item count, and returns a
+//! `KeyOutcome`. The `handle_key` wrapper at the top routes that
+//! outcome back into `App`-level effects (mode switch on Close). This
+//! keeps the keystroke logic unit-testable without spinning up a full
+//! `App`.
 
+use super::state::{McPanel, McState};
 use crate::tui::app::App;
 use crate::tui::events::AppMode;
 use crossterm::event::{KeyCode, KeyEvent};
 
-/// Handle a key press while Mission Control is the active mode.
+/// Effect of a keystroke that the wrapper has to apply at the App level.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum KeyOutcome {
+    /// Key consumed; no further App-level action required.
+    Consumed,
+    /// User wants to leave MC — caller should switch back to Chat mode.
+    Close,
+    /// Key wasn't recognised; caller may fall through to the chat-mode
+    /// default handlers.
+    NotConsumed,
+}
+
+/// Top-level handler called from the App's keystroke dispatcher.
 /// Returns `true` if the key was consumed.
 pub fn handle_key(app: &mut App, key: KeyEvent) -> bool {
-    // Detail popup, when open, swallows Esc first — second Esc closes MC.
-    if app.mc.detail_open {
-        if matches!(key.code, KeyCode::Esc) {
+    let count = panel_count(app);
+    match decide(&mut app.mc, count, key) {
+        KeyOutcome::Consumed => true,
+        KeyOutcome::Close => {
+            app.mode = AppMode::Chat;
             app.mc.detail_open = false;
-            return true;
-        }
-        // C11 will fan out the rest of the popup keys.
-        return false;
-    }
-
-    match key.code {
-        KeyCode::Esc => {
-            close(app);
             true
         }
-        _ => false,
+        KeyOutcome::NotConsumed => false,
     }
 }
 
-/// Close Mission Control and restore the previous app mode (Chat).
-pub fn close(app: &mut App) {
-    app.mode = AppMode::Chat;
-    app.mc.detail_open = false;
-    // Selection state is intentionally preserved across open/close
-    // cycles in C8 — re-opening MC resumes where you left off. C11
-    // adds a `reset_on_open` toggle if we want the other behaviour.
+/// Pure decision function — mutates `state`, returns the App-level
+/// effect. `panel_item_count` is the number of items in the currently
+/// focused panel, used to clamp selection movement.
+pub fn decide(state: &mut McState, panel_item_count: usize, key: KeyEvent) -> KeyOutcome {
+    if state.detail_open {
+        decide_with_popup(state, panel_item_count, key)
+    } else {
+        decide_without_popup(state, panel_item_count, key)
+    }
+}
+
+fn decide_with_popup(state: &mut McState, panel_item_count: usize, key: KeyEvent) -> KeyOutcome {
+    match key.code {
+        KeyCode::Esc => {
+            state.detail_open = false;
+            KeyOutcome::Consumed
+        }
+        // Allow scrolling the underlying selection so the popup updates
+        // as the user moves through the list.
+        KeyCode::Up | KeyCode::Char('k') => {
+            move_selection(state, panel_item_count, -1);
+            KeyOutcome::Consumed
+        }
+        KeyCode::Down | KeyCode::Char('j') => {
+            move_selection(state, panel_item_count, 1);
+            KeyOutcome::Consumed
+        }
+        _ => KeyOutcome::NotConsumed,
+    }
+}
+
+fn decide_without_popup(state: &mut McState, panel_item_count: usize, key: KeyEvent) -> KeyOutcome {
+    match key.code {
+        KeyCode::Esc => KeyOutcome::Close,
+        KeyCode::Tab | KeyCode::Char('l') => {
+            state.focus_next();
+            KeyOutcome::Consumed
+        }
+        KeyCode::BackTab | KeyCode::Char('h') => {
+            state.focus_prev();
+            KeyOutcome::Consumed
+        }
+        KeyCode::Up | KeyCode::Char('k') => {
+            move_selection(state, panel_item_count, -1);
+            KeyOutcome::Consumed
+        }
+        KeyCode::Down | KeyCode::Char('j') => {
+            move_selection(state, panel_item_count, 1);
+            KeyOutcome::Consumed
+        }
+        KeyCode::Home | KeyCode::Char('g') => {
+            state.selected_index = 0;
+            KeyOutcome::Consumed
+        }
+        KeyCode::End | KeyCode::Char('G') => {
+            state.selected_index = panel_item_count.saturating_sub(1);
+            KeyOutcome::Consumed
+        }
+        KeyCode::Enter => {
+            if panel_item_count > 0 {
+                state.detail_open = true;
+            }
+            KeyOutcome::Consumed
+        }
+        _ => KeyOutcome::NotConsumed,
+    }
+}
+
+fn move_selection(state: &mut McState, count: usize, delta: i32) {
+    if count == 0 {
+        state.selected_index = 0;
+        return;
+    }
+    let max_idx = count - 1;
+    let cur = state.selected_index.min(max_idx) as i32;
+    let next = (cur + delta).clamp(0, max_idx as i32) as usize;
+    state.selected_index = next;
+}
+
+fn panel_count(app: &App) -> usize {
+    match app.mc.focused_panel {
+        // Inbox count is recomputed each draw from the proposals store
+        // rather than cached in McState. Reading it here means a
+        // fresh disk read on every Enter / Tab keystroke, which stays
+        // in sync if the inbox file changes mid-session.
+        McPanel::Inbox => crate::brain::mission_control::inbox_service::list().len(),
+        McPanel::Activity => app.mc.activity.len(),
+        McPanel::Schedule => app.mc.schedule.len(),
+    }
 }

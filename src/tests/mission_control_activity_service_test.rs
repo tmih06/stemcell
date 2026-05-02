@@ -30,7 +30,10 @@ fn parses_one_well_formed_entry() {
     assert!(entry.detail.contains("SOUL.md"));
     assert!(entry.detail.contains("Users prefer shorter responses"));
     // Date parsed and sane (2026-04-12 23:01 UTC).
-    assert_eq!(entry.timestamp.format("%Y-%m-%d %H:%M").to_string(), "2026-04-12 23:01");
+    assert_eq!(
+        entry.timestamp.format("%Y-%m-%d %H:%M").to_string(),
+        "2026-04-12 23:01"
+    );
 }
 
 #[test]
@@ -85,23 +88,14 @@ fn drops_target_and_rationale_when_marked_none() {
 
 #[test]
 fn level_maps_status_field_first_then_header() {
-    let applied = parse_improvements_md(
-        "## [Applied] x\n\n**Status:** Applied\n",
-        50,
-    );
+    let applied = parse_improvements_md("## [Applied] x\n\n**Status:** Applied\n", 50);
     assert_eq!(applied[0].level, McActivityLevel::Success);
 
-    let failed = parse_improvements_md(
-        "## [Applied] x\n\n**Status:** Failed\n",
-        50,
-    );
+    let failed = parse_improvements_md("## [Applied] x\n\n**Status:** Failed\n", 50);
     // Status field beats header status.
     assert_eq!(failed[0].level, McActivityLevel::Error);
 
-    let reverted = parse_improvements_md(
-        "## [Applied] x\n\n**Status:** Reverted\n",
-        50,
-    );
+    let reverted = parse_improvements_md("## [Applied] x\n\n**Status:** Reverted\n", 50);
     assert_eq!(reverted[0].level, McActivityLevel::Warn);
 }
 

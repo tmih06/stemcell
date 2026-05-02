@@ -1,33 +1,222 @@
 //! Detail popup overlay — opens on Enter, dismissed on Esc.
 //!
-//! C8 stub: skeleton renderer that just clears a centred area. The real
-//! per-panel detail content (proposal body, activity event, schedule
-//! row) lands alongside C11's keyboard navigation.
+//! Renders the full record for the currently-selected item in the
+//! focused panel. Inbox proposals show their rationale + tool/command
+//! definition; activity entries show the parsed metadata; schedule
+//! rows show the cron expression + paused/next-run state.
+//!
+//! Pure read of `app.mc` snapshots — no service calls during render.
 
 use super::theme;
+use crate::brain::mission_control::{
+    McActivity, McInboxItem, McInboxKind, McScheduleItem, McScheduleKind, inbox_service,
+};
+use crate::tui::app::App;
+use crate::tui::app::mission_control::McPanel;
+
 use ratatui::Frame;
 use ratatui::layout::Rect;
-use ratatui::style::Style;
-use ratatui::widgets::{Block, Borders, Clear, Paragraph};
+use ratatui::style::{Modifier, Style};
+use ratatui::symbols;
+use ratatui::text::{Line, Span};
+use ratatui::widgets::{Block, Borders, Clear, Paragraph, Wrap};
 
 /// Render a centred popup occupying ~60% × 70% of `area`.
-pub fn draw(frame: &mut Frame, area: Rect) {
-    let pw = (area.width * 60 / 100).max(30);
-    let ph = (area.height * 70 / 100).max(10);
+pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
+    let pw = (area.width * 60 / 100).max(40);
+    let ph = (area.height * 70 / 100).max(12);
     let px = area.x + area.width.saturating_sub(pw) / 2;
     let py = area.y + area.height.saturating_sub(ph) / 2;
     let popup = Rect::new(px, py, pw, ph);
 
     frame.render_widget(Clear, popup);
 
+    let (title, accent, lines) = match app.mc.focused_panel {
+        McPanel::Inbox => inbox_detail(app),
+        McPanel::Activity => activity_detail(app),
+        McPanel::Schedule => schedule_detail(app),
+    };
+
     let block = Block::default()
-        .title(" Detail ")
-        .title_style(theme::title_style(theme::BORDER_INBOX_FOCUS))
+        .title(title)
+        .title_style(theme::title_style(accent))
         .borders(Borders::ALL)
-        .border_set(ratatui::symbols::border::ROUNDED)
-        .border_style(Style::default().fg(theme::BORDER_INBOX_FOCUS));
-    let body = Paragraph::new("\n  (Detail body lands in C11)")
-        .style(theme::muted())
+        .border_set(symbols::border::ROUNDED)
+        .border_style(Style::default().fg(accent));
+
+    let body = Paragraph::new(lines)
+        .wrap(Wrap { trim: false })
         .block(block);
     frame.render_widget(body, popup);
+}
+
+// ── Inbox detail ────────────────────────────────────────────────────────────
+
+fn inbox_detail(app: &App) -> (String, ratatui::style::Color, Vec<Line<'static>>) {
+    let items = inbox_service::list();
+    let item = items.get(app.mc.selected_index);
+    let lines = match item {
+        Some(item) => render_inbox_item(item),
+        None => empty_lines("No proposal selected"),
+    };
+    (" Inbox detail ".to_string(), theme::TEAL, lines)
+}
+
+fn render_inbox_item(item: &McInboxItem) -> Vec<Line<'static>> {
+    let kind_label = match item.kind {
+        McInboxKind::ProposedTool => "tool",
+        McInboxKind::ProposedCommand => "command",
+    };
+    let filed = item.created_at.format("%Y-%m-%d %H:%M UTC").to_string();
+    let mut lines: Vec<Line<'static>> = vec![
+        blank(),
+        kv("Kind", kind_label),
+        kv("Label", &item.label),
+        kv("Source", &item.source),
+        kv("Filed", &filed),
+        kv("ID", &item.id),
+        blank(),
+        section_heading("Summary"),
+    ];
+    for s in wrap_paragraph(&item.summary) {
+        lines.push(body_line(s));
+    }
+    lines.extend([
+        blank(),
+        section_heading("Apply / reject"),
+        body_line(format!(
+            "Use `rsi_proposals apply {}` to install or `reject {}` to discard.",
+            item.id, item.id
+        )),
+    ]);
+    lines
+}
+
+// ── Activity detail ─────────────────────────────────────────────────────────
+
+fn activity_detail(app: &App) -> (String, ratatui::style::Color, Vec<Line<'static>>) {
+    let entry = app.mc.activity.get(app.mc.selected_index);
+    let lines = match entry {
+        Some(e) => render_activity(e),
+        None => empty_lines("No activity selected"),
+    };
+    (" Activity detail ".to_string(), theme::ORANGE, lines)
+}
+
+fn render_activity(entry: &McActivity) -> Vec<Line<'static>> {
+    let when = entry.timestamp.format("%Y-%m-%d %H:%M UTC").to_string();
+    let mut lines: Vec<Line<'static>> = vec![
+        blank(),
+        kv("When", &when),
+        kv("Source", &entry.source),
+        kv("Level", level_label(entry.level)),
+        blank(),
+        section_heading("Detail"),
+    ];
+    for s in wrap_paragraph(&entry.detail) {
+        lines.push(body_line(s));
+    }
+    lines
+}
+
+fn level_label(level: crate::brain::mission_control::McActivityLevel) -> &'static str {
+    use crate::brain::mission_control::McActivityLevel as L;
+    match level {
+        L::Info => "info",
+        L::Success => "success",
+        L::Warn => "warn",
+        L::Error => "error",
+    }
+}
+
+// ── Schedule detail ─────────────────────────────────────────────────────────
+
+fn schedule_detail(app: &App) -> (String, ratatui::style::Color, Vec<Line<'static>>) {
+    let item = app.mc.schedule.get(app.mc.selected_index);
+    let lines = match item {
+        Some(i) => render_schedule(i),
+        None => empty_lines("No schedule item selected"),
+    };
+    (" Schedule detail ".to_string(), theme::WHITE, lines)
+}
+
+fn render_schedule(item: &McScheduleItem) -> Vec<Line<'static>> {
+    let kind = match item.kind {
+        McScheduleKind::Cron => "cron job",
+        McScheduleKind::PendingApproval => "pending approval",
+    };
+    let state = if item.awaiting_user {
+        "awaiting user"
+    } else {
+        "active"
+    };
+    let mut lines: Vec<Line<'static>> = vec![
+        blank(),
+        kv("Kind", kind),
+        kv("Label", &item.label),
+        kv("State", state),
+        blank(),
+        section_heading("Schedule"),
+    ];
+    for s in wrap_paragraph(&item.schedule) {
+        lines.push(body_line(s));
+    }
+    lines.extend([blank(), kv("ID", &item.id)]);
+    lines
+}
+
+// ── Layout helpers ──────────────────────────────────────────────────────────
+
+fn empty_lines(message: &str) -> Vec<Line<'static>> {
+    vec![
+        blank(),
+        Line::from(vec![
+            Span::raw("  "),
+            Span::styled(message.to_string(), theme::muted()),
+        ]),
+    ]
+}
+
+fn blank() -> Line<'static> {
+    Line::raw("")
+}
+
+fn kv(key: &str, value: &str) -> Line<'static> {
+    Line::from(vec![
+        Span::raw("  "),
+        Span::styled(
+            format!("{key:<8} "),
+            Style::default()
+                .fg(theme::TEXT_DIM)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(value.to_string(), Style::default().fg(theme::TEXT_PRIMARY)),
+    ])
+}
+
+fn section_heading(text: &str) -> Line<'static> {
+    Line::from(vec![
+        Span::raw("  "),
+        Span::styled(
+            text.to_string(),
+            Style::default()
+                .fg(theme::TEXT_DIM)
+                .add_modifier(Modifier::BOLD),
+        ),
+    ])
+}
+
+fn body_line(text: String) -> Line<'static> {
+    Line::from(vec![
+        Span::raw("  "),
+        Span::styled(text, Style::default().fg(theme::TEXT_PRIMARY)),
+    ])
+}
+
+/// Greedy soft-wrap on whitespace so each line in the detail popup
+/// fits comfortably within typical popup widths. We let the
+/// `Paragraph` widget handle hard wrapping for over-long single
+/// tokens via `Wrap { trim: false }`.
+fn wrap_paragraph(text: &str) -> Vec<String> {
+    text.split('\n').map(|s| s.to_string()).collect()
 }

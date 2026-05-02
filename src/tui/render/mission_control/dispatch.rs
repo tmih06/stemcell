@@ -35,7 +35,7 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
     }
 
     if app.mc.detail_open {
-        detail_popup::draw(frame, area);
+        detail_popup::draw(frame, app, area);
     }
 }
 
