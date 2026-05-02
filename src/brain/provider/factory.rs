@@ -973,6 +973,17 @@ fn configure_openai_compatible(
         tracing::info!("Context window configured: {} tokens", cw);
         provider = provider.with_context_window(cw);
     }
+    // OpenRouter response caching
+    if let Some(cache) = config.cache_enabled {
+        provider = provider.with_cache_enabled(cache);
+        if cache {
+            tracing::info!("OpenRouter response caching enabled");
+        }
+    }
+    if let Some(ttl) = config.cache_ttl {
+        provider = provider.with_cache_ttl(ttl);
+        tracing::info!("OpenRouter cache TTL: {}s", ttl);
+    }
     provider
 }
 

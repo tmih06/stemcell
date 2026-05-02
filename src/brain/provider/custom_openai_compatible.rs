@@ -1021,6 +1021,10 @@ pub struct OpenAIProvider {
     /// `retry_config()`. Used by `RotatingQwenProvider` to disable
     /// retry-on-rate-limit for sub-providers (rotation handles 429).
     retry_config_override: Option<super::retry::RetryConfig>,
+    /// OpenRouter response caching — when true, adds `X-OpenRouter-Cache: true`.
+    cache_enabled: bool,
+    /// OpenRouter cache TTL in seconds (1-86400, default 300).
+    cache_ttl: Option<u32>,
 }
 
 impl OpenAIProvider {
@@ -1085,6 +1089,8 @@ impl OpenAIProvider {
             auth_refresh_fn: None,
             auth_invalidate_fn: None,
             retry_config_override: None,
+            cache_enabled: false,
+            cache_ttl: None,
         }
     }
 
@@ -1114,6 +1120,8 @@ impl OpenAIProvider {
             auth_refresh_fn: None,
             auth_invalidate_fn: None,
             retry_config_override: None,
+            cache_enabled: false,
+            cache_ttl: None,
         }
     }
 
@@ -1143,6 +1151,8 @@ impl OpenAIProvider {
             auth_refresh_fn: None,
             auth_invalidate_fn: None,
             retry_config_override: None,
+            cache_enabled: false,
+            cache_ttl: None,
         }
     }
 
@@ -1230,6 +1240,18 @@ impl OpenAIProvider {
     /// rotate immediately instead of burning ~45s in backoff per account.
     pub fn with_retry_config(mut self, config: super::retry::RetryConfig) -> Self {
         self.retry_config_override = Some(config);
+        self
+    }
+
+    /// Enable OpenRouter response caching (`X-OpenRouter-Cache: true`).
+    pub fn with_cache_enabled(mut self, enabled: bool) -> Self {
+        self.cache_enabled = enabled;
+        self
+    }
+
+    /// Set OpenRouter cache TTL in seconds (1-86400, default 300).
+    pub fn with_cache_ttl(mut self, ttl: u32) -> Self {
+        self.cache_ttl = Some(ttl);
         self
     }
 
@@ -1332,6 +1354,23 @@ impl OpenAIProvider {
                 "cli-agent,personal-agent,programming-app".parse::<reqwest::header::HeaderValue>(),
             ) {
                 headers.insert(k3, v3);
+            }
+            // OpenRouter response caching — zero cost for identical requests
+            if self.cache_enabled {
+                if let (Ok(k), Ok(v)) = (
+                    "X-OpenRouter-Cache".parse::<reqwest::header::HeaderName>(),
+                    "true".parse::<reqwest::header::HeaderValue>(),
+                ) {
+                    headers.insert(k, v);
+                }
+                if let Some(ttl) = self.cache_ttl
+                    && let (Ok(k), Ok(v)) = (
+                        "X-OpenRouter-Cache-TTL".parse::<reqwest::header::HeaderName>(),
+                        ttl.to_string().parse::<reqwest::header::HeaderValue>(),
+                    )
+                {
+                    headers.insert(k, v);
+                }
             }
             tracing::debug!("OpenRouter optimization headers attached");
         }
@@ -2418,8 +2457,24 @@ impl Provider for OpenAIProvider {
                     return Err(self.handle_error(response).await);
                 }
 
+                // Extract OpenRouter cache status before consuming response
+                let cache_status = response
+                    .headers()
+                    .get("x-openrouter-cache-status")
+                    .and_then(|v| v.to_str().ok())
+                    .map(|s| s.to_string());
+
                 let openai_response: OpenAIResponse = response.json().await?;
                 let llm_response = self.from_openai_response(openai_response);
+
+                // Log cache hit/miss for OpenRouter
+                if let Some(ref status) = cache_status {
+                    if status == "HIT" {
+                        tracing::info!("OpenRouter cache HIT — zero tokens billed");
+                    } else {
+                        tracing::debug!("OpenRouter cache MISS");
+                    }
+                }
 
                 tracing::info!(
                     "OpenAI API response: input_tokens={}, output_tokens={}, stop_reason={:?}",
@@ -2695,6 +2750,20 @@ impl Provider for OpenAIProvider {
             }
         }
         let response = response?;
+
+        // Extract OpenRouter cache status before consuming the stream
+        let cache_status = response
+            .headers()
+            .get("x-openrouter-cache-status")
+            .and_then(|v| v.to_str().ok())
+            .map(|s| s.to_string());
+        if let Some(ref status) = cache_status {
+            if status == "HIT" {
+                tracing::info!("OpenRouter cache HIT (stream) — zero tokens billed");
+            } else {
+                tracing::debug!("OpenRouter cache MISS (stream)");
+            }
+        }
 
         // Parse Server-Sent Events stream - return Vec to emit multiple events like Anthropic
         let byte_stream = response.bytes_stream();

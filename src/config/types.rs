@@ -1085,6 +1085,18 @@ pub struct ProviderConfig {
     /// Cloud providers that aren't Qwen ignore this flag entirely.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub enable_thinking: Option<bool>,
+
+    /// OpenRouter response caching — add `X-OpenRouter-Cache: true` header
+    /// to eligible requests. Cached identical requests return in milliseconds
+    /// with zero tokens billed. Only effective for OpenRouter endpoints.
+    /// Default: false (opt-in).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cache_enabled: Option<bool>,
+
+    /// Cache TTL in seconds for OpenRouter response caching (1-86400).
+    /// Default: 300 (5 minutes). Only used when cache_enabled is true.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cache_ttl: Option<u32>,
 }
 
 fn default_enabled() -> bool {
