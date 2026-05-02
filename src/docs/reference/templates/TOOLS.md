@@ -49,6 +49,32 @@ agent uses, so a UI-applied proposal is byte-identical to one
 applied via `rsi_proposals apply <id>`. The inbox refreshes
 automatically after each action.
 
+## Skills picker (`/skills`)
+
+A full-screen dialog that lists every loaded skill (built-in + user
+overlay) as a card and lets you launch one without typing its full
+slash slug. Useful for browsing what's available and for fuzzy-finding
+when you can't remember the exact name.
+
+Each card shows the slug, a source badge (orange for built-in, teal
+for user-installed), and the description.
+
+### Keys
+
+| Key | Action |
+|---|---|
+| `Tab` / `↓` | Next skill (wraps from last back to first) |
+| `Shift-Tab` / `↑` | Previous skill (wraps from first back to last) |
+| `Enter` | Run the selected skill — sends its body as a prompt and returns to chat |
+| `Esc` | Close without running |
+| `(any printable char)` | Append to filter; selection resets to top |
+| `Backspace` | Pop last char from filter; selection resets to top |
+
+The filter matches case-insensitive substrings against both the
+skill's name and description. When the filter narrows to a single
+match, that skill is the only candidate — `Enter` runs it
+immediately.
+
 ## Skills (Built-in & User)
 
 Skills are workflow templates — multi-stage prompts the agent follows to perform a comprehensive task. Each skill is a single `SKILL.md` file with YAML frontmatter at the top followed by the prompt body. Format follows the de-facto convention used by Claude Code, Anthropic managed agents, and OpenClaw — **the same `SKILL.md` works across harnesses**.

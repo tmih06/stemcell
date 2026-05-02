@@ -151,10 +151,22 @@ cargo test --all-features
 | Tests — exa_search MCP Handshake | 4 | `src/tests/exa_search_test.rs` |
 | Tests — http_request User-Agent | 3 | `src/tests/http_request_test.rs` |
 | Tests — Phantom Detection (Self-Healing) | 5 | `src/tests/self_healing_test.rs` |
+| Tests — Bash SSH Detection | 10 | `src/tests/bash_ssh_detection_test.rs` |
+| Tests — Bash POSIX Quote (askpass) | 9 | `src/tests/bash_posix_quote_test.rs` |
+| Tests — RSI Proposals Inbox | 13 | `src/tests/rsi_proposals_test.rs` |
+| Tests — Skills Loader | 14 | `src/tests/skills_test.rs` |
+| Tests — Skill Slash Dispatch | 7 | `src/tests/skill_slash_dispatch_test.rs` |
+| Tests — Slash Autocomplete Dimensions | 12 | `src/tests/slash_autocomplete_dimensions_test.rs` |
+| Tests — Mission Control Layout | 7 | `src/tests/mission_control_layout_test.rs` |
+| Tests — Mission Control Inbox Service | 6 | `src/tests/mission_control_inbox_service_test.rs` |
+| Tests — Mission Control Activity Service | 8 | `src/tests/mission_control_activity_service_test.rs` |
+| Tests — Mission Control Schedule Service | 5 | `src/tests/mission_control_schedule_service_test.rs` |
+| Tests — Mission Control Input | 23 | `src/tests/mission_control_input_test.rs` |
+| Tests — Skills Dialog | 18 | `src/tests/skills_dialog_test.rs` |
 | **Usage — Categorizer** | 4 | `src/usage/categorizer.rs` |
 | **Usage — Dashboard** | 6 | `src/usage/dashboard.rs` |
 | **Usage — Data** | 7 | `src/usage/data.rs` |
-| **Total** | **2,346** | +215 since last update: RSI sync (12), model fetch (10), provider factory regression (26), onboarding welcome (10), Ollama/TUI fixes, browser tests, and more |
+| **Total** | **2,518** | +172 since last update: Mission Control (49: layout, services, input, popup), Skills (39: loader, dispatch, dialog), Slash autocomplete responsive fix (12), Bash SSH + POSIX quote hardening (19), RSI proposals inbox (13), and more |
 
 ---
 
