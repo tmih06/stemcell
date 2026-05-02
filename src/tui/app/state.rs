@@ -113,6 +113,10 @@ pub const SLASH_COMMANDS: &[SlashCommand] = &[
         name: "/mission-control",
         description: "RSI proposals, activity, schedule",
     },
+    SlashCommand {
+        name: "/skills",
+        description: "Browse and run loaded skills",
+    },
 ];
 
 /// Approval option selected by the user
@@ -384,6 +388,9 @@ pub struct App {
     /// Single struct so `AppState` only carries one MC field; everything
     /// else (input, actions) lives in `tui::app::mission_control`.
     pub mc: crate::tui::app::mission_control::McState,
+    /// Skills dialog state — filter buffer, selection, scroll. Same
+    /// "single-struct field" pattern as MC.
+    pub skills_dialog: crate::tui::app::skills_dialog::SkillsDialogState,
 
     /// Onboarding wizard state
     pub onboarding: Option<OnboardingWizard>,
@@ -621,6 +628,7 @@ impl App {
             user_commands,
             skills,
             mc: crate::tui::app::mission_control::McState::default(),
+            skills_dialog: crate::tui::app::skills_dialog::SkillsDialogState::default(),
             onboarding: None,
             force_onboard: false,
             processing_sessions: HashSet::new(),
@@ -2803,6 +2811,9 @@ impl App {
             }
             AppMode::MissionControl => {
                 crate::tui::app::mission_control::input::handle_key(self, event).await;
+            }
+            AppMode::SkillsList => {
+                crate::tui::app::skills_dialog::input::handle_key(self, event).await;
             }
         }
 

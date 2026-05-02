@@ -706,6 +706,10 @@ impl App {
                 crate::tui::app::mission_control::actions::open(self).await;
                 true
             }
+            "/skills" => {
+                crate::tui::app::skills_dialog::actions::open(self);
+                true
+            }
             "/cd" => {
                 let _ = self.open_directory_picker().await;
                 true

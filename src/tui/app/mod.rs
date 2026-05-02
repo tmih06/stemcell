@@ -4,6 +4,7 @@ mod dialogs;
 pub(crate) mod input;
 mod messaging;
 pub mod mission_control;
+pub mod skills_dialog;
 mod state;
 
 pub use state::*;

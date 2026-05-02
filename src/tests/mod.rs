@@ -97,6 +97,7 @@ pub mod runtime_info_home_anchor_test;
 pub mod self_healing_test;
 pub mod session_chat_id_lookup_test;
 pub mod skill_slash_dispatch_test;
+pub mod skills_dialog_test;
 pub mod skills_test;
 pub mod slash_autocomplete_dimensions_test;
 pub mod split_pane_test;

@@ -359,6 +359,8 @@ pub enum AppMode {
     Onboarding,
     /// Mission Control — RSI proposals, activity, schedule (triggered by /mission-control)
     MissionControl,
+    /// Skills picker — filterable list of loaded skills (triggered by /skills)
+    SkillsList,
 }
 
 /// Event handler for the TUI
