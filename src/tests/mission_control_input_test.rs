@@ -192,3 +192,67 @@ fn unrecognised_key_is_not_consumed() {
     let out = decide(&mut s, 5, key(KeyCode::F(12)));
     assert_eq!(out, KeyOutcome::NotConsumed);
 }
+
+// ── Apply / reject ──────────────────────────────────────────────────────────
+
+#[test]
+fn a_on_inbox_with_items_returns_apply_selected() {
+    let mut s = McState::default();
+    assert_eq!(s.focused_panel, McPanel::Inbox);
+    let out = decide(&mut s, 3, key(KeyCode::Char('a')));
+    assert_eq!(out, KeyOutcome::ApplySelected);
+}
+
+#[test]
+fn a_on_inbox_when_empty_does_nothing() {
+    let mut s = McState::default();
+    let out = decide(&mut s, 0, key(KeyCode::Char('a')));
+    // Swallowed silently — no apply, no fallthrough.
+    assert_eq!(out, KeyOutcome::Consumed);
+}
+
+#[test]
+fn a_on_activity_panel_is_swallowed_not_applied() {
+    let mut s = McState {
+        focused_panel: McPanel::Activity,
+        ..Default::default()
+    };
+    let out = decide(&mut s, 5, key(KeyCode::Char('a')));
+    assert_eq!(
+        out,
+        KeyOutcome::Consumed,
+        "apply only fires from the inbox panel"
+    );
+}
+
+#[test]
+fn r_on_inbox_with_items_returns_reject_selected() {
+    let mut s = McState::default();
+    let out = decide(&mut s, 3, key(KeyCode::Char('r')));
+    assert_eq!(out, KeyOutcome::RejectSelected);
+}
+
+#[test]
+fn r_on_schedule_panel_is_swallowed_not_rejected() {
+    let mut s = McState {
+        focused_panel: McPanel::Schedule,
+        ..Default::default()
+    };
+    let out = decide(&mut s, 5, key(KeyCode::Char('r')));
+    assert_eq!(out, KeyOutcome::Consumed);
+}
+
+#[test]
+fn apply_reject_do_not_fire_while_popup_is_open() {
+    // The popup-mode handler accepts only Esc + j/k. `a` and `r` are
+    // not recognised there — they fall back to NotConsumed so the
+    // user can't fire actions through the popup overlay.
+    let mut s = McState {
+        detail_open: true,
+        ..Default::default()
+    };
+    let a_out = decide(&mut s, 5, key(KeyCode::Char('a')));
+    assert_eq!(a_out, KeyOutcome::NotConsumed);
+    let r_out = decide(&mut s, 5, key(KeyCode::Char('r')));
+    assert_eq!(r_out, KeyOutcome::NotConsumed);
+}

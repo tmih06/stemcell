@@ -18,6 +18,37 @@ This ensures `git pull` on the repo never overwrites your work. See AGENTS.md fo
 ### Rust-First Policy
 When building custom tools or adding dependencies, **always prioritize Rust-based crates** over wrappers, FFI bindings, or other-language alternatives. Native Rust = lean, safe, fast.
 
+## Mission Control (`/mission-control`)
+
+A full-screen dialog that surfaces every actionable artifact in one
+place. Three panels share the screen:
+
+| Panel | Source | What it shows |
+|---|---|---|
+| **Inbox** (left, teal) | `~/.opencrabs/rsi/proposed_*.toml` | RSI-proposed tools and slash commands as cards, with shell command / HTTP method+URL / prompt body preview, kind badge (orange = tool, teal = command), and `proposed by … N ago` footer |
+| **Activity** (top right, orange) | `~/.opencrabs/rsi/improvements.md` | RSI journal: improvements applied, cycles completed, template syncs. Status colour-codes the leading dot (teal = success, orange = warn/reverted, red = error) |
+| **Schedule** (bottom right, white) | cron-jobs DB | Every cron job with its expression, timezone (when non-UTC), and either `next <time>` or `paused` suffix. Paused jobs flag in orange; active in teal |
+
+### Keys
+
+| Key | Action |
+|---|---|
+| `Tab` / `l` | Next panel |
+| `Shift-Tab` / `h` | Previous panel |
+| `j` / `↓` | Next item |
+| `k` / `↑` | Previous item |
+| `g` / `Home` | Jump to first item |
+| `G` / `End` | Jump to last item |
+| `Enter` | Open detail popup for the selected item |
+| `a` | Apply selected proposal (Inbox panel only) |
+| `r` | Reject selected proposal (Inbox panel only) |
+| `Esc` | Close popup if open, otherwise leave Mission Control |
+
+`a` / `r` route through the same `RsiProposalsTool` machinery the
+agent uses, so a UI-applied proposal is byte-identical to one
+applied via `rsi_proposals apply <id>`. The inbox refreshes
+automatically after each action.
+
 ## Skills (Built-in & User)
 
 Skills are workflow templates — multi-stage prompts the agent follows to perform a comprehensive task. Each skill is a single `SKILL.md` file with YAML frontmatter at the top followed by the prompt body. Format follows the de-facto convention used by Claude Code, Anthropic managed agents, and OpenClaw — **the same `SKILL.md` works across harnesses**.

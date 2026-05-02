@@ -2802,10 +2802,7 @@ impl App {
                 }
             }
             AppMode::MissionControl => {
-                let _consumed = crate::tui::app::mission_control::input::handle_key(self, event);
-                // C11 will branch on `consumed` — for the C8 stub the
-                // only key wired is Esc, which the handler routes back
-                // to Chat mode by writing `self.mode` directly.
+                crate::tui::app::mission_control::input::handle_key(self, event).await;
             }
         }
 

@@ -71,7 +71,7 @@ impl RsiProposalsTool {
         out
     }
 
-    fn apply_tool(&self, id: &str) -> std::result::Result<String, String> {
+    pub(crate) fn apply_tool(&self, id: &str) -> std::result::Result<String, String> {
         let store = self.store();
         let Some(proposal) = store
             .take_tool_proposal(id)
@@ -98,7 +98,7 @@ impl RsiProposalsTool {
         ))
     }
 
-    fn apply_command(&self, id: &str) -> std::result::Result<String, String> {
+    pub(crate) fn apply_command(&self, id: &str) -> std::result::Result<String, String> {
         let store = self.store();
         let Some(proposal) = store
             .take_command_proposal(id)
@@ -122,7 +122,11 @@ impl RsiProposalsTool {
         ))
     }
 
-    fn reject(&self, id: &str, reason: Option<&str>) -> std::result::Result<String, String> {
+    pub(crate) fn reject(
+        &self,
+        id: &str,
+        reason: Option<&str>,
+    ) -> std::result::Result<String, String> {
         let store = self.store();
 
         if let Some(p) = store

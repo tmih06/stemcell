@@ -32,20 +32,29 @@ pub enum KeyOutcome {
     /// Key wasn't recognised; caller may fall through to the chat-mode
     /// default handlers.
     NotConsumed,
+    /// Inbox panel is focused and the user pressed `a` — caller should
+    /// apply the currently selected proposal via `actions::apply_selected`.
+    ApplySelected,
+    /// Inbox panel is focused and the user pressed `r` — caller should
+    /// reject the currently selected proposal.
+    RejectSelected,
 }
 
 /// Top-level handler called from the App's keystroke dispatcher.
-/// Returns `true` if the key was consumed.
-pub fn handle_key(app: &mut App, key: KeyEvent) -> bool {
+/// Mission Control is a full-screen mode (like `Sessions` and `Help`) —
+/// the App's match-arm doesn't fall through to chat handlers, so there
+/// is no return value to thread back. Unrecognised keys are simply
+/// ignored.
+pub async fn handle_key(app: &mut App, key: KeyEvent) {
     let count = panel_count(app);
     match decide(&mut app.mc, count, key) {
-        KeyOutcome::Consumed => true,
+        KeyOutcome::Consumed | KeyOutcome::NotConsumed => {}
         KeyOutcome::Close => {
             app.mode = AppMode::Chat;
             app.mc.detail_open = false;
-            true
         }
-        KeyOutcome::NotConsumed => false,
+        KeyOutcome::ApplySelected => super::actions::apply_selected(app).await,
+        KeyOutcome::RejectSelected => super::actions::reject_selected(app).await,
     }
 }
 
@@ -112,6 +121,24 @@ fn decide_without_popup(state: &mut McState, panel_item_count: usize, key: KeyEv
                 state.detail_open = true;
             }
             KeyOutcome::Consumed
+        }
+        // Apply / reject are scoped to the Inbox panel — that's where
+        // the actionable items live. On other panels these keys are
+        // swallowed (Consumed) rather than falling through, so they
+        // can't accidentally trigger anything in the chat handlers.
+        KeyCode::Char('a') => {
+            if state.focused_panel == McPanel::Inbox && panel_item_count > 0 {
+                KeyOutcome::ApplySelected
+            } else {
+                KeyOutcome::Consumed
+            }
+        }
+        KeyCode::Char('r') => {
+            if state.focused_panel == McPanel::Inbox && panel_item_count > 0 {
+                KeyOutcome::RejectSelected
+            } else {
+                KeyOutcome::Consumed
+            }
         }
         _ => KeyOutcome::NotConsumed,
     }
