@@ -2618,14 +2618,7 @@ impl App {
             // Update AgentService working directory (runtime)
             self.agent_service.set_working_directory(canonical.clone());
 
-            // Persist to config.toml
-            let _ = crate::config::Config::write_key(
-                "agent",
-                "working_directory",
-                &canonical.to_string_lossy(),
-            );
-
-            // Persist to session DB so it survives session switches
+            // Persist to session DB — that's the source of truth for per-session WD.
             if let Some(ref session) = self.current_session {
                 let _ = self
                     .session_service

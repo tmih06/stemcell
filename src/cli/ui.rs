@@ -919,12 +919,28 @@ async fn cmd_chat_inner(
                 // Clear the table so these don't resume again if THIS run also crashes
                 let _ = pending_repo.clear_all().await;
                 let agent = app.agent_service().clone();
+                let session_repo = crate::db::SessionRepository::new(db.pool().clone());
                 // Dedup by session_id — only resume each session once
                 let mut seen = std::collections::HashSet::new();
                 for req in requests {
                     if let Ok(session_id) = uuid::Uuid::parse_str(&req.session_id) {
                         if !seen.insert(session_id) {
                             continue;
+                        }
+                        // Restore the session's saved working directory before
+                        // resuming so the agent runs tools in the right CWD.
+                        // Note: agent_service shares one global WD lock across
+                        // sessions, so concurrent multi-session resumes with
+                        // different WDs can race — resolving that needs
+                        // per-session WD threading through the request pipeline
+                        // and is out of scope here.
+                        if let Ok(Some(s)) = session_repo.find_by_id(session_id).await
+                            && let Some(ref dir_str) = s.working_directory
+                        {
+                            let p = std::path::PathBuf::from(dir_str);
+                            if p.is_dir() {
+                                agent.set_working_directory(p);
+                            }
                         }
                         let agent = agent.clone();
                         let ev_tx = resume_event_sender.clone();

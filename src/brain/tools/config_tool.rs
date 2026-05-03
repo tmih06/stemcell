@@ -336,19 +336,7 @@ impl ConfigTool {
             *shared_wd.write().expect("working_directory lock poisoned") = canonical.clone();
         }
 
-        // Persist to config.toml under [agent].working_directory
-        if let Err(e) = crate::config::Config::write_key(
-            "agent",
-            "working_directory",
-            &canonical.to_string_lossy(),
-        ) {
-            return Ok(ToolResult::error(format!(
-                "Runtime updated but failed to persist to config.toml: {}",
-                e
-            )));
-        }
-
-        // Persist to session DB so it survives session switches
+        // Persist to session DB — that's the source of truth for per-session WD.
         if let Some(ref svc_ctx) = context.service_context {
             let session_svc = crate::services::SessionService::new(svc_ctx.clone());
             let sid = context.session_id;

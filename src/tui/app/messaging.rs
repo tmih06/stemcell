@@ -49,6 +49,18 @@ impl App {
             .create_session_with_provider(Some("New Chat".to_string()), provider_name, model)
             .await?;
 
+        // Capture the launching CWD onto the session row so crash-recovery
+        // resumes can restore it. Without this, only sessions where the user
+        // explicitly /cd'd carry a WD; fresh ones are NULL and resume in
+        // whatever current_dir() the next process happens to start in.
+        let _ = self
+            .session_service
+            .update_session_working_directory(
+                session.id,
+                Some(self.working_directory.to_string_lossy().to_string()),
+            )
+            .await;
+
         self.current_session = Some(session.clone());
         // Persist as last active so the next startup resumes this session.
         // Without this, `last_session` kept pointing at whatever chat the
@@ -127,19 +139,13 @@ impl App {
         self.streaming_output_tokens = 0;
         self.intermediate_text_received = false;
 
-        // Restore session's working directory if persisted.
-        // Only write to config if actually changed — writing triggers ConfigWatcher
-        // which reloads config → calls load_session → writes again → infinite loop.
+        // Restore session's working directory if persisted. Source of truth is
+        // the session DB — config.toml does NOT carry per-session state.
         if let Some(ref dir_str) = session.working_directory {
             let path = std::path::PathBuf::from(dir_str);
             if path.is_dir() && path != self.working_directory {
                 self.working_directory = path.clone();
                 self.agent_service.set_working_directory(path.clone());
-                let _ = crate::config::Config::write_key(
-                    "agent",
-                    "working_directory",
-                    &path.to_string_lossy(),
-                );
             }
         }
 
