@@ -1268,16 +1268,21 @@ async fn cmd_chat_inner(
         crate::config::profile::release_all_locks();
         return Ok(());
     }
-    // Capture provider/model/tools for the banner; we need these again on
+    // Capture provider/model/tools/skills for the banner; we need these again on
     // exit after `app` is moved into `tui::run`.
     let banner_provider = provider.name().to_string();
     let banner_model = provider.default_model().to_string();
     let banner_tools = shared_tool_registry.list_tools();
+    let banner_skills: Vec<String> = crate::brain::skills::load_all_skills()
+        .iter()
+        .map(|s| format!("/{}", s.name))
+        .collect();
 
     print_terminal_banner(
         &banner_provider,
         &banner_model,
         &banner_tools,
+        &banner_skills,
         BannerKind::Start,
     );
 
@@ -1318,6 +1323,7 @@ async fn cmd_chat_inner(
         &banner_provider,
         &banner_model,
         &banner_tools,
+        &banner_skills,
         BannerKind::Exit,
     );
 
@@ -1334,7 +1340,7 @@ enum BannerKind {
 /// tools + quick commands + tips) to the terminal before the TUI takes
 /// over and again after it exits. Mirrors the in-TUI header card so the
 /// user has a persistent record in their terminal scrollback.
-fn print_terminal_banner(provider: &str, model: &str, tools: &[String], kind: BannerKind) {
+fn print_terminal_banner(provider: &str, model: &str, tools: &[String], skills: &[String], kind: BannerKind) {
     // ANSI color codes (24-bit).
     const ORANGE: &str = "\x1b[38;2;215;100;20m";
     const ORANGE_IT: &str = "\x1b[3;38;2;215;100;20m";
@@ -1417,9 +1423,20 @@ fn print_terminal_banner(provider: &str, model: &str, tools: &[String], kind: Ba
         println!();
     }
 
+    if !skills.is_empty() {
+        let mut sorted: Vec<&str> = skills.iter().map(|s| s.as_str()).collect();
+        sorted.sort();
+        println!("  {}Skills{}", CYAN, RESET);
+        let joined = sorted.join(", ");
+        for line in wrap_plain(&joined, 80) {
+            println!("  {}{}{}", DIM, line, RESET);
+        }
+        println!();
+    }
+
     println!("  {}Quick Commands{}", CYAN, RESET);
     println!(
-        "  {}/help  /sessions  /model  /settings  /usage  /approve  /rebuild  /doctor{}",
+        "  {}/help  /sessions  /models  /skills  /usage  /approve  /rebuild  /doctor{}",
         DIM, RESET
     );
     println!();
