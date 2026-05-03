@@ -2095,10 +2095,24 @@ impl App {
         // can draw the next frame immediately (is_processing is already false).
         // DB writes and file reads here were causing 5+ second spinner delays.
         let session_service = self.session_service.clone();
+        let message_service = self.message_service.clone();
         let session_for_bg = self.current_session.clone();
         let response_model = response.model.clone();
         let plan_path = self.plan_file_path.clone();
         let is_processing = self.is_processing;
+        // Capture the final assistant message ID and reasoning for DB persistence.
+        // reasoning_details was already consumed above (moved into DisplayMessage.details),
+        // so we need the cloned copy we made before the in-memory assignment.
+        let thinking_for_bg = reasoning_details.clone();
+        let assistant_msg_id_for_bg: Option<Uuid> = if self.intermediate_text_received {
+            self.messages
+                .iter()
+                .rev()
+                .find(|m| m.role == "assistant")
+                .map(|m| m.id)
+        } else {
+            Some(response.message_id)
+        };
 
         tokio::spawn(async move {
             // Update session model in DB
@@ -2108,6 +2122,15 @@ impl App {
                 session.model = Some(response_model);
                 if let Err(e) = session_service.update_session(&session).await {
                     tracing::warn!("Failed to update session model: {}", e);
+                }
+            }
+
+            // Persist thinking/reasoning to DB so it survives restarts
+            if let (Some(msg_id), Some(thinking)) = (assistant_msg_id_for_bg, thinking_for_bg) {
+                if !thinking.trim().is_empty() {
+                    if let Err(e) = message_service.set_thinking(msg_id, &thinking).await {
+                        tracing::warn!("Failed to persist thinking for message {}: {}", msg_id, e);
+                    }
                 }
             }
 
