@@ -11,10 +11,8 @@ use std::path::PathBuf;
 /// Kept lean (~8 KB) so always-injecting is cheap. TOOLS.md and CODE.md
 /// moved to contextual (on-demand via `load_brain_file`) to avoid ~44k
 /// first-request bloat.
-const CORE_BRAIN_FILES: &[(&str, &str)] = &[
-    ("SOUL.md", "personality"),
-    ("USER.md", "user profile"),
-];
+const CORE_BRAIN_FILES: &[(&str, &str)] =
+    &[("SOUL.md", "personality"), ("USER.md", "user profile")];
 
 /// Contextual brain files — loaded on demand via the `load_brain_file` tool.
 /// IDENTITY.md lives here — only needed for cron jobs and social media replies.
@@ -255,16 +253,49 @@ impl BrainLoader {
             .copied()
             .collect();
 
-        if !available.is_empty() {
-            prompt.push_str("--- Available Context Files ---\n");
-            prompt.push_str(
-                "The following brain files contain detailed context. \
-                 Load them on demand using the `load_brain_file` tool when relevant — \
-                 do NOT load them unless the request actually needs that context. \
-                 To update or edit a brain file, use the `write_opencrabs_file` tool.\n\n",
-            );
+        // Discover user-created .md files not in the hardcoded list so the
+        // agent knows the full brain layout (AGENTVERSE.md, VOICE.md, etc.)
+        let known: std::collections::HashSet<String> = CORE_BRAIN_FILES
+            .iter()
+            .chain(CONTEXTUAL_BRAIN_FILES.iter())
+            .map(|(n, _)| n.to_lowercase())
+            .collect();
+        let mut extras: Vec<String> = std::fs::read_dir(&self.workspace_path)
+            .ok()
+            .map(|entries| {
+                entries
+                    .filter_map(|e| e.ok())
+                    .filter_map(|e| {
+                        let name = e.file_name().to_string_lossy().to_string();
+                        (name.ends_with(".md") && !known.contains(&name.to_lowercase()))
+                            .then_some(name)
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        extras.sort();
+
+        if !available.is_empty() || !extras.is_empty() {
+            // Anchor the brain dir path so the agent doesn't have to grep for it.
+            // Render as ~/... (collapse_home) to keep the prompt cache-stable
+            // across machines and avoid leaking the username.
+            let brain_dir = crate::brain::tools::error::collapse_home(&self.workspace_path);
+            prompt.push_str(&format!(
+                "--- Available Context Files (in {}/) ---\n",
+                brain_dir
+            ));
+            prompt.push_str(&format!(
+                "Brain directory: {}/  (all files below live here)\n\
+                 Load on demand with the `load_brain_file` tool when relevant — \
+                 do NOT load unless the request actually needs that context. \
+                 Use `write_opencrabs_file` to update or edit a brain file.\n\n",
+                brain_dir
+            ));
             for (name, desc) in &available {
                 prompt.push_str(&format!("- **{}**: {}\n", name, desc));
+            }
+            for name in &extras {
+                prompt.push_str(&format!("- **{}**: (user-created)\n", name));
             }
             // Guidance text: only mention files that actually exist on disk
             let has = |name: &str| available.iter().any(|(n, _)| *n == name);

@@ -90,17 +90,20 @@ fn test_agents_md_not_injected_in_core_brain() {
 }
 
 #[test]
-fn test_tools_md_injected_in_core_brain() {
-    // TOOLS.md was moved to CORE_BRAIN_FILES on 2026-04-19 after
-    // duplicate gdrive uploads traced to the model guessing CLI
-    // syntax because TOOLS.md was only loaded on demand. The
-    // correct invocations must always be visible to the model.
+fn test_tools_md_not_injected_in_core_brain() {
+    // TOOLS.md moved back to contextual on 2026-05-03 (eb58c63f) to slim
+    // the always-on prompt. Content must NOT be inline; only listed in the
+    // index so the agent retrieves it via `load_brain_file` when relevant.
     let dir = TempDir::new().unwrap();
     write(&dir, "TOOLS.md", "TOOL_NOTE: use cargo test");
     let brain = loader(&dir).build_core_brain(None, None);
     assert!(
-        brain.contains("TOOL_NOTE"),
-        "TOOLS.md content must be injected inline (always-on CLI reference)"
+        !brain.contains("TOOL_NOTE"),
+        "TOOLS.md content must NOT be injected inline (it is contextual)"
+    );
+    assert!(
+        brain.contains("TOOLS.md"),
+        "TOOLS.md must still be listed in the context-file index"
     );
 }
 
@@ -171,6 +174,44 @@ fn test_memory_index_absent_when_no_contextual_files_exist() {
     assert!(
         !brain.contains("Available Context Files"),
         "memory index must be absent when no contextual files exist"
+    );
+}
+
+// ── brain directory path is exposed ──────────────────────────────────────────
+
+/// Regression guard: when TOOLS.md was always-on it carried the literal
+/// `~/.opencrabs/` path inside its body, anchoring the agent to where brain
+/// files live. After 2026-05-03 (eb58c63f) TOOLS.md became contextual and that
+/// anchor disappeared, leaving the agent grep'ing the codebase to find paths.
+/// The index header MUST now expose the brain dir path explicitly.
+#[test]
+fn test_memory_index_exposes_brain_directory_path() {
+    let dir = TempDir::new().unwrap();
+    write(&dir, "MEMORY.md", "notes");
+    let brain = loader(&dir).build_core_brain(None, None);
+    let dir_str = dir.path().display().to_string();
+    assert!(
+        brain.contains(&format!("Brain directory: {}/", dir_str))
+            || brain.contains(&format!("(in {}/)", dir_str)),
+        "context-file index must show the brain directory path so the agent \
+         knows where the files live; brain was:\n{}",
+        brain
+    );
+}
+
+#[test]
+fn test_memory_index_lists_user_created_md_files() {
+    let dir = TempDir::new().unwrap();
+    write(&dir, "MEMORY.md", "notes");
+    write(&dir, "AGENTVERSE.md", "user notes about agentverse");
+    let brain = loader(&dir).build_core_brain(None, None);
+    assert!(
+        brain.contains("AGENTVERSE.md"),
+        "user-created brain files must be discoverable in the index"
+    );
+    assert!(
+        !brain.contains("user notes about agentverse"),
+        "user-created file CONTENT must NOT be inlined — only the name"
     );
 }
 
