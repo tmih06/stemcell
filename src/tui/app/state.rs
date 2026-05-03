@@ -2947,17 +2947,26 @@ impl App {
     /// Handle tool approval request — inline in chat (session-aware)
     fn handle_approval_requested(&mut self, request: ToolApprovalRequest) {
         let is_current = self.is_current_session(request.session_id);
+
+        // Always read approval policy from config at runtime — never trust
+        // cached flags. This ensures changes to config.toml or /approve
+        // take effect immediately without session restart.
+        let (auto_session, auto_always) = Self::read_approval_policy_from_config();
+        // Sync cached state for render/display consistency
+        self.approval_auto_session = auto_session;
+        self.approval_auto_always = auto_always;
+
         tracing::info!(
             "[APPROVAL] handle_approval_requested tool='{}' session={} is_current={} auto_session={} auto_always={}",
             request.tool_name,
             request.session_id,
             is_current,
-            self.approval_auto_session,
-            self.approval_auto_always
+            auto_session,
+            auto_always
         );
 
         // Auto-approve silently if policy allows
-        if self.approval_auto_always || self.approval_auto_session {
+        if auto_always || auto_session {
             let response = ToolApprovalResponse {
                 request_id: request.request_id,
                 approved: true,
