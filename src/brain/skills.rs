@@ -57,6 +57,22 @@ const BUILTIN_SKILLS: &[(&str, &str)] = &[
         "security-audit",
         include_str!("../docs/reference/templates/skills/security-audit/SKILL.md"),
     ),
+    (
+        "opencli",
+        include_str!("../docs/reference/templates/skills/opencli/SKILL.md"),
+    ),
+    (
+        "browser-cdp",
+        include_str!("../docs/reference/templates/skills/browser-cdp/SKILL.md"),
+    ),
+    (
+        "a2a-gateway",
+        include_str!("../docs/reference/templates/skills/a2a-gateway/SKILL.md"),
+    ),
+    (
+        "dynamic-tools",
+        include_str!("../docs/reference/templates/skills/dynamic-tools/SKILL.md"),
+    ),
 ];
 
 /// Where this skill came from. Used by the TUI to badge built-ins
