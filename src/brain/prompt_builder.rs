@@ -8,26 +8,22 @@ use std::path::PathBuf;
 
 /// Core brain files — always injected (personality + user context).
 ///
-/// TOOLS.md is here because it contains the exact CLI syntax for common
-/// external tools (gdrive, rclone, etc.) that the agent drives via bash.
-/// Gating it behind a tool call meant the agent guessed syntax (e.g.
-/// `gdrive upload` vs the correct `gdrive files upload`), which produced
-/// duplicate Drive uploads when the guess partially worked (2026-04-19
-/// 00:02 incident: same file uploaded twice in one turn because the model
-/// tried the wrong syntax, then retried with the right one). Small
-/// (~6 KB) so always-injecting is cheap.
+/// Kept lean (~8 KB) so always-injecting is cheap. TOOLS.md and CODE.md
+/// moved to contextual (on-demand via `load_brain_file`) to avoid ~44k
+/// first-request bloat.
 const CORE_BRAIN_FILES: &[(&str, &str)] = &[
     ("SOUL.md", "personality"),
     ("USER.md", "user profile"),
-    ("TOOLS.md", "tool notes"),
 ];
 
 /// Contextual brain files — loaded on demand via the `load_brain_file` tool.
 /// IDENTITY.md lives here — only needed for cron jobs and social media replies.
+/// TOOLS.md and CODE.md moved here (2026-05) to slim core prompt.
 pub(crate) const CONTEXTUAL_BRAIN_FILES: &[(&str, &str)] = &[
     ("IDENTITY.md", "identity — social/cron replies only"),
     ("AGENTS.md", "workspace rules"),
     ("CODE.md", "coding standards"),
+    ("TOOLS.md", "tool notes & config"),
     ("SECURITY.md", "security policies"),
     ("MEMORY.md", "long-term memory"),
     ("BOOT.md", "startup config"),
@@ -37,12 +33,11 @@ pub(crate) const CONTEXTUAL_BRAIN_FILES: &[(&str, &str)] = &[
 
 /// All brain files in assembly order — kept for `build_system_brain` (full mode).
 /// IDENTITY.md excluded — only loaded on-demand for cron/social agent sessions.
+/// TOOLS.md and CODE.md excluded from full mode too — they're contextual now.
 const BRAIN_FILES: &[(&str, &str)] = &[
     ("SOUL.md", "personality"),
     ("USER.md", "user"),
     ("AGENTS.md", "agents"),
-    ("TOOLS.md", "tools"),
-    ("CODE.md", "code"),
     ("SECURITY.md", "security"),
     ("MEMORY.md", "memory"),
     ("BOOT.md", "boot"),
@@ -282,15 +277,15 @@ impl BrainLoader {
                     "- Starting a project session or recalling past work → load MEMORY.md\n",
                 );
             }
-            if has("AGENTS.md") || has("SECURITY.md") {
-                let files: Vec<&str> = ["AGENTS.md", "SECURITY.md"]
+            if has("AGENTS.md") || has("SECURITY.md") || has("CODE.md") {
+                let files: Vec<&str> = ["AGENTS.md", "SECURITY.md", "CODE.md"]
                     .iter()
                     .copied()
                     .filter(|n| has(n))
                     .collect();
                 prompt.push_str(&format!(
-                    "- Policy / rule / safety check needed → load {}\n",
-                    files.join(" or ")
+                    "- Policy / rule / safety / coding standards check → load {}\n",
+                    files.join(", ")
                 ));
             }
             if has("TOOLS.md") {
