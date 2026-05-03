@@ -293,12 +293,11 @@ impl App {
             .clone()
             .unwrap_or_else(|| self.agent_service.provider_model_for_session(session.id));
         // context_window is session-specific (different providers have
-        // different windows). Cache it per session_id so the indicator
-        // is correct even if the focused pane's provider differs from
-        // the global default.
+        // different windows). Use per-session limit so compaction and
+        // TUI indicator stay correct even when global provider changes.
         let max_ctx = self
             .agent_service
-            .context_window_for_model(&self.default_model_name);
+            .context_limit_for_session(session_id);
         self.context_max_tokens = max_ctx;
         self.session_context_max.insert(session_id, max_ctx);
 
@@ -2039,7 +2038,7 @@ impl App {
                 last_assistant.token_count = Some(response.usage.output_tokens as i32);
                 last_assistant.cost = Some(response.cost);
                 if reasoning_details.is_some() {
-                    last_assistant.details = reasoning_details;
+                    last_assistant.details = reasoning_details.clone();
                 }
                 tracing::debug!(
                     "Updated intermediate assistant message: old_len={}, new_len={}",
@@ -2057,7 +2056,7 @@ impl App {
                     cost: Some(response.cost),
                     approval: None,
                     approve_menu: None,
-                    details: reasoning_details,
+                    details: reasoning_details.clone(),
                     expanded: false,
                     tool_group: None,
                 });
@@ -2073,7 +2072,7 @@ impl App {
                 cost: Some(response.cost),
                 approval: None,
                 approve_menu: None,
-                details: reasoning_details,
+                details: reasoning_details.clone(),
                 expanded: false,
                 tool_group: None,
             };
@@ -2091,6 +2090,9 @@ impl App {
                 .insert(session.id, self.messages.clone());
         }
 
+        // Clone reasoning BEFORE it gets moved into DisplayMessage.details below
+        let thinking_for_bg = reasoning_details.clone();
+
         // Spawn slow post-completion work in the background so the render loop
         // can draw the next frame immediately (is_processing is already false).
         // DB writes and file reads here were causing 5+ second spinner delays.
@@ -2100,10 +2102,6 @@ impl App {
         let response_model = response.model.clone();
         let plan_path = self.plan_file_path.clone();
         let is_processing = self.is_processing;
-        // Capture the final assistant message ID and reasoning for DB persistence.
-        // reasoning_details was already consumed above (moved into DisplayMessage.details),
-        // so we need the cloned copy we made before the in-memory assignment.
-        let thinking_for_bg = reasoning_details.clone();
         let assistant_msg_id_for_bg: Option<Uuid> = if self.intermediate_text_received {
             self.messages
                 .iter()
@@ -2126,12 +2124,11 @@ impl App {
             }
 
             // Persist thinking/reasoning to DB so it survives restarts
-            if let (Some(msg_id), Some(thinking)) = (assistant_msg_id_for_bg, thinking_for_bg) {
-                if !thinking.trim().is_empty() {
-                    if let Err(e) = message_service.set_thinking(msg_id, &thinking).await {
-                        tracing::warn!("Failed to persist thinking for message {}: {}", msg_id, e);
-                    }
-                }
+            if let (Some(msg_id), Some(thinking)) = (assistant_msg_id_for_bg, thinking_for_bg)
+                && !thinking.trim().is_empty()
+                && let Err(e) = message_service.set_thinking(msg_id, &thinking).await
+            {
+                tracing::warn!("Failed to persist thinking for message {}: {}", msg_id, e);
             }
 
             // Reload user commands (agent may have written new ones to commands.json)

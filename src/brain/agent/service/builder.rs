@@ -31,6 +31,13 @@ pub struct AgentService {
     /// the other session had saved (2026-04-17 17:01 logs).
     pub(super) session_providers: std::sync::RwLock<HashMap<Uuid, Arc<dyn Provider>>>,
 
+    /// Per-session context window overrides. When a session's provider
+    /// has a custom `configured_context_window()`, it's cached here so
+    /// compaction and budget checks use the correct window even when
+    /// the global provider changes (e.g. user switches models on another
+    /// pane). Mirrors the `session_providers` pattern.
+    pub(super) session_context_limits: std::sync::RwLock<HashMap<Uuid, u32>>,
+
     /// Service context for database operations
     pub(super) context: ServiceContext,
 
@@ -109,6 +116,7 @@ impl AgentService {
         Self {
             provider: std::sync::RwLock::new(provider),
             session_providers: std::sync::RwLock::new(HashMap::new()),
+            session_context_limits: std::sync::RwLock::new(HashMap::new()),
             context,
             tool_registry: Arc::new(ToolRegistry::new()),
             max_tool_iterations: 0, // 0 = unlimited (loop detection is the safety net)
@@ -146,10 +154,28 @@ impl AgentService {
     /// `configured_context_window()` when set (only custom OpenAI-compatible
     /// providers expose one, via `providers.<name>.context_window` in
     /// `config.toml`); otherwise the static `agent.context_limit`.
+    ///
+    /// Prefer `context_limit_for_session(session_id)` for session-scoped
+    /// operations (compaction, budget checks) to avoid cross-session
+    /// contamination when the global provider changes.
     pub fn context_limit(&self) -> u32 {
         self.provider()
             .configured_context_window()
             .unwrap_or(self.context_limit)
+    }
+
+    /// Per-session context window budget. Mirrors `provider_for_session`:
+    /// returns the cached override for this session if one exists (set by
+    /// `swap_provider_for_session`), otherwise falls back to the global
+    /// `context_limit()`. This ensures compaction and budget checks use
+    /// the correct window even when the user switches models on another pane.
+    pub fn context_limit_for_session(&self, session_id: Uuid) -> u32 {
+        if let Ok(map) = self.session_context_limits.read()
+            && let Some(&cw) = map.get(&session_id)
+        {
+            return cw;
+        }
+        self.context_limit()
     }
 
     /// Get max tokens from config
@@ -393,11 +419,23 @@ impl AgentService {
     /// global default are untouched. Called by `/models` dialog on model
     /// pick and by `load_session` when restoring a session's saved
     /// `provider_name`.
+    ///
+    /// Also caches the provider's `configured_context_window()` into
+    /// `session_context_limits` so compaction uses the correct budget
+    /// even if the global provider changes later.
     pub fn swap_provider_for_session(&self, session_id: Uuid, new_provider: Arc<dyn Provider>) {
         self.session_providers
             .write()
             .expect("session_providers lock poisoned")
-            .insert(session_id, new_provider);
+            .insert(session_id, new_provider.clone());
+
+        // Cache context window for this session
+        if let Some(cw) = new_provider.configured_context_window() {
+            self.session_context_limits
+                .write()
+                .expect("session_context_limits lock poisoned")
+                .insert(session_id, cw);
+        }
     }
 
     /// Drop a session's provider entry (e.g. session deleted). Noop if
@@ -407,6 +445,10 @@ impl AgentService {
         self.session_providers
             .write()
             .expect("session_providers lock poisoned")
+            .remove(&session_id);
+        self.session_context_limits
+            .write()
+            .expect("session_context_limits lock poisoned")
             .remove(&session_id);
     }
 

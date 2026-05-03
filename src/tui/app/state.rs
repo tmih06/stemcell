@@ -1792,16 +1792,16 @@ impl App {
                         tool_group: None,
                     });
                     // Persist thinking to DB in background (non-blocking)
-                    if let Some(ref thinking) = reasoning_details {
-                        if !thinking.trim().is_empty() {
-                            let msg_svc = self.message_service.clone();
-                            let thinking_clone = thinking.clone();
-                            tokio::spawn(async move {
-                                if let Err(e) = msg_svc.set_thinking(assistant_id, &thinking_clone).await {
-                                    tracing::warn!("Failed to persist IntermediateText thinking for {}: {}", assistant_id, e);
-                                }
-                            });
-                        }
+                    if let Some(ref thinking) = reasoning_details
+                        && !thinking.trim().is_empty()
+                    {
+                        let msg_svc = self.message_service.clone();
+                        let thinking_clone = thinking.clone();
+                        tokio::spawn(async move {
+                            if let Err(e) = msg_svc.set_thinking(assistant_id, &thinking_clone).await {
+                                tracing::warn!("Failed to persist IntermediateText thinking for {}: {}", assistant_id, e);
+                            }
+                        });
                     }
                 } else if has_reasoning {
                     // Reasoning-only iteration (no visible text, no new
