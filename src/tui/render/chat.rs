@@ -686,7 +686,11 @@ pub(super) fn render_chat(f: &mut Frame, app: &mut App, area: Rect) {
     // When user is scrolled up (auto_scroll=false), compensate for new lines
     // added during streaming so the view stays on the same content instead of
     // drifting downward one line per chunk.
-    if !app.auto_scroll {
+    // Only compensate if we have a previous baseline (prev_rendered_lines > 0).
+    // Without this guard, the first render after scrolling up sees
+    // new_lines = total_lines - 0 = entire chat height, instantly inflating
+    // scroll_offset by hundreds and pinning the view to the top.
+    if !app.auto_scroll && app.prev_rendered_lines > 0 {
         let new_lines = total_lines.saturating_sub(app.prev_rendered_lines);
         app.scroll_offset += new_lines;
     }
@@ -695,6 +699,13 @@ pub(super) fn render_chat(f: &mut Frame, app: &mut App, area: Rect) {
     // Only 1 row of top padding (Borders::NONE + Padding::new(1,1,1,0)); no border rows
     let visible_height = area.height.saturating_sub(1) as usize;
     let max_scroll = total_lines.saturating_sub(visible_height);
+
+    // Cap scroll_offset at max_scroll so it never exceeds the scrollable range.
+    // Without this, streaming compensation + mouse coalescing can inflate
+    // scroll_offset to hundreds while max_scroll is ~80, making the user
+    // scroll down hundreds of times to get back to the visible area.
+    app.scroll_offset = app.scroll_offset.min(max_scroll);
+
     let actual_scroll_offset = max_scroll.saturating_sub(app.scroll_offset);
 
     // Store render info for click-to-copy + drag-selection coordinate mapping

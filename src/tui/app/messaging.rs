@@ -295,9 +295,7 @@ impl App {
         // context_window is session-specific (different providers have
         // different windows). Use per-session limit so compaction and
         // TUI indicator stay correct even when global provider changes.
-        let max_ctx = self
-            .agent_service
-            .context_limit_for_session(session_id);
+        let max_ctx = self.agent_service.context_limit_for_session(session_id);
         self.context_max_tokens = max_ctx;
         self.session_context_max.insert(session_id, max_ctx);
 

@@ -375,14 +375,18 @@ async fn run_loop(
                     None => break,
                 }
             }
-            // Apply coalesced scroll as a single operation
-            if pending_scroll > 0 {
-                app.scroll_offset = app.scroll_offset.saturating_add(pending_scroll as usize);
+            // Apply coalesced scroll as a single operation.
+            // Cap to prevent macOS smooth-scroll flicks (20-50 events) from
+            // launching the user into orbit. Max one viewport-ish jump per frame.
+            const MAX_SCROLL_PER_FRAME: i32 = 15;
+            let capped = pending_scroll.clamp(-MAX_SCROLL_PER_FRAME, MAX_SCROLL_PER_FRAME);
+            if capped > 0 {
+                app.scroll_offset = app.scroll_offset.saturating_add(capped as usize);
                 app.auto_scroll = false;
-            } else if pending_scroll < 0 {
+            } else if capped < 0 {
                 app.scroll_offset = app
                     .scroll_offset
-                    .saturating_sub(pending_scroll.unsigned_abs() as usize);
+                    .saturating_sub(capped.unsigned_abs() as usize);
                 app.auto_scroll = false;
                 if app.scroll_offset == 0 {
                     app.auto_scroll = true;

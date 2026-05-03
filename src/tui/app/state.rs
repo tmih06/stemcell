@@ -1223,14 +1223,14 @@ impl App {
                 if self.mode == AppMode::Chat {
                     if direction > 0 {
                         // Scrolling up — disable auto-scroll
-                        self.scroll_offset = self.scroll_offset.saturating_add(3);
+                        self.scroll_offset = self.scroll_offset.saturating_add(1);
                         self.auto_scroll = false;
                         // Load more history when scrolling up if hidden messages exist
                         if self.hidden_older_messages > 0 && self.display_token_count < 300_000 {
                             let _ = self.load_more_history().await;
                         }
                     } else {
-                        self.scroll_offset = self.scroll_offset.saturating_sub(3);
+                        self.scroll_offset = self.scroll_offset.saturating_sub(1);
                         // Re-enable auto-scroll when back at bottom
                         if self.scroll_offset == 0 {
                             self.auto_scroll = true;
@@ -1798,8 +1798,14 @@ impl App {
                         let msg_svc = self.message_service.clone();
                         let thinking_clone = thinking.clone();
                         tokio::spawn(async move {
-                            if let Err(e) = msg_svc.set_thinking(assistant_id, &thinking_clone).await {
-                                tracing::warn!("Failed to persist IntermediateText thinking for {}: {}", assistant_id, e);
+                            if let Err(e) =
+                                msg_svc.set_thinking(assistant_id, &thinking_clone).await
+                            {
+                                tracing::warn!(
+                                    "Failed to persist IntermediateText thinking for {}: {}",
+                                    assistant_id,
+                                    e
+                                );
                             }
                         });
                     }
@@ -1843,7 +1849,11 @@ impl App {
                         let thinking_clone = combined_thinking;
                         tokio::spawn(async move {
                             if let Err(e) = msg_svc.set_thinking(prev_id, &thinking_clone).await {
-                                tracing::warn!("Failed to persist merged IntermediateText thinking for {}: {}", prev_id, e);
+                                tracing::warn!(
+                                    "Failed to persist merged IntermediateText thinking for {}: {}",
+                                    prev_id,
+                                    e
+                                );
                             }
                         });
                     } else {
@@ -1868,8 +1878,14 @@ impl App {
                             let thinking_clone = reasoning_text;
                             let msg_svc2 = self.message_service.clone();
                             tokio::spawn(async move {
-                                if let Err(e) = msg_svc2.set_thinking(thinking_id, &thinking_clone).await {
-                                    tracing::warn!("Failed to persist reasoning-only IntermediateText thinking for {}: {}", thinking_id, e);
+                                if let Err(e) =
+                                    msg_svc2.set_thinking(thinking_id, &thinking_clone).await
+                                {
+                                    tracing::warn!(
+                                        "Failed to persist reasoning-only IntermediateText thinking for {}: {}",
+                                        thinking_id,
+                                        e
+                                    );
                                 }
                             });
                         }
