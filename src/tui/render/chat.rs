@@ -683,17 +683,20 @@ pub(super) fn render_chat(f: &mut Frame, app: &mut App, area: Rect) {
     // Calculate scroll offset — lines are pre-wrapped so count is accurate
     let total_lines = lines.len();
 
-    // When user is scrolled up (auto_scroll=false), compensate for new lines
-    // added during streaming so the view stays on the same content instead of
-    // drifting downward one line per chunk.
-    // Only compensate if we have a previous baseline (prev_rendered_lines > 0).
-    // Without this guard, the first render after scrolling up sees
-    // new_lines = total_lines - 0 = entire chat height, instantly inflating
-    // scroll_offset by hundreds and pinning the view to the top.
-    if !app.auto_scroll && app.prev_rendered_lines > 0 {
-        let new_lines = total_lines.saturating_sub(app.prev_rendered_lines);
-        app.scroll_offset += new_lines;
-    }
+    // DEBUG: log scroll state before compensation
+    tracing::debug!(
+        "[SCROLL] render start: scroll_offset={}, prev_rendered={}, total_lines={}, auto_scroll={}",
+        app.scroll_offset,
+        app.prev_rendered_lines,
+        total_lines,
+        app.auto_scroll
+    );
+
+    // Track rendered line count for future reference.
+    // Streaming compensation was REMOVED: it accumulated wrapped thinking lines
+    // on every render cycle, inflating scroll_offset by 1000+ in seconds.
+    // New content appends at the bottom, so scrolled-up viewports don't need
+    // compensation — the user's position in history stays stable naturally.
     app.prev_rendered_lines = total_lines;
 
     // Only 1 row of top padding (Borders::NONE + Padding::new(1,1,1,0)); no border rows
@@ -704,9 +707,25 @@ pub(super) fn render_chat(f: &mut Frame, app: &mut App, area: Rect) {
     // Without this, streaming compensation + mouse coalescing can inflate
     // scroll_offset to hundreds while max_scroll is ~80, making the user
     // scroll down hundreds of times to get back to the visible area.
+    let before_cap = app.scroll_offset;
     app.scroll_offset = app.scroll_offset.min(max_scroll);
+    if before_cap != app.scroll_offset {
+        tracing::debug!(
+            "[SCROLL] capped: {} -> {} (max_scroll={})",
+            before_cap,
+            app.scroll_offset,
+            max_scroll
+        );
+    }
 
     let actual_scroll_offset = max_scroll.saturating_sub(app.scroll_offset);
+
+    tracing::debug!(
+        "[SCROLL] render end: actual_offset={}, max_scroll={}, visible_height={}",
+        actual_scroll_offset,
+        max_scroll,
+        visible_height
+    );
 
     // Store render info for click-to-copy + drag-selection coordinate mapping
     app.chat_render_scroll = actual_scroll_offset;
