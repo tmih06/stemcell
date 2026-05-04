@@ -997,6 +997,13 @@ pub struct OpenAIProvider {
     pub(crate) extra_headers: Vec<(String, String)>,
     /// Configured context window size (overrides model-name heuristics).
     configured_context_window: Option<u32>,
+    /// Models advertised by this provider (e.g. live-fetched from `/v1/models`
+    /// at /models save time). When non-empty, overrides the hardcoded GPT
+    /// fallback in `supported_models()`. Without this, custom routers like
+    /// dialagram (which expose qwen, kimi, etc.) hit the supported-model
+    /// mismatch path in helpers.rs and either log a noisy no-op remap or
+    /// route to a wrong model when default_model differs from the selection.
+    configured_models: Vec<String>,
     /// Optional dynamic token provider (overrides api_key when set).
     token_fn: Option<TokenFn>,
     /// Proactive rate limiter — shared via Arc so all clones throttle together.
@@ -1082,6 +1089,7 @@ impl OpenAIProvider {
             vision_model: None,
             extra_headers: vec![],
             configured_context_window: None,
+            configured_models: Vec::new(),
             token_fn: None,
             rate_limiter: None,
             body_transform: None,
@@ -1113,6 +1121,7 @@ impl OpenAIProvider {
             vision_model: None,
             extra_headers: vec![],
             configured_context_window: None,
+            configured_models: Vec::new(),
             token_fn: None,
             rate_limiter: None,
             body_transform: None,
@@ -1144,6 +1153,7 @@ impl OpenAIProvider {
             vision_model: None,
             extra_headers: vec![],
             configured_context_window: None,
+            configured_models: Vec::new(),
             token_fn: None,
             rate_limiter: None,
             body_transform: None,
@@ -1165,6 +1175,14 @@ impl OpenAIProvider {
     /// Set a configured context window size that overrides model-name heuristics.
     pub fn with_context_window(mut self, size: u32) -> Self {
         self.configured_context_window = Some(size);
+        self
+    }
+
+    /// Set the list of models this provider advertises. Populated from the
+    /// custom provider config's `models = [...]` field, which the /models
+    /// dialog writes after a live `/v1/models` fetch.
+    pub fn with_models(mut self, models: Vec<String>) -> Self {
+        self.configured_models = models;
         self
     }
 
@@ -3660,6 +3678,15 @@ impl Provider for OpenAIProvider {
     }
 
     fn supported_models(&self) -> Vec<String> {
+        // Live-fetched / config-declared models win — they reflect what this
+        // particular endpoint actually serves (e.g. dialagram routes qwen,
+        // kimi, deepseek; bigmodel/zhipu serves glm-*; OpenRouter has its
+        // own catalog). Without this override, every custom OpenAI-compatible
+        // provider would advertise the OpenAI GPT list, causing helpers.rs:95
+        // to either run a noisy no-op remap or mis-route to default_model.
+        if !self.configured_models.is_empty() {
+            return self.configured_models.clone();
+        }
         vec![
             "gpt-4-turbo-preview".to_string(),
             "gpt-4".to_string(),

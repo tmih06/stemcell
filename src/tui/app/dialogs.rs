@@ -1316,6 +1316,21 @@ impl App {
             write_errors.push(format!("{}.default_model", section));
         }
 
+        // Persist the live-fetched models list onto the provider section so
+        // `supported_models()` returns the real catalog at next load. Without
+        // this, picking qwen on dialagram (or any non-default model on a
+        // custom router) makes helpers.rs:95 either log a no-op remap or
+        // route to default_model. Skip when the list is empty (e.g. provider
+        // has no /v1/models endpoint) to avoid wiping a legitimate manually
+        // curated `models = [...]` entry.
+        if !self.ps.models.is_empty()
+            && let Err(e) =
+                crate::config::Config::write_array(section, "models", &self.ps.models)
+        {
+            tracing::warn!("Failed to persist models list to config: {}", e);
+            write_errors.push(format!("{}.models", section));
+        }
+
         // Warn user if any config writes failed
         if !write_errors.is_empty() {
             self.push_system_message(format!(

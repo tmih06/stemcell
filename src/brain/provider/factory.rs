@@ -973,6 +973,13 @@ fn configure_openai_compatible(
         tracing::info!("Context window configured: {} tokens", cw);
         provider = provider.with_context_window(cw);
     }
+    if !config.models.is_empty() {
+        tracing::debug!(
+            "Loaded {} configured models for provider",
+            config.models.len()
+        );
+        provider = provider.with_models(config.models.clone());
+    }
     // OpenRouter response caching
     if let Some(cache) = config.cache_enabled {
         provider = provider.with_cache_enabled(cache);

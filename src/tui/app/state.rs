@@ -2463,16 +2463,20 @@ impl App {
                 reason: _,
             } => {
                 // A fallback in one session must never leak into another
-                // pane's footer. Always persist the swap to the originating
-                // session's DB record so the new provider/model survives a
-                // restart and is visible when the user navigates back, but
-                // only update the live footer + current_session if that
-                // session is the one currently focused.
-                if let Some(target_session) = self.sessions.iter_mut().find(|s| s.id == session_id)
+                // pane's footer, AND must always stick — both in DB (survives
+                // restart) and in session_providers (so the next turn doesn't
+                // re-walk the failing primary). Background sessions are the
+                // critical case: if the session isn't currently focused, the
+                // sessions cache may not contain it and the in-memory pin may
+                // still point at the wrapper that just failed.
+                let mut updated_in_cache = false;
+                if let Some(target_session) =
+                    self.sessions.iter_mut().find(|s| s.id == session_id)
                 {
                     target_session.provider_name = Some(to_name.clone());
                     target_session.model = Some(to_model.clone());
                     let target_copy = target_session.clone();
+                    updated_in_cache = true;
                     if let Err(e) = self.session_service.update_session(&target_copy).await {
                         tracing::warn!(
                             "Failed to persist provider swap to session {}: {}",
@@ -2481,32 +2485,69 @@ impl App {
                         );
                     }
                 }
+                if !updated_in_cache {
+                    // Cache miss — fetch fresh from DB and update directly so
+                    // the swap persists regardless of what's loaded into the
+                    // sessions sidebar. Without this, fallbacks fired on a
+                    // session that isn't currently in the cache silently drop
+                    // their persistence and the next turn re-runs the bounce.
+                    match self.session_service.get_session(session_id).await {
+                        Ok(Some(mut s)) => {
+                            s.provider_name = Some(to_name.clone());
+                            s.model = Some(to_model.clone());
+                            if let Err(e) = self.session_service.update_session(&s).await {
+                                tracing::warn!(
+                                    "Failed to persist provider swap to uncached session {}: {}",
+                                    session_id,
+                                    e
+                                );
+                            }
+                        }
+                        Ok(None) => {
+                            tracing::warn!(
+                                "ProviderSwitched for unknown session {}",
+                                session_id
+                            );
+                        }
+                        Err(e) => {
+                            tracing::warn!(
+                                "Failed to load session {} for provider swap persistence: {}",
+                                session_id,
+                                e
+                            );
+                        }
+                    }
+                }
+
+                // Always rebuild a clean session_providers entry from config
+                // by name — for every session, focused or not. The agent's
+                // own swap at tool_loop.rs:1302 reuses the fallback Arc,
+                // which can still carry the failing primary internally. A
+                // fresh by-name build is what makes the swap actually stick.
+                if let Ok(config) = crate::config::Config::load()
+                    && let Ok(new_provider) =
+                        crate::brain::provider::factory::create_provider_by_name(
+                            &config, &to_name,
+                        )
+                        .await
+                {
+                    self.agent_service
+                        .swap_provider_for_session(session_id, new_provider.clone());
+                    self.provider_cache.insert(to_name.clone(), new_provider);
+                    tracing::info!(
+                        "[ProviderSwitched] rebuilt session_providers for session {} → {}",
+                        session_id,
+                        to_name
+                    );
+                }
+
+                // Footer + current_session mirror only when the swapped
+                // session is the focused one. Other panes keep their own.
                 if self.is_current_session(session_id) {
                     self.default_model_name = to_model.clone();
                     if let Some(ref mut session) = self.current_session {
                         session.provider_name = Some(to_name.clone());
                         session.model = Some(to_model.clone());
-                    }
-                    // CRITICAL: update session_providers so the footer reads
-                    // the correct provider immediately. Without this, the DB
-                    // and current_session are updated but session_providers
-                    // still points at the old Arc, so pane switches and
-                    // rebuild_agent_service see stale data.
-                    if let Ok(config) = crate::config::Config::load()
-                        && let Ok(new_provider) =
-                            crate::brain::provider::factory::create_provider_by_name(
-                                &config, &to_name,
-                            )
-                            .await
-                    {
-                        self.agent_service
-                            .swap_provider_for_session(session_id, new_provider.clone());
-                        self.provider_cache.insert(to_name.clone(), new_provider);
-                        tracing::info!(
-                            "[ProviderSwitched] updated session_providers for session {} → {}",
-                            session_id,
-                            to_name
-                        );
                     }
                 }
             }
