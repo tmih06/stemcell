@@ -757,20 +757,24 @@ pub(super) fn render_status_bar(f: &mut Frame, app: &App, area: Rect) {
         .to_string();
 
     // --- Provider / model ---
-    // Always read from the session record — every session has both fields.
-    let session = app.current_session.as_ref();
-    let provider_str = session
-        .and_then(|s| s.provider_name.clone())
-        .unwrap_or_else(|| app.agent_service.provider_name());
-    let model_str = {
-        let raw = session.and_then(|s| s.model.as_deref()).unwrap_or_else(|| {
-            session
-                .and_then(|s| s.provider_name.as_deref())
-                .unwrap_or("")
-        });
-        let prefix = format!("{}/", provider_str);
-        let stripped = raw.strip_prefix(&prefix).unwrap_or(raw);
-        crate::tui::provider_selector::model_display_label(stripped).to_string()
+    // Read from the authoritative source: agent_service.session_providers.
+    // DB records (current_session.provider_name/model) can lag behind
+    // after sticky fallbacks or /models swaps. session_providers is always
+    // live and per-session isolated.
+    let (provider_str, model_str) = if let Some(ref session) = app.current_session {
+        let prov = app.agent_service.provider_name_for_session(session.id);
+        let model = app.agent_service.provider_model_for_session(session.id);
+        let prefix = format!("{}/", prov);
+        let stripped = model.strip_prefix(&prefix).unwrap_or(&model);
+        (prov, crate::tui::provider_selector::model_display_label(stripped).to_string())
+    } else {
+        (
+            app.agent_service.provider_name(),
+            crate::tui::provider_selector::model_display_label(
+                app.agent_service.provider_model().as_str(),
+            )
+            .to_string(),
+        )
     };
 
     // Working directory — collapse $HOME to ~, then truncate if still long

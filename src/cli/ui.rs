@@ -1340,7 +1340,13 @@ enum BannerKind {
 /// tools + quick commands + tips) to the terminal before the TUI takes
 /// over and again after it exits. Mirrors the in-TUI header card so the
 /// user has a persistent record in their terminal scrollback.
-fn print_terminal_banner(provider: &str, model: &str, tools: &[String], skills: &[String], kind: BannerKind) {
+fn print_terminal_banner(
+    provider: &str,
+    model: &str,
+    tools: &[String],
+    skills: &[String],
+    kind: BannerKind,
+) {
     // ANSI color codes (24-bit).
     const ORANGE: &str = "\x1b[38;2;215;100;20m";
     const ORANGE_IT: &str = "\x1b[3;38;2;215;100;20m";

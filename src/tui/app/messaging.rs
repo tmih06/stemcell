@@ -386,10 +386,16 @@ impl App {
     /// Load an older batch of messages (up to 100k tokens) from the DB and prepend
     /// them to the current display list.  Called by Ctrl+O when hidden_older_messages > 0.
     pub(crate) async fn load_more_history(&mut self) -> Result<()> {
+        tracing::debug!(
+            "[SCROLL] load_more_history called: hidden={}, display_tokens={}",
+            self.hidden_older_messages,
+            self.display_token_count
+        );
         let session_id = match self.current_session.as_ref().map(|s| s.id) {
             Some(id) => id,
             None => return Ok(()),
         };
+        let msgs_before = self.messages.len();
         let all = self
             .message_service
             .list_messages_for_session(session_id)
@@ -438,6 +444,13 @@ impl App {
         self.oldest_displayed_sequence = to_add.first().map(|m| m.sequence).unwrap_or(0);
         self.display_token_count += tokens;
         self.render_cache.clear();
+        tracing::debug!(
+            "[SCROLL] load_more_history done: msgs {} -> {}, hidden_remaining={}, tokens_added={}",
+            msgs_before,
+            self.messages.len(),
+            hidden_still,
+            tokens
+        );
         Ok(())
     }
 

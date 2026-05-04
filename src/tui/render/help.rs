@@ -99,7 +99,10 @@ pub(super) fn render_help(f: &mut Frame, app: &App, area: Rect) {
 
     // Skills section — collect owned data first so borrows outlive the lines
     let all_skills = crate::brain::skills::load_all_skills();
-    let skill_data: Vec<(String, String)> = all_skills.iter().map(|s| (s.slash_name.clone(), s.description.clone())).collect();
+    let skill_data: Vec<(String, String)> = all_skills
+        .iter()
+        .map(|s| (s.slash_name.clone(), s.description.clone()))
+        .collect();
     let skills_count = skill_data.len();
     let skills_summary = format!("Browse {} skills", skills_count);
     if !skill_data.is_empty() {

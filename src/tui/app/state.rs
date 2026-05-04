@@ -1223,14 +1223,26 @@ impl App {
                 if self.mode == AppMode::Chat {
                     if direction > 0 {
                         // Scrolling up — disable auto-scroll
+                        let before = self.scroll_offset;
                         self.scroll_offset = self.scroll_offset.saturating_add(1);
                         self.auto_scroll = false;
+                        tracing::debug!(
+                            "[SCROLL] mouse up: {} -> {} (auto_scroll=false)",
+                            before,
+                            self.scroll_offset
+                        );
                         // Load more history when scrolling up if hidden messages exist
                         if self.hidden_older_messages > 0 && self.display_token_count < 300_000 {
                             let _ = self.load_more_history().await;
                         }
                     } else {
+                        let before = self.scroll_offset;
                         self.scroll_offset = self.scroll_offset.saturating_sub(1);
+                        tracing::debug!(
+                            "[SCROLL] mouse down: {} -> {}",
+                            before,
+                            self.scroll_offset
+                        );
                         // Re-enable auto-scroll when back at bottom
                         if self.scroll_offset == 0 {
                             self.auto_scroll = true;

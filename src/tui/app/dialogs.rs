@@ -1418,6 +1418,39 @@ impl App {
                 self.agent_service.provider(),
             )
         };
+        // Flush ONLY the current session's stale entry so runtime picks up
+        // the fresh config immediately. Other sessions keep their pins —
+        // per-session isolation must never be broken by a /models save in
+        // a different pane.
+        // Without this, a session that cached an instance built before
+        // the save (e.g. stale no-key opencodeiolo) keeps failing until
+        // the user manually forces a new provider creation. The 2026-04-18
+        // 13:52 401 cascade was exactly this — config had the key,
+        // session_providers cache had the keyless instance.
+        if let Some(ref current) = self.current_session {
+            let current_sid = current.id;
+            if let Some(cached) = self.agent_service.session_provider_snapshot()
+                .into_iter().find(|(sid, _)| *sid == current_sid)
+                .map(|(_, p)| p)
+            {
+                let cached_name = cached.name().to_string();
+                let mut invalidate_names: Vec<String> = vec![agent_provider_name.clone()];
+                if let Some(ref old_key) = self.ps.editing_custom_key
+                    && old_key != &self.ps.custom_name
+                {
+                    invalidate_names.push(old_key.clone());
+                }
+                if invalidate_names.iter().any(|n| n == &cached_name) {
+                    self.agent_service.remove_session_provider(current_sid);
+                    tracing::info!(
+                        "[save_provider] flushed stale session_providers entry for current session={} (was '{}')",
+                        current_sid,
+                        cached_name
+                    );
+                }
+            }
+        }
+
         if let Some(ref mut session) = self.current_session {
             session.provider_name = Some(agent_provider_name.clone());
             session.model = Some(actual_model.clone());
@@ -1431,32 +1464,6 @@ impl App {
         // Cache the provider instance for fast session switching
         self.provider_cache
             .insert(agent_provider_name.clone(), provider_arc);
-
-        // Flush session_providers entries still bound to the old/new
-        // provider name so runtime picks up the fresh config immediately.
-        // Without this, sessions that cached an instance built before
-        // the save (e.g. Telegram session using a stale no-key
-        // opencodeiolo instance) keep failing until the user manually
-        // forces a new provider creation per session. The 2026-04-18
-        // 13:52 401 cascade was exactly this — config had the key,
-        // session_providers cache had the keyless instance.
-        let mut invalidate_names: Vec<String> = vec![agent_provider_name.clone()];
-        if let Some(ref old_key) = self.ps.editing_custom_key
-            && old_key != &self.ps.custom_name
-        {
-            invalidate_names.push(old_key.clone());
-        }
-        for (sid, p) in self.agent_service.session_provider_snapshot() {
-            let cached_name = p.name().to_string();
-            if invalidate_names.iter().any(|n| n == &cached_name) {
-                self.agent_service.remove_session_provider(sid);
-                tracing::info!(
-                    "[save_provider] flushed stale session_providers entry for session={} (was '{}')",
-                    sid,
-                    cached_name
-                );
-            }
-        }
         // Anchor moves to the new key for the next save in this dialog
         // session (if the user saves again without reopening).
         self.ps.editing_custom_key = Some(self.ps.custom_name.clone());

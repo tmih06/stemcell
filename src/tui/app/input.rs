@@ -1488,14 +1488,22 @@ impl App {
                 }
             }
         } else if keys::is_page_up(&event) {
+            let before = self.scroll_offset;
             self.scroll_offset = self.scroll_offset.saturating_add(10);
             self.auto_scroll = false;
+            tracing::debug!(
+                "[SCROLL] PageUp: {} -> {} (auto_scroll=false)",
+                before,
+                self.scroll_offset
+            );
             // Load more history when paging up if hidden messages exist
             if self.hidden_older_messages > 0 && self.display_token_count < 300_000 {
                 let _ = self.load_more_history().await;
             }
         } else if keys::is_page_down(&event) {
+            let before = self.scroll_offset;
             self.scroll_offset = self.scroll_offset.saturating_sub(10);
+            tracing::debug!("[SCROLL] PageDown: {} -> {}", before, self.scroll_offset);
             if self.scroll_offset == 0 {
                 self.auto_scroll = true;
             }
