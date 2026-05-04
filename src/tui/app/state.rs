@@ -2470,8 +2470,7 @@ impl App {
                 // sessions cache may not contain it and the in-memory pin may
                 // still point at the wrapper that just failed.
                 let mut updated_in_cache = false;
-                if let Some(target_session) =
-                    self.sessions.iter_mut().find(|s| s.id == session_id)
+                if let Some(target_session) = self.sessions.iter_mut().find(|s| s.id == session_id)
                 {
                     target_session.provider_name = Some(to_name.clone());
                     target_session.model = Some(to_model.clone());
@@ -2504,10 +2503,7 @@ impl App {
                             }
                         }
                         Ok(None) => {
-                            tracing::warn!(
-                                "ProviderSwitched for unknown session {}",
-                                session_id
-                            );
+                            tracing::warn!("ProviderSwitched for unknown session {}", session_id);
                         }
                         Err(e) => {
                             tracing::warn!(
@@ -2526,10 +2522,8 @@ impl App {
                 // fresh by-name build is what makes the swap actually stick.
                 if let Ok(config) = crate::config::Config::load()
                     && let Ok(new_provider) =
-                        crate::brain::provider::factory::create_provider_by_name(
-                            &config, &to_name,
-                        )
-                        .await
+                        crate::brain::provider::factory::create_provider_by_name(&config, &to_name)
+                            .await
                 {
                     self.agent_service
                         .swap_provider_for_session(session_id, new_provider.clone());

@@ -1324,8 +1324,7 @@ impl App {
         // has no /v1/models endpoint) to avoid wiping a legitimate manually
         // curated `models = [...]` entry.
         if !self.ps.models.is_empty()
-            && let Err(e) =
-                crate::config::Config::write_array(section, "models", &self.ps.models)
+            && let Err(e) = crate::config::Config::write_array(section, "models", &self.ps.models)
         {
             tracing::warn!("Failed to persist models list to config: {}", e);
             write_errors.push(format!("{}.models", section));
