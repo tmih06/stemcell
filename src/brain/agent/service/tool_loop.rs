@@ -1596,7 +1596,8 @@ impl AgentService {
                                     // the swap to the session DB and updates the
                                     // footer (matches rate-limit sticky path).
                                     if let Some(ref cb) = progress_callback {
-                                        let primary_from_name = self.provider_name_for_session(session_id);
+                                        let primary_from_name =
+                                            self.provider_name_for_session(session_id);
                                         cb(
                                             session_id,
                                             ProgressEvent::SelfHealingAlert {
@@ -1610,7 +1611,8 @@ impl AgentService {
                                             session_id,
                                             ProgressEvent::ProviderSwitched {
                                                 from_name: primary_from_name,
-                                                from_model: self.provider_model_for_session(session_id),
+                                                from_model: self
+                                                    .provider_model_for_session(session_id),
                                                 to_name: fb_name.to_string(),
                                                 to_model: fb_model.to_string(),
                                                 reason: "stream_error".to_string(),
@@ -1821,12 +1823,14 @@ impl AgentService {
                                     // Emit ProviderSwitched so the TUI persists
                                     // the swap to the session DB and updates the footer
                                     if let Some(ref cb) = progress_callback {
-                                        let primary_from_name = self.provider_name_for_session(session_id);
+                                        let primary_from_name =
+                                            self.provider_name_for_session(session_id);
                                         cb(
                                             session_id,
                                             ProgressEvent::ProviderSwitched {
                                                 from_name: primary_from_name,
-                                                from_model: self.provider_model_for_session(session_id),
+                                                from_model: self
+                                                    .provider_model_for_session(session_id),
                                                 to_name: fb_name.clone(),
                                                 to_model: fb_model.clone(),
                                                 reason: "5xx_error".to_string(),
@@ -2325,7 +2329,9 @@ impl AgentService {
                         // First try stripping just a leading preamble so
                         // we keep any legitimate draft that follows the
                         // gaslighting opener in the same block.
-                        if let Some(remainder) = super::helpers::strip_gaslighting_preamble(text) {
+                        if let Some(remainder) =
+                            super::gaslighting::strip_gaslighting_preamble(text)
+                        {
                             let removed = text.len().saturating_sub(remainder.len());
                             stripped_bytes += removed;
                             if stripped_preview.is_empty() {
@@ -2338,7 +2344,7 @@ impl AgentService {
                             return true;
                         }
                         // Fallback: whole-block match (small pure refusals)
-                        if super::helpers::is_gaslighting_preamble(text) {
+                        if super::gaslighting::is_gaslighting_preamble(text) {
                             stripped_bytes += text.len();
                             if stripped_preview.is_empty() {
                                 stripped_preview = text.chars().take(80).collect::<String>();
@@ -2673,7 +2679,7 @@ impl AgentService {
                 // = a legitimate text answer. Keep the gate narrow.
                 if phantom_retries_used < MAX_PHANTOM_RETRIES
                     && !is_cli_provider
-                    && super::helpers::has_phantom_tool_intent_no_tools(&iteration_text)
+                    && super::phantom::has_phantom_tool_intent_no_tools(&iteration_text)
                 {
                     phantom_retries_used += 1;
                     tracing::warn!(
@@ -2829,7 +2835,7 @@ impl AgentService {
                         response.stop_reason,
                         Some(crate::brain::provider::StopReason::EndTurn)
                     )
-                    && super::helpers::looks_truncated_mid_sentence(iteration_text.trim_end())
+                    && super::phantom::looks_truncated_mid_sentence(iteration_text.trim_end())
                 {
                     truncated_mid_sentence_retry_used = true;
                     let preview: String = iteration_text
