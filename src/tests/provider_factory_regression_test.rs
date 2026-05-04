@@ -354,9 +354,8 @@ fn tui_providers_match_factory_session_ids() {
         }
         assert!(
             session_ids.contains(&p.id),
-            "TUI provider id '{}' not found in factory session_ids: {:?}",
-            p.id,
-            session_ids
+            "TUI provider id '{}' not found in factory session_ids",
+            p.id
         );
     }
 }
