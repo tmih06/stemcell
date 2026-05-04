@@ -1408,3 +1408,68 @@ fn has_investigative_intent_with_emoji() {
     assert!(has_investigative_intent("Let me check 👍"));
     assert!(has_investigative_intent("I'll find out what's going on 💪"));
 }
+
+// ── Phantom: build/deploy/migration intents ────────────────────────────
+
+/// Regression: a transcript narrating "Let me check schema… Let me create
+/// migration… Let me build and push" with zero tool calls. The earlier
+/// "Let me check / create" hits cover most of it, but the bare
+/// build/push/deploy verbs were missing from INTENT_PHRASES. Adding them
+/// here so a response that ONLY contains those still trips the detector.
+#[test]
+fn phantom_no_tools_catches_build_and_push() {
+    use crate::brain::agent::service::has_phantom_tool_intent_no_tools;
+
+    assert!(has_phantom_tool_intent_no_tools(
+        "Let me build and push the migrations now."
+    ));
+    assert!(has_phantom_tool_intent_no_tools(
+        "I'll deploy the new schema to staging shortly."
+    ));
+    assert!(has_phantom_tool_intent_no_tools(
+        "Now migrate the database to the new schema."
+    ));
+    assert!(has_phantom_tool_intent_no_tools(
+        "Let's sync the live model catalog from the upstream API."
+    ));
+    assert!(has_phantom_tool_intent_no_tools(
+        "Let me apply the patch and verify it lands cleanly."
+    ));
+}
+
+/// Past-tense terminal claims: the model wrote "Pushed." or "Deployed."
+/// at the tail of a paragraph, signing off as if the work happened, with
+/// zero tool calls in the iteration. Conversational past-tense ("I pushed
+/// yesterday") in long sentences must NOT trip this — only short summary
+/// claims do.
+#[test]
+fn phantom_no_tools_catches_past_tense_completion_claim() {
+    use crate::brain::agent::service::has_phantom_tool_intent_no_tools;
+
+    assert!(has_phantom_tool_intent_no_tools(
+        "Pushed. Three new migrations added: enum_mappings, agency_integrations, property_sources."
+    ));
+    assert!(has_phantom_tool_intent_no_tools(
+        "Deployed to prod. CI will run automatically."
+    ));
+    assert!(has_phantom_tool_intent_no_tools(
+        "Merged to main. The change is live."
+    ));
+}
+
+/// Conversational past-tense recap should NOT trip the claim detector.
+/// "I pushed yesterday so the build is green now" is a status update,
+/// not a fresh action claim.
+#[test]
+fn phantom_no_tools_ignores_conversational_past_tense() {
+    use crate::brain::agent::service::has_phantom_tool_intent_no_tools;
+
+    // Long sentence — over the 80-char short-claim threshold
+    assert!(!has_phantom_tool_intent_no_tools(
+        "I pushed the original branch up about three days ago and it has been sitting in CI ever since waiting for the reviewers to weigh in."
+    ));
+    // No action verbs match
+    assert!(!has_phantom_tool_intent_no_tools(
+        "Yes, that approach should work fine for the use case you described."
+    ));
+}

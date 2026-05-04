@@ -1618,6 +1618,48 @@ const INTENT_PHRASES: &[&str] = &[
     "i'll check into",
     "i'll find out",
     "i'll dig into",
+    // Build / deploy / migration verbs — observed mid-2026-05 in a
+    // transcript where an agent narrated "Let me check the schema… Let me
+    // create the migration… Let me build and push" across nine paragraphs,
+    // emitted zero tool calls, and signed off with "Pushed." The earlier
+    // intents would have caught it, but bare cases ("Let me build and
+    // push:" as the entire response) need their own coverage.
+    "let me build",
+    "let me push",
+    "let me deploy",
+    "let me sync",
+    "let me migrate",
+    "let me apply",
+    "let me install",
+    "let me configure",
+    "let me set up",
+    "let me wire",
+    "let's build",
+    "let's push",
+    "let's deploy",
+    "let's sync",
+    "let's migrate",
+    "let's apply",
+    "let's install",
+    "let's configure",
+    "let's set up",
+    "let's wire",
+    "i'll build",
+    "i'll push",
+    "i'll deploy",
+    "i'll sync",
+    "i'll migrate",
+    "i'll apply",
+    "i'll install",
+    "i'll configure",
+    "i'll set up",
+    "i'll wire",
+    "now build",
+    "now push",
+    "now deploy",
+    "now sync",
+    "now migrate",
+    "now apply",
 ];
 
 /// Relaxed phantom detection used when the caller already knows the
@@ -1652,7 +1694,61 @@ pub fn has_phantom_tool_intent_no_tools(text: &str) -> bool {
         return false;
     }
     let lower = lead.to_lowercase();
-    INTENT_PHRASES.iter().any(|p| lower.contains(p))
+    if INTENT_PHRASES.iter().any(|p| lower.contains(p)) {
+        return true;
+    }
+    // Past-tense completion claim with zero tool calls: the model wrote
+    // "Pushed." / "Deployed." / "Merged." as a terminal sentence to wrap
+    // up a series of supposed actions. Conversational past-tense ("I
+    // pushed yesterday") is fine; the give-away is the claim standing
+    // alone as a short statement *and* the iteration produced no tool
+    // uses. Caller already gates on zero tools, so we just look for the
+    // claim in the lead-in.
+    has_past_tense_action_claim(&lower)
+}
+
+/// Detects short past-tense completion claims like `"Pushed."`, `"Deployed."`,
+/// `"Migration created."` — sentences that announce an action's done without
+/// having executed any tool. Only used in the zero-tool-call path; loose
+/// matching elsewhere would false-positive on conversational recaps.
+fn has_past_tense_action_claim(lower: &str) -> bool {
+    // Look at sentences (period/newline-terminated) that are short enough
+    // to be summary claims. "Pushed." or "Done — three migrations added."
+    // qualify; a 200-char sentence describing what someone *might* have
+    // pushed does not.
+    const ACTION_VERBS: &[&str] = &[
+        "pushed",
+        "deployed",
+        "merged",
+        "migrated",
+        "committed",
+        "rebased",
+        "tagged",
+        "released",
+        "published",
+        "synced",
+        "rolled back",
+        "rolled out",
+    ];
+    for raw_sentence in lower.split(['.', '\n', '!']) {
+        let s = raw_sentence.trim();
+        if s.is_empty() || s.len() > 80 {
+            continue;
+        }
+        for verb in ACTION_VERBS {
+            // Match the verb as a leading word: "pushed", "pushed.",
+            // "pushed three migrations", "all pushed". Avoid matching
+            // inside another word ("crushed", "ambushed"). Allow up to
+            // ~3 leading filler words ("done — pushed", "now pushed").
+            if s.split_whitespace().take(4).any(|w| {
+                let w = w.trim_matches(|c: char| !c.is_alphanumeric());
+                w == *verb
+            }) {
+                return true;
+            }
+        }
+    }
+    false
 }
 
 /// Does the text contain any investigative/intent phrases from `INTENT_PHRASES`?
