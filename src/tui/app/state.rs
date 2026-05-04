@@ -2484,8 +2484,29 @@ impl App {
                 if self.is_current_session(session_id) {
                     self.default_model_name = to_model.clone();
                     if let Some(ref mut session) = self.current_session {
-                        session.provider_name = Some(to_name);
-                        session.model = Some(to_model);
+                        session.provider_name = Some(to_name.clone());
+                        session.model = Some(to_model.clone());
+                    }
+                    // CRITICAL: update session_providers so the footer reads
+                    // the correct provider immediately. Without this, the DB
+                    // and current_session are updated but session_providers
+                    // still points at the old Arc, so pane switches and
+                    // rebuild_agent_service see stale data.
+                    if let Ok(config) = crate::config::Config::load()
+                        && let Ok(new_provider) =
+                            crate::brain::provider::factory::create_provider_by_name(
+                                &config, &to_name,
+                            )
+                            .await
+                    {
+                        self.agent_service
+                            .swap_provider_for_session(session_id, new_provider.clone());
+                        self.provider_cache.insert(to_name.clone(), new_provider);
+                        tracing::info!(
+                            "[ProviderSwitched] updated session_providers for session {} → {}",
+                            session_id,
+                            to_name
+                        );
                     }
                 }
             }
