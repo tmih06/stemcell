@@ -1570,7 +1570,7 @@ impl AgentService {
                             // mid-await (see FallbackProviderGuard doc).
                             let original_provider = self.provider_for_session(session_id);
                             self.swap_provider_for_session(session_id, (*fallback).clone());
-                            let _restore_guard = FallbackProviderGuard {
+                            let mut restore_guard = FallbackProviderGuard {
                                 service: self,
                                 session_id,
                                 original: Some(original_provider),
@@ -1586,13 +1586,43 @@ impl AgentService {
                                     false,
                                 )
                                 .await;
-                            drop(_restore_guard);
                             match fb_result {
                                 Ok(resp) => {
+                                    // Disable restore — the swap must stick.
+                                    restore_guard.original = None;
+                                    drop(restore_guard);
                                     stream_succeeded = Some(resp);
+                                    // Emit ProviderSwitched so the TUI persists
+                                    // the swap to the session DB and updates the
+                                    // footer (matches rate-limit sticky path).
+                                    if let Some(ref cb) = progress_callback {
+                                        let primary_from_name = self.provider_name_for_session(session_id);
+                                        cb(
+                                            session_id,
+                                            ProgressEvent::SelfHealingAlert {
+                                                message: format!(
+                                                    "Stream error → switched to {}/{}",
+                                                    fb_name, fb_model
+                                                ),
+                                            },
+                                        );
+                                        cb(
+                                            session_id,
+                                            ProgressEvent::ProviderSwitched {
+                                                from_name: primary_from_name,
+                                                from_model: self.provider_model_for_session(session_id),
+                                                to_name: fb_name.to_string(),
+                                                to_model: fb_model.to_string(),
+                                                reason: "stream_error".to_string(),
+                                            },
+                                        );
+                                    }
                                     break;
                                 }
                                 Err(fb_err) => {
+                                    // Guard's Drop restores the original so the
+                                    // next candidate iteration starts clean.
+                                    drop(restore_guard);
                                     tracing::warn!(
                                         "Stream fallback '{}' failed: {} — trying next",
                                         fb_name,
@@ -1788,6 +1818,21 @@ impl AgentService {
                                     stream_succeeded = Some(resp);
                                     // Sticky swap so subsequent iterations use this provider
                                     self.swap_provider_for_session(session_id, (*fallback).clone());
+                                    // Emit ProviderSwitched so the TUI persists
+                                    // the swap to the session DB and updates the footer
+                                    if let Some(ref cb) = progress_callback {
+                                        let primary_from_name = self.provider_name_for_session(session_id);
+                                        cb(
+                                            session_id,
+                                            ProgressEvent::ProviderSwitched {
+                                                from_name: primary_from_name,
+                                                from_model: self.provider_model_for_session(session_id),
+                                                to_name: fb_name.clone(),
+                                                to_model: fb_model.clone(),
+                                                reason: "5xx_error".to_string(),
+                                            },
+                                        );
+                                    }
                                     break;
                                 }
                                 Err(fb_err) => {
