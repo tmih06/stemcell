@@ -37,7 +37,13 @@ const INTENT_PHRASES: &[&str] = &[
     "now amend",
     // "Now + gerund" status-then-action drops: model reports what it did,
     // then says "Now cherry-picking/updating/fixing..." and stops with
-    // zero tool calls. Seen: "Now cherry-picking to main and prod."
+    // zero tool calls. Seen: "Now cherry-picking to main and prod." and
+    // (2026-05-05 14:47 incident on a 'slack'-named TUI session) "Now
+    // creating the new tests file for signin/invitation error messages."
+    // The model emitted that line, zero tool_use blocks followed, and
+    // the phantom detector missed it because "now creating" wasn't in
+    // INTENT_PHRASES — covered the git/deploy verbs but not the file-
+    // operation gerunds. Add the full file-operation set.
     "now updating",
     "now fixing",
     "now committing",
@@ -52,6 +58,21 @@ const INTENT_PHRASES: &[&str] = &[
     "now checking",
     "now applying",
     "now restarting",
+    "now creating",
+    "now writing",
+    "now editing",
+    "now adding",
+    "now removing",
+    "now deleting",
+    "now reading",
+    "now running",
+    "now starting",
+    "now finishing",
+    "now finalizing",
+    "now installing",
+    "now configuring",
+    "now wiring",
+    "now setting up",
     "i'll update",
     "i'll fix",
     "i'll modify",
@@ -531,7 +552,7 @@ pub fn has_phantom_tool_intent(text: &str) -> bool {
     // Must appear at a sentence boundary (start of text or after .!?)
     // to avoid false positives like "Are you now checking the logs?"
     let now_gerund_re = Regex::new(
-        r"(?im)(?:^|[.!?]\s+)\s*now\s+(?:updating|fixing|committing|amending|pushing|cherry-picking|merging|rebasing|deploying|building|testing|checking|applying|restarting)\b"
+        r"(?im)(?:^|[.!?]\s+)\s*now\s+(?:updating|fixing|committing|amending|pushing|cherry-picking|merging|rebasing|deploying|building|testing|checking|applying|restarting|creating|writing|editing|adding|removing|deleting|reading|running|starting|finishing|finalizing|installing|configuring|wiring)\b"
     ).unwrap();
     if now_gerund_re.is_match(trimmed) {
         return true;

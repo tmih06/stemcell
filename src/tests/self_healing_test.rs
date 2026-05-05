@@ -1437,6 +1437,34 @@ fn phantom_no_tools_catches_build_and_push() {
     ));
 }
 
+/// "Now + file-operation gerund" status-then-action drops. The detector
+/// already had the git/deploy gerunds (committing, amending, pushing,
+/// cherry-picking, deploying, building, testing, checking, applying,
+/// restarting) but missed the file/CRUD ones. Regression: 2026-05-05
+/// 14:47 — model emitted "Now creating the new tests file for signin/
+/// invitation error messages." with zero tool calls and the request
+/// looked dropped to the user. The relaxed detector must catch it.
+#[test]
+fn phantom_no_tools_catches_now_file_op_gerund() {
+    use crate::brain::agent::service::has_phantom_tool_intent_no_tools;
+
+    assert!(has_phantom_tool_intent_no_tools(
+        "Now creating the new tests file for signin/invitation error messages."
+    ));
+    assert!(has_phantom_tool_intent_no_tools(
+        "Done with the previous step. Now writing the migration."
+    ));
+    assert!(has_phantom_tool_intent_no_tools(
+        "Now editing the config to point at the new endpoint."
+    ));
+    assert!(has_phantom_tool_intent_no_tools(
+        "Got it. Now reading the schema before I touch anything."
+    ));
+    assert!(has_phantom_tool_intent_no_tools(
+        "Now installing the missing dependency and verifying."
+    ));
+}
+
 /// Past-tense terminal claims: the model wrote "Pushed." or "Deployed."
 /// at the tail of a paragraph, signing off as if the work happened, with
 /// zero tool calls in the iteration. Conversational past-tense ("I pushed
