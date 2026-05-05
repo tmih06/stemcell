@@ -198,20 +198,8 @@ impl AgentService {
         } else {
             std::time::Duration::from_secs(90)
         };
-        // After the first content chunk is received, reduce the per-chunk timeout
-        // to detect stalled streams quickly. The handshake can take up to the full
-        // idle timeout, but once streaming is active 15s of silence means the
-        // connection dropped.
-        let chunk_watchdog = std::time::Duration::from_secs(15);
-        let mut stream_started = false;
 
         loop {
-            // Use the shorter watchdog once content is flowing, full timeout for handshake
-            let effective_timeout = if stream_started {
-                chunk_watchdog
-            } else {
-                stream_idle_timeout
-            };
             // Race stream.next() against cancellation token and idle timeout.
             // This ensures /stop takes effect immediately even mid-chunk.
             let next = tokio::select! {
@@ -227,16 +215,15 @@ impl AgentService {
                     tracing::info!("Stream cancelled by user");
                     break;
                 }
-                result = tokio::time::timeout(effective_timeout, stream.next()) => {
+                result = tokio::time::timeout(stream_idle_timeout, stream.next()) => {
                     match result {
                         Ok(Some(item)) => item,
                         Ok(None) => break, // Stream ended normally
                         Err(_elapsed) => {
                             tracing::warn!(
-                                "⏱️ Stream {}timeout after {}s — no event received from provider. \
+                                "⏱️ Stream idle timeout after {}s — no event received from provider. \
                                  Treating as dropped stream (stop_reason=None → will retry).",
-                                if stream_started { "chunk watchdog " } else { "idle " },
-                                effective_timeout.as_secs()
+                                stream_idle_timeout.as_secs()
                             );
                             break; // stop_reason stays None → triggers retry in tool_loop
                         }
@@ -257,8 +244,6 @@ impl AgentService {
                     id = message.id;
                     model = message.model;
                     input_tokens = message.usage.input_tokens;
-                    // Stream is active — switch to fast watchdog for subsequent chunks
-                    stream_started = true;
                 }
                 StreamEvent::ContentBlockStart {
                     index,
