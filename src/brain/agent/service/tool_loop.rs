@@ -640,8 +640,15 @@ impl AgentService {
         // the actual context window size.
 
         // Auto-compact: triggers at >65% usage.
-        // CLI providers manage their own context window — skip our compaction entirely.
-        let compaction_result = if is_cli_provider {
+        // Skip ONLY when the CLI manages its own session (qwen-code with
+        // --resume). Claude CLI handles tools internally but DOES NOT
+        // manage the context we feed it via stdin — we send the full
+        // conversation each turn, so we MUST compact for Claude CLI too.
+        // The other 3 call sites in this file already use cli_owns_context;
+        // this one was using is_cli_provider, which let Claude CLI
+        // bypass compaction entirely and inflated the ctx counter past
+        // 200% (user report 2026-05-04: 484k/200k = 242%).
+        let compaction_result = if cli_owns_context {
             None
         } else {
             self.enforce_context_budget(
@@ -2018,9 +2025,20 @@ impl AgentService {
 
             // Calibrate context token count from the provider's reported usage.
             //
-            // CLI providers: use context_input() which gives the LAST round's
-            // per-call cache tokens (actual context window), NOT cumulative billing.
-            if is_cli_provider {
+            // Claude CLI handles caching internally — its reported cache_read /
+            // cache_creation tokens reflect Claude's own cached system prompt +
+            // tool schemas + accumulated session state, NOT the conversation
+            // OpenCrabs sent. Adding those to context_input() inflates the
+            // counter past the model's window (e.g. 484k/200k = 242%) on every
+            // turn, which then triggers spurious auto-compaction that drops
+            // the in-flight request. We manage the context we send; Claude
+            // manages its own cache. Trust the local tiktoken estimate that
+            // already reflects what we sent in `request.messages`.
+            //
+            // Other CLI providers (qwen-code) re-spawn cold each turn — their
+            // reported context_input() IS what we sent and is calibration-worthy.
+            let is_claude_cli = self.provider_for_session(session_id).name() == "claude-cli";
+            if is_cli_provider && !is_claude_cli {
                 let cli_context = response.usage.context_input() as usize;
                 if cli_context > 0 {
                     // Sanity guard: if the CLI's reported context is more
@@ -2050,6 +2068,15 @@ impl AgentService {
                         context.token_count = cli_context;
                     }
                 }
+            } else if is_claude_cli {
+                // Local estimate stays authoritative for Claude CLI — already
+                // computed from `request.messages`, no API calibration needed.
+                tracing::debug!(
+                    "Claude CLI: keeping local estimate {} (reported context_input={} \
+                     ignored — represents Claude's internal cache, not our sent context)",
+                    context.token_count,
+                    response.usage.context_input(),
+                );
             } else {
                 let api_input = response.usage.input_tokens as usize;
                 // API input_tokens includes system prompt + tool schemas + messages.

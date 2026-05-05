@@ -1173,6 +1173,19 @@ impl Provider for ClaudeCliProvider {
     fn cli_handles_tools(&self) -> bool {
         true // CLI executes tools internally — display only, don't re-execute
     }
+
+    fn cli_manages_context(&self) -> bool {
+        // We send Claude CLI the full conversation each turn via stdin.
+        // Claude CLI's internal session state in ~/.claude/ is irrelevant —
+        // what matters is what we feed it. So OpenCrabs owns the context
+        // and MUST run its own compaction; otherwise local tiktoken
+        // estimates climb without bound (484k/200k = 242% reported by
+        // user 2026-05-04) because tool-result messages pile up across
+        // iterations and we never trim. Claude CLI handles its own prompt
+        // caching transparently — that's a separate concern from context
+        // sizing.
+        false
+    }
 }
 
 // ── Helper functions for assistant message → StreamEvent translation ──
