@@ -3,6 +3,7 @@
 //! Provides a unified interface for interacting with different LLM providers.
 
 pub mod error;
+pub mod json_repair;
 pub mod placeholder;
 pub mod rate_limiter;
 pub mod retry;

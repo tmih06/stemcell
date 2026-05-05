@@ -355,14 +355,18 @@ impl AgentService {
                 }
                 StreamEvent::ContentBlockStop { index } => {
                     if index < block_states.len() {
-                        // Finalize tool use blocks: parse accumulated JSON
+                        // Finalize tool use blocks: parse accumulated JSON with
+                        // partial-repair fallback so a truncated stream surfaces
+                        // partial intent instead of {}.
                         {
                             let state = &mut block_states[index];
                             if let ContentBlock::ToolUse { ref mut input, .. } = state.block
                                 && !state.json_buf.is_empty()
-                                && let Ok(parsed) = serde_json::from_str(&state.json_buf)
                             {
-                                *input = parsed;
+                                *input =
+                                    crate::brain::provider::json_repair::parse_or_repair(
+                                        &state.json_buf,
+                                    );
                             }
                         }
                         // CLI: flush accumulated text as IntermediateText before

@@ -1837,16 +1837,9 @@ impl OpenAIProvider {
                 tool_calls.len()
             );
             for tool_call in tool_calls {
-                // Parse arguments JSON string
-                let input =
-                    serde_json::from_str(&tool_call.function.arguments).unwrap_or_else(|e| {
-                        tracing::warn!(
-                            "Failed to parse tool arguments for {}: {}",
-                            tool_call.function.name,
-                            e
-                        );
-                        serde_json::json!({})
-                    });
+                // Parse arguments JSON string with partial-repair fallback so
+                // a truncated tool call surfaces partial intent instead of {}.
+                let input = super::json_repair::parse_or_repair(&tool_call.function.arguments);
 
                 tracing::debug!(
                     "Converted tool call: {} with id {}",
@@ -2270,8 +2263,10 @@ impl OpenAIProvider {
                                         st.emitted_content_stop = true;
                                     }
                                     for (_idx, accum) in st.tool_calls.drain() {
-                                        let input = serde_json::from_str(&accum.arguments)
-                                            .unwrap_or_else(|_| serde_json::json!({}));
+                                        // parse_or_repair recovers truncated args
+                                        // (network drop / timeout) so partial intent
+                                        // is preserved instead of dropped to {}.
+                                        let input = super::json_repair::parse_or_repair(&accum.arguments);
                                         let tool_index = _idx + 1;
                                         events.push(Ok(StreamEvent::ContentBlockStart {
                                             index: tool_index,
@@ -2933,8 +2928,7 @@ impl Provider for OpenAIProvider {
                                     // events to the TUI (otherwise the tool cards stay
                                     // visually "stuck" forever).
                                     for (_idx, accum) in st.tool_calls.drain() {
-                                        let input = serde_json::from_str(&accum.arguments)
-                                            .unwrap_or_else(|_| serde_json::json!({}));
+                                        let input = super::json_repair::parse_or_repair(&accum.arguments);
                                         tracing::info!(
                                             "[TOOL_EMIT] Flushing tool on DONE: id={}, name={}, args={}",
                                             accum.id, accum.name, &accum.arguments.chars().take(200).collect::<String>()
@@ -3146,14 +3140,9 @@ impl Provider for OpenAIProvider {
                                                 // ToolStarted/ToolCompleted progress events — otherwise
                                                 // the TUI tool cards stay visually stuck forever.
                                                 for (idx, accum) in st.tool_calls.drain() {
-                                                    let input = serde_json::from_str(&accum.arguments)
-                                                        .unwrap_or_else(|e| {
-                                                            tracing::warn!(
-                                                                "[TOOL_EMIT] Failed to parse accumulated args for '{}': {} | args: {}",
-                                                                accum.name, e, &accum.arguments.chars().take(300).collect::<String>()
-                                                            );
-                                                            serde_json::json!({})
-                                                        });
+                                                    // Repair partial args (network drop / timeout)
+                                                    // instead of dropping the whole tool call.
+                                                    let input = super::json_repair::parse_or_repair(&accum.arguments);
                                                     tracing::info!(
                                                         "[TOOL_EMIT] Emitting tool call: idx={}, id={}, name={}, args_len={}",
                                                         idx, accum.id, accum.name, accum.arguments.len()
