@@ -598,6 +598,7 @@ impl AgentService {
                         context_tokens: context.token_count as u32,
                         cost: 0.0,
                         model: model_name,
+                        provider_name: self.provider_name_for_session(session_id),
                     });
                 }
                 Err(e) => {
@@ -628,6 +629,7 @@ impl AgentService {
                         context_tokens: context.token_count as u32,
                         cost: 0.0,
                         model: model_name,
+                        provider_name: self.provider_name_for_session(session_id),
                     });
                 }
             }
@@ -3835,6 +3837,7 @@ impl AgentService {
             context_tokens: context.token_count as u32,
             cost,
             model: response.model,
+            provider_name: self.provider_name_for_session(session_id),
         })
     }
 }

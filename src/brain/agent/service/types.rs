@@ -205,6 +205,16 @@ pub struct AgentResponse {
 
     /// Model used
     pub model: String,
+
+    /// Provider that produced this response. Set from the per-session active
+    /// provider at the moment of construction, so it reflects sticky-fallback
+    /// targets too. Callers who persist `model` MUST persist `provider_name`
+    /// from the same response in the same write — the {provider, model} pair
+    /// is a locked unit, splitting them across writes lets a fallback's
+    /// model leak onto a different provider's session row and produces
+    /// cross-provider routing on the next turn (e.g. dialagram/glm-5.1
+    /// where glm-5.1 belongs to zhipu's catalogue).
+    pub provider_name: String,
 }
 
 /// Streaming response from the agent

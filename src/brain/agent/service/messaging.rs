@@ -82,6 +82,7 @@ impl AgentService {
             usage: response.usage,
             cost,
             model: response.model,
+            provider_name: self.provider_name_for_session(session_id),
         })
     }
 

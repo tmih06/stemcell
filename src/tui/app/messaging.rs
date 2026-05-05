@@ -2117,6 +2117,7 @@ impl App {
         let message_service = self.message_service.clone();
         let session_for_bg = self.current_session.clone();
         let response_model = response.model.clone();
+        let response_provider = response.provider_name.clone();
         let plan_path = self.plan_file_path.clone();
         let is_processing = self.is_processing;
         let assistant_msg_id_for_bg: Option<Uuid> = if self.intermediate_text_received {
@@ -2130,13 +2131,27 @@ impl App {
         };
 
         tokio::spawn(async move {
-            // Update session model in DB
-            if let Some(mut session) = session_for_bg
-                && session.model.is_none()
-            {
-                session.model = Some(response_model);
-                if let Err(e) = session_service.update_session(&session).await {
-                    tracing::warn!("Failed to update session model: {}", e);
+            // Persist the {provider, model} pair from the response onto the
+            // session row whenever it differs from what's stored. The two
+            // fields are a LOCKED unit — writing only one (the prior code
+            // wrote `model` alone behind an `is_none()` gate) lets a sticky
+            // fallback's model land on a row whose provider_name still
+            // points at the original. The next turn then ships e.g.
+            // dialagram/glm-5.1 — a pair that exists in no provider's
+            // catalogue. ProviderSwitched event handler also keeps the row
+            // in sync; this is the second writer that closes the same gap
+            // for paths that produce a response without firing
+            // ProviderSwitched (e.g. resume after restart, channel-driven
+            // turns whose progress events miss the TUI loop).
+            if let Some(mut session) = session_for_bg {
+                let pair_changed = session.model.as_deref() != Some(response_model.as_str())
+                    || session.provider_name.as_deref() != Some(response_provider.as_str());
+                if pair_changed {
+                    session.model = Some(response_model);
+                    session.provider_name = Some(response_provider);
+                    if let Err(e) = session_service.update_session(&session).await {
+                        tracing::warn!("Failed to update session provider/model pair: {}", e);
+                    }
                 }
             }
 
