@@ -766,7 +766,10 @@ pub(super) fn render_status_bar(f: &mut Frame, app: &App, area: Rect) {
         let model = app.agent_service.provider_model_for_session(session.id);
         let prefix = format!("{}/", prov);
         let stripped = model.strip_prefix(&prefix).unwrap_or(&model);
-        (prov, crate::tui::provider_selector::model_display_label(stripped).to_string())
+        (
+            prov,
+            crate::tui::provider_selector::model_display_label(stripped).to_string(),
+        )
     } else {
         (
             app.agent_service.provider_name(),

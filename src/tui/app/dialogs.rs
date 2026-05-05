@@ -1443,8 +1443,11 @@ impl App {
         // session_providers cache had the keyless instance.
         if let Some(ref current) = self.current_session {
             let current_sid = current.id;
-            if let Some(cached) = self.agent_service.session_provider_snapshot()
-                .into_iter().find(|(sid, _)| *sid == current_sid)
+            if let Some(cached) = self
+                .agent_service
+                .session_provider_snapshot()
+                .into_iter()
+                .find(|(sid, _)| *sid == current_sid)
                 .map(|(_, p)| p)
             {
                 let cached_name = cached.name().to_string();

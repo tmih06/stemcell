@@ -23,6 +23,9 @@ const DEFAULT_OPENAI_API_URL: &str = "https://api.openai.com/v1/chat/completions
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(300);
 const DEFAULT_CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 const DEFAULT_POOL_IDLE_TIMEOUT: Duration = Duration::from_secs(90);
+// TCP keepalive: OS-level probes detect silent connection drops without
+// waiting for the 300s request timeout. Critical for streaming.
+const DEFAULT_TCP_KEEPALIVE: Duration = Duration::from_secs(15);
 
 /// Open/close tag pairs to strip from streaming/non-streaming content.
 /// Covers DeepSeek-style `<think>` and Kimi-style `<!-- reasoning -->` blocks.
@@ -1077,6 +1080,7 @@ impl OpenAIProvider {
             .connect_timeout(DEFAULT_CONNECT_TIMEOUT)
             .pool_idle_timeout(DEFAULT_POOL_IDLE_TIMEOUT)
             .pool_max_idle_per_host(2)
+            .tcp_keepalive(DEFAULT_TCP_KEEPALIVE)
             .build()
             .expect("Failed to create HTTP client");
 
@@ -1109,6 +1113,7 @@ impl OpenAIProvider {
             .connect_timeout(DEFAULT_CONNECT_TIMEOUT)
             .pool_idle_timeout(DEFAULT_POOL_IDLE_TIMEOUT)
             .pool_max_idle_per_host(2)
+            .tcp_keepalive(DEFAULT_TCP_KEEPALIVE)
             .build()
             .expect("Failed to create HTTP client");
 
@@ -1141,6 +1146,7 @@ impl OpenAIProvider {
             .connect_timeout(DEFAULT_CONNECT_TIMEOUT)
             .pool_idle_timeout(DEFAULT_POOL_IDLE_TIMEOUT)
             .pool_max_idle_per_host(2)
+            .tcp_keepalive(DEFAULT_TCP_KEEPALIVE)
             .build()
             .expect("Failed to create HTTP client");
 

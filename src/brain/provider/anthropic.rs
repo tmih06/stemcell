@@ -28,6 +28,12 @@ const ANTHROPIC_VERSION: &str = "2023-06-01";
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(300); // Total request timeout
 const DEFAULT_CONNECT_TIMEOUT: Duration = Duration::from_secs(10); // Connection timeout
 const DEFAULT_POOL_IDLE_TIMEOUT: Duration = Duration::from_secs(90); // Keep connections alive
+// TCP keepalive: OS-level probes detect silent connection drops without
+// waiting for the 300s request timeout. Critical for long-running streams
+// where the server crashes/network drops mid-response — without this, the
+// stream hangs until the full timeout. With it, the kernel kills the dead
+// socket in ~15-45s and reqwest surfaces an error so retry logic kicks in.
+const DEFAULT_TCP_KEEPALIVE: Duration = Duration::from_secs(15);
 
 /// Anthropic provider for Claude models
 #[derive(Clone)]
@@ -45,6 +51,7 @@ impl AnthropicProvider {
             .connect_timeout(DEFAULT_CONNECT_TIMEOUT) // Connection establishment timeout
             .pool_idle_timeout(DEFAULT_POOL_IDLE_TIMEOUT) // Keep connections in pool
             .pool_max_idle_per_host(2) // Max idle connections per host
+            .tcp_keepalive(DEFAULT_TCP_KEEPALIVE) // Detect silent TCP drops fast
             .build()
             .expect("Failed to create HTTP client");
 

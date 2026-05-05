@@ -34,6 +34,9 @@ const GEMINI_BASE_URL: &str = "https://generativelanguage.googleapis.com/v1beta"
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(300);
 const DEFAULT_CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 const DEFAULT_POOL_IDLE_TIMEOUT: Duration = Duration::from_secs(90);
+// TCP keepalive: OS-level probes detect silent connection drops without
+// waiting for the 300s request timeout. Critical for streaming.
+const DEFAULT_TCP_KEEPALIVE: Duration = Duration::from_secs(15);
 
 /// Google Gemini provider
 #[derive(Clone)]
@@ -52,6 +55,7 @@ impl GeminiProvider {
             .connect_timeout(DEFAULT_CONNECT_TIMEOUT)
             .pool_idle_timeout(DEFAULT_POOL_IDLE_TIMEOUT)
             .pool_max_idle_per_host(2)
+            .tcp_keepalive(DEFAULT_TCP_KEEPALIVE)
             .build()
             .expect("Failed to create HTTP client");
 
