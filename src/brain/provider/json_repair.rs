@@ -35,7 +35,13 @@ pub fn parse_or_repair(raw: &str) -> Value {
             "[JSON_REPAIR] recovered partial args ({} bytes → {} bytes): {:?}",
             raw.len(),
             repaired.len(),
-            raw.chars().rev().take(80).collect::<String>().chars().rev().collect::<String>()
+            raw.chars()
+                .rev()
+                .take(80)
+                .collect::<String>()
+                .chars()
+                .rev()
+                .collect::<String>()
         );
         return v;
     }
@@ -136,7 +142,10 @@ pub fn try_repair(raw: &str) -> Option<String> {
 
     // If we ended right after a `:` with no value, drop the trailing key.
     // e.g. `{"a":1,"b":` → `{"a":1}`. Safer than appending `null`.
-    if after_colon && !in_string && let Some(end) = last_complete_value_end {
+    if after_colon
+        && !in_string
+        && let Some(end) = last_complete_value_end
+    {
         // Find the comma or `{` before the trailing key
         let bytes = out.as_bytes();
         // Look back from `end` for `,` or `{`

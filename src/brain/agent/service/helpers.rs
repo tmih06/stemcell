@@ -378,10 +378,9 @@ impl AgentService {
                             if let ContentBlock::ToolUse { ref mut input, .. } = state.block
                                 && !state.json_buf.is_empty()
                             {
-                                *input =
-                                    crate::brain::provider::json_repair::parse_or_repair(
-                                        &state.json_buf,
-                                    );
+                                *input = crate::brain::provider::json_repair::parse_or_repair(
+                                    &state.json_buf,
+                                );
                             }
                         }
                         // CLI: flush accumulated text as IntermediateText before

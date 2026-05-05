@@ -65,10 +65,16 @@ impl FallbackProvider {
 
     /// Check provider health and compute the starting active index.
     /// Returns 0 (primary) if healthy, or the index of the healthiest fallback.
-    fn compute_health_start_index(primary: &Arc<dyn Provider>, fallbacks: &[Arc<dyn Provider>]) -> usize {
+    fn compute_health_start_index(
+        primary: &Arc<dyn Provider>,
+        fallbacks: &[Arc<dyn Provider>],
+    ) -> usize {
         // Only skip primary if it has consecutive failures AND a fallback is healthier
         let primary_health = crate::config::health::get_health(primary.name());
-        let primary_fails = primary_health.as_ref().map(|h| h.consecutive_failures).unwrap_or(0);
+        let primary_fails = primary_health
+            .as_ref()
+            .map(|h| h.consecutive_failures)
+            .unwrap_or(0);
 
         // Require at least 2 consecutive failures to skip primary on startup
         if primary_fails < 2 {

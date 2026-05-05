@@ -544,15 +544,14 @@ async fn cmd_chat_inner(
                     to_model,
                     reason,
                 }),
-                ProgressEvent::RetryAttempt { attempt, max, reason } => {
-                    progress_sender.send(TuiEvent::SystemMessage {
-                        session_id,
-                        text: format!(
-                            "⏳ Retry {}/{} — {}",
-                            attempt, max, reason
-                        ),
-                    })
-                },
+                ProgressEvent::RetryAttempt {
+                    attempt,
+                    max,
+                    reason,
+                } => progress_sender.send(TuiEvent::SystemMessage {
+                    session_id,
+                    text: format!("⏳ Retry {}/{} — {}", attempt, max, reason),
+                }),
             };
             if let Err(e) = result {
                 tracing::error!("Progress event channel closed: {}", e);
