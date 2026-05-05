@@ -1368,12 +1368,6 @@ impl App {
             return Err(e);
         }
 
-        // Update app state — use the ACTUAL provider's model, not the requested one.
-        // If the requested provider failed (e.g. Qwen no creds) and a fallback kicked in,
-        // the agent service's provider_model() reflects the real active model.
-        let actual_model = self.agent_service.provider_model();
-        self.default_model_name = actual_model.clone();
-
         // Persist provider + model to current session DB record AND pin the
         // newly built provider to THIS session's entry in the agent service.
         // Without the per-session pin a second pane's turn using a different
@@ -1432,6 +1426,23 @@ impl App {
                 self.agent_service.provider(),
             )
         };
+
+        // Read the model from the SESSION's provider, never from
+        // `agent_service.provider_model()`. The global agent service can be
+        // sitting on a sticky-fallback target whose model belongs to a
+        // different provider's catalogue (e.g. global is zhipu/glm-5.1 after
+        // a fallback while the user just picked dialagram). Sourcing
+        // `actual_model` from the global there persists `dialagram/glm-5.1`
+        // to the session, then every following turn ships glm-5.1 to
+        // dialagram (which serves only qwen-* models), 3-retries, falls
+        // back to zhipu, and the user sees the cross-provider mash-up the
+        // last fix was supposed to prevent. `provider_arc` was built fresh
+        // from config-by-name above with the user's selected default_model
+        // already written to disk, so its `.default_model()` is the right
+        // model for THIS session.
+        let actual_model = provider_arc.default_model().to_string();
+        self.default_model_name = actual_model.clone();
+
         // Flush ONLY the current session's stale entry so runtime picks up
         // the fresh config immediately. Other sessions keep their pins —
         // per-session isolation must never be broken by a /models save in
