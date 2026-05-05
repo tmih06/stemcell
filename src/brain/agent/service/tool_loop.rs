@@ -305,11 +305,17 @@ impl AgentService {
     /// Core tool-execution loop — called by all public shims.
     /// `override_approval_callback` and `override_progress_callback` take
     /// precedence over the service-level callbacks (used by Telegram, etc.)
+    ///
+    /// `display_text_override`: when `Some`, channels can supply a human-
+    /// readable user message for DB persistence/TUI display while the LLM
+    /// still receives the full `user_message` (typically wrapped with
+    /// channel/sender/reply metadata for context).
     #[allow(clippy::too_many_arguments)]
     pub(super) async fn run_tool_loop(
         &self,
         session_id: Uuid,
         user_message: String,
+        display_text_override: Option<String>,
         model: Option<String>,
         cancel_token: Option<CancellationToken>,
         override_approval_callback: Option<ApprovalCallback>,
@@ -356,6 +362,7 @@ impl AgentService {
             .run_tool_loop_inner(
                 session_id,
                 user_message,
+                display_text_override,
                 model,
                 cancel_token,
                 has_override_approval,
@@ -380,11 +387,18 @@ impl AgentService {
     }
 
     /// Inner tool loop — separated so `run_tool_loop` can wrap with request tracking.
+    ///
+    /// `display_text_override`: optional clean message for DB persistence/TUI.
+    /// The LLM context still gets `user_message` (full agent input including
+    /// channel-injected sender metadata, reply context, group history, etc.).
+    /// When `None`, behaves identically to before — `user_message` is used
+    /// for both context and DB.
     #[allow(clippy::too_many_arguments)]
     async fn run_tool_loop_inner(
         &self,
         session_id: Uuid,
         user_message: String,
+        display_text_override: Option<String>,
         model: Option<String>,
         cancel_token: Option<CancellationToken>,
         has_override_approval: bool,
@@ -520,9 +534,16 @@ impl AgentService {
         // — they go to context for the LLM but never appear in chat history.
         // Redact secrets so Bearer tokens, API keys etc. from cron prompts
         // never persist to DB or appear in TUI chat history.
+        //
+        // When a channel handler supplies `display_text_override`, the DB row
+        // (and therefore the TUI chat history) shows that clean text instead
+        // of the LLM-context-augmented `user_message`. This keeps Telegram /
+        // Discord / Slack / WhatsApp / Trello sessions readable in OpenCrabs
+        // — no sender brackets, no reply context, no recent-history dump.
         let is_system_continuation = user_message.starts_with("[System:");
         if !is_system_continuation {
-            let safe_message = crate::utils::sanitize::redact_secrets(&user_message);
+            let raw_for_db = display_text_override.as_deref().unwrap_or(&user_message);
+            let safe_message = crate::utils::sanitize::redact_secrets(raw_for_db);
             let _user_db_msg = message_service
                 .create_message(session_id, "user".to_string(), safe_message)
                 .await

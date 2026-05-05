@@ -916,6 +916,29 @@ pub(crate) async fn handle_message(
         Some(format!("[Replying to {reply_sender}: \"{reply_text}\"]"))
     });
 
+    // Build the human-readable display text (used for DB persistence + TUI).
+    // For DM owner: bare user text. Other cases get a `Sender: text` prefix
+    // so multi-user groups read like the source channel rather than a
+    // metadata-stuffed LLM prompt. Reply context, group history, and the
+    // channel hint are LLM-only and never enter `display_text`.
+    let display_text = {
+        let mut name = user.first_name.clone();
+        if let Some(ref last) = user.last_name {
+            name.push(' ');
+            name.push_str(last);
+        }
+        let handle = user
+            .username
+            .as_ref()
+            .map(|u| format!(" (@{})", u))
+            .unwrap_or_default();
+        if is_dm && is_owner {
+            text.clone()
+        } else {
+            format!("{name}{handle}: {text}")
+        }
+    };
+
     // Prepend sender identity and group context so the agent knows who and where.
     let agent_input = {
         let mut name = user.first_name.clone();
@@ -1445,9 +1468,10 @@ pub(crate) async fn handle_message(
 
     let chat_id_str = msg.chat.id.0.to_string();
     let result = agent
-        .send_message_with_tools_and_callback(
+        .send_message_with_tools_and_display(
             session_id,
             agent_input.clone(),
+            Some(display_text.clone()),
             None,
             Some(cancel_token.clone()),
             Some(approval_cb),
@@ -1486,9 +1510,10 @@ pub(crate) async fn handle_message(
                         .store_cancel_token(new_id, cancel_token2.clone())
                         .await;
                     let retry_result = agent
-                        .send_message_with_tools_and_callback(
+                        .send_message_with_tools_and_display(
                             new_id,
                             agent_input,
+                            Some(display_text.clone()),
                             None,
                             Some(cancel_token2),
                             Some(approval_cb2),

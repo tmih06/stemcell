@@ -491,6 +491,16 @@ pub(crate) async fn handle_message(
         Some(format!("[Replying to {reply_sender}: \"{reply_text}\"]"))
     });
 
+    // Build the human-readable display text (used for DB persistence + TUI).
+    // Owner DMs show the bare text; everything else gets a `Sender: text`
+    // prefix so multi-user channels stay readable in OpenCrabs without
+    // surfacing the LLM-only metadata brackets.
+    let display_text = if is_owner && msg.guild_id.is_none() {
+        content.clone()
+    } else {
+        format!("{}: {}", msg.author.name, content)
+    };
+
     // For non-owner users, prepend sender identity so the agent knows who
     // it's talking to and doesn't assume it's the owner.
     let agent_input = if !is_owner {
@@ -632,9 +642,10 @@ pub(crate) async fn handle_message(
 
     let discord_chat_id = msg.channel_id.get().to_string();
     let result = agent
-        .send_message_with_tools_and_callback(
+        .send_message_with_tools_and_display(
             session_id,
             agent_input,
+            Some(display_text),
             None,
             Some(cancel_token),
             Some(approval_cb),

@@ -648,6 +648,22 @@ pub(crate) async fn handle_message(
     // Extract replied-to message context so the agent knows what the user is referencing.
     let reply_context = extract_reply_context(&msg);
 
+    // Build the human-readable display text (used for DB persistence + TUI).
+    // Owner DMs keep the bare text; non-owner / group messages prefix with
+    // sender so OpenCrabs sessions stay readable without the LLM-only
+    // metadata brackets.
+    let display_text = if is_owner && !info.source.is_group {
+        content.clone()
+    } else {
+        let name = info.push_name.trim();
+        let sender = if name.is_empty() {
+            format!("+{}", phone)
+        } else {
+            name.to_string()
+        };
+        format!("{sender}: {content}")
+    };
+
     // For non-owner contacts, prepend sender identity so the agent knows who
     // it's talking to and doesn't assume it's the owner messaging themselves.
     let agent_input = if !is_owner {
@@ -900,9 +916,10 @@ pub(crate) async fn handle_message(
 
     let wa_chat_id = format!("{}", info.source.chat);
     let result = agent
-        .send_message_with_tools_and_callback(
+        .send_message_with_tools_and_display(
             session_id,
             agent_input,
+            Some(display_text),
             None,
             Some(cancel_token),
             Some(approval_cb),

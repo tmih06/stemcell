@@ -177,6 +177,10 @@ pub async fn process_comment(
         )
     };
 
+    // Display version: clean comment for the TUI session, prefixed with the
+    // commenter's name so multi-user Trello cards stay readable.
+    let display_text = format!("{commenter_name}: {text}");
+
     tracing::info!(
         "Trello: comment on '{}' from {} — routing to agent (session {})",
         card_name,
@@ -189,9 +193,10 @@ pub async fn process_comment(
         Arc::new(|_info| Box::pin(async { Ok((true, false)) }));
 
     let response = match agent
-        .send_message_with_tools_and_callback(
+        .send_message_with_tools_and_display(
             session_id,
             message,
+            Some(display_text),
             None,
             None,
             Some(approval_cb),

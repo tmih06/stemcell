@@ -141,6 +141,7 @@ impl AgentService {
         self.run_tool_loop(
             session_id,
             user_message,
+            None,
             model,
             cancel_token,
             None,
@@ -174,6 +175,46 @@ impl AgentService {
         self.run_tool_loop(
             session_id,
             user_message,
+            None,
+            model,
+            cancel_token,
+            override_approval_callback,
+            override_progress_callback,
+            channel,
+            channel_chat_id,
+        )
+        .await
+    }
+
+    /// Send a message and provide a separate human-readable `display_text`
+    /// for DB persistence and TUI/session display. The full `user_message`
+    /// (typically the channel-wrapped agent input with sender metadata,
+    /// reply context, group history, channel hints) still goes to the LLM
+    /// context so the agent retains all the information it needs, but the
+    /// chat history shown in the TUI mirrors what the user actually typed
+    /// in the channel.
+    ///
+    /// Channels (Telegram, Discord, Slack, WhatsApp, Trello) pass the raw
+    /// user text — or a lightly prefixed `Sender: text` for groups/non-DM
+    /// scenarios — as `display_text` so opening the session in OpenCrabs
+    /// no longer surfaces the LLM-only metadata brackets.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn send_message_with_tools_and_display(
+        &self,
+        session_id: Uuid,
+        user_message: String,
+        display_text: Option<String>,
+        model: Option<String>,
+        cancel_token: Option<CancellationToken>,
+        override_approval_callback: Option<ApprovalCallback>,
+        override_progress_callback: Option<ProgressCallback>,
+        channel: &str,
+        channel_chat_id: Option<&str>,
+    ) -> Result<AgentResponse> {
+        self.run_tool_loop(
+            session_id,
+            user_message,
+            display_text,
             model,
             cancel_token,
             override_approval_callback,

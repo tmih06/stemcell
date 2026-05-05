@@ -1162,6 +1162,15 @@ async fn handle_message(
         ""
     };
 
+    // Build the human-readable display text (used for DB persistence + TUI).
+    // Owner DMs show bare text; multi-user/group conversations get a
+    // `Sender: text` prefix so OpenCrabs sessions stay readable.
+    let display_text = if is_owner && is_dm {
+        content.clone()
+    } else {
+        format!("{user_name}: {content}")
+    };
+
     // For non-owner users, prepend sender identity so the agent knows who
     // it's talking to and doesn't assume it's the owner.
     let agent_input = if !is_owner {
@@ -1381,9 +1390,10 @@ async fn handle_message(
 
     let result = state
         .agent
-        .send_message_with_tools_and_callback(
+        .send_message_with_tools_and_display(
             session_id,
             agent_input,
+            Some(display_text),
             None,
             Some(cancel_token),
             Some(approval_cb),
