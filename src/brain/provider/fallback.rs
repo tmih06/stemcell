@@ -80,14 +80,13 @@ impl FallbackProvider {
         let mut best_ts: u64 = 0;
 
         for (i, fb) in fallbacks.iter().enumerate() {
-            if let Some(health) = crate::config::health::get_health(fb.name()) {
-                if let Some(ts) = health.last_success
-                    && ts > best_ts
-                    && health.consecutive_failures < primary_fails
-                {
-                    best_ts = ts;
-                    best_idx = Some(i + 1); // +1 because index 0 is primary
-                }
+            if let Some(health) = crate::config::health::get_health(fb.name())
+                && let Some(ts) = health.last_success
+                && ts > best_ts
+                && health.consecutive_failures < primary_fails
+            {
+                best_ts = ts;
+                best_idx = Some(i + 1); // +1 because index 0 is primary
             }
         }
 

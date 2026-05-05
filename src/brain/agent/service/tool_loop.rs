@@ -2226,6 +2226,17 @@ impl AgentService {
                         stream_retry_count,
                         MAX_STREAM_RETRIES,
                     );
+                    // Emit transient retry notification
+                    if let Some(ref cb) = progress_callback {
+                        cb(
+                            session_id,
+                            ProgressEvent::RetryAttempt {
+                                attempt: stream_retry_count,
+                                max: MAX_STREAM_RETRIES,
+                                reason: "stream dropped".to_string(),
+                            },
+                        );
+                    }
                     // Subtract the tokens we just counted — they'll be re-counted on retry
                     total_input_tokens -= response.usage.input_tokens;
                     total_output_tokens -= response.usage.output_tokens;

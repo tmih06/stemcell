@@ -131,6 +131,13 @@ pub enum ProgressEvent {
         to_model: String,
         reason: String,
     },
+    /// A retry attempt is in progress (stream drop, network error, etc.).
+    /// Transient notification — shows attempt count and reason.
+    RetryAttempt {
+        attempt: u32,
+        max: u32,
+        reason: String,
+    },
 }
 
 /// Callback for reporting progress during agent execution.
