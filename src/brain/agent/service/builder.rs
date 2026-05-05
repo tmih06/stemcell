@@ -480,6 +480,61 @@ impl AgentService {
             .unwrap_or_else(|| p.default_model().to_string())
     }
 
+    /// Persist a sticky-fallback {provider, model} pair onto the session row
+    /// in the DB. Called at every site that emits `ProviderSwitched` so the
+    /// pair is durable regardless of whether the consuming progress callback
+    /// (TUI / Slack / Telegram / Discord / WhatsApp) actually handles the
+    /// event — channel handlers historically only matched on ToolStarted /
+    /// IntermediateText / SelfHealingAlert and dropped ProviderSwitched on
+    /// the floor, leaving DB on the pre-fallback pair while
+    /// `session_providers[sid]` was already swapped to the fallback. The
+    /// next channel turn would then see DB-and-memory disagree, run
+    /// `sync_provider_for_session` to "restore" memory from stale DB, and
+    /// loop forever — eventually leaking a model from one provider's
+    /// catalogue onto another provider's session row when an update path
+    /// finally caught up out of order.
+    ///
+    /// Fire-and-forget: spawns a tokio task. The pair is written once; if
+    /// it fails, the next ProviderSwitched (or response writeback) will
+    /// retry. We don't block the streaming path on the DB roundtrip.
+    pub(crate) fn persist_sticky_pair(
+        &self,
+        session_id: Uuid,
+        provider_name: String,
+        model: String,
+    ) {
+        let context = self.context.clone();
+        tokio::spawn(async move {
+            let svc = crate::services::SessionService::new(context);
+            match svc.get_session(session_id).await {
+                Ok(Some(mut s)) => {
+                    s.provider_name = Some(provider_name.clone());
+                    s.model = Some(model.clone());
+                    if let Err(e) = svc.update_session(&s).await {
+                        tracing::warn!(
+                            "persist_sticky_pair[{}]: update_session failed: {}",
+                            session_id,
+                            e
+                        );
+                    }
+                }
+                Ok(None) => {
+                    tracing::warn!(
+                        "persist_sticky_pair[{}]: session not found in DB",
+                        session_id
+                    );
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        "persist_sticky_pair[{}]: get_session failed: {}",
+                        session_id,
+                        e
+                    );
+                }
+            }
+        });
+    }
+
     /// Get context window size for a given model.
     ///
     /// Delegates to `context_limit()` so custom OpenAI-compatible providers

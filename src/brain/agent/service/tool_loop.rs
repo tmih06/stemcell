@@ -1409,6 +1409,16 @@ impl AgentService {
                                     },
                                 );
                             }
+                            // Persist the locked {provider, model} pair to
+                            // DB independently of the progress callback —
+                            // channel handlers (Slack/Telegram/Discord/
+                            // WhatsApp) historically dropped ProviderSwitched
+                            // on the floor, leaving DB stale while
+                            // session_providers[sid] was already swapped to
+                            // the fallback. Stale DB → next turn's
+                            // sync_provider_for_session "restored" memory
+                            // from the wrong row → cross-pair leak.
+                            self.persist_sticky_pair(session_id, fb_name.clone(), fb_model.clone());
                             // Update the local model_name binding so any
                             // further iterations in THIS turn build
                             // requests with the fallback's model
@@ -1649,6 +1659,15 @@ impl AgentService {
                                             },
                                         );
                                     }
+                                    // Persist the locked pair to DB
+                                    // independently of the progress callback
+                                    // (channel cbs historically dropped this
+                                    // event — see persist_sticky_pair docs).
+                                    self.persist_sticky_pair(
+                                        session_id,
+                                        fb_name.to_string(),
+                                        fb_model.to_string(),
+                                    );
                                     break;
                                 }
                                 Err(fb_err) => {
@@ -1867,6 +1886,11 @@ impl AgentService {
                                             },
                                         );
                                     }
+                                    self.persist_sticky_pair(
+                                        session_id,
+                                        fb_name.clone(),
+                                        fb_model.clone(),
+                                    );
                                     break;
                                 }
                                 Err(fb_err) => {
@@ -1898,35 +1922,44 @@ impl AgentService {
             // performed during this turn so the user sees which provider/model
             // is now active. Fires at most once per swap.
             let rotated_this_iteration = self.provider_for_session(session_id).take_swap_event();
-            if let Some(ref swap) = rotated_this_iteration
-                && let Some(ref cb) = progress_callback
-            {
+            if let Some(ref swap) = rotated_this_iteration {
                 let reason = if swap.reason.is_empty() {
                     "unavailable".to_string()
                 } else {
                     swap.reason.clone()
                 };
-                cb(
-                    session_id,
-                    ProgressEvent::SelfHealingAlert {
-                        message: format!(
-                            "Switched to {}/{} — {}/{} {}",
-                            swap.to_name, swap.to_model, swap.from_name, swap.from_model, reason
-                        ),
-                    },
-                );
-                // Structured follow-up so UIs can update the session footer
-                // without parsing the alert text above.
-                cb(
-                    session_id,
-                    ProgressEvent::ProviderSwitched {
-                        from_name: swap.from_name.clone(),
-                        from_model: swap.from_model.clone(),
-                        to_name: swap.to_name.clone(),
-                        to_model: swap.to_model.clone(),
-                        reason,
-                    },
-                );
+                if let Some(ref cb) = progress_callback {
+                    cb(
+                        session_id,
+                        ProgressEvent::SelfHealingAlert {
+                            message: format!(
+                                "Switched to {}/{} — {}/{} {}",
+                                swap.to_name,
+                                swap.to_model,
+                                swap.from_name,
+                                swap.from_model,
+                                reason
+                            ),
+                        },
+                    );
+                    // Structured follow-up so UIs can update the session footer
+                    // without parsing the alert text above.
+                    cb(
+                        session_id,
+                        ProgressEvent::ProviderSwitched {
+                            from_name: swap.from_name.clone(),
+                            from_model: swap.from_model.clone(),
+                            to_name: swap.to_name.clone(),
+                            to_model: swap.to_model.clone(),
+                            reason,
+                        },
+                    );
+                }
+                // Persist the locked pair to DB even when no progress
+                // callback is wired (e.g. a2a, RSI, subagent paths) and
+                // independently of whether the consuming UI handles
+                // ProviderSwitched.
+                self.persist_sticky_pair(session_id, swap.to_name.clone(), swap.to_model.clone());
             }
 
             // CLI providers return "Prompt is too long" as a successful response
