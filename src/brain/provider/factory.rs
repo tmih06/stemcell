@@ -376,7 +376,7 @@ pub async fn create_provider_with_warning(
                     fallback_providers.len()
                 );
                 Ok((
-                    Arc::new(super::FallbackProvider::new(provider, fallback_providers)),
+                    Arc::new(super::FallbackProvider::new_with_health(provider, fallback_providers)),
                     warning,
                 ))
             }
