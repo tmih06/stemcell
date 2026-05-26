@@ -356,8 +356,13 @@ impl AgentService {
                 );
                 match title_provider.complete(title_request).await {
                     Ok(response) => {
-                        let title_text = Self::extract_text_from_response(&response);
-                        let clean_title = Self::clean_auto_title(&title_text);
+                        // Use the thinking-aware extractor — reasoning
+                        // models sometimes return ONLY a Thinking block
+                        // for short prompts and never produce a Text
+                        // block. The old `extract_text_from_response`
+                        // returned "" in that case, sessions stayed
+                        // stuck on default titles forever (issue #121).
+                        let clean_title = Self::extract_title_candidate(&response);
                         if !clean_title.is_empty() {
                             // Preserve channel prefix if it existed
                             let prefix = Self::extract_channel_prefix(&old_title);

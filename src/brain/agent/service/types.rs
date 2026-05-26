@@ -251,6 +251,43 @@ impl AgentService {
         text
     }
 
+    /// Extract a usable title candidate from an LLM response, falling
+    /// through several shapes some providers use for short prompts.
+    /// Returns the cleaned candidate (already trimmed, dequoted, capped
+    /// at 60 chars) or empty string if nothing usable was found.
+    ///
+    /// Order:
+    /// 1. Concatenated `ContentBlock::Text` blocks (the normal path).
+    /// 2. `ContentBlock::Thinking` content. Reasoning models like
+    ///    `qwen-3.7-max-preview-thinking` sometimes return ONLY a
+    ///    Thinking block for very short prompts ("generate a title")
+    ///    and never finalize a Text block. Issue #121: auto-title ran
+    ///    fine in isolation but produced empty titles on the reporter's
+    ///    setup, so sessions stayed stuck on the default
+    ///    channel-generated name forever.
+    ///
+    /// For the Thinking fallback we extract the last quoted phrase if
+    /// any (most likely the candidate the model settled on), otherwise
+    /// take the last short sentence trimmed to title length.
+    pub(crate) fn extract_title_candidate(
+        response: &crate::brain::provider::LLMResponse,
+    ) -> String {
+        let from_text = Self::clean_auto_title(&Self::extract_text_from_response(response));
+        if !from_text.is_empty() {
+            return from_text;
+        }
+        for content in &response.content {
+            if let crate::brain::provider::ContentBlock::Thinking { thinking, .. } = content {
+                let cand = pluck_title_from_thinking(thinking);
+                let cleaned = Self::clean_auto_title(&cand);
+                if !cleaned.is_empty() {
+                    return cleaned;
+                }
+            }
+        }
+        String::new()
+    }
+
     /// Post-process an LLM-generated auto-title: trim whitespace, strip
     /// surrounding quotes, and cap at 60 characters.
     pub(crate) fn clean_auto_title(raw: &str) -> String {
@@ -337,4 +374,54 @@ impl AgentService {
         }
         ""
     }
+}
+
+/// Pull a likely title out of a Thinking block. Reasoning models that
+/// answer "generate a title" without producing a Text block typically
+/// leave one or more candidate titles inside their thinking. Heuristic:
+/// the LAST quoted phrase (single or double quotes) is usually the
+/// model's settled choice; failing that, the LAST short sentence.
+fn pluck_title_from_thinking(thinking: &str) -> String {
+    let trimmed = thinking.trim();
+    if trimmed.is_empty() {
+        return String::new();
+    }
+
+    // Last quoted phrase. Try double quotes first, then single.
+    for delim in ['"', '\''] {
+        let mut last: Option<String> = None;
+        let mut chars = trimmed.char_indices();
+        while let Some((start, c)) = chars.next() {
+            if c != delim {
+                continue;
+            }
+            // Find the next matching delim.
+            for (end, c2) in chars.by_ref() {
+                if c2 == delim {
+                    let inner = &trimmed[start + delim.len_utf8()..end];
+                    if !inner.trim().is_empty() && inner.chars().count() <= 60 {
+                        last = Some(inner.trim().to_string());
+                    }
+                    break;
+                }
+            }
+        }
+        if let Some(s) = last {
+            return s;
+        }
+    }
+
+    // Fallback: last short sentence. Split on `. ` `! ` `? ` and take
+    // the last segment under 60 chars.
+    let mut sentences: Vec<&str> = trimmed
+        .split(['.', '!', '?', '\n'])
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+        .collect();
+    while let Some(last) = sentences.pop() {
+        if last.chars().count() <= 60 {
+            return last.to_string();
+        }
+    }
+    String::new()
 }
