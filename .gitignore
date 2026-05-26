@@ -31,6 +31,7 @@ opencrab.db-wal
 # Testing
 /tests/fixtures/temp/
 coverage/
+cobertura.xml
 *.profraw
 *.profdata
 
