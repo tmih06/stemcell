@@ -20,7 +20,12 @@ pub fn build_session_title(
 }
 
 /// Legacy title format (pre suffix) for migration lookups.
-pub fn build_legacy_session_title(is_dm: bool, user_name: &str, user_id: i64, chat_title: &str) -> String {
+pub fn build_legacy_session_title(
+    is_dm: bool,
+    user_name: &str,
+    user_id: i64,
+    chat_title: &str,
+) -> String {
     if is_dm {
         format!("Telegram: DM {user_name} ({user_id})")
     } else {
@@ -33,7 +38,10 @@ pub fn chat_id_suffix(chat_id: i64) -> String {
 }
 
 /// True when a session exceeded the configured idle window (same rule as handler suffix path).
-pub fn session_idle_expired(updated_at: chrono::DateTime<chrono::Utc>, idle_hours: Option<f64>) -> bool {
+pub fn session_idle_expired(
+    updated_at: chrono::DateTime<chrono::Utc>,
+    idle_hours: Option<f64>,
+) -> bool {
     idle_hours.is_some_and(|h| {
         let elapsed = (chrono::Utc::now() - updated_at).num_seconds();
         elapsed > (h * 3600.0) as i64
@@ -41,6 +49,15 @@ pub fn session_idle_expired(updated_at: chrono::DateTime<chrono::Utc>, idle_hour
 }
 
 /// Handler resolve policy: explicit chat binding wins over suffix `updated_at` winner.
+///
+/// Cold-start behaviour: the `chat_sessions` map that feeds `chat_bound`
+/// is in-memory and process-scoped — every opencrabs restart starts the
+/// map empty. The first message in any chat after a restart therefore
+/// returns `ResolveSource::Suffix` (no binding yet) and falls through to
+/// `find_session_by_title_suffix`. That's correct behaviour, just worth
+/// being aware of when reading the policy in isolation: an empty map
+/// doesn't mean "create a new session", it means "look up the existing
+/// row by suffix".
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ResolveSource {
     ChatBound,
@@ -92,18 +109,12 @@ fn is_telegram_group_session_title(title: &str) -> bool {
 }
 
 fn telegram_middle_label(title: &str) -> String {
-    let body = title
-        .strip_prefix("Telegram: ")
-        .unwrap_or(title)
-        .trim();
+    let body = title.strip_prefix("Telegram: ").unwrap_or(title).trim();
     let suffix = crate::brain::agent::service::AgentService::extract_chat_id_suffix(title);
     if suffix.is_empty() {
         return body.to_string();
     }
-    body.strip_suffix(suffix)
-        .unwrap_or(body)
-        .trim()
-        .to_string()
+    body.strip_suffix(suffix).unwrap_or(body).trim().to_string()
 }
 
 #[cfg(test)]
@@ -120,7 +131,7 @@ mod tests {
     fn should_not_clobber_auto_titled_dm() {
         let auto = "Telegram: Fix deploy [chat:133526395]";
         let template = build_session_title(true, "Alexey", 133526395, "", 133526395);
-        assert!(!should_refresh_label(auto, template));
+        assert!(!should_refresh_label(auto, &template));
     }
 
     #[test]

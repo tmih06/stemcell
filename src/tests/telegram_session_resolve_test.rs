@@ -1,15 +1,15 @@
 //! Integration tests for Telegram session title + label drift (issue #121).
 
-use crate::channels::telegram::session_resolve::{
-    build_session_title, chat_id_suffix, choose_resolve_source, session_idle_expired,
-    should_refresh_label, ResolveSource,
-};
 use crate::channels::telegram::TelegramState;
-use uuid::Uuid;
+use crate::channels::telegram::session_resolve::{
+    ResolveSource, build_session_title, chat_id_suffix, choose_resolve_source,
+    session_idle_expired, should_refresh_label,
+};
 use crate::db::Database;
 use crate::db::models::Session;
 use crate::db::repository::SessionRepository;
 use crate::services::{ServiceContext, SessionService};
+use uuid::Uuid;
 
 async fn fresh_repo() -> (Database, SessionRepository) {
     let db = Database::connect_in_memory()
@@ -39,7 +39,11 @@ async fn telegram_state_chat_map_survives_suffix_competition() {
     state.register_session_chat(bound, chat_id).await;
     assert_eq!(state.chat_session(chat_id).await, Some(bound));
     assert_eq!(
-        choose_resolve_source(state.chat_session(chat_id).await, false, Some(suffix_winner)),
+        choose_resolve_source(
+            state.chat_session(chat_id).await,
+            false,
+            Some(suffix_winner)
+        ),
         ResolveSource::ChatBound
     );
 }
@@ -91,10 +95,7 @@ async fn suffix_lookup_after_switch_touch_picks_switched_row() {
 #[tokio::test]
 async fn auto_titled_title_survives_should_refresh_check() {
     let template = build_session_title(true, "Alice", 1, "", 99);
-    let auto_titled = format!(
-        "Telegram: Deploy fix {}",
-        chat_id_suffix(99)
-    );
+    let auto_titled = format!("Telegram: Deploy fix {}", chat_id_suffix(99));
     assert!(!should_refresh_label(&auto_titled, &template));
 }
 
@@ -156,19 +157,13 @@ async fn chat_bound_idle_archives_and_creates_new_session() {
         .expect("create replacement");
 
     assert_ne!(new_session.id, bound.id);
-    let archived = svc
-        .get_session(bound.id)
-        .await
-        .expect("get")
-        .expect("row");
+    let archived = svc.get_session(bound.id).await.expect("get").expect("row");
     assert!(archived.is_archived());
 }
 
 #[tokio::test]
 async fn service_update_session_title_preserves_suffix() {
-    let db = Database::connect_in_memory()
-        .await
-        .expect("connect");
+    let db = Database::connect_in_memory().await.expect("connect");
     db.run_migrations().await.expect("migrations");
     let ctx = ServiceContext::new(db.pool().clone());
     let svc = SessionService::new(ctx);
@@ -184,7 +179,11 @@ async fn service_update_session_title_preserves_suffix() {
         .await
         .expect("rename");
 
-    let loaded = svc.get_session(session.id).await.expect("get").expect("row");
+    let loaded = svc
+        .get_session(session.id)
+        .await
+        .expect("get")
+        .expect("row");
     assert_eq!(loaded.title.as_deref(), Some(new_title.as_str()));
     assert!(
         loaded.title.as_ref().unwrap().ends_with("[chat:77]"),

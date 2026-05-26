@@ -3,8 +3,8 @@
 //! Processes incoming messages: text, voice (STT/TTS), photos, image documents, allowlist enforcement.
 //! Supports live streaming (edit-based) and Telegram-native approval inline keyboards.
 
-use super::session_resolve;
 use super::TelegramState;
+use super::session_resolve;
 use crate::brain::agent::{AgentService, ProgressCallback, ProgressEvent};
 use crate::config::{Config, RespondTo};
 use crate::db::ChannelMessageRepository;
@@ -882,16 +882,11 @@ pub(crate) async fn handle_message(
     // lookup. The chat_id suffix prevents that.
     let chat_id = msg.chat.id.0;
     let chat_id_suffix = session_resolve::chat_id_suffix(chat_id);
-    let session_title = session_resolve::build_session_title(
-        is_dm,
-        &user.first_name,
-        user_id,
-        &chat_title,
-        chat_id,
-    );
+    let session_title =
+        session_resolve::build_session_title(is_dm, &user.first_name, user_id, chat_title, chat_id);
     // Legacy title format used before the chat_id suffix was added.
     let legacy_title =
-        session_resolve::build_legacy_session_title(is_dm, &user.first_name, user_id, &chat_title);
+        session_resolve::build_legacy_session_title(is_dm, &user.first_name, user_id, chat_title);
 
     let session_id = {
         // Resolve policy (chat map → suffix → create): see
@@ -958,58 +953,118 @@ pub(crate) async fn handle_message(
                 bound_id
             }
         } else {
-        // 1) Stable lookup: any session whose title ends with the chat_id
-        //    suffix is THIS chat regardless of how the label has changed.
-        // 2) Legacy fallback: pre-suffix sessions match the bare title.
-        //    On hit we update the row to the new format so subsequent
-        //    lookups go through the suffix path directly.
-        let mut existing = session_svc
-            .find_session_by_title_suffix(&chat_id_suffix)
-            .await
-            .ok()
-            .flatten();
+            // 1) Stable lookup: any session whose title ends with the chat_id
+            //    suffix is THIS chat regardless of how the label has changed.
+            // 2) Legacy fallback: pre-suffix sessions match the bare title.
+            //    On hit we update the row to the new format so subsequent
+            //    lookups go through the suffix path directly.
+            let mut existing = session_svc
+                .find_session_by_title_suffix(&chat_id_suffix)
+                .await
+                .ok()
+                .flatten();
 
-        if existing.is_none()
-            && let Ok(Some(legacy)) = session_svc.find_session_by_title(&legacy_title).await
-        {
-            tracing::info!(
-                "Telegram: forward-migrating legacy session {} '{}' → '{}'",
-                legacy.id,
-                legacy.title.as_deref().unwrap_or(""),
-                session_title
-            );
-            let mut migrated = legacy.clone();
-            migrated.title = Some(session_title.clone());
-            if let Err(e) = session_svc.update_session(&migrated).await {
-                tracing::warn!(
-                    "Telegram: failed to forward-migrate session {} title: {}",
+            if existing.is_none()
+                && let Ok(Some(legacy)) = session_svc.find_session_by_title(&legacy_title).await
+            {
+                tracing::info!(
+                    "Telegram: forward-migrating legacy session {} '{}' → '{}'",
                     legacy.id,
-                    e
+                    legacy.title.as_deref().unwrap_or(""),
+                    session_title
                 );
-                existing = Some(legacy);
-            } else {
-                existing = Some(migrated);
-            }
-        }
-
-        if let Some(session) = existing {
-            if session_resolve::session_idle_expired(session.updated_at, idle_timeout_hours) {
-                if let Err(e) = session_svc.archive_session(session.id).await {
-                    tracing::error!("Telegram: failed to archive session {}: {}", session.id, e);
+                let mut migrated = legacy.clone();
+                migrated.title = Some(session_title.clone());
+                if let Err(e) = session_svc.update_session(&migrated).await {
+                    tracing::warn!(
+                        "Telegram: failed to forward-migrate session {} title: {}",
+                        legacy.id,
+                        e
+                    );
+                    existing = Some(legacy);
+                } else {
+                    existing = Some(migrated);
                 }
+            }
+
+            if let Some(session) = existing {
+                if session_resolve::session_idle_expired(session.updated_at, idle_timeout_hours) {
+                    if let Err(e) = session_svc.archive_session(session.id).await {
+                        tracing::error!(
+                            "Telegram: failed to archive session {}: {}",
+                            session.id,
+                            e
+                        );
+                    }
+                    match crate::channels::session_init::create_channel_session(
+                        &session_svc,
+                        Some(session_title.clone()),
+                    )
+                    .await
+                    {
+                        Ok(new_session) => {
+                            tracing::info!(
+                                "Telegram: idle-timeout reset — new session {} for \"{}\"",
+                                new_session.id,
+                                session_title,
+                            );
+                            new_session.id
+                        }
+                        Err(e) => {
+                            tracing::error!("Telegram: failed to create session: {}", e);
+                            bot.send_message(msg.chat.id, "Internal error creating session.")
+                                .await?;
+                            return Ok(());
+                        }
+                    }
+                } else {
+                    // Label drift: refresh display label when appropriate (issue #121:
+                    // do not revert auto-titled DM sessions to the default template).
+                    if session_resolve::should_refresh_label(
+                        session.title.as_deref().unwrap_or(""),
+                        &session_title,
+                    ) {
+                        let mut renamed = session.clone();
+                        let prev_title = renamed.title.clone().unwrap_or_default();
+                        renamed.title = Some(session_title.clone());
+                        if let Err(e) = session_svc.update_session(&renamed).await {
+                            tracing::warn!(
+                                "Telegram: failed to update renamed session {} title ({} → {}): {}",
+                                renamed.id,
+                                prev_title,
+                                session_title,
+                                e
+                            );
+                        } else {
+                            tracing::info!(
+                                "Telegram: chat rename — session {} title '{}' → '{}'",
+                                renamed.id,
+                                prev_title,
+                                session_title
+                            );
+                        }
+                    }
+                    tracing::debug!(
+                        "Telegram: reusing existing session {} for \"{}\"",
+                        session.id,
+                        session_title,
+                    );
+                    session.id
+                }
+            } else {
                 match crate::channels::session_init::create_channel_session(
                     &session_svc,
                     Some(session_title.clone()),
                 )
                 .await
                 {
-                    Ok(new_session) => {
+                    Ok(session) => {
                         tracing::info!(
-                            "Telegram: idle-timeout reset — new session {} for \"{}\"",
-                            new_session.id,
+                            "Telegram: created new session {} for \"{}\"",
+                            session.id,
                             session_title,
                         );
-                        new_session.id
+                        session.id
                     }
                     Err(e) => {
                         tracing::error!("Telegram: failed to create session: {}", e);
@@ -1018,63 +1073,7 @@ pub(crate) async fn handle_message(
                         return Ok(());
                     }
                 }
-            } else {
-                // Label drift: refresh display label when appropriate (issue #121:
-                // do not revert auto-titled DM sessions to the default template).
-                if session_resolve::should_refresh_label(
-                    session.title.as_deref().unwrap_or(""),
-                    &session_title,
-                ) {
-                    let mut renamed = session.clone();
-                    let prev_title = renamed.title.clone().unwrap_or_default();
-                    renamed.title = Some(session_title.clone());
-                    if let Err(e) = session_svc.update_session(&renamed).await {
-                        tracing::warn!(
-                            "Telegram: failed to update renamed session {} title ({} → {}): {}",
-                            renamed.id,
-                            prev_title,
-                            session_title,
-                            e
-                        );
-                    } else {
-                        tracing::info!(
-                            "Telegram: chat rename — session {} title '{}' → '{}'",
-                            renamed.id,
-                            prev_title,
-                            session_title
-                        );
-                    }
-                }
-                tracing::debug!(
-                    "Telegram: reusing existing session {} for \"{}\"",
-                    session.id,
-                    session_title,
-                );
-                session.id
             }
-        } else {
-            match crate::channels::session_init::create_channel_session(
-                &session_svc,
-                Some(session_title.clone()),
-            )
-            .await
-            {
-                Ok(session) => {
-                    tracing::info!(
-                        "Telegram: created new session {} for \"{}\"",
-                        session.id,
-                        session_title,
-                    );
-                    session.id
-                }
-                Err(e) => {
-                    tracing::error!("Telegram: failed to create session: {}", e);
-                    bot.send_message(msg.chat.id, "Internal error creating session.")
-                        .await?;
-                    return Ok(());
-                }
-            }
-        }
         }
     };
 
@@ -1154,7 +1153,7 @@ pub(crate) async fn handle_message(
                     is_dm,
                     &user.first_name,
                     user_id,
-                    &chat_title,
+                    chat_title,
                     chat_id,
                 );
                 // Archive the previous session on /new, except for the owner —
