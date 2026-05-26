@@ -184,7 +184,15 @@ async fn run_auto_title_round_trip(
 }
 
 #[tokio::test]
-async fn auto_title_end_to_end_covers_text_and_thinking_only_responses() {
+async fn auto_title_end_to_end_covers_all_scenarios() {
+    // Three phases run inside a SINGLE #[tokio::test] because adding more
+    // tokio tests to this file makes the first one fail with
+    // `Database("Failed to create message")` — even when each test creates
+    // its own UUID-keyed in-memory DB, there is enough shared/global state
+    // somewhere in the AgentService stack that between-test isolation is
+    // not reliable for this entry-point. Until that root cause is found,
+    // all scenarios are folded here and run sequentially.
+
     // Phase 1 — Normal provider with Text response.
     let default_title = "Telegram: DM TestUser (133526395) [chat:133526395]";
     let title = run_auto_title_round_trip(Arc::new(AutoTitleMockProvider), default_title)
@@ -228,6 +236,39 @@ async fn auto_title_end_to_end_covers_text_and_thinking_only_responses() {
     assert!(
         title2.ends_with("[chat:133526395]"),
         "Phase 2: chat suffix must be preserved, got: {title2:?}",
+    );
+
+    // Phase 3 — Two consecutive messages. Regression test for the
+    // label-drift clobber bug fixed by PR #123. Before the fix, the
+    // handler did `if session.title != computed_default { overwrite }`,
+    // so every subsequent message reverted the auto-titled name to the
+    // default template. This phase exercises the agent-level flow
+    // (which doesn't run the channel handler's label-drift code), so
+    // it primarily proves that the agent path doesn't re-fire
+    // auto-title on a session that already has a non-default title.
+    // The Telegram handler's version of this guard lives in
+    // `should_refresh_label` and is covered by
+    // `tests::telegram_session_resolve_test`.
+    let initial = "Telegram: DM TestUser (133526395) [chat:133526395]";
+    let (after_first, after_second) =
+        run_two_message_round_trip(Arc::new(AutoTitleMockProvider), initial).await;
+
+    let renamed = after_first.expect("Phase 3: auto-title must rename on turn 1");
+    assert_ne!(
+        renamed, initial,
+        "Phase 3: turn 1: title should have changed off the default",
+    );
+
+    let final_title = after_second.expect("Phase 3: session must exist after turn 2");
+    assert_eq!(
+        final_title, renamed,
+        "Phase 3: turn 2 must NOT clobber the auto-titled name. Bug from PR #123 \
+         (label-drift clobber) would surface here as a revert to the default \
+         template.",
+    );
+    assert_ne!(
+        final_title, initial,
+        "Phase 3: turn 2 must not revert to the original default channel-generated title",
     );
 }
 
@@ -305,44 +346,6 @@ async fn run_two_message_round_trip(
     let after_second = s.title.clone();
 
     (after_first, after_second)
-}
-
-#[tokio::test]
-async fn auto_titled_name_survives_second_message_round_trip() {
-    // Regression test for the label-drift clobber bug fixed by PR #123.
-    // Before the fix, the handler did `if session.title !=
-    // computed_default { overwrite }`, so on every subsequent message
-    // the auto-titled name was reverted to the default template
-    // ("Telegram: DM <name> ... [chat:<id>]"). This test would have
-    // caught that bug if it had existed before the PR.
-    //
-    // Note: this exercises the agent-level flow (which doesn't run
-    // the channel handler's label-drift code), so it primarily proves
-    // that the agent path doesn't re-fire auto-title on a session
-    // that already has a non-default title. The Telegram handler's
-    // version of this guard lives in `should_refresh_label` and is
-    // covered by `tests::telegram_session_resolve_test`.
-    let initial = "Telegram: DM TestUser (133526395) [chat:133526395]";
-    let (after_first, after_second) =
-        run_two_message_round_trip(Arc::new(AutoTitleMockProvider), initial).await;
-
-    let renamed = after_first.expect("auto-title must rename on turn 1");
-    assert_ne!(
-        renamed, initial,
-        "turn 1: title should have changed off the default",
-    );
-
-    let final_title = after_second.expect("session must exist after turn 2");
-    assert_eq!(
-        final_title, renamed,
-        "turn 2 must NOT clobber the auto-titled name. Bug from PR #123 \
-         (label-drift clobber) would surface here as a revert to the default \
-         template.",
-    );
-    assert_ne!(
-        final_title, initial,
-        "turn 2 must not revert to the original default channel-generated title",
-    );
 }
 
 /// Provider that mimics qwen-3.7-max-preview-thinking on a short prompt:
