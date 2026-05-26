@@ -158,18 +158,23 @@ async fn idle_session_archives_and_creates_new() {
         .expect("create");
 
     // Backdate updated_at via direct SQL since update_session always stamps now().
-    let conn = svc.pool().get().await.expect("conn");
-    let session_id_str = created.id.to_string();
-    let backdated_ts = (chrono::Utc::now() - chrono::Duration::hours(2)).timestamp();
-    conn.interact(move |c| {
-        c.execute(
-            "UPDATE sessions SET updated_at = ?1 WHERE id = ?2",
-            params![backdated_ts, session_id_str],
-        )
-    })
-    .await
-    .expect("interact")
-    .expect("backdate");
+    // Scope the connection handle tight — the in-memory pool is single-conn
+    // (see Database::connect_in_memory), so holding `conn` across the
+    // resolve_or_create_channel_session call below would deadlock.
+    {
+        let conn = svc.pool().get().await.expect("conn");
+        let session_id_str = created.id.to_string();
+        let backdated_ts = (chrono::Utc::now() - chrono::Duration::hours(2)).timestamp();
+        conn.interact(move |c| {
+            c.execute(
+                "UPDATE sessions SET updated_at = ?1 WHERE id = ?2",
+                params![backdated_ts, session_id_str],
+            )
+        })
+        .await
+        .expect("interact")
+        .expect("backdate");
+    }
 
     let resolved = resolve_or_create_channel_session(
         &svc,
