@@ -45,11 +45,10 @@ async fn resolves_existing_session_by_suffix() {
         .await
         .expect("create");
 
-    let resolved = resolve_or_create_channel_session(
-        &svc, &suffix, &legacy, &title, None, "Discord",
-    )
-    .await
-    .expect("resolve");
+    let resolved =
+        resolve_or_create_channel_session(&svc, &suffix, &legacy, &title, None, "Discord")
+            .await
+            .expect("resolve");
     assert_eq!(resolved, created.id);
 }
 
@@ -70,11 +69,9 @@ async fn suffix_lookup_survives_auto_rename() {
     renamed.title = Some(format!("Deploy planning {suffix}"));
     svc.update_session(&renamed).await.expect("rename");
 
-    let resolved = resolve_or_create_channel_session(
-        &svc, &suffix, &legacy, &title, None, "Slack",
-    )
-    .await
-    .expect("resolve");
+    let resolved = resolve_or_create_channel_session(&svc, &suffix, &legacy, &title, None, "Slack")
+        .await
+        .expect("resolve");
     assert_eq!(
         resolved, created.id,
         "auto-rename must not orphan the session"
@@ -94,11 +91,10 @@ async fn forward_migrates_legacy_pre_suffix_row() {
         .await
         .expect("create legacy");
 
-    let resolved = resolve_or_create_channel_session(
-        &svc, &suffix, &legacy, &title, None, "WhatsApp",
-    )
-    .await
-    .expect("resolve");
+    let resolved =
+        resolve_or_create_channel_session(&svc, &suffix, &legacy, &title, None, "WhatsApp")
+            .await
+            .expect("resolve");
 
     assert_eq!(resolved, created.id, "must reuse legacy row, not duplicate");
 
@@ -114,11 +110,10 @@ async fn forward_migrates_legacy_pre_suffix_row() {
     );
 
     // Second call resolves via suffix path now that the row was migrated.
-    let resolved2 = resolve_or_create_channel_session(
-        &svc, &suffix, &legacy, &title, None, "WhatsApp",
-    )
-    .await
-    .expect("resolve again");
+    let resolved2 =
+        resolve_or_create_channel_session(&svc, &suffix, &legacy, &title, None, "WhatsApp")
+            .await
+            .expect("resolve again");
     assert_eq!(resolved2, created.id);
 }
 
@@ -129,11 +124,10 @@ async fn creates_when_no_match_exists() {
     let legacy = "Discord: DM Alice (999)".to_string();
     let title = format!("{legacy} {suffix}");
 
-    let resolved = resolve_or_create_channel_session(
-        &svc, &suffix, &legacy, &title, None, "Discord",
-    )
-    .await
-    .expect("resolve creates");
+    let resolved =
+        resolve_or_create_channel_session(&svc, &suffix, &legacy, &title, None, "Discord")
+            .await
+            .expect("resolve creates");
 
     let row = svc
         .get_session(resolved)

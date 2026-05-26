@@ -175,6 +175,12 @@ fn registry_register_overwrites_duplicate() {
     reg.register("hermes", Some("v1"));
     let created_v1 = reg.profiles["hermes"].created_at.clone();
 
+    // `register` stamps `Utc::now().to_rfc3339()`. In release mode two
+    // back-to-back calls can land in the same nanosecond, producing
+    // identical timestamps and flaking the `assert_ne!` below. A 1 ms
+    // sleep guarantees the second timestamp is strictly later.
+    std::thread::sleep(std::time::Duration::from_millis(1));
+
     reg.register("hermes", Some("v2"));
     assert_eq!(reg.profiles["hermes"].description.as_deref(), Some("v2"));
     assert_ne!(reg.profiles["hermes"].created_at, created_v1);
