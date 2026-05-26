@@ -766,65 +766,39 @@ async fn handle_message(
     }
 
     // Sessions are ALWAYS isolated per chat — owner DMs no longer share the
-    // TUI session. DMs keyed by user_id; channels keyed by channel_id.
+    // TUI session. DMs keyed by user_id; channels keyed by channel_id. Title
+    // carries a stable `[chat:slack-…]` suffix so auto-rename rewrites the
+    // visible label without orphaning the row (issue #121 port of PR #123).
     let session_id = {
-        let session_title = if is_dm {
-            format!("Slack: DM {}", user_id)
-        } else {
-            format!("Slack: #{}", channel_id)
-        };
-
-        // Look up existing session from DB
-        let existing = state
-            .session_svc
-            .find_session_by_title(&session_title)
-            .await
-            .ok()
-            .flatten();
-
-        if let Some(session) = existing {
-            // Check idle timeout
-            if idle_timeout_hours.is_some_and(|h| {
-                let elapsed = (chrono::Utc::now() - session.updated_at).num_seconds();
-                elapsed > (h * 3600.0) as i64
-            }) {
-                if let Err(e) = state.session_svc.archive_session(session.id).await {
-                    tracing::error!("Slack: failed to archive session {}: {}", session.id, e);
-                }
-                match crate::channels::session_init::create_channel_session(
-                    &state.session_svc,
-                    Some(session_title),
-                )
-                .await
-                {
-                    Ok(new_session) => new_session.id,
-                    Err(e) => {
-                        tracing::error!("Slack: failed to create session: {}", e);
-                        return;
-                    }
-                }
-            } else {
-                session.id
-            }
-        } else {
-            match crate::channels::session_init::create_channel_session(
-                &state.session_svc,
-                Some(session_title),
+        use crate::channels::session_resolve;
+        let (id_str, legacy_title) = if is_dm {
+            (
+                format!("slack-dm-{}", user_id),
+                format!("Slack: DM {}", user_id),
             )
-            .await
-            {
-                Ok(session) => {
-                    tracing::info!(
-                        "Slack: created new channel session {} for {}",
-                        session.id,
-                        if is_dm { &user_id } else { &channel_id }
-                    );
-                    session.id
-                }
-                Err(e) => {
-                    tracing::error!("Slack: failed to create session: {}", e);
-                    return;
-                }
+        } else {
+            (
+                format!("slack-{}", channel_id),
+                format!("Slack: #{}", channel_id),
+            )
+        };
+        let suffix = session_resolve::chat_id_suffix(&id_str);
+        let session_title = format!("{legacy_title} {suffix}");
+
+        match session_resolve::resolve_or_create_channel_session(
+            &state.session_svc,
+            &suffix,
+            &legacy_title,
+            &session_title,
+            idle_timeout_hours,
+            "Slack",
+        )
+        .await
+        {
+            Ok(id) => id,
+            Err(e) => {
+                tracing::error!("Slack: failed to resolve session: {}", e);
+                return;
             }
         }
     };
@@ -1034,24 +1008,42 @@ async fn handle_message(
             ChannelCommand::NewSession => {
                 // MUST match the per-message resolver format above —
                 // DM titles include the "DM" prefix so /new and the
-                // next typed message land on the same row (issue #89).
-                let session_title = if is_dm {
-                    format!("Slack: DM {}", user_id)
+                // next typed message land on the same row (issue #89). Both
+                // the suffix and legacy lookups run so auto-titled rows still
+                // get archived (issue #121).
+                use crate::channels::session_resolve;
+                let (id_str, legacy_title) = if is_dm {
+                    (
+                        format!("slack-dm-{}", user_id),
+                        format!("Slack: DM {}", user_id),
+                    )
                 } else {
-                    format!("Slack: #{}", channel_id)
+                    (
+                        format!("slack-{}", channel_id),
+                        format!("Slack: #{}", channel_id),
+                    )
                 };
-                // Archive the previous session on /new, except for the owner —
-                // owner sessions stay non-archived so they remain visible in
-                // /sessions for history review. Guest sessions get archived
-                // so the next title lookup resolves cleanly to the new row.
-                if !is_owner
-                    && let Ok(Some(old)) = state
+                let suffix = session_resolve::chat_id_suffix(&id_str);
+                let session_title = format!("{legacy_title} {suffix}");
+                if !is_owner {
+                    let prior = match state
                         .session_svc
-                        .find_session_by_title(&session_title)
+                        .find_session_by_title_suffix(&suffix)
                         .await
-                    && let Err(e) = state.session_svc.archive_session(old.id).await
-                {
-                    tracing::error!("Slack: failed to archive old session {}: {}", old.id, e);
+                    {
+                        Ok(Some(s)) => Some(s),
+                        _ => state
+                            .session_svc
+                            .find_session_by_title(&legacy_title)
+                            .await
+                            .ok()
+                            .flatten(),
+                    };
+                    if let Some(old) = prior
+                        && let Err(e) = state.session_svc.archive_session(old.id).await
+                    {
+                        tracing::error!("Slack: failed to archive old session {}: {}", old.id, e);
+                    }
                 }
                 match crate::channels::session_init::create_channel_session(
                     &state.session_svc,

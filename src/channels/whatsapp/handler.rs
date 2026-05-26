@@ -522,54 +522,30 @@ pub(crate) async fn handle_message(
             .unwrap_or(false);
 
     // Sessions are ALWAYS isolated per phone — owner no longer shares the
-    // TUI session. Each phone gets its own session in the DB.
+    // TUI session. Each phone gets its own session in the DB. Title carries a
+    // stable `[chat:wa-<phone>]` suffix so auto-rename of the visible label
+    // still resolves to the same row (issue #121, Discord/Slack/WhatsApp port
+    // of the Telegram fix in PR #123).
     let session_id = {
-        let session_title = format!("WhatsApp: {}", phone);
+        use crate::channels::session_resolve;
+        let legacy_title = format!("WhatsApp: {}", phone);
+        let suffix = session_resolve::chat_id_suffix(&format!("wa-{phone}"));
+        let session_title = format!("{legacy_title} {suffix}");
 
-        let existing = session_svc
-            .find_session_by_title(&session_title)
-            .await
-            .ok()
-            .flatten();
-
-        if let Some(session) = existing {
-            if idle_timeout_hours.is_some_and(|h| {
-                let elapsed = (chrono::Utc::now() - session.updated_at).num_seconds();
-                elapsed > (h * 3600.0) as i64
-            }) {
-                if let Err(e) = session_svc.archive_session(session.id).await {
-                    tracing::error!("WhatsApp: failed to archive session {}: {}", session.id, e);
-                }
-                match crate::channels::session_init::create_channel_session(
-                    &session_svc,
-                    Some(session_title),
-                )
-                .await
-                {
-                    Ok(new_session) => new_session.id,
-                    Err(e) => {
-                        tracing::error!("WhatsApp: failed to create session: {}", e);
-                        return;
-                    }
-                }
-            } else {
-                session.id
-            }
-        } else {
-            match crate::channels::session_init::create_channel_session(
-                &session_svc,
-                Some(session_title),
-            )
-            .await
-            {
-                Ok(session) => {
-                    tracing::info!("WhatsApp: created new session {} for {}", session.id, phone);
-                    session.id
-                }
-                Err(e) => {
-                    tracing::error!("WhatsApp: failed to create session: {}", e);
-                    return;
-                }
+        match session_resolve::resolve_or_create_channel_session(
+            &session_svc,
+            &suffix,
+            &legacy_title,
+            &session_title,
+            idle_timeout_hours,
+            "WhatsApp",
+        )
+        .await
+        {
+            Ok(id) => id,
+            Err(e) => {
+                tracing::error!("WhatsApp: failed to resolve session: {}", e);
+                return;
             }
         }
     };

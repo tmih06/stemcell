@@ -256,61 +256,39 @@ pub(crate) async fn handle_message(
 
     // Sessions are ALWAYS isolated per chat — owner DMs no longer share the
     // TUI session. DMs keyed by author user_id; guild channels by channel_id.
+    // Title carries a stable `[chat:discord-…]` suffix so auto-rename rewrites
+    // the visible label but `find_session_by_title_suffix` still resolves the
+    // same row (issue #121, pre-fix every renamed session was orphaned).
     let session_id = {
-        let session_title = if is_dm {
-            format!("Discord: DM {} ({})", msg.author.name, msg.author.id.get())
-        } else {
-            format!("Discord: #{}", msg.channel_id.get())
-        };
-
-        let existing = session_svc
-            .find_session_by_title(&session_title)
-            .await
-            .ok()
-            .flatten();
-
-        if let Some(session) = existing {
-            if idle_timeout_hours.is_some_and(|h| {
-                let elapsed = (chrono::Utc::now() - session.updated_at).num_seconds();
-                elapsed > (h * 3600.0) as i64
-            }) {
-                if let Err(e) = session_svc.archive_session(session.id).await {
-                    tracing::error!("Discord: failed to archive session {}: {}", session.id, e);
-                }
-                match crate::channels::session_init::create_channel_session(
-                    &session_svc,
-                    Some(session_title),
-                )
-                .await
-                {
-                    Ok(new_session) => new_session.id,
-                    Err(e) => {
-                        tracing::error!("Discord: failed to create session: {}", e);
-                        return;
-                    }
-                }
-            } else {
-                session.id
-            }
-        } else {
-            match crate::channels::session_init::create_channel_session(
-                &session_svc,
-                Some(session_title),
+        use crate::channels::session_resolve;
+        let (id_str, legacy_title) = if is_dm {
+            (
+                format!("discord-dm-{}", msg.author.id.get()),
+                format!("Discord: DM {} ({})", msg.author.name, msg.author.id.get()),
             )
-            .await
-            {
-                Ok(session) => {
-                    tracing::info!(
-                        "Discord: created new channel session {} for #{}",
-                        session.id,
-                        msg.channel_id.get()
-                    );
-                    session.id
-                }
-                Err(e) => {
-                    tracing::error!("Discord: failed to create session: {}", e);
-                    return;
-                }
+        } else {
+            (
+                format!("discord-{}", msg.channel_id.get()),
+                format!("Discord: #{}", msg.channel_id.get()),
+            )
+        };
+        let suffix = session_resolve::chat_id_suffix(&id_str);
+        let session_title = format!("{legacy_title} {suffix}");
+
+        match session_resolve::resolve_or_create_channel_session(
+            &session_svc,
+            &suffix,
+            &legacy_title,
+            &session_title,
+            idle_timeout_hours,
+            "Discord",
+        )
+        .await
+        {
+            Ok(id) => id,
+            Err(e) => {
+                tracing::error!("Discord: failed to resolve session: {}", e);
+                return;
             }
         }
     };
