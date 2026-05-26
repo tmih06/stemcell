@@ -52,6 +52,24 @@ fn apply_pragmas(conn: &rusqlite::Connection) -> std::result::Result<(), rusqlit
     )
 }
 
+/// PRAGMA settings for in-memory test databases.
+///
+/// WAL is a no-op (no file to journal to) but with `cache=shared` it triggers
+/// spurious `database table is locked` (SQLITE_LOCKED, code 262) failures
+/// under concurrent writers in release mode — the auto_title_e2e_test reliably
+/// fell over here. MEMORY journal is the right mode for `:memory:` and shared
+/// in-memory URIs; foreign keys stay on so FK violations still surface.
+fn apply_pragmas_in_memory(
+    conn: &rusqlite::Connection,
+) -> std::result::Result<(), rusqlite::Error> {
+    conn.execute_batch(
+        "PRAGMA journal_mode = MEMORY;
+         PRAGMA busy_timeout = 30000;
+         PRAGMA synchronous = OFF;
+         PRAGMA foreign_keys = ON;",
+    )
+}
+
 impl Database {
     /// Connect to a SQLite database file.
     ///
@@ -104,19 +122,27 @@ impl Database {
 
     /// Connect to an in-memory database (for testing)
     ///
-    /// Each call creates a uniquely-named shared in-memory database so that
-    /// parallel tests never collide, while all connections *within* a single
-    /// test still see the same data.
+    /// Pool is capped to `max_size = 1` — a single serialized connection.
+    /// This is critical for correctness, not just isolation: SQLite's
+    /// in-memory `cache=shared` mode handles cross-connection locking
+    /// erratically (release-mode regularly hit `SQLITE_LOCKED` code 262
+    /// with WAL pragma, and `MEMORY` journal mode shifted the symptom
+    /// without removing it). With one connection there is no
+    /// cross-connection lock contention, every interact() runs
+    /// sequentially, and tests behave identically in debug and release.
+    ///
+    /// Each call still uses a unique URI so parallel tests never see
+    /// each other's data.
     pub async fn connect_in_memory() -> Result<Self> {
         let id = uuid::Uuid::new_v4().simple().to_string();
         let uri = format!("file:mem_{}?mode=memory&cache=shared", id);
         let pool = Config::new(uri)
             .builder(Runtime::Tokio1)
             .context("Failed to build pool config")?
-            .max_size(5)
+            .max_size(1)
             .post_create(Hook::async_fn(|conn, _| {
                 Box::pin(async move {
-                    conn.interact(|conn| apply_pragmas(conn))
+                    conn.interact(|conn| apply_pragmas_in_memory(conn))
                         .await
                         .map_err(|e| deadpool_sqlite::HookError::Message(e.to_string().into()))?
                         .map_err(|e| deadpool_sqlite::HookError::Message(e.to_string().into()))?;
