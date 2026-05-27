@@ -327,7 +327,7 @@ fn local_thinking_body_transform(enable: bool) -> BodyTransformFn {
 /// in the log when caching auto-engaged. Subsequent requests with the same
 /// pair stay silent; switching to a different qwen model on the same
 /// provider logs once more.
-fn auto_qwen_cache_transform(base_url: String) -> BodyTransformFn {
+pub(crate) fn auto_qwen_cache_transform(base_url: String) -> BodyTransformFn {
     use std::collections::HashSet;
     use std::sync::Mutex;
     let seen: Arc<Mutex<HashSet<String>>> = Arc::new(Mutex::new(HashSet::new()));
@@ -353,7 +353,7 @@ fn auto_qwen_cache_transform(base_url: String) -> BodyTransformFn {
 }
 
 /// Compose multiple body transforms left-to-right.
-fn chain_body_transforms(a: BodyTransformFn, b: BodyTransformFn) -> BodyTransformFn {
+pub(crate) fn chain_body_transforms(a: BodyTransformFn, b: BodyTransformFn) -> BodyTransformFn {
     Arc::new(move |body| b(a(body)))
 }
 
