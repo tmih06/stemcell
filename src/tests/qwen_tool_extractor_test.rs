@@ -589,3 +589,162 @@ fn bare_command_args_alongside_prose_strips_only_json() {
         "surrounding prose must remain, got: {cleaned:?}"
     );
 }
+
+// ─── Pass 1.8 — invoke-style Anthropic XML (qwen:tool_call wrapper) ──
+
+#[test]
+fn invoke_style_single_clean_with_qwen_wrapper() {
+    let text = r#"<qwen:tool_call>
+<invoke name="read_file">
+<parameter name="path">/tmp/x.dart</parameter>
+<parameter name="start_line">10</parameter>
+<parameter name="line_count">50</parameter>
+</invoke>
+</qwen:tool_call>"#;
+    let (calls, cleaned) = extract_text_tool_calls(text);
+    assert_eq!(calls.len(), 1);
+    assert_eq!(calls[0].0, "read_file");
+    assert_eq!(calls[0].1["path"], "/tmp/x.dart");
+    assert_eq!(calls[0].1["start_line"], 10);
+    assert_eq!(calls[0].1["line_count"], 50);
+    assert!(
+        cleaned.trim().is_empty(),
+        "wrapper + invoke must be stripped, leftover: {cleaned:?}"
+    );
+}
+
+#[test]
+fn invoke_style_user_screenshot_2026_05_27_malformed() {
+    // Verbatim reproduction of the 2026-05-27 Telegram screenshot.
+    // Two malformations preserved:
+    //   (a) first invoke missing leading `<`  →  `invoke name="read_file">`
+    //   (b) second block wrote `<parameter name="read_file">` instead of
+    //       `<invoke name="read_file">`
+    let text = r#"<qwen:tool_call>
+invoke name="read_file">
+<parameter name="path">~/srv/dart/heyiolo/lib/presentation/buyer_intent_screen/widgets/iolo_chat_widget.dart</parameter>
+<parameter name="start_line">1888</parameter>
+<parameter name="line_count">50</parameter>
+</invoke>
+<parameter name="read_file">
+<parameter name="path">~/srv/dart/heyiolo/lib/presentation/propositions_screen/propositions_screen.dart</parameter>
+<parameter name="start_line">360</parameter>
+<parameter name="line_count">30</parameter>
+</invoke>
+</qwen:tool_call>"#;
+    let (calls, cleaned) = extract_text_tool_calls(text);
+
+    // Both invokes must be recovered despite the malformations.
+    assert_eq!(
+        calls.len(),
+        2,
+        "both invokes (missing-< and parameter-not-invoke) must recover, got {} calls: {:?}",
+        calls.len(),
+        calls
+    );
+
+    // First call: `invoke name="read_file">` missing the leading `<`.
+    assert_eq!(calls[0].0, "read_file");
+    assert!(
+        calls[0].1["path"]
+            .as_str()
+            .unwrap()
+            .ends_with("iolo_chat_widget.dart"),
+    );
+    assert_eq!(calls[0].1["start_line"], 1888);
+    assert_eq!(calls[0].1["line_count"], 50);
+
+    // Second call: `<parameter name="read_file">` malformation.
+    assert_eq!(calls[1].0, "read_file");
+    assert!(
+        calls[1].1["path"]
+            .as_str()
+            .unwrap()
+            .ends_with("propositions_screen.dart"),
+    );
+    assert_eq!(calls[1].1["start_line"], 360);
+    assert_eq!(calls[1].1["line_count"], 30);
+
+    // Whole wrapper must be stripped from visible content.
+    assert!(
+        !cleaned.contains("qwen:tool_call"),
+        "qwen wrapper must be gone from rendered content, got: {cleaned:?}"
+    );
+    assert!(
+        !cleaned.contains("<invoke") && !cleaned.contains("invoke name="),
+        "invoke blocks must be gone, got: {cleaned:?}"
+    );
+}
+
+#[test]
+fn invoke_style_anthropic_function_calls_wrapper() {
+    let text = r#"<function_calls>
+<invoke name="bash">
+<parameter name="command">ls -la</parameter>
+</invoke>
+</function_calls>"#;
+    let (calls, cleaned) = extract_text_tool_calls(text);
+    assert_eq!(calls.len(), 1);
+    assert_eq!(calls[0].0, "bash");
+    assert_eq!(calls[0].1["command"], "ls -la");
+    assert!(
+        !cleaned.contains("function_calls"),
+        "function_calls wrapper must be stripped, got: {cleaned:?}"
+    );
+}
+
+#[test]
+fn invoke_style_standalone_no_wrapper() {
+    let text = r#"<invoke name="bash">
+<parameter name="command">pwd</parameter>
+</invoke>"#;
+    let (calls, _cleaned) = extract_text_tool_calls(text);
+    assert_eq!(calls.len(), 1);
+    assert_eq!(calls[0].0, "bash");
+    assert_eq!(calls[0].1["command"], "pwd");
+}
+
+#[test]
+fn invoke_style_unknown_tool_name_ignored() {
+    // Prose mention with `invoke name="not_a_tool"` must NOT match.
+    let text = r#"This is just prose with <invoke name="not_a_real_tool"> mentioned."#;
+    let (calls, cleaned) = extract_text_tool_calls(text);
+    assert!(
+        calls.is_empty(),
+        "unknown tool name must not dispatch a call"
+    );
+    // Prose passes through unchanged (Pass 1.8 short-circuits, but the
+    // overall extractor returns the text intact when no other pass strips).
+    assert!(cleaned.contains("just prose"));
+}
+
+#[test]
+fn invoke_style_value_type_coercion() {
+    let text = r#"<invoke name="read_file">
+<parameter name="path">/tmp/x</parameter>
+<parameter name="start_line">42</parameter>
+<parameter name="hashline">true</parameter>
+</invoke>"#;
+    let (calls, _) = extract_text_tool_calls(text);
+    assert_eq!(calls.len(), 1);
+    assert_eq!(calls[0].1["path"], "/tmp/x");
+    assert_eq!(
+        calls[0].1["start_line"], 42,
+        "numeric string must coerce to integer"
+    );
+    assert_eq!(
+        calls[0].1["hashline"], true,
+        "boolean string must coerce to bool"
+    );
+}
+
+#[test]
+fn invoke_style_single_quoted_name_attribute() {
+    let text = r#"<invoke name='bash'>
+<parameter name='command'>echo hi</parameter>
+</invoke>"#;
+    let (calls, _) = extract_text_tool_calls(text);
+    assert_eq!(calls.len(), 1);
+    assert_eq!(calls[0].0, "bash");
+    assert_eq!(calls[0].1["command"], "echo hi");
+}

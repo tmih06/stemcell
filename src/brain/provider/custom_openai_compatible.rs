@@ -420,6 +420,13 @@ pub(crate) fn extract_text_tool_calls(text: &str) -> (Vec<(String, serde_json::V
     let has_bare_command_args = text.contains("{\"command\":")
         || text.contains("{ \"command\":")
         || text.contains("{\"command\" :");
+    // Anthropic `<invoke name="X">` signal — used standalone, inside
+    // `<function_calls>`, or inside the Qwen-namespaced `<qwen:tool_call>`
+    // wrapper (2026-05-27 leak: model emitted the inner Anthropic shape
+    // inside qwen:tool_call and we had no parser for either layer).
+    // Anchoring on `<invoke name=` is strict enough to skip prose like
+    // `the <invoke> tag` while catching every real shape.
+    let has_invoke_signal = text.contains("<invoke name=") || text.contains("invoke name=\"");
     if !text.contains("<tool_call>")
         && !text.contains("<function=")
         && !text.contains("tool_call:")
@@ -429,6 +436,7 @@ pub(crate) fn extract_text_tool_calls(text: &str) -> (Vec<(String, serde_json::V
         && !has_bare_array_signal
         && !has_dict_by_id_signal
         && !has_bare_command_args
+        && !has_invoke_signal
     {
         return (Vec::new(), text.to_string());
     }
@@ -940,6 +948,44 @@ pub(crate) fn extract_text_tool_calls(text: &str) -> (Vec<(String, serde_json::V
         }
     }
 
+    // Pass 1.8 — Anthropic-style `<invoke name="X">` blocks, optionally
+    // wrapped in `<qwen:tool_call>` or `<function_calls>`. 2026-05-27
+    // qwen-3.7-max-thinking on Telegram emitted:
+    //
+    //   <qwen:tool_call>
+    //   invoke name="read_file">       (model dropped the leading `<`)
+    //   <parameter name="path">/tmp/x</parameter>
+    //   <parameter name="start_line">1888</parameter>
+    //   </invoke>
+    //   <parameter name="read_file">   (model wrote `parameter` not `invoke`)
+    //   <parameter name="path">/tmp/y</parameter>
+    //   </invoke>
+    //   </qwen:tool_call>
+    //
+    // The wrapper is not in our XML signal table and the inner
+    // `<invoke name>` shape is Anthropic-original (tool name as attribute,
+    // not as tag). Without this pass the whole block leaks to TUI / Telegram
+    // and no calls dispatch.
+    //
+    // Strategy: scan for `invoke name="X"` anywhere. The leading `<` is
+    // optional — qwen-thinking regularly drops it. Tool name X must be in
+    // KNOWN_TOOL_NAMES to skip prose `<invoke>` mentions. Collect each
+    // `<parameter name="Y">value</parameter>` inside the matching `</invoke>`,
+    // parameter values coerced to int/bool when they look like one. Strip
+    // ranges include any surrounding `<qwen:tool_call>` / `<function_calls>`
+    // wrapper so it doesn't render as an empty tag.
+    if has_invoke_signal {
+        let invoke_calls = extract_invoke_style_tool_calls(text, &strip_ranges);
+        for (s, e, name, args) in invoke_calls {
+            tool_calls.push((name, args));
+            strip_ranges.push((s, e));
+        }
+        // After collecting invoke ranges, opportunistically extend each to
+        // swallow a surrounding `<qwen:tool_call>` / `<function_calls>` wrapper
+        // when it would otherwise leave a lone empty tag pair behind.
+        widen_strip_to_known_wrappers(text, &mut strip_ranges);
+    }
+
     if strip_ranges.is_empty() {
         return (tool_calls, text.to_string());
     }
@@ -1092,6 +1138,241 @@ fn parse_xml_param_pairs(body: &str) -> Vec<(String, String)> {
         cursor = body_start + close_rel + close.len();
     }
     pairs
+}
+
+/// Extract Anthropic-style `<invoke name="X">…</invoke>` blocks. The tool
+/// name is read from the `name="…"` attribute (or `name='…'`), parameters
+/// from each nested `<parameter name="Y">value</parameter>`. The leading
+/// `<` on `invoke` is OPTIONAL — qwen-thinking regularly drops it.
+///
+/// Tolerates the 2026-05-27 qwen-thinking malformation where the model
+/// wrote `<parameter name="TOOL">` instead of `<invoke name="TOOL">`:
+/// if a `<parameter>` block at the top level has its `name` matching a
+/// KNOWN_TOOL_NAMES entry, treat it as an invoke. This loses the
+/// parameter-name semantics for that one call (we can't recover what
+/// the model meant) but at least dispatches a call instead of silently
+/// dropping it.
+///
+/// Returns `(start_byte, end_byte, tool_name, args_json)` per match.
+fn extract_invoke_style_tool_calls(
+    text: &str,
+    existing_strip_ranges: &[(usize, usize)],
+) -> Vec<(usize, usize, String, serde_json::Value)> {
+    let mut results: Vec<(usize, usize, String, serde_json::Value)> = Vec::new();
+    let mut cursor: usize = 0;
+    while cursor < text.len() {
+        // Find next anchor — either the canonical `invoke name=` OR the
+        // qwen-thinking malformation `<parameter name="KNOWN_TOOL"` at the
+        // top level. Whichever appears first wins.
+        let invoke_at = text[cursor..]
+            .find("invoke name=")
+            .map(|r| (cursor + r, "invoke name=".len()));
+        let param_at = text[cursor..]
+            .find("<parameter name=")
+            .map(|r| (cursor + r, "<parameter name=".len()));
+        let (anchor, anchor_len) = match (invoke_at, param_at) {
+            (Some(i), Some(p)) => {
+                if i.0 <= p.0 {
+                    i
+                } else {
+                    p
+                }
+            }
+            (Some(i), None) => i,
+            (None, Some(p)) => p,
+            (None, None) => break,
+        };
+        // Skip if already covered by another pass.
+        if existing_strip_ranges
+            .iter()
+            .any(|(s, e)| *s <= anchor && anchor < *e)
+        {
+            cursor = anchor + anchor_len;
+            continue;
+        }
+        // Find quote char (' or "), then name end.
+        let after_eq = anchor + anchor_len;
+        let bytes = text.as_bytes();
+        if after_eq >= bytes.len() {
+            break;
+        }
+        let quote = bytes[after_eq];
+        if quote != b'"' && quote != b'\'' {
+            cursor = after_eq;
+            continue;
+        }
+        let name_start = after_eq + 1;
+        let name_end_rel = match text[name_start..].find(quote as char) {
+            Some(r) => r,
+            None => {
+                cursor = name_start;
+                continue;
+            }
+        };
+        let name = text[name_start..name_start + name_end_rel].to_string();
+        // Tool name must match a KNOWN_TOOL_NAMES entry — strict guard against
+        // prose like `<invoke name="something">` or legitimate
+        // `<parameter name="some_arg">` blocks (those are nested params, not
+        // tool invocations, and are consumed by parse_invoke_parameters).
+        if !KNOWN_TOOL_NAMES.iter().any(|&n| n == name) {
+            cursor = name_start + name_end_rel;
+            continue;
+        }
+        // Find the matching `</invoke>`. If absent, take everything up to
+        // the wrapper close (`</qwen:tool_call>`, `</function_calls>`) or
+        // end of text — best-effort recovery.
+        let body_search_start = name_start + name_end_rel;
+        let close = text[body_search_start..]
+            .find("</invoke>")
+            .map(|r| (body_search_start + r, "</invoke>".len()));
+        let (body_end, close_len) = close.unwrap_or_else(|| {
+            // Wrapper-close fallback: stop at the next known wrapper close.
+            let qwen_close = text[body_search_start..].find("</qwen:tool_call>");
+            let func_close = text[body_search_start..].find("</function_calls>");
+            let stop_rel = [qwen_close, func_close]
+                .into_iter()
+                .flatten()
+                .min()
+                .unwrap_or(text.len() - body_search_start);
+            (body_search_start + stop_rel, 0)
+        });
+
+        let body = &text[body_search_start..body_end];
+        let params = parse_invoke_parameters(body);
+        let mut obj = serde_json::Map::new();
+        for (k, v) in params {
+            obj.insert(k, coerce_xml_param_value(&v));
+        }
+        // Find the original start of this invoke block. Walk back from
+        // `anchor` past whitespace; if the preceding char is `<`, include it.
+        let mut block_start = anchor;
+        if block_start > 0 && text.as_bytes()[block_start - 1] == b'<' {
+            block_start -= 1;
+        }
+        let block_end = body_end + close_len;
+        results.push((block_start, block_end, name, serde_json::Value::Object(obj)));
+        cursor = block_end;
+    }
+    results
+}
+
+/// Parse `<parameter name="K">V</parameter>` pairs from an invoke body.
+/// Tolerates the qwen-thinking malformation where some inner blocks are
+/// themselves `<parameter name="KNOWN_TOOL">…</invoke>` — those are skipped
+/// here (they get re-scanned by the outer `invoke name=` search loop on
+/// the next iteration).
+fn parse_invoke_parameters(body: &str) -> Vec<(String, String)> {
+    let mut out = Vec::new();
+    let mut cursor = 0;
+    while cursor < body.len() {
+        let rel = match body[cursor..].find("<parameter name=") {
+            Some(r) => r,
+            None => break,
+        };
+        let abs = cursor + rel;
+        let after = abs + "<parameter name=".len();
+        let bytes = body.as_bytes();
+        if after >= bytes.len() {
+            break;
+        }
+        let quote = bytes[after];
+        if quote != b'"' && quote != b'\'' {
+            cursor = after;
+            continue;
+        }
+        let name_start = after + 1;
+        let name_end_rel = match body[name_start..].find(quote as char) {
+            Some(r) => r,
+            None => break,
+        };
+        let key = body[name_start..name_start + name_end_rel].to_string();
+        // After the closing quote, expect `>`. Skip any leading whitespace
+        // before the value.
+        let after_name = name_start + name_end_rel + 1;
+        let value_start = match body[after_name..].find('>') {
+            Some(r) => after_name + r + 1,
+            None => break,
+        };
+        let close = "</parameter>";
+        let close_rel = match body[value_start..].find(close) {
+            Some(r) => r,
+            None => break,
+        };
+        let value = body[value_start..value_start + close_rel]
+            .trim()
+            .to_string();
+        // Skip the qwen malformation: `<parameter name="read_file">` at top
+        // level is the model writing `parameter` where it meant `invoke`.
+        // Caller's extractor re-scans for `invoke name=` so we just don't
+        // record it as a parameter.
+        if !KNOWN_TOOL_NAMES.iter().any(|&n| n == key) {
+            out.push((key, value));
+        }
+        cursor = value_start + close_rel + close.len();
+    }
+    out
+}
+
+/// Coerce an XML parameter string value into the most likely JSON type.
+/// Numbers (`1888`), booleans (`true`/`false`/`yes`/`no`), and everything
+/// else as string. Keeps strings as strings for path-like or
+/// command-like values.
+fn coerce_xml_param_value(raw: &str) -> serde_json::Value {
+    let trimmed = raw.trim();
+    if let Ok(n) = trimmed.parse::<i64>() {
+        return serde_json::Value::from(n);
+    }
+    if let Ok(n) = trimmed.parse::<f64>() {
+        // Reject NaN / inf to keep the JSON valid.
+        if n.is_finite() {
+            return serde_json::json!(n);
+        }
+    }
+    match trimmed.to_ascii_lowercase().as_str() {
+        "true" | "yes" => return serde_json::Value::Bool(true),
+        "false" | "no" => return serde_json::Value::Bool(false),
+        _ => {}
+    }
+    serde_json::Value::String(trimmed.to_string())
+}
+
+/// After Pass 1.8 records every `<invoke>` block as a strip range, scan
+/// the whole text for `<qwen:tool_call>…</qwen:tool_call>` or
+/// `<function_calls>…</function_calls>` wrappers that CONTAIN at least
+/// one already-stripped invoke. Add the wrapper's outer bounds as a new
+/// strip range so the wrapper doesn't render as an empty tag pair.
+///
+/// Scanning the whole text (instead of per-range backward/forward) is
+/// necessary because multiple invokes commonly share one wrapper — a
+/// per-range widening leaves the inter-invoke whitespace AND the
+/// outer wrapper visible.
+fn widen_strip_to_known_wrappers(text: &str, strip_ranges: &mut Vec<(usize, usize)>) {
+    const WRAPPERS: &[(&str, &str)] = &[
+        ("<qwen:tool_call>", "</qwen:tool_call>"),
+        ("<function_calls>", "</function_calls>"),
+    ];
+    let mut additions: Vec<(usize, usize)> = Vec::new();
+    for (open, close) in WRAPPERS {
+        let mut search_from = 0;
+        while let Some(rel) = text[search_from..].find(open) {
+            let open_pos = search_from + rel;
+            let after_open = open_pos + open.len();
+            let close_rel = match text[after_open..].find(close) {
+                Some(r) => r,
+                None => break,
+            };
+            let close_end = after_open + close_rel + close.len();
+            // Does this wrapper contain any already-stripped invoke?
+            let contains_invoke = strip_ranges
+                .iter()
+                .any(|(s, _)| open_pos <= *s && *s < close_end);
+            if contains_invoke {
+                additions.push((open_pos, close_end));
+            }
+            search_from = close_end;
+        }
+    }
+    strip_ranges.extend(additions);
 }
 
 /// Consume a balanced JSON object starting at `s[0] == '{'`. Returns the byte
