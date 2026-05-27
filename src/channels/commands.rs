@@ -190,8 +190,12 @@ pub enum ChannelCommand {
 pub struct ProvidersResponse {
     pub current_provider: String,
     pub current_model: String,
-    /// Available providers (name, display label) that have API keys configured.
-    pub providers: Vec<(String, String)>,
+    /// All known providers as `(id, display_label, configured)` triples.
+    /// `configured = false` entries surface providers the user hasn't set
+    /// up yet (issue #126) so the picker shows e.g. `🔒 OpenCode` alongside
+    /// active providers. Tapping a locked entry shows the help text from
+    /// `unconfigured_provider_help()` instead of swapping.
+    pub providers: Vec<(String, String, bool)>,
     /// Fallback text when platform buttons are unavailable.
     pub text: String,
 }
@@ -626,21 +630,25 @@ fn format_providers(agent: &AgentService) -> ProvidersResponse {
     let current_provider = agent.provider_name();
     let current_model = agent.provider_model();
 
-    let providers = configured_providers();
+    let providers = all_known_providers_with_status_loaded();
 
     let mut text_lines = vec![
         "🤖 *Switch Provider*".to_string(),
         format!("Current: `{}` / `{}`", current_provider, current_model),
         String::new(),
     ];
-    for (name, label) in &providers {
-        let marker = if *name == current_provider {
-            " ✓"
+    for (name, label, configured) in &providers {
+        let prefix = if !configured {
+            "🔒 "
+        } else if *name == current_provider {
+            "✓ "
         } else {
-            ""
+            "• "
         };
-        text_lines.push(format!("• `{}`{}", label, marker));
+        text_lines.push(format!("{}`{}`", prefix, label));
     }
+    text_lines.push(String::new());
+    text_lines.push("🔒 = needs API key (tap for setup steps)".to_string());
 
     ProvidersResponse {
         current_provider: current_provider.clone(),
@@ -650,13 +658,30 @@ fn format_providers(agent: &AgentService) -> ProvidersResponse {
     }
 }
 
-/// List configured providers (those with API keys set or enabled CLI providers).
-fn configured_providers() -> Vec<(String, String)> {
+/// Loaded version of `crate::utils::providers::all_known_providers_with_status`.
+fn all_known_providers_with_status_loaded() -> Vec<(String, String, bool)> {
     let config = match crate::config::Config::load() {
         Ok(c) => c,
         Err(_) => return vec![],
     };
-    crate::utils::providers::configured_providers(&config.providers)
+    crate::utils::providers::all_known_providers_with_status(&config.providers)
+}
+
+/// Help text shown when a user taps a locked (🔒) provider in the channel
+/// picker. Tells them where to add the API key. Bots cannot delete user
+/// messages in DMs, so we deliberately do NOT prompt for the key inline —
+/// pasting it into chat would persist the secret in Telegram history.
+pub fn unconfigured_provider_help(provider_name: &str) -> String {
+    let display = provider_display_name(provider_name);
+    let section = provider_name.replace("-", "_");
+    let path = crate::utils::providers::keys_toml_path_hint();
+    format!(
+        "🔒 *{display}* is not configured yet.\n\n\
+         To enable it, add this to `{path}`:\n\n\
+         ```toml\n[providers.{section}]\napi_key = \"YOUR-{display}-KEY\"\n```\n\n\
+         Then restart OpenCrabs. Do NOT paste your API key here — \
+         Telegram keeps message history that bots cannot delete in DMs."
+    )
 }
 
 /// Fetch models for a specific provider (called from callback handler).

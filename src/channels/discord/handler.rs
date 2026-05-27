@@ -329,8 +329,10 @@ pub(crate) async fn handle_message(
                         CreateActionRow::Buttons(
                             chunk
                                 .iter()
-                                .map(|(name, label)| {
-                                    let display = if *name == resp.current_provider {
+                                .map(|(name, label, configured)| {
+                                    let display = if !*configured {
+                                        format!("🔒 {} (setup)", label)
+                                    } else if *name == resp.current_provider {
                                         format!("✓ {}", label)
                                     } else {
                                         label.clone()
@@ -340,7 +342,12 @@ pub(crate) async fn handle_message(
                                     } else {
                                         display
                                     };
-                                    CreateButton::new(format!("provider:{}", name))
+                                    let cb = if *configured {
+                                        format!("provider:{}", name)
+                                    } else {
+                                        format!("setup:{}", name)
+                                    };
+                                    CreateButton::new(cb)
                                         .label(display)
                                         .style(ButtonStyle::Secondary)
                                 })

@@ -1122,16 +1122,23 @@ pub(crate) async fn handle_message(
                 let rows: Vec<Vec<InlineKeyboardButton>> = resp
                     .providers
                     .iter()
-                    .map(|(name, label)| {
-                        let display = if *name == resp.current_provider {
+                    .map(|(name, label, configured)| {
+                        let display = if !*configured {
+                            format!("🔒 {} (setup)", label)
+                        } else if *name == resp.current_provider {
                             format!("✓ {}", label)
                         } else {
                             label.clone()
                         };
-                        vec![InlineKeyboardButton::callback(
-                            display,
-                            format!("provider:{}", name),
-                        )]
+                        // Unconfigured providers route through `setup:<name>`
+                        // so the callback handler can show setup instructions
+                        // instead of trying to swap to a provider with no key.
+                        let cb = if *configured {
+                            format!("provider:{}", name)
+                        } else {
+                            format!("setup:{}", name)
+                        };
+                        vec![InlineKeyboardButton::callback(display, cb)]
                     })
                     .collect();
                 let keyboard = InlineKeyboardMarkup::new(rows);

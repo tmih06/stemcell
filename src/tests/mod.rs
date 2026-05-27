@@ -87,6 +87,7 @@ pub mod post_evolve_test;
 pub mod provider_config_regression_test;
 pub mod provider_error_proxy_test;
 pub mod provider_factory_regression_test;
+pub mod provider_picker_setup_hint_test;
 pub mod provider_sync_test;
 pub mod qr_render_test;
 pub mod queued_message_test;

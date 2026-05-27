@@ -186,6 +186,26 @@ impl TelegramAgent {
                         if let Some(data) = query.data.as_deref() {
                             tracing::info!("Telegram callback query received: data={}", data);
 
+                            // Setup callback for unconfigured providers — show the
+                            // help text from `unconfigured_provider_help` instead
+                            // of trying to switch (no API key would just fail).
+                            // Bots cannot delete user messages in DMs, so we
+                            // never prompt for the key inline (issue #126, B.1).
+                            if let Some(provider_name) = data.strip_prefix("setup:") {
+                                let help = crate::channels::commands::unconfigured_provider_help(provider_name);
+                                if let Some(chat_id) = query.message.as_ref().map(|m| m.chat().id) {
+                                    let _ = bot
+                                        .send_message(
+                                            chat_id,
+                                            crate::channels::telegram::handler::md_to_html(&help),
+                                        )
+                                        .parse_mode(teloxide::types::ParseMode::Html)
+                                        .await;
+                                }
+                                let _ = bot.answer_callback_query(&query.id).await;
+                                return Ok::<(), teloxide::RequestError>(());
+                            }
+
                             // Provider picker callback → show models for that provider
                             if let Some(provider_name) = data.strip_prefix("provider:") {
                                 let resp = crate::channels::commands::models_for_provider(provider_name).await;

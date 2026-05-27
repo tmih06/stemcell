@@ -982,14 +982,21 @@ async fn handle_message(
                     .providers
                     .iter()
                     .take(25)
-                    .map(|(name, label)| {
-                        let display = if *name == resp.current_provider {
+                    .map(|(name, label, configured)| {
+                        let display = if !*configured {
+                            format!("🔒 {} (setup)", label)
+                        } else if *name == resp.current_provider {
                             format!("✓ {}", label)
                         } else {
                             label.clone()
                         };
+                        let cb = if *configured {
+                            format!("provider:{}", name)
+                        } else {
+                            format!("setup:{}", name)
+                        };
                         SlackActionBlockElement::Button(SlackBlockButtonElement::new(
-                            SlackActionId::new(format!("provider:{}", name)),
+                            SlackActionId::new(cb),
                             SlackBlockPlainTextOnly::from(SlackBlockPlainText::new(display)),
                         ))
                     })

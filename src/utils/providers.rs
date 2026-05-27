@@ -224,6 +224,48 @@ pub fn configured_providers(providers: &ProviderConfigs) -> Vec<(String, String)
     result
 }
 
+/// List ALL known providers, marking each as configured or not. Returns
+/// `(provider_id, display_name, configured)` triples. Unlike
+/// `configured_providers`, this surfaces providers the user hasn't set up
+/// yet so a channel picker can show `🔒 OpenCode (needs API key)` next to
+/// the active ones (issue #126: there was no way to see that OpenCode-API
+/// existed as an option until the user already had the key in keys.toml).
+pub fn all_known_providers_with_status(providers: &ProviderConfigs) -> Vec<(String, String, bool)> {
+    let mut result = Vec::new();
+    for meta in KNOWN_PROVIDERS {
+        let cfg = config_for(providers, meta.id);
+        let configured = if meta.needs_api_key {
+            cfg.is_some_and(|c| c.api_key.is_some())
+        } else {
+            true
+        };
+        result.push((
+            meta.id.to_string(),
+            meta.display_name.to_string(),
+            configured,
+        ));
+    }
+    if let Some(ref customs) = providers.custom {
+        for (name, cfg) in customs {
+            let configured = cfg.api_key.is_some();
+            result.push((
+                format!("custom:{}", name),
+                format!("Custom ({})", name),
+                configured,
+            ));
+        }
+    }
+    result
+}
+
+/// Path hint shown to users when they tap an unconfigured provider in a
+/// channel `/models` picker — tells them where to add the API key.
+pub fn keys_toml_path_hint() -> String {
+    let dir = crate::config::profile::base_opencrabs_dir();
+    let collapsed = crate::utils::string::tilde_home(&dir.display().to_string());
+    format!("{collapsed}/keys.toml")
+}
+
 /// Canonical model list + default for a CLI provider, read straight from
 /// the provider module's const tables. Returns `None` for non-CLI
 /// providers. The channel `/models` menu uses this so the listed models
