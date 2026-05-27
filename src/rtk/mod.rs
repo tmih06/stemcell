@@ -28,11 +28,11 @@ pub use rewrite::{RtkResult, is_rtk_available, rewrite_command};
 pub use tracker::{RtkMetrics, RtkTracker, TokenSavings, global_tracker};
 
 #[cfg(not(feature = "rtk"))]
-pub fn is_rtk_available() -> bool {
+pub async fn is_rtk_available() -> bool {
     false
 }
 
 #[cfg(not(feature = "rtk"))]
-pub fn rewrite_command(_command: &str) -> Option<String> {
+pub async fn rewrite_command(_command: &str) -> Option<String> {
     None
 }

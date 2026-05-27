@@ -472,8 +472,8 @@ impl Tool for BashTool {
             // RTK rewriting: if the rtk feature is enabled and RTK is available,
             // try to rewrite the command to save tokens (60-90% reduction).
             #[cfg(feature = "rtk")]
-            let execution_command = if crate::rtk::is_rtk_available() {
-                match crate::rtk::rewrite_command(&input.command) {
+            let execution_command = if crate::rtk::is_rtk_available().await {
+                match crate::rtk::rewrite_command(&input.command).await {
                     Some(result) => {
                         tracing::debug!(
                             "RTK rewrote command: '{}' -> '{}'",

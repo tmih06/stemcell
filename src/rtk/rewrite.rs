@@ -6,8 +6,7 @@
 //!
 //! This module maintains the list of supported commands and handles the rewriting.
 
-use std::process::Command;
-use std::sync::OnceLock;
+use tokio::sync::OnceCell;
 
 /// Commands that RTK supports as a proxy (from `rtk --help`).
 /// When the first token of a bash command matches one of these, we prepend `rtk`.
@@ -81,19 +80,25 @@ pub struct RtkResult {
     pub original_command: String,
 }
 
-/// Find the RTK binary path.
+/// Cached RTK binary path lookup.
+///
+/// Uses `tokio::sync::OnceCell` so the async initialization never blocks the
+/// tokio runtime. The previous `std::sync::OnceLock` + `std::process::Command`
+/// combination blocked the worker thread on the first call (issue #125).
+static RTK_BINARY: OnceCell<Option<String>> = OnceCell::const_new();
+
+/// Find the RTK binary path (async, cached).
 ///
 /// Checks in order:
 /// 1. Bundled binary in the same directory as the OpenCrabs executable
 /// 2. Bundled binary in `bin/` subdirectory relative to the executable
-/// 3. System PATH via `which rtk`
+/// 3. System PATH via `which rtk` (spawned as a non-blocking tokio child)
 ///
-/// Result is cached after the first call.
-fn find_rtk_binary() -> Option<String> {
-    static RTK_BINARY: OnceLock<Option<String>> = OnceLock::new();
-
+/// Result is cached after the first call. Concurrent callers await the same
+/// initialization — no thundering herd, no blocking.
+async fn find_rtk_binary() -> Option<String> {
     RTK_BINARY
-        .get_or_init(|| {
+        .get_or_init(|| async {
             // Check for bundled binary in the same directory as the executable
             if let Ok(exe_path) = std::env::current_exe()
                 && let Some(exe_dir) = exe_path.parent()
@@ -113,17 +118,23 @@ fn find_rtk_binary() -> Option<String> {
                 }
             }
 
-            // Fall back to PATH lookup
-            match Command::new("which").arg("rtk").output() {
-                Ok(output) => {
-                    if output.status.success() {
-                        let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
-                        tracing::info!("RTK binary found in PATH: {}", path);
-                        Some("rtk".to_string())
-                    } else {
-                        tracing::info!("RTK binary not found in PATH or bundled");
-                        None
-                    }
+            // Fall back to PATH lookup — async so we never block the runtime.
+            match tokio::process::Command::new("which")
+                .arg("rtk")
+                .stdout(std::process::Stdio::piped())
+                .stderr(std::process::Stdio::null())
+                .output()
+                .await
+            {
+                Ok(output) if output.status.success() => {
+                    let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+                    tracing::info!("RTK binary found in PATH: {}", path);
+                    // Store the bare name; tokio::process::Command resolves via PATH at exec time.
+                    Some("rtk".to_string())
+                }
+                Ok(_) => {
+                    tracing::info!("RTK binary not found in PATH or bundled");
+                    None
                 }
                 Err(_) => {
                     tracing::warn!("Failed to check for rtk binary availability");
@@ -131,14 +142,13 @@ fn find_rtk_binary() -> Option<String> {
                 }
             }
         })
+        .await
         .clone()
 }
 
-/// Check if the rtk binary is available (bundled or in PATH).
-///
-/// Result is cached after the first call.
-pub fn is_rtk_available() -> bool {
-    find_rtk_binary().is_some()
+/// Check if the rtk binary is available (bundled or in PATH). Async + cached.
+pub async fn is_rtk_available() -> bool {
+    find_rtk_binary().await.is_some()
 }
 
 /// Extract the first real command token from a shell command string.
@@ -186,8 +196,8 @@ fn is_rtk_supported(token: &str) -> bool {
 /// let result = rewrite_command("echo hello");
 /// // Returns None (echo is not RTK-supported)
 /// ```
-pub fn rewrite_command(command: &str) -> Option<RtkResult> {
-    let rtk_binary = find_rtk_binary()?;
+pub async fn rewrite_command(command: &str) -> Option<RtkResult> {
+    let rtk_binary = find_rtk_binary().await?;
 
     let trimmed = command.trim();
     if trimmed.is_empty() {
@@ -226,8 +236,8 @@ pub fn rewrite_command(command: &str) -> Option<RtkResult> {
 
 /// Convenience wrapper: returns just the rewritten string or None.
 #[allow(dead_code)]
-pub fn rewrite_command_string(command: &str) -> Option<String> {
-    rewrite_command(command).map(|r| r.rewritten_command)
+pub async fn rewrite_command_string(command: &str) -> Option<String> {
+    rewrite_command(command).await.map(|r| r.rewritten_command)
 }
 
 #[cfg(test)]
@@ -272,82 +282,82 @@ mod tests {
         assert!(is_rtk_supported("/usr/local/bin/cargo"));
     }
 
-    #[test]
-    fn test_rewrite_git_status() {
+    #[tokio::test]
+    async fn test_rewrite_git_status() {
         // This test depends on rtk being installed
-        if !is_rtk_available() {
+        if !is_rtk_available().await {
             return;
         }
-        let result = rewrite_command("git status");
+        let result = rewrite_command("git status").await;
         assert!(result.is_some());
         let r = result.unwrap();
         assert!(r.was_rewritten);
         assert_eq!(r.rewritten_command, "rtk git status");
     }
 
-    #[test]
-    fn test_rewrite_echo_not_supported() {
-        let result = rewrite_command("echo hello");
+    #[tokio::test]
+    async fn test_rewrite_echo_not_supported() {
+        let result = rewrite_command("echo hello").await;
         assert!(result.is_none());
     }
 
-    #[test]
-    fn test_rewrite_already_rtk() {
-        let result = rewrite_command("rtk git status");
+    #[tokio::test]
+    async fn test_rewrite_already_rtk() {
+        let result = rewrite_command("rtk git status").await;
         assert!(result.is_none());
     }
 
-    #[test]
-    fn test_rewrite_sudo_blocked() {
-        let result = rewrite_command("sudo git pull");
+    #[tokio::test]
+    async fn test_rewrite_sudo_blocked() {
+        let result = rewrite_command("sudo git pull").await;
         assert!(result.is_none());
     }
 
-    #[test]
-    fn test_rewrite_chained_command() {
-        if !is_rtk_available() {
+    #[tokio::test]
+    async fn test_rewrite_chained_command() {
+        if !is_rtk_available().await {
             return;
         }
-        let result = rewrite_command("git status && echo done");
+        let result = rewrite_command("git status && echo done").await;
         assert!(result.is_some());
         let r = result.unwrap();
         assert_eq!(r.rewritten_command, "rtk git status && echo done");
     }
 
-    #[test]
-    fn test_rewrite_empty_command() {
-        let result = rewrite_command("");
+    #[tokio::test]
+    async fn test_rewrite_empty_command() {
+        let result = rewrite_command("").await;
         assert!(result.is_none());
     }
 
-    #[test]
-    fn test_rewrite_cargo_test() {
-        if !is_rtk_available() {
+    #[tokio::test]
+    async fn test_rewrite_cargo_test() {
+        if !is_rtk_available().await {
             return;
         }
-        let result = rewrite_command("cargo test --release");
+        let result = rewrite_command("cargo test --release").await;
         assert!(result.is_some());
         let r = result.unwrap();
         assert_eq!(r.rewritten_command, "rtk cargo test --release");
     }
 
-    #[test]
-    fn test_rewrite_npm_install() {
-        if !is_rtk_available() {
+    #[tokio::test]
+    async fn test_rewrite_npm_install() {
+        if !is_rtk_available().await {
             return;
         }
-        let result = rewrite_command("npm install express");
+        let result = rewrite_command("npm install express").await;
         assert!(result.is_some());
         let r = result.unwrap();
         assert_eq!(r.rewritten_command, "rtk npm install express");
     }
 
-    #[test]
-    fn test_rewrite_env_prefix() {
-        if !is_rtk_available() {
+    #[tokio::test]
+    async fn test_rewrite_env_prefix() {
+        if !is_rtk_available().await {
             return;
         }
-        let result = rewrite_command("RUST_LOG=debug cargo build");
+        let result = rewrite_command("RUST_LOG=debug cargo build").await;
         assert!(result.is_some());
         let r = result.unwrap();
         assert_eq!(r.rewritten_command, "rtk RUST_LOG=debug cargo build");
