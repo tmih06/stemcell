@@ -6,6 +6,121 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
+## [0.3.29] - 2026-05-27
+
+10 commits since v0.3.28. Patch release closing issue #121 (the
+reporter's session stuck on the default channel-generated title) on
+two fronts: reasoning models that return ONLY a Thinking block for
+the title call now fall back to extracting a candidate from that
+block instead of dropping the title silently, and the Telegram
+handler stops clobbering non-default session titles on every
+subsequent message via a new should_refresh_label policy plus
+explicit chat→session binding on /sessions switch (PR #123 by
+@leshchenko1979). Audit of Discord, Slack, and WhatsApp handlers
+found the same root-cause bug with a different symptom — exact-title
+find_session_by_title lookup orphaned auto-renamed sessions and
+created a duplicate row on every subsequent message — fixed by
+lifting Telegram's stable [chat:<id>] suffix pattern into a shared
+channels::session_resolve module that all three channels now use,
+with suffix-first lookup, legacy exact-title fallback, and one-shot
+forward-migration of pre-suffix rows. Test infra got two real bug
+fixes that were masking CI failures: the in-memory test pool
+switched from WAL journal mode (a no-op for :memory: but a source of
+spurious SQLITE_LOCKED 262 on shared-cache under concurrent writers
+in release mode) to MEMORY journal with a single serialized
+connection, eliminating cross-connection lock contention; a
+release-mode rfc3339 nanosecond collision flake in the profile
+registry test got a 1 ms guard so back-to-back Utc::now() calls
+produce strictly-ordered timestamps. Closes #121.
+
+AUTO-TITLE + TELEGRAM SESSION RESOLUTION (4 commits, closes #121)
+
+The reporter's reproduction of #121 had two failure modes that
+compounded each other. Reasoning models like qwen-3.7-max-preview-
+thinking on a short prompt returned ONLY a Thinking block for the
+title call — no Text block — so extract_text_from_response returned
+empty and the session never renamed. PR #123 (community contribution
+by @leshchenko1979) found a second bug: on every subsequent message
+the Telegram handler did `if session.title != computed_default
+{ overwrite }`, so any auto-titled name was reverted to the default
+template (`Telegram: DM <name> (<id>) [chat:<id>]`) the next time
+the user sent a message. Combined fix: extract_title_candidate
+falls back to pluck_title_from_thinking when no Text block is
+present (last quoted phrase, then last short sentence), and
+should_refresh_label only refreshes default→default-different or
+group label changes — never auto-titled or custom titles. Telegram
+also now binds chat_id→session_id in an in-memory map on /sessions
+switch so explicit user choices win over suffix lookup.
+
+- 1aeaca2a fix(auto-title): handle thinking-only responses from reasoning models + add real e2e test (closes #121)
+- 13f4930c fix(telegram): preserve auto-titled sessions and bind chat on switch
+- 0f0c4174 Merge PR #123: fix(telegram) preserve auto-titled sessions and bind chat on switch
+- a63c1826 test(auto-title): add second-message regression + cold-start doc note (PR #123 follow-up)
+
+CROSS-CHANNEL SESSION SUFFIX PORT (1 commit)
+
+Audit of Discord/Slack/WhatsApp handlers found the same root cause
+as the Telegram bug PR #123 fixed but with a different user-visible
+symptom: all three used exact-title
+`find_session_by_title(&template)` lookup. After the agent
+auto-renamed a session, the next message's lookup missed and the
+handler created a brand-new duplicate session on every turn. New
+`channels::session_resolve` module gives all three channels the
+same stable `[chat:<id>]` suffix Telegram already had:
+`[chat:discord-dm-<user_id>]`, `[chat:discord-<channel_id>]`,
+`[chat:slack-dm-<user_id>]`, `[chat:slack-<channel_id>]`,
+`[chat:wa-<phone>]`. `resolve_or_create_channel_session` runs
+suffix-first lookup, falls back to legacy exact-title for
+pre-suffix rows, and one-shot migrates the legacy row to the
+suffix-bearing title format so subsequent lookups take the fast
+path. Slack `/new` also runs the suffix-first lookup so
+auto-titled rows still get archived. 7 unit tests cover suffix
+resolve, auto-rename survival, legacy forward-migration, fresh
+create, and idle archive + recreate.
+
+- faa8b755 fix(channels): port telegram suffix-stable session lookup to discord, slack, whatsapp
+
+IN-MEMORY TEST POOL HARDENING (3 commits)
+
+CI release-mode runs of auto_title_e2e_test were panicking with
+`Database("Failed to create message")`. Surfacing the error chain
+revealed the underlying cause: SQLITE_LOCKED 262 on the `sessions`
+table. Two compounding pool misconfigurations: WAL journal mode is
+a no-op for `:memory:` (no file to journal to) but with
+`cache=shared` triggers spurious table-lock failures under
+concurrent writers in release mode, and `max_size = 5` let
+deadpool hand out distinct connections that fought for
+shared-cache table locks. The auto-title flow spawns a background
+title task which races the main turn's session touch — reliable
+failure in release, flaky in debug. Fix splits `apply_pragmas` so
+in-memory connections get `journal_mode=MEMORY`,
+`synchronous=OFF`, `foreign_keys=ON` (file pools keep WAL/NORMAL),
+and caps the in-memory pool to a single serialized connection. Two
+tokio test functions in auto_title_e2e_test.rs violating the file's
+own "must be folded into a single tokio test" invariant got folded
+back into one. The channel resolver idle test was holding a
+deadpool connection across a call that needed another — fine on a
+5-connection pool, deadlock on the new single-connection pool —
+scoped the connection handle tight.
+
+- 2456b91d test(auto-title): fold second-message regression into single tokio test
+- d49c5e04 fix(db): use MEMORY journal + max_size=1 for in-memory test pool
+- db43aeef fix(test): scope deadpool connection in idle test to avoid single-conn deadlock
+
+CI HYGIENE (2 commits)
+
+`tests::profile_test::registry_register_overwrites_duplicate` was a
+pre-existing release-mode flake: `register` stamps
+`Utc::now().to_rfc3339()`, and two back-to-back calls in release
+sometimes land in the same nanosecond, producing identical
+timestamps and failing the `assert_ne!` on `created_at`. A 1 ms
+sleep between calls guarantees the second timestamp is strictly
+later. Tarpaulin's cobertura.xml output is now gitignored so
+running coverage locally doesn't dirty the tree.
+
+- c46e500e fix(test): release-mode rfc3339 collision in profile registry test + fmt
+- 5963f47f chore: gitignore tarpaulin's cobertura.xml output
+
 ## [0.3.28] - 2026-05-25
 
 25 commits since v0.3.27. Patch release covering STT/TTS fallback chains
@@ -1313,7 +1428,8 @@ provider and context budget.
 - **Anti-code-block nudge for local models** — brain instructions explicitly
   tell the model to use `tool_calls`, not markdown code blocks.
 
-[Unreleased]: https://github.com/adolfousier/opencrabs/compare/v0.3.28...HEAD
+[Unreleased]: https://github.com/adolfousier/opencrabs/compare/v0.3.29...HEAD
+[0.3.29]: https://github.com/adolfousier/opencrabs/compare/v0.3.28...v0.3.29
 [0.3.28]: https://github.com/adolfousier/opencrabs/compare/v0.3.27...v0.3.28
 [0.3.27]: https://github.com/adolfousier/opencrabs/compare/v0.3.26...v0.3.27
 [0.3.26]: https://github.com/adolfousier/opencrabs/compare/v0.3.25...v0.3.26
