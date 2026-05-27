@@ -687,16 +687,22 @@ pub async fn models_for_provider(provider_name: &str) -> ModelsResponse {
     );
 
     if is_cli_provider {
-        // Get default model from config or use hardcoded fallback
+        // Get default model from config or use hardcoded fallback that
+        // matches the provider's own default_model().
         let current_model = config_models.first().cloned().unwrap_or_else(|| {
             if provider_name.starts_with("claude") {
                 "opus-4-7".to_string()
             } else {
-                "sonnet-4.5".to_string()
+                // opencode-cli default. Was incorrectly "sonnet-4.5"
+                // (a Claude name) — the menu listed Claude models for
+                // OpenCode CLI users, bug 2026-05-27.
+                "opencode/gpt-5-nano".to_string()
             }
         });
 
-        // Hardcoded supported models for CLI providers (no binary needed)
+        // Hardcoded supported models for CLI providers (no binary needed).
+        // Must mirror OpenCodeCliProvider::supported_models() and
+        // ClaudeCliProvider::supported_models() exactly.
         let models = if !config_models.is_empty() {
             config_models
         } else if provider_name.starts_with("claude") {
@@ -706,7 +712,19 @@ pub async fn models_for_provider(provider_name: &str) -> ModelsResponse {
                 "haiku-4-5".to_string(),
             ]
         } else {
-            vec!["sonnet-4.5".to_string(), "opus-4.1".to_string()]
+            // opencode-cli — was incorrectly listing Claude model names
+            // ("sonnet-4.5", "opus-4.1"). Now mirrors the provider's
+            // actual supported_models() output (8 OpenCode-hosted models).
+            vec![
+                "opencode/big-pickle".to_string(),
+                "opencode/gpt-5-nano".to_string(),
+                "opencode/mimo-v2-omni-free".to_string(),
+                "opencode/mimo-v2-pro-free".to_string(),
+                "opencode/minimax-m2.5-free".to_string(),
+                "opencode/nemotron-3-super-free".to_string(),
+                "opencode/opencode-zen".to_string(),
+                "opencode/opencode-go".to_string(),
+            ]
         };
 
         let mut text_lines = vec![
