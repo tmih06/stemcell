@@ -24,7 +24,7 @@ fn empty_config_lists_every_known_provider_as_unconfigured() {
         "issue #126: OpenCode (API) must appear in the picker even without an API key"
     );
     let (_, label, configured) = opencode.unwrap();
-    assert_eq!(*configured, false);
+    assert!(!*configured);
     assert!(label.contains("OpenCode"));
 
     // CLI providers must be shown as configured (no API key needed).
