@@ -21,6 +21,25 @@ use tokio::io::AsyncWriteExt;
 static CLI_MODEL_DRIFT_SEEN: LazyLock<Mutex<HashSet<String>>> =
     LazyLock::new(|| Mutex::new(HashSet::new()));
 
+/// Canonical model list for Claude CLI. Single source of truth read by
+/// `Provider::supported_models` AND by the channel `/models` menu helper
+/// in `utils::providers::cli_supported_models` — adding or removing a
+/// Claude variant only requires editing this const, not chasing
+/// duplicated lists across modules.
+pub(crate) const SUPPORTED_MODELS: &[&str] = &[
+    "sonnet",
+    "opus",
+    "haiku",
+    "opus-4-7",
+    "sonnet-4-6",
+    "opus-4-6",
+    "haiku-4-5",
+];
+
+/// Default model when no per-session override is set. Mirrors the
+/// `default_for_alias("sonnet")` resolution used by `ClaudeCliProvider::new`.
+pub(crate) const DEFAULT_MODEL: &str = "opus-4-7";
+
 /// Claude CLI provider — talks directly to the `claude` binary.
 #[derive(Clone)]
 pub struct ClaudeCliProvider {
@@ -1141,15 +1160,7 @@ impl Provider for ClaudeCliProvider {
     }
 
     fn supported_models(&self) -> Vec<String> {
-        vec![
-            "sonnet".to_string(),
-            "opus".to_string(),
-            "haiku".to_string(),
-            "opus-4-7".to_string(),
-            "sonnet-4-6".to_string(),
-            "opus-4-6".to_string(),
-            "haiku-4-5".to_string(),
-        ]
+        SUPPORTED_MODELS.iter().map(|s| s.to_string()).collect()
     }
 
     fn context_window(&self, _model: &str) -> Option<u32> {

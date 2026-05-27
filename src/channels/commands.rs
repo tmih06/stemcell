@@ -687,44 +687,23 @@ pub async fn models_for_provider(provider_name: &str) -> ModelsResponse {
     );
 
     if is_cli_provider {
-        // Get default model from config or use hardcoded fallback that
-        // matches the provider's own default_model().
-        let current_model = config_models.first().cloned().unwrap_or_else(|| {
-            if provider_name.starts_with("claude") {
-                "opus-4-7".to_string()
-            } else {
-                // opencode-cli default. Was incorrectly "sonnet-4.5"
-                // (a Claude name) — the menu listed Claude models for
-                // OpenCode CLI users, bug 2026-05-27.
-                "opencode/gpt-5-nano".to_string()
-            }
-        });
+        // Read the canonical model list straight from the provider module's
+        // const tables via `cli_supported_models`. Single source of truth
+        // for both the provider's `supported_models()` and this menu —
+        // can't drift, can't show Claude names for OpenCode CLI again.
+        let (canonical_models, canonical_default) =
+            crate::utils::providers::cli_supported_models(provider_name)
+                .unwrap_or_else(|| (Vec::new(), ""));
 
-        // Hardcoded supported models for CLI providers (no binary needed).
-        // Must mirror OpenCodeCliProvider::supported_models() and
-        // ClaudeCliProvider::supported_models() exactly.
+        let current_model = config_models
+            .first()
+            .cloned()
+            .unwrap_or_else(|| canonical_default.to_string());
+
         let models = if !config_models.is_empty() {
             config_models
-        } else if provider_name.starts_with("claude") {
-            vec![
-                "opus-4-7".to_string(),
-                "sonnet-4-6".to_string(),
-                "haiku-4-5".to_string(),
-            ]
         } else {
-            // opencode-cli — was incorrectly listing Claude model names
-            // ("sonnet-4.5", "opus-4.1"). Now mirrors the provider's
-            // actual supported_models() output (8 OpenCode-hosted models).
-            vec![
-                "opencode/big-pickle".to_string(),
-                "opencode/gpt-5-nano".to_string(),
-                "opencode/mimo-v2-omni-free".to_string(),
-                "opencode/mimo-v2-pro-free".to_string(),
-                "opencode/minimax-m2.5-free".to_string(),
-                "opencode/nemotron-3-super-free".to_string(),
-                "opencode/opencode-zen".to_string(),
-                "opencode/opencode-go".to_string(),
-            ]
+            canonical_models
         };
 
         let mut text_lines = vec![

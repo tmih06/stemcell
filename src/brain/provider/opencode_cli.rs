@@ -14,6 +14,26 @@ use serde::Deserialize;
 use std::process::Stdio;
 use tokio::io::AsyncBufReadExt;
 
+/// Canonical model list for OpenCode CLI. Single source of truth read by
+/// `Provider::supported_models` AND by the channel `/models` menu helper
+/// in `utils::providers::cli_supported_models` — adding or removing an
+/// OpenCode-hosted model only requires editing this const, not chasing
+/// duplicated lists across modules. Was the root cause of the
+/// 2026-05-27 "/models shows Claude names for OpenCode CLI" bug.
+pub(crate) const SUPPORTED_MODELS: &[&str] = &[
+    "opencode/big-pickle",
+    "opencode/gpt-5-nano",
+    "opencode/mimo-v2-omni-free",
+    "opencode/mimo-v2-pro-free",
+    "opencode/minimax-m2.5-free",
+    "opencode/nemotron-3-super-free",
+    "opencode/opencode-zen",
+    "opencode/opencode-go",
+];
+
+/// Default model when no per-session override is set.
+pub(crate) const DEFAULT_MODEL: &str = "opencode/gpt-5-nano";
+
 /// OpenCode CLI provider — talks directly to the `opencode` binary.
 #[derive(Clone)]
 pub struct OpenCodeCliProvider {
@@ -27,7 +47,7 @@ impl OpenCodeCliProvider {
         let path = resolve_opencode_path()?;
         Ok(Self {
             opencode_path: path,
-            default_model: "opencode/gpt-5-nano".to_string(),
+            default_model: DEFAULT_MODEL.to_string(),
         })
     }
 
@@ -728,16 +748,7 @@ impl Provider for OpenCodeCliProvider {
     }
 
     fn supported_models(&self) -> Vec<String> {
-        vec![
-            "opencode/big-pickle".to_string(),
-            "opencode/gpt-5-nano".to_string(),
-            "opencode/mimo-v2-omni-free".to_string(),
-            "opencode/mimo-v2-pro-free".to_string(),
-            "opencode/minimax-m2.5-free".to_string(),
-            "opencode/nemotron-3-super-free".to_string(),
-            "opencode/opencode-zen".to_string(),
-            "opencode/opencode-go".to_string(),
-        ]
+        SUPPORTED_MODELS.iter().map(|s| s.to_string()).collect()
     }
 
     fn context_window(&self, _model: &str) -> Option<u32> {

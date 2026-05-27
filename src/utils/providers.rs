@@ -224,6 +224,36 @@ pub fn configured_providers(providers: &ProviderConfigs) -> Vec<(String, String)
     result
 }
 
+/// Canonical model list + default for a CLI provider, read straight from
+/// the provider module's const tables. Returns `None` for non-CLI
+/// providers. The channel `/models` menu uses this so the listed models
+/// can never drift from what the provider actually serves — the
+/// 2026-05-27 bug where OpenCode CLI users saw Claude model names came
+/// from a hardcoded fallback that bypassed this lookup.
+///
+/// Two accepted name forms per provider (hyphen and underscore variants)
+/// because both surface from different config-loading paths.
+pub fn cli_supported_models(name: &str) -> Option<(Vec<String>, &'static str)> {
+    use crate::brain::provider::{claude_cli, opencode_cli};
+    match name {
+        "claude-cli" | "claude_cli" => Some((
+            claude_cli::SUPPORTED_MODELS
+                .iter()
+                .map(|s| s.to_string())
+                .collect(),
+            claude_cli::DEFAULT_MODEL,
+        )),
+        "opencode-cli" | "opencode_cli" => Some((
+            opencode_cli::SUPPORTED_MODELS
+                .iter()
+                .map(|s| s.to_string())
+                .collect(),
+            opencode_cli::DEFAULT_MODEL,
+        )),
+        _ => None,
+    }
+}
+
 /// Find the TUI PROVIDERS index for a provider name/alias.
 /// Returns None for custom providers (those map to 9+ dynamically).
 pub fn tui_index_for_id(name: &str) -> Option<usize> {
