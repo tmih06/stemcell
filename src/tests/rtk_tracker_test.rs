@@ -90,3 +90,52 @@ async fn test_format_report() {
     assert!(report.contains("Total Commands: 1"));
     assert!(report.contains("git"));
 }
+
+// ─── No-block regression test (issue #125 sibling) ─────────────────
+//
+// Same shape as `concurrent_rtk_calls_never_block_single_worker_runtime`
+// in `rtk_rewrite_test`: 32 concurrent `record_savings` calls on a
+// single-worker tokio runtime, capped by a 5-second timeout. If the
+// `tokio::sync::Mutex` is ever swapped back to `std::sync::Mutex` in an
+// async path, the contention pattern can stall the worker and this test
+// fails instead of silently regressing.
+
+#[test]
+fn concurrent_record_savings_never_blocks_single_worker_runtime() {
+    use std::sync::Arc;
+    use std::time::Duration;
+    use tokio::time::timeout;
+
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .expect("current_thread runtime");
+
+    rt.block_on(async {
+        let tracker = Arc::new(RtkTracker::new());
+        let mut handles = Vec::new();
+        for i in 0..32 {
+            let t = tracker.clone();
+            handles.push(tokio::spawn(async move {
+                t.record_savings(TokenSavings {
+                    command: format!("cmd-{i}"),
+                    rewritten_command: format!("rtk cmd-{i}"),
+                    original_tokens: 100,
+                    filtered_tokens: 20,
+                    tokens_saved: 80,
+                    savings_percent: 80.0,
+                    timestamp: Utc::now(),
+                })
+                .await;
+            }));
+        }
+
+        let joined = futures::future::join_all(handles);
+        timeout(Duration::from_secs(5), joined).await.expect(
+            "record_savings hung a single-worker runtime — std::sync::Mutex \
+             was likely reintroduced (issue #125 sibling regression)",
+        );
+
+        assert_eq!(tracker.total_commands().await, 32);
+    });
+}
