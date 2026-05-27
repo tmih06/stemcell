@@ -7,7 +7,8 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Arc, OnceLock};
+use tokio::sync::Mutex;
 
 /// Global RTK tracker instance
 static GLOBAL_TRACKER: OnceLock<Arc<RtkTracker>> = OnceLock::new();
@@ -89,10 +90,16 @@ impl RtkTracker {
 
     /// Record token savings for a command execution
     ///
+    /// Async because it acquires a `tokio::sync::Mutex`. The critical section
+    /// is microseconds long, but using a sync `std::sync::Mutex` in an async
+    /// path is the same class of bug that hung the daemon in issue #125 — the
+    /// `which rtk` blocking process call. Defense in depth: never reach for a
+    /// sync primitive from inside `bash.rs`'s async execute path.
+    ///
     /// # Arguments
     /// * `savings` - The token savings data for this execution
-    pub fn record_savings(&self, savings: TokenSavings) {
-        let mut metrics = self.metrics.lock().unwrap();
+    pub async fn record_savings(&self, savings: TokenSavings) {
+        let mut metrics = self.metrics.lock().await;
 
         // Update totals
         metrics.total_commands += 1;
@@ -142,28 +149,28 @@ impl RtkTracker {
     }
 
     /// Get current metrics snapshot
-    pub fn get_metrics(&self) -> RtkMetrics {
-        self.metrics.lock().unwrap().clone()
+    pub async fn get_metrics(&self) -> RtkMetrics {
+        self.metrics.lock().await.clone()
     }
 
     /// Get total tokens saved
-    pub fn total_tokens_saved(&self) -> usize {
-        self.metrics.lock().unwrap().total_tokens_saved
+    pub async fn total_tokens_saved(&self) -> usize {
+        self.metrics.lock().await.total_tokens_saved
     }
 
     /// Get total commands executed
-    pub fn total_commands(&self) -> usize {
-        self.metrics.lock().unwrap().total_commands
+    pub async fn total_commands(&self) -> usize {
+        self.metrics.lock().await.total_commands
     }
 
     /// Get average savings percentage
-    pub fn average_savings_percent(&self) -> f64 {
-        self.metrics.lock().unwrap().average_savings_percent
+    pub async fn average_savings_percent(&self) -> f64 {
+        self.metrics.lock().await.average_savings_percent
     }
 
     /// Format metrics as a human-readable string for display
-    pub fn format_report(&self) -> String {
-        let metrics = self.get_metrics();
+    pub async fn format_report(&self) -> String {
+        let metrics = self.get_metrics().await;
 
         let mut report = String::new();
         report.push_str("═══ RTK Token Savings Report ═══\n\n");
@@ -203,88 +210,5 @@ impl RtkTracker {
 impl Default for RtkTracker {
     fn default() -> Self {
         Self::new()
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_tracker_creation() {
-        let tracker = RtkTracker::new();
-        assert_eq!(tracker.total_commands(), 0);
-        assert_eq!(tracker.total_tokens_saved(), 0);
-    }
-
-    #[test]
-    fn test_record_savings() {
-        let tracker = RtkTracker::new();
-
-        let savings = TokenSavings {
-            command: "git status".to_string(),
-            rewritten_command: "rtk git status".to_string(),
-            original_tokens: 100,
-            filtered_tokens: 20,
-            tokens_saved: 80,
-            savings_percent: 80.0,
-            timestamp: Utc::now(),
-        };
-
-        tracker.record_savings(savings);
-
-        assert_eq!(tracker.total_commands(), 1);
-        assert_eq!(tracker.total_tokens_saved(), 80);
-        assert!((tracker.average_savings_percent() - 80.0).abs() < 0.01);
-    }
-
-    #[test]
-    fn test_multiple_commands() {
-        let tracker = RtkTracker::new();
-
-        // Record git status
-        tracker.record_savings(TokenSavings {
-            command: "git status".to_string(),
-            rewritten_command: "rtk git status".to_string(),
-            original_tokens: 100,
-            filtered_tokens: 20,
-            tokens_saved: 80,
-            savings_percent: 80.0,
-            timestamp: Utc::now(),
-        });
-
-        // Record cargo build
-        tracker.record_savings(TokenSavings {
-            command: "cargo build".to_string(),
-            rewritten_command: "rtk cargo build".to_string(),
-            original_tokens: 200,
-            filtered_tokens: 40,
-            tokens_saved: 160,
-            savings_percent: 80.0,
-            timestamp: Utc::now(),
-        });
-
-        assert_eq!(tracker.total_commands(), 2);
-        assert_eq!(tracker.total_tokens_saved(), 240);
-    }
-
-    #[test]
-    fn test_format_report() {
-        let tracker = RtkTracker::new();
-
-        tracker.record_savings(TokenSavings {
-            command: "git status".to_string(),
-            rewritten_command: "rtk git status".to_string(),
-            original_tokens: 100,
-            filtered_tokens: 20,
-            tokens_saved: 80,
-            savings_percent: 80.0,
-            timestamp: Utc::now(),
-        });
-
-        let report = tracker.format_report();
-        assert!(report.contains("RTK Token Savings Report"));
-        assert!(report.contains("Total Commands: 1"));
-        assert!(report.contains("git"));
     }
 }

@@ -541,7 +541,7 @@ impl Tool for BashTool {
                     timestamp: chrono::Utc::now(),
                 };
 
-                crate::rtk::global_tracker().record_savings(savings);
+                crate::rtk::global_tracker().record_savings(savings).await;
 
                 tracing::info!(
                     "RTK rewrote command ({} filtered tokens): {}",

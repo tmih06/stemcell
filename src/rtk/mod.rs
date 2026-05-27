@@ -18,7 +18,7 @@
 //! ```
 
 #[cfg(feature = "rtk")]
-mod rewrite;
+pub(crate) mod rewrite;
 #[cfg(feature = "rtk")]
 mod tracker;
 
