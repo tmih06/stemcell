@@ -14,7 +14,7 @@
 //! `create_provider_by_name`, `create_fallback`, `active_provider_vision`)
 //! all iterate the registry automatically.
 
-use super::qwen::{qwen_body_transform, qwen_extra_headers};
+use super::qwen::{looks_like_qwen_target, qwen_body_transform, qwen_extra_headers};
 use super::{
     Provider,
     anthropic::AnthropicProvider,
@@ -305,6 +305,38 @@ fn local_thinking_body_transform(enable: bool) -> BodyTransformFn {
     })
 }
 
+/// Body transform for custom providers that auto-applies `qwen_body_transform`
+/// when the outgoing request looks Qwen / Alibaba-shaped.
+///
+/// `base_url` is captured at construction (provider-level, static). `model` is
+/// read from each outgoing request body (dynamic — one custom provider may
+/// route to many models, only some of which are Qwen). The transform is a
+/// no-op for non-matching requests: the body passes through unchanged.
+///
+/// Composes safely with `local_thinking_body_transform` when both are
+/// installed — order matters only insofar as the cache transform expects to
+/// see `messages` and `tools` in their final form, which `local_thinking_*`
+/// doesn't touch.
+///
+/// This unlocks Alibaba's explicit cache (90% off on hits, 25% surcharge on
+/// create, 5-minute TTL auto-renewed) for any custom provider pointed at a
+/// known Qwen endpoint or running a `qwen-*` model — zero user config.
+fn auto_qwen_cache_transform(base_url: String) -> BodyTransformFn {
+    Arc::new(move |body: serde_json::Value| {
+        let model = body.get("model").and_then(|v| v.as_str()).unwrap_or("");
+        if looks_like_qwen_target(&base_url, model) {
+            qwen_body_transform(body)
+        } else {
+            body
+        }
+    })
+}
+
+/// Compose multiple body transforms left-to-right.
+fn chain_body_transforms(a: BodyTransformFn, b: BodyTransformFn) -> BodyTransformFn {
+    Arc::new(move |body| b(a(body)))
+}
+
 // ── Public factory functions ────────────────────────────────────
 
 /// Create a provider based on config.toml
@@ -522,10 +554,19 @@ fn try_create_custom_by_name(config: &Config, name: &str) -> Result<Option<Arc<d
     );
     let mut builder =
         OpenAIProvider::with_base_url(api_key.clone(), base_url.clone()).with_name(name);
-    if is_local_base_url(&base_url) {
+
+    // Compose body transforms: thinking flag for local servers, then auto-qwen
+    // cache markers for Qwen / Alibaba targets. Both are no-ops on requests
+    // that don't match their respective triggers.
+    let cache_transform = auto_qwen_cache_transform(base_url.clone());
+    let combined_transform = if is_local_base_url(&base_url) {
         let enable = custom_config.enable_thinking.unwrap_or(true);
-        builder = builder.with_body_transform(local_thinking_body_transform(enable));
-    }
+        chain_body_transforms(local_thinking_body_transform(enable), cache_transform)
+    } else {
+        cache_transform
+    };
+    builder = builder.with_body_transform(combined_transform);
+
     let provider = configure_openai_compatible(builder, &custom_config);
     Ok(Some(Arc::new(provider)))
 }
@@ -1039,10 +1080,18 @@ fn try_create_custom(config: &Config) -> Result<Option<Arc<dyn Provider>>> {
         !api_key.is_empty()
     );
     let mut builder = OpenAIProvider::with_base_url(api_key, base_url.clone()).with_name(&name);
-    if is_local_base_url(&base_url) {
+
+    // Mirror try_create_custom_by_name: thinking flag for local servers,
+    // then auto-qwen cache markers for Qwen / Alibaba targets.
+    let cache_transform = auto_qwen_cache_transform(base_url.clone());
+    let combined_transform = if is_local_base_url(&base_url) {
         let enable = custom_config.enable_thinking.unwrap_or(true);
-        builder = builder.with_body_transform(local_thinking_body_transform(enable));
-    }
+        chain_body_transforms(local_thinking_body_transform(enable), cache_transform)
+    } else {
+        cache_transform
+    };
+    builder = builder.with_body_transform(combined_transform);
+
     let provider = configure_openai_compatible(builder, &custom_config);
     Ok(Some(Arc::new(provider)))
 }
