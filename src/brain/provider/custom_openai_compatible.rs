@@ -408,6 +408,18 @@ pub(crate) fn extract_text_tool_calls(text: &str) -> (Vec<(String, serde_json::V
     // the whole thing as a code block and the call never dispatches.
     let has_dict_by_id_signal =
         text.contains("\"call_") && (text.contains("\"name\"") || text.contains("\"function\""));
+    // Bare-args signal: 2026-05-27 qwen-3.7-max-thinking regression on the
+    // dialagram provider. The model emits orphaned tool arguments as bare
+    // JSON objects in delta.content with NO call_id wrapper, NO `name`
+    // field, NO XML tag — just the raw arguments object. Shape:
+    //   {"command": "cd ~/srv/rs/opencrabs && grep ..."}
+    // The bash tool's `command` key is unique enough to anchor on (other
+    // tools take `path`, `query`, `pattern`, …; only bash uses `command`).
+    // Without this signal the early-return below ships the JSON straight
+    // to visible TUI content and the call never dispatches.
+    let has_bare_command_args = text.contains("{\"command\":")
+        || text.contains("{ \"command\":")
+        || text.contains("{\"command\" :");
     if !text.contains("<tool_call>")
         && !text.contains("<function=")
         && !text.contains("tool_call:")
@@ -416,6 +428,7 @@ pub(crate) fn extract_text_tool_calls(text: &str) -> (Vec<(String, serde_json::V
         && !has_claude_style
         && !has_bare_array_signal
         && !has_dict_by_id_signal
+        && !has_bare_command_args
     {
         return (Vec::new(), text.to_string());
     }
@@ -821,6 +834,109 @@ pub(crate) fn extract_text_tool_calls(text: &str) -> (Vec<(String, serde_json::V
             let end = open_end + body_rel + close_len;
             strip_ranges.push((start, end));
             i = end;
+        }
+    }
+
+    // Pass 1.7 — orphaned bash args. 2026-05-27 qwen-3.7-max-thinking on
+    // dialagram emits multiple bare `{"command": "..."}` objects in
+    // delta.content with no wrapper. Runs LAST so it can check the
+    // accumulated `strip_ranges` and skip any `"command"` anchor that's
+    // already inside a wrapper the other passes captured — otherwise a
+    // nested `{"arguments":{"command":"..."}}` would synthesize a
+    // duplicate.
+    //
+    // Anchor on `"command"` preceded by `{` (with optional whitespace),
+    // balance-extract the object, verify keys are a strict subset of
+    // bash's schema (`command`, `working_dir`, `timeout_secs`) — that
+    // rules out prose like `{"command": "show example", "note": "x"}` —
+    // and synthesize a bash tool call.
+    if has_bare_command_args {
+        let mut search_from = 0;
+        while let Some(rel) = text[search_from..].find("\"command\"") {
+            let anchor_pos = search_from + rel;
+            // Walk back past whitespace to find `{`.
+            let mut back = anchor_pos;
+            while back > 0 {
+                let b = text.as_bytes()[back - 1];
+                if b.is_ascii_whitespace() || b == b'\n' || b == b'\r' {
+                    back -= 1;
+                    continue;
+                }
+                break;
+            }
+            if back == 0 || text.as_bytes()[back - 1] != b'{' {
+                search_from = anchor_pos + "\"command\"".len();
+                continue;
+            }
+            let obj_start = back - 1;
+            // Already inside a wrapper another pass captured — skip.
+            if strip_ranges
+                .iter()
+                .any(|(s, e)| *s <= obj_start && obj_start < *e)
+            {
+                search_from = anchor_pos + "\"command\"".len();
+                continue;
+            }
+            // Nested-as-value guard: if the `{` is preceded (past
+            // whitespace) by `:`, this object is the value of an outer
+            // key (e.g. `"arguments": {"command": ...}` or
+            // `"function": {...}`). Some outer envelope already had its
+            // chance via the other passes; if it wasn't a recognised
+            // shape we deliberately don't try to recover it as bare bash
+            // — the existing test `openai_nested_function_name_without_
+            // wrapper` locks that policy in.
+            let mut prev = obj_start;
+            while prev > 0 {
+                let b = text.as_bytes()[prev - 1];
+                if b.is_ascii_whitespace() || b == b'\n' || b == b'\r' {
+                    prev -= 1;
+                    continue;
+                }
+                break;
+            }
+            if prev > 0 && text.as_bytes()[prev - 1] == b':' {
+                // Distinguish JSON-key colon (preceded by `"`) from
+                // English-prose colon (preceded by a letter/digit). Only
+                // JSON nesting should suppress synthesis — prose like
+                // `"Running build: {\"command\":\"cargo\"} done."` is
+                // still a legit bare-args leak.
+                let mut k = prev - 1;
+                while k > 0 {
+                    let b = text.as_bytes()[k - 1];
+                    if b.is_ascii_whitespace() {
+                        k -= 1;
+                        continue;
+                    }
+                    break;
+                }
+                if k > 0 && text.as_bytes()[k - 1] == b'"' {
+                    search_from = anchor_pos + "\"command\"".len();
+                    continue;
+                }
+            }
+            let Some(consumed) = extract_balanced_json(&text[obj_start..]) else {
+                search_from = anchor_pos + "\"command\"".len();
+                continue;
+            };
+            let obj_slice = &text[obj_start..obj_start + consumed];
+            let Ok(v) = serde_json::from_str::<serde_json::Value>(obj_slice) else {
+                search_from = anchor_pos + "\"command\"".len();
+                continue;
+            };
+            let Some(obj) = v.as_object() else {
+                search_from = anchor_pos + "\"command\"".len();
+                continue;
+            };
+            let known = ["command", "working_dir", "timeout_secs"];
+            let all_known = obj.keys().all(|k| known.contains(&k.as_str()));
+            let has_command_string = obj.get("command").and_then(|c| c.as_str()).is_some();
+            if !all_known || !has_command_string {
+                search_from = anchor_pos + "\"command\"".len();
+                continue;
+            }
+            tool_calls.push(("bash".to_string(), v));
+            strip_ranges.push((obj_start, obj_start + consumed));
+            search_from = obj_start + consumed;
         }
     }
 

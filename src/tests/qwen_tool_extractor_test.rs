@@ -492,3 +492,100 @@ fn dict_by_call_id_with_function_envelope_form() {
     assert_eq!(calls[0].0, "bash");
     assert_eq!(calls[0].1["command"], "pwd");
 }
+
+// ─── Pass 1.7 — bare-args orphans (qwen-3.7-max-thinking on dialagram) ──
+
+#[test]
+fn extract_bare_command_args_single() {
+    let text = r#"{"command": "cd ~/srv/rs/opencrabs && cat src/rtk/tracker.rs | head -150"}"#;
+    let (calls, cleaned) = extract_text_tool_calls(text);
+    assert_eq!(calls.len(), 1, "must synthesize a bash call");
+    assert_eq!(calls[0].0, "bash");
+    assert_eq!(
+        calls[0].1["command"],
+        "cd ~/srv/rs/opencrabs && cat src/rtk/tracker.rs | head -150"
+    );
+    assert!(
+        cleaned.trim().is_empty(),
+        "bare-args JSON must be stripped from visible text, got: {cleaned:?}"
+    );
+}
+
+#[test]
+fn extract_bare_command_args_multiple_blobs_user_screenshot() {
+    // Verbatim reproduction of the 2026-05-27 user screenshot: five bare
+    // `{"command": "..."}` blobs the model emitted in delta.content after
+    // some structured tool calls succeeded. Pre-fix: every blob rendered
+    // as visible JSON in the TUI and the calls never dispatched.
+    let text = r#"{"command": "cd ~/srv/rs/opencrabs && cat src/rtk/tracker.rs | head -150"}
+{"command": "cd ~/srv/rs/opencrabs && cat src/rtk/mod.rs | head -200"}
+{"command": "cd ~/srv/rs/opencrabs && grep -r \"rtk::rewrite\\|rtk_rewrite\\|Rtk Result\" src/brain/tools/ --include=\"*.rs\" | head -20"}
+{"command": "cd ~/srv/rs/opencrabs && git diff v0.3.24..v0.3.25 -- src/brain/tools/bash.rs | head -100"}
+{"command": "cd ~/srv/rs/opencrabs && cat src/brain/tools/bash.rs | grep -A 30 -B 5 'rtk\\|spawn_blocking\\|block_on' | head -80"}"#;
+
+    let (calls, cleaned) = extract_text_tool_calls(text);
+    assert_eq!(calls.len(), 5, "all five blobs must become tool calls");
+    for call in &calls {
+        assert_eq!(call.0, "bash");
+        assert!(
+            call.1["command"]
+                .as_str()
+                .unwrap()
+                .starts_with("cd ~/srv/rs/opencrabs"),
+            "command must round-trip exactly: {call:?}"
+        );
+    }
+    assert!(
+        cleaned.trim().is_empty(),
+        "all bare-args blobs must be stripped, leftover: {cleaned:?}"
+    );
+}
+
+#[test]
+fn extract_bare_command_args_with_optional_keys() {
+    // Bash schema has `working_dir` and `timeout_secs` alongside `command`.
+    // A bare-args object using those is still bash.
+    let text = r#"{"command": "cargo build", "timeout_secs": 600}"#;
+    let (calls, _) = extract_text_tool_calls(text);
+    assert_eq!(calls.len(), 1);
+    assert_eq!(calls[0].0, "bash");
+    assert_eq!(calls[0].1["command"], "cargo build");
+    assert_eq!(calls[0].1["timeout_secs"], 600);
+}
+
+#[test]
+fn bare_command_args_ignored_when_extra_unknown_keys() {
+    // A prose-emitted object with `command` AND unknown extras (`note`,
+    // `id`, etc.) is NOT a tool call — must not synthesize bash, must
+    // leave content alone.
+    let text = r#"{"command": "ls", "note": "example", "id": "x"}"#;
+    let (calls, cleaned) = extract_text_tool_calls(text);
+    assert!(
+        calls.is_empty(),
+        "object with non-bash keys must not synthesize"
+    );
+    assert!(
+        cleaned.contains("ls"),
+        "non-tool prose must pass through, got: {cleaned:?}"
+    );
+}
+
+#[test]
+fn bare_command_args_ignored_when_command_not_string() {
+    let text = r#"{"command": 42}"#;
+    let (calls, _) = extract_text_tool_calls(text);
+    assert!(calls.is_empty(), "non-string command must not synthesize");
+}
+
+#[test]
+fn bare_command_args_alongside_prose_strips_only_json() {
+    let text = "Running the build now: {\"command\": \"cargo build\"} please wait.";
+    let (calls, cleaned) = extract_text_tool_calls(text);
+    assert_eq!(calls.len(), 1);
+    assert_eq!(calls[0].0, "bash");
+    assert_eq!(calls[0].1["command"], "cargo build");
+    assert!(
+        cleaned.contains("Running the build") && cleaned.contains("please wait"),
+        "surrounding prose must remain, got: {cleaned:?}"
+    );
+}
