@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
+### Added
+- Custom providers pointed at Qwen / Alibaba endpoints (dashscope, aliyun,
+  aliyuncs, dialagram) or running `qwen-*` models auto-enable Alibaba's
+  ephemeral `cache_control` markers on system prompt, last message
+  (streaming), and last tool. Cache hits bill input tokens at 10% of
+  standard price (≈90% off), 25% surcharge on first creation, 5-minute
+  TTL auto-renewed. Zero user config required — detection runs per-request
+  so mixed-model custom providers only mark Qwen requests.
+
 ## [0.3.29] - 2026-05-27
 
 10 commits since v0.3.28. Patch release closing issue #121 (the

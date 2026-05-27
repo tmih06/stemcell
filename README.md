@@ -598,6 +598,16 @@ models = ["qwen2.5-coder-7b-instruct", "llama-3-8B", "mistral-7B-instruct"]
 > enable_thinking = false  # optional — default is true for local providers
 > ```
 
+> **Qwen / Alibaba cache (zero-config):** when a custom provider's `base_url` points at a known Qwen / Alibaba endpoint (`dashscope.aliyuncs.com`, `dashscope-intl.aliyuncs.com`, `aliyun.com`, `dialagram.me`) or the request model name starts with `qwen-`, OpenCrabs auto-injects `cache_control: {"type": "ephemeral"}` markers on the system message, the last message (streaming), and the last tool definition. This unlocks Alibaba's [explicit context cache](https://www.alibabacloud.com/help/en/model-studio/explicit-cache-best-practice) — cache hits bill input tokens at 10% of the standard price (≈90% off), with a 25% surcharge on first creation and a 5-minute TTL auto-renewed on every hit. The detection runs per-request so a provider routing between Qwen and non-Qwen models only marks the Qwen ones. Non-Qwen backends ignore the marker (it's an unknown JSON field), so the only cost on a mismatch is a few wasted bytes per request.
+>
+> ```toml
+> [providers.custom.dashscope]
+> enabled = true
+> base_url = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+> default_model = "qwen3-max"
+> # No cache flags needed — auto-enabled on URL match.
+> ```
+
 **Multiple custom providers** coexist — define as many as you need with different names and switch between them via `/models`:
 
 ```toml
