@@ -321,10 +321,30 @@ fn local_thinking_body_transform(enable: bool) -> BodyTransformFn {
 /// This unlocks Alibaba's explicit cache (90% off on hits, 25% surcharge on
 /// create, 5-minute TTL auto-renewed) for any custom provider pointed at a
 /// known Qwen endpoint or running a `qwen-*` model — zero user config.
+///
+/// Logs one `info!` line the first time the cache transform fires for any
+/// new `(base_url, model)` pair so users (and post-incident triage) can see
+/// in the log when caching auto-engaged. Subsequent requests with the same
+/// pair stay silent; switching to a different qwen model on the same
+/// provider logs once more.
 fn auto_qwen_cache_transform(base_url: String) -> BodyTransformFn {
+    use std::collections::HashSet;
+    use std::sync::Mutex;
+    let seen: Arc<Mutex<HashSet<String>>> = Arc::new(Mutex::new(HashSet::new()));
     Arc::new(move |body: serde_json::Value| {
         let model = body.get("model").and_then(|v| v.as_str()).unwrap_or("");
         if looks_like_qwen_target(&base_url, model) {
+            let key = format!("{base_url}|{model}");
+            let first_time = {
+                let mut guard = seen.lock().unwrap_or_else(|p| p.into_inner());
+                guard.insert(key)
+            };
+            if first_time {
+                tracing::info!(
+                    "Auto-enabled Qwen ephemeral cache_control for custom provider \
+                     (base_url={base_url}, model={model})"
+                );
+            }
             qwen_body_transform(body)
         } else {
             body
