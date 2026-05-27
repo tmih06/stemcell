@@ -127,6 +127,31 @@ fn normalize_content_to_array(content: &serde_json::Value) -> Vec<serde_json::Va
     }
 }
 
+/// Heuristic: does this custom provider look like a Qwen / Alibaba target
+/// that honours `cache_control: {type: "ephemeral"}` markers?
+///
+/// Triggers on EITHER signal:
+/// - `base_url` contains a known Qwen / Alibaba host
+///   (`dashscope`, `aliyun`, `aliyuncs`, `dialagram`)
+/// - `model` name starts with `qwen` (strict prefix — we deliberately do
+///   not match `tongyi`, `q3`, etc., to avoid false positives; users on
+///   non-standard aliases can rename their model setting)
+///
+/// Adding `cache_control` markers to a non-Qwen backend is benign — OpenAI,
+/// Gemini OpenAI-compat, Groq, DeepSeek, Cerebras, Together and others
+/// silently ignore unknown JSON fields per the chat-completions spec.
+/// Worst case: ~30 bytes of wasted JSON per request.
+pub fn looks_like_qwen_target(base_url: &str, model: &str) -> bool {
+    let url = base_url.to_ascii_lowercase();
+    let model_lower = model.to_ascii_lowercase();
+    let url_match = url.contains("dashscope")
+        || url.contains("aliyun")
+        || url.contains("aliyuncs")
+        || url.contains("dialagram");
+    let model_match = model_lower.starts_with("qwen");
+    url_match || model_match
+}
+
 /// Apply `cache_control: {type: "ephemeral"}` to the LAST part of the
 /// content array. Mirrors `addCacheControlToContentArray`.
 fn add_cache_control_to_content(content: &serde_json::Value) -> serde_json::Value {
