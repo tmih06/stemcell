@@ -41,25 +41,6 @@ struct ToolMsg {
     dirty: bool,
 }
 
-/// Fun rotating status quips shown during long tool execution.
-const TOOL_STATUS_QUIPS: &[&str] = &[
-    "☕ Grab a coffee — my sub-agents are on fire right now",
-    "🦀 My crabs are working their claws off — hang tight",
-    "🔥 Still cooking... deep in the code",
-    "⚡ Sub-agents going brrr — almost there",
-    "🧠 Thinking hard so you don't have to",
-    "🏗️ Building something beautiful — one sec",
-    "🎯 Locked in — the crabs are laser-focused",
-    "🚀 Full speed ahead — engines at max",
-    "💪 Crunching through the code like a boss",
-    "🌊 Riding the wave — results incoming",
-    "🎪 The circus is in town — all crabs performing",
-    "🔧 Wrenching away at it — precision work",
-    "🏎️ Pedal to the metal — no brakes",
-    "🧪 Experimenting... for science!",
-    "🎵 Working to the rhythm — almost done",
-];
-
 /// Per-message streaming state shared between the progress callback and the edit loop.
 /// Each tool call gets its own message above; response streams in a separate message below.
 /// Ordered display event — preserves chronological ordering of tools and intermediate texts.
@@ -92,9 +73,7 @@ struct StreamingState {
     tool_round_count: usize,
     /// When tool execution started (for elapsed time)
     tools_started_at: Option<std::time::Instant>,
-    /// Index into TOOL_STATUS_QUIPS for rotation
-    quip_index: usize,
-    /// When the current status quip was shown (for show/vanish timing)
+    /// When the current status message was shown (for show/vanish timing)
     status_shown_at: Option<std::time::Instant>,
     /// Intermediate texts already sent — used to dedup final response
     sent_intermediates: Vec<String>,
@@ -1395,7 +1374,6 @@ pub(crate) async fn handle_message(
         status_msg_id: None,
         tool_round_count: 0,
         tools_started_at: Some(std::time::Instant::now()),
-        quip_index: 0,
         status_shown_at: None,
         sent_intermediates: Vec::new(),
         intermediate_msg_ids: Vec::new(),
@@ -1427,8 +1405,11 @@ pub(crate) async fn handle_message(
                             status_msg_id: Option<MessageId>,
                             tool_round_count: usize,
                             tools_started_at: Option<std::time::Instant>,
-                            quip_index: usize,
                             status_shown_at: Option<std::time::Instant>,
+                            /// Currently running tools: (name, context) pairs
+                            active_tools: Vec<(String, String)>,
+                            /// Last successfully completed tool: (name, context)
+                            last_completed_tool: Option<(String, String)>,
                             /// Ordered display items (tools + intermediates in chronological order)
                             display_items: Vec<DisplayItem>,
                             /// Dirty tools that already have messages (need editing, not new sends)
@@ -1481,8 +1462,14 @@ pub(crate) async fn handle_message(
                                 status_msg_id: s.status_msg_id,
                                 tool_round_count: s.tool_round_count,
                                 tools_started_at: s.tools_started_at,
-                                quip_index: s.quip_index,
                                 status_shown_at: s.status_shown_at,
+                                active_tools: s.tool_msgs.iter()
+                                    .filter(|t| t.completed.is_none())
+                                    .map(|t| (t.name.clone(), t.context.clone()))
+                                    .collect(),
+                                last_completed_tool: s.tool_msgs.iter().rev()
+                                    .find(|t| t.completed == Some(true))
+                                    .map(|t| (t.name.clone(), t.context.clone())),
                                 display_items,
                                 tool_edits,
                                 has_active_tools,
@@ -1642,13 +1629,13 @@ pub(crate) async fn handle_message(
                                 .await;
                         }
 
-                        // ── Rolling status quips during processing ──
-                        // Show quips when: tools are active (non-CLI), OR tools ran but no
-                        // response yet (CLI inter-tool), OR still processing (CLI initial wait).
-                        let show_quips = snap.has_active_tools
+                        // ── Rolling context-aware status during processing ──
+                        // Show status when: tools are active, OR tools ran but no
+                        // response yet, OR still processing (initial wait).
+                        let show_status = snap.has_active_tools
                             || (snap.tool_round_count > 0 && snap.response_text.is_empty())
                             || snap.processing;
-                        if show_quips {
+                        if show_status {
                             let now = std::time::Instant::now();
                             let shown_elapsed = snap.status_shown_at
                                 .map(|t| now.duration_since(t).as_secs())
@@ -1665,29 +1652,24 @@ pub(crate) async fn handle_message(
                                 let elapsed_total = snap.tools_started_at
                                     .map(|t| t.elapsed().as_secs())
                                     .unwrap_or(0);
-                                let quip = TOOL_STATUS_QUIPS[snap.quip_index % TOOL_STATUS_QUIPS.len()];
 
-                                let mut status = if snap.tool_round_count > 0 {
-                                    format!("{} ({} tools", quip, snap.tool_round_count)
-                                } else {
-                                    format!("{} (thinking", quip)
-                                };
-                                if elapsed_total >= 5 {
-                                    let mins = elapsed_total / 60;
-                                    let secs = elapsed_total % 60;
-                                    if mins > 0 {
-                                        status.push_str(&format!(", {}m {}s", mins, secs));
-                                    } else {
-                                        status.push_str(&format!(", {}s", secs));
-                                    }
-                                }
-                                status.push(')');
+                                let active_refs: Vec<(&str, &str)> = snap.active_tools.iter()
+                                    .map(|(n, c)| (n.as_str(), c.as_str()))
+                                    .collect();
+                                let last_ref = snap.last_completed_tool.as_ref()
+                                    .map(|(n, c)| (n.as_str(), c.as_str()));
+                                let status = build_status_message(
+                                    &active_refs,
+                                    last_ref,
+                                    snap.tool_round_count,
+                                    elapsed_total,
+                                    snap.processing,
+                                );
 
                                 if let Ok(m) = bot.send_message(chat, &status).await {
                                     let mut s = st.lock().unwrap_or_else(|e| e.into_inner());
                                     s.status_msg_id = Some(m.id);
                                     s.status_shown_at = Some(now);
-                                    s.quip_index += 1;
                                 }
                             }
                         }
@@ -2382,7 +2364,6 @@ pub(crate) async fn resume_session(
         status_msg_id: None,
         tool_round_count: 0,
         tools_started_at: Some(std::time::Instant::now()),
-        quip_index: 0,
         status_shown_at: None,
         sent_intermediates: Vec::new(),
         intermediate_msg_ids: Vec::new(),
@@ -2891,6 +2872,57 @@ pub(crate) fn md_to_html(s: &str) -> String {
         }
     }
     out
+}
+
+/// Build a context-aware status message for Telegram rolling updates.
+/// Replaces hardcoded filler quips with functional messages that tell the user
+/// what is happening right now based on actual tool execution state.
+fn build_status_message(
+    active_tools: &[(&str, &str)],
+    last_completed: Option<(&str, &str)>,
+    tool_round_count: usize,
+    elapsed_secs: u64,
+    processing: bool,
+) -> String {
+    let elapsed = if elapsed_secs >= 60 {
+        let mins = elapsed_secs / 60;
+        let secs = elapsed_secs % 60;
+        format!("{}m {}s", mins, secs)
+    } else {
+        format!("{}s", elapsed_secs)
+    };
+
+    let action = if !active_tools.is_empty() {
+        if active_tools.len() == 1 {
+            let (name, ctx) = active_tools[0];
+            if ctx.is_empty() {
+                format!("Running {}", name)
+            } else {
+                format!("Running {}{}", name, ctx)
+            }
+        } else {
+            let names: Vec<&str> = active_tools.iter().map(|(n, _)| *n).collect();
+            format!("Running {} tools: {}", active_tools.len(), names.join(", "))
+        }
+    } else if processing && tool_round_count == 0 {
+        "Thinking through this...".to_string()
+    } else if tool_round_count > 0 {
+        if let Some((name, _ctx)) = last_completed {
+            format!("{} done, moving to next step", name)
+        } else {
+            format!("{} tools done, preparing next step", tool_round_count)
+        }
+    } else {
+        "Processing...".to_string()
+    };
+
+    if tool_round_count > 0 && elapsed_secs >= 5 {
+        format!("⚙️ {} (tool {}, {})", action, tool_round_count, elapsed)
+    } else if elapsed_secs >= 5 {
+        format!("⚙️ {} ({})", action, elapsed)
+    } else {
+        format!("⚙️ {}", action)
+    }
 }
 
 /// Shorthand — delegates to the shared utility in `crate::utils`.
