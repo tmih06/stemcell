@@ -46,6 +46,7 @@ pub mod context_window_test;
 pub mod cron_test;
 pub mod custom_model_paste_test;
 pub mod custom_provider_cache_autoenable_test;
+pub mod custom_provider_no_models_test;
 pub mod custom_provider_test;
 pub mod daemon_health_test;
 pub mod dynamic_tool_coerce_test;

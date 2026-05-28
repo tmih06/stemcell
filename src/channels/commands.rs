@@ -756,17 +756,43 @@ pub async fn models_for_provider(provider_name: &str) -> ModelsResponse {
     if provider_name == "openrouter" || provider_name.starts_with("custom:") {
         let config_default = crate::utils::providers::config_for(&config.providers, provider_name)
             .and_then(|c| c.default_model.clone());
+
+        // Real-config check: do we actually have any model to offer?
+        // Pre-fix: when both config_models and default_model were empty
+        // for a custom provider, we returned a single button labeled
+        // "unknown (no models configured)" — clicking it stored that
+        // literal string as the session's model, leaving the agent in
+        // a half-broken state. 2026-05-28 user report: Telegram model
+        // switch did nothing for a freshly merge-created custom provider
+        // (`qwen-mlx`) whose config had neither default_model nor a
+        // populated models list.
+        let has_real_model = !config_models.is_empty() || config_default.is_some();
+
+        if !has_real_model {
+            let section = provider_name.replace(':', ".");
+            let path =
+                crate::utils::providers::keys_toml_path_hint().replace("keys.toml", "config.toml");
+            let text = format!(
+                "🤖 *{display_name} Models*\n\n\
+                 No models configured for this provider.\n\n\
+                 Add a `default_model` to `[providers.{section}]` in `{path}`, \
+                 then restart OpenCrabs. Example:\n\n\
+                 ```toml\n[providers.{section}]\ndefault_model = \"YOUR-MODEL-NAME\"\n```",
+            );
+            return ModelsResponse {
+                provider_name: provider_name.to_string(),
+                current_model: String::new(),
+                models: vec![], // empty → channel renders the help text, no buttons
+                text,
+                agent_handled: false,
+            };
+        }
+
         let current_model = config_models
             .first()
             .cloned()
             .or(config_default)
-            .unwrap_or_else(|| {
-                if provider_name.starts_with("custom:") {
-                    "unknown (no models configured)".to_string()
-                } else {
-                    "openrouter-default".to_string()
-                }
-            });
+            .expect("has_real_model guard ensures one of these is Some");
 
         let models = if !config_models.is_empty() {
             config_models
