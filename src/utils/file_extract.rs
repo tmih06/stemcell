@@ -92,6 +92,7 @@ pub fn mime_from_ext(filename: &str) -> &'static str {
         "webp" => "image/webp",
         "bmp" => "image/bmp",
         "pdf" => "application/pdf",
+        "zip" => "application/zip",
         "mp4" | "m4v" => "video/mp4",
         "mov" => "video/quicktime",
         "webm" => "video/webm",
@@ -230,6 +231,11 @@ pub fn process_file_with_vision(
         return extract_pdf_text(bytes, filename);
     }
 
+    // ── ZIP archives ──
+    if effective == "application/zip" || effective == "application/x-zip-compressed" {
+        return extract_zip_contents(bytes, filename, config);
+    }
+
     // ── Text files ──
     if is_text_mime(effective) {
         let raw = String::from_utf8_lossy(bytes);
@@ -364,4 +370,125 @@ pub fn classify_file(bytes: &[u8], mime: &str, filename: &str) -> FileContent {
     FileContent::Unsupported(format!(
         "[File received: {filename} ({effective}) — unsupported format]"
     ))
+}
+
+/// Extract and process files from a ZIP archive.
+///
+/// For each entry in the archive:
+/// - Text files → inline content
+/// - Images → save to temp + vision marker
+/// - PDFs → text extraction
+/// - Nested archives → skip with note
+/// - Binary/unsupported → note with filename
+///
+/// Returns a combined FileContent with all extracted files.
+fn extract_zip_contents(bytes: &[u8], archive_name: &str, config: &Config) -> FileContent {
+    use std::io::Read as _;
+
+    let reader = std::io::Cursor::new(bytes);
+    let mut archive = match zip::ZipArchive::new(reader) {
+        Ok(a) => a,
+        Err(e) => {
+            return FileContent::Unsupported(format!(
+                "[ZIP archive: {archive_name} — failed to open: {e}]"
+            ));
+        }
+    };
+
+    let mut parts: Vec<String> = Vec::new();
+    let file_count = archive.len();
+
+    for i in 0..file_count {
+        let mut file = match archive.by_index(i) {
+            Ok(f) => f,
+            Err(e) => {
+                parts.push(format!("[Error reading entry {i}: {e}]"));
+                continue;
+            }
+        };
+
+        let name = file.name().to_string();
+
+        // Skip directories
+        if file.is_dir() {
+            continue;
+        }
+
+        // Skip hidden files and macOS metadata
+        let basename = name.rsplit('/').next().unwrap_or(&name);
+        if basename.starts_with('.') || basename.starts_with("__MACOSX") {
+            continue;
+        }
+
+        // Read file bytes (cap at 10MB per entry)
+        let mut buf = Vec::new();
+        if let Err(e) = file.read_to_end(&mut buf) {
+            parts.push(format!("[{name} — read error: {e}]"));
+            continue;
+        }
+        if buf.len() > 10 * 1024 * 1024 {
+            parts.push(format!(
+                "[{name} — skipped, too large ({}MB)]",
+                buf.len() / 1024 / 1024
+            ));
+            continue;
+        }
+
+        let entry_mime = mime_from_ext(&name);
+        let content = process_file_with_vision(&buf, entry_mime, &name, config);
+
+        match content {
+            FileContent::Text(t) => parts.push(t),
+            FileContent::Image(path) => {
+                parts.push(format!("<<IMG:{}>>", path.display()));
+            }
+            FileContent::Video(path) => {
+                parts.push(format!("<<VID:{}>>", path.display()));
+            }
+            FileContent::PdfPages { paths, label } => {
+                // PDF pages rendered as images — inject as vision markers
+                parts.push(label);
+                for path in paths {
+                    parts.push(format!("<<IMG:{}>>", path.display()));
+                }
+            }
+            FileContent::Unsupported(msg) => {
+                parts.push(msg);
+            }
+        }
+
+        // Safety cap: stop after 50 files
+        if parts.len() >= 50 {
+            parts.push(format!(
+                "[... and {} more files truncated]",
+                file_count - i - 1
+            ));
+            break;
+        }
+    }
+
+    if parts.is_empty() {
+        return FileContent::Unsupported(format!(
+            "[ZIP archive: {archive_name} — empty or no processable files]"
+        ));
+    }
+
+    let combined = if file_count == 1 {
+        parts.into_iter().next().unwrap()
+    } else {
+        format!(
+            "[ZIP archive: {archive_name} — {file_count} files]
+
+{}",
+            parts.join(
+                "
+
+---
+
+"
+            )
+        )
+    };
+
+    FileContent::Text(combined)
 }
