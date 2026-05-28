@@ -74,6 +74,29 @@ fn looks_like_failure_log(content: &str) -> Option<&'static str> {
     None
 }
 
+/// Check if content is trivial/meaningless (test entries, single words, etc.)
+fn is_trivial_content(content: &str, description: &str) -> bool {
+    let c = content.trim();
+    let d = description.trim().to_ascii_lowercase();
+
+    // Single word or very short content
+    if c.len() < 15 && !c.contains('\n') {
+        return true;
+    }
+
+    // Literally just "test" or similar
+    if matches!(d.as_str(), "test" | "testing" | "test entry" | "test test") {
+        return true;
+    }
+
+    // Content is just the word "test" repeated
+    if c.eq_ignore_ascii_case("test") {
+        return true;
+    }
+
+    false
+}
+
 pub struct SelfImproveTool;
 
 #[async_trait]
@@ -422,6 +445,13 @@ impl Tool for SelfImproveTool {
 
                 if let Some(reason) = looks_like_failure_log(content) {
                     return Ok(ToolResult::error(reason.to_string()));
+                }
+
+                if is_trivial_content(content, description) {
+                    return Ok(ToolResult::error(
+                        "Content too short or trivial (e.g. 'test').                          Brain files store meaningful rules and context,                          not placeholder text. Provide real content."
+                            .to_string(),
+                    ));
                 }
 
                 // Ensure RSI dirs exist
