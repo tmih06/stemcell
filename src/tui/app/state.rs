@@ -59,7 +59,7 @@ pub const SLASH_COMMANDS: &[SlashCommand] = &[
     },
     SlashCommand {
         name: "/onboard:channels",
-        description: "Jump to channel config",
+        description: "Setup Telegram, Slack, Discord, WhatsApp, Trello",
     },
     SlashCommand {
         name: "/onboard:voice",

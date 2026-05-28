@@ -63,7 +63,7 @@ pub(super) fn render_help(f: &mut Frame, app: &App, area: Rect) {
         section_header("CHAT"),
         kv("Enter", "Send message", cyan),
         kv("Ctrl+J", "New line (vim)", cyan),
-        kv("Escape (x2)", "Clear input / abort", cyan),
+        kv("Escape (x2)", "Cancel / abort immediately", cyan),
         kv("Page Up/Down", "Scroll history", cyan),
         kv("@", "File picker", cyan),
         Line::from(""),
