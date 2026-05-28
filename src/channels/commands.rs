@@ -596,17 +596,24 @@ async fn format_sessions(
         .await
         .unwrap_or_default();
 
-    let mut text_lines = vec!["📂 *Sessions*".to_string(), String::new()];
+    // Issue #129: the body used to enumerate every session — same list
+    // the inline keyboard renders directly below as tappable buttons.
+    // Pure duplication. Strip the body to a header + a one-line current
+    // indicator and let the buttons carry the per-session labels.
+    let mut text_lines = vec!["📂 *Sessions*".to_string()];
     let mut items = Vec::new();
+
+    let current = sessions.iter().find(|s| s.id == current_session_id);
+    if let Some(s) = current {
+        let title = s.title.as_deref().unwrap_or("Untitled");
+        text_lines.push(format!("Current: `{}`", title));
+    }
+    text_lines.push(String::new());
 
     for s in &sessions {
         let title = s.title.as_deref().unwrap_or("Untitled");
         let date = s.updated_at.format("%b %d %H:%M");
-        let is_current = s.id == current_session_id;
-        let marker = if is_current { " ← current" } else { "" };
         let label = format!("{} ({})", title, date);
-        let prefix = if is_current { "▸ " } else { "  " };
-        text_lines.push(format!("{}*`{}`*{}", prefix, label, marker));
         items.push((s.id, label));
     }
 
