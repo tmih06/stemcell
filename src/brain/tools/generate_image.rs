@@ -5,12 +5,16 @@
 //! * **Gemini** — historical default. Calls
 //!   `POST https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent`
 //!   with `x-goog-api-key` and `responseModalities: ["TEXT", "IMAGE"]`.
+//!   Optionally accepts an input image (local path or HTTPS URL) for
+//!   img2img editing — the input image is prepended as an `inlineData`
+//!   part so Gemini can modify, restyle, or composite onto it.
 //! * **OpenAI-compatible** — `POST {base_url}/images/generations` with
 //!   `Authorization: Bearer {key}` and `response_format: "b64_json"`.
 //!   Lets users point `generate_image` at OpenRouter, OpenAI, Together,
 //!   or any custom provider that exposes the OpenAI images endpoint by
 //!   setting `[providers.<name>] generation_model = "..."` in
 //!   `config.toml` (and api_key + base_url already there for chat).
+//!   img2img is NOT supported on this backend.
 //!
 //! Both backends save the result as a PNG file in
 //! `~/.opencrabs/images/` and return the path.
@@ -99,7 +103,12 @@ impl Tool for GenerateImageTool {
     }
 
     fn description(&self) -> &str {
-        "Generate an image from a text prompt. Returns the file path to the saved PNG. Use <<IMG:path>> syntax in your reply to send the image through a channel."
+        "Generate an image from a text prompt. Returns the file path to the saved PNG. \
+         Use <<IMG:path>> syntax in your reply to send the image through a channel. \
+         Optionally accepts an input image (local path or HTTPS URL) for img2img editing \
+         on the Gemini backend — useful for replacing elements, restyling, compositing \
+         logos, or modifying user-uploaded images. The OpenAI-compatible backend does \
+         not support input images."
     }
 
     fn input_schema(&self) -> Value {
@@ -108,7 +117,11 @@ impl Tool for GenerateImageTool {
             "properties": {
                 "prompt": {
                     "type": "string",
-                    "description": "Text description of the image to generate"
+                    "description": "Text description of the image to generate, or editing instruction when an input image is provided"
+                },
+                "image": {
+                    "type": "string",
+                    "description": "Optional input image (local file path or HTTPS URL) for img2img editing. The model will modify, restyle, or composite onto this image based on the prompt. Gemini backend only."
                 },
                 "filename": {
                     "type": "string",
@@ -141,6 +154,11 @@ impl Tool for GenerateImageTool {
             }
         };
 
+        let image = input["image"]
+            .as_str()
+            .filter(|s| !s.is_empty())
+            .map(|s| s.to_string());
+
         let filename = input["filename"]
             .as_str()
             .map(|s| s.to_string())
@@ -157,9 +175,12 @@ impl Tool for GenerateImageTool {
         let save_path = images_dir.join(&filename);
 
         match &self.backend {
-            Backend::Gemini { api_key } => self.execute_gemini(&prompt, api_key, &save_path).await,
+            Backend::Gemini { api_key } => {
+                self.execute_gemini(&prompt, image.as_deref(), api_key, &save_path)
+                    .await
+            }
             Backend::OpenAi { api_key, base_url } => {
-                self.execute_openai(&prompt, api_key, base_url, &save_path)
+                self.execute_openai(&prompt, image.as_deref(), api_key, base_url, &save_path)
                     .await
             }
         }
@@ -170,12 +191,21 @@ impl GenerateImageTool {
     async fn execute_gemini(
         &self,
         prompt: &str,
+        image: Option<&str>,
         api_key: &str,
         save_path: &std::path::Path,
     ) -> super::error::Result<ToolResult> {
         let url = format!("{}/models/{}:generateContent", GEMINI_BASE_URL, self.model);
+
+        // Build parts list: optional input image first, then the text prompt.
+        let mut parts: Vec<Value> = Vec::with_capacity(2);
+        if let Some(src) = image {
+            parts.push(build_image_part(src).await?);
+        }
+        parts.push(serde_json::json!({"text": prompt}));
+
         let body = serde_json::json!({
-            "contents": [{"parts": [{"text": prompt}]}],
+            "contents": [{"parts": parts}],
             "generationConfig": {
                 "responseModalities": ["TEXT", "IMAGE"]
             }
@@ -250,10 +280,22 @@ impl GenerateImageTool {
     async fn execute_openai(
         &self,
         prompt: &str,
+        image: Option<&str>,
         api_key: &str,
         base_url: &str,
         save_path: &std::path::Path,
     ) -> super::error::Result<ToolResult> {
+        // img2img is a Gemini-only capability — the OpenAI
+        // `/v1/images/generations` endpoint has no input-image slot.
+        if image.is_some() {
+            return Ok(ToolResult::error(
+                "The active image generation backend (OpenAI-compatible) does not support \
+                 input images. img2img editing requires the Gemini backend. Either switch \
+                 the generation provider to Gemini, or retry without the `image` parameter."
+                    .to_string(),
+            ));
+        }
+
         // OpenAI `/v1/images/generations` shape — matches OpenAI,
         // OpenRouter, Together, and most clones. `response_format =
         // b64_json` keeps the byte path local; providers that only
@@ -327,6 +369,64 @@ impl GenerateImageTool {
             "No image data found in OpenAI-images response: {}",
             json
         )))
+    }
+}
+
+/// Build a Gemini-compatible `inlineData` part from a local file path
+/// or HTTPS URL. Reuses `base64_encode` and `detect_mime_type` from
+/// `analyze_image` to stay consistent with the vision tool.
+async fn build_image_part(src: &str) -> super::error::Result<Value> {
+    use super::analyze_image::{base64_encode, detect_mime_type};
+
+    if src.starts_with("http://") || src.starts_with("https://") {
+        let client = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(30))
+            .build()
+            .map_err(|e| super::error::ToolError::Execution(e.to_string()))?;
+
+        let resp = client.get(src).send().await.map_err(|e| {
+            super::error::ToolError::Execution(format!("Failed to fetch image URL: {}", e))
+        })?;
+
+        if !resp.status().is_success() {
+            return Err(super::error::ToolError::Execution(format!(
+                "Failed to fetch image URL: HTTP {}",
+                resp.status()
+            )));
+        }
+
+        let content_type = resp
+            .headers()
+            .get("content-type")
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("image/jpeg")
+            .to_string();
+        let mime_type = content_type
+            .split(';')
+            .next()
+            .unwrap_or("image/jpeg")
+            .to_string();
+
+        let bytes = resp.bytes().await.map_err(|e| {
+            super::error::ToolError::Execution(format!("Failed to read image bytes: {}", e))
+        })?;
+
+        let b64 = base64_encode(&bytes);
+        Ok(serde_json::json!({
+            "inlineData": { "mimeType": mime_type, "data": b64 }
+        }))
+    } else {
+        let bytes = tokio::fs::read(src).await.map_err(|e| {
+            super::error::ToolError::Execution(format!(
+                "Failed to read image file '{}': {}",
+                src, e
+            ))
+        })?;
+        let mime_type = detect_mime_type(src);
+        let b64 = base64_encode(&bytes);
+        Ok(serde_json::json!({
+            "inlineData": { "mimeType": mime_type, "data": b64 }
+        }))
     }
 }
 

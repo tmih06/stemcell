@@ -296,7 +296,7 @@ pub fn inject_file_content(content: &FileContent) -> (String, bool) {
             let path_str = path.to_string_lossy();
             (
                 format!(
-                    "[User attached an image. Call analyze_image with this path to view it.]\n<<IMG:{path_str}>>"
+                    "[User attached an image. Call analyze_image with this path to view it. If the user asks to edit, modify, replace elements, or restyle the image, call generate_image with this path as the 'image' parameter instead.]\n<<IMG:{path_str}>>"
                 ),
                 true,
             )
