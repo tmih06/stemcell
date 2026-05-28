@@ -107,6 +107,7 @@ pub mod rtk_tracker_test;
 pub mod session_working_dir_test;
 pub mod slack_fmt_test;
 pub mod stream_loop_test;
+pub mod streaming_tps_accumulator_test;
 pub mod stt_fallback_chain_test;
 pub mod system_continuation_test;
 pub mod tts_fallback_chain_test;

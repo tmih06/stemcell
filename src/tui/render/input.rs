@@ -902,23 +902,33 @@ pub(super) fn render_status_bar(f: &mut Frame, app: &App, area: Rect) {
         ),
     ];
 
-    // Real-time tokens/sec while streaming (output tokens / wall-clock elapsed).
-    // Only shown during an active turn with at least one output token counted —
-    // keeps the footer clean when idle and avoids a division-by-zero on the
-    // very first tick before any StreamingOutputTokens event has landed.
-    if app.is_processing
-        && app.streaming_output_tokens > 0
-        && let Some(started) = app.processing_started_at
-    {
-        let elapsed = started.elapsed().as_secs_f64();
-        if elapsed > 0.0 {
-            let tps = app.streaming_output_tokens as f64 / elapsed;
-            spans.push(Span::styled("  ·  ", Style::default().fg(Color::DarkGray)));
-            spans.push(Span::styled(
-                format!("{:.0} tok/s", tps),
-                Style::default().fg(Color::Rgb(80, 200, 120)),
-            ));
+    // Tokens/sec footer field.
+    //   - Live: output_tokens / active_streaming_window_secs (the
+    //     accumulator excludes tool execution waits, between-stream
+    //     idle, network round-trips — only counts time the model is
+    //     actually emitting tokens). 2026-05-28 user report: pre-fix
+    //     this divided by total wall-clock so a 30s tool exec made
+    //     "200 tok/s" decay to "8 tok/s" mid-turn.
+    //   - Persisted: when no live turn is active, keep showing the
+    //     last finalized rate (from `finalize_tps` on response complete)
+    //     until the next turn's first token replaces it.
+    let live_tps = if app.is_processing && app.streaming_output_tokens > 0 {
+        let active = app.current_streaming_active_secs();
+        if active > 0.0 {
+            Some(app.streaming_output_tokens as f64 / active)
+        } else {
+            None
         }
+    } else {
+        None
+    };
+    let display_tps = live_tps.or(app.last_tps());
+    if let Some(tps) = display_tps {
+        spans.push(Span::styled("  ·  ", Style::default().fg(Color::DarkGray)));
+        spans.push(Span::styled(
+            format!("{:.0} tok/s", tps),
+            Style::default().fg(Color::Rgb(80, 200, 120)),
+        ));
     }
 
     spans.push(Span::styled(sep_text, Style::default().fg(Color::DarkGray)));
