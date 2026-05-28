@@ -17,6 +17,7 @@ fn key(code: KeyCode) -> KeyEvent {
     KeyEvent::new(code, KeyModifiers::NONE)
 }
 
+#[allow(clippy::field_reassign_with_default)]
 fn quick_jump_wizard_on_model_step() -> OnboardingWizard {
     let mut w = OnboardingWizard::default();
     w.quick_jump = true;
@@ -28,6 +29,7 @@ fn quick_jump_wizard_on_model_step() -> OnboardingWizard {
     w
 }
 
+#[allow(clippy::field_reassign_with_default)]
 fn quick_jump_wizard_on_custom_context_window() -> OnboardingWizard {
     let mut w = OnboardingWizard::default();
     w.quick_jump = true;

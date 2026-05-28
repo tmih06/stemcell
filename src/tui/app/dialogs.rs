@@ -1951,6 +1951,22 @@ impl App {
                         ));
                     }
                     if needs_rebuild {
+                        // Swap the CURRENT session's per-session provider to
+                        // the newly-rebuilt global. Without this, the agent
+                        // service still serves the old per-session pin (set
+                        // by an earlier swap_provider_for_session, e.g. from
+                        // a previous /models switch), so the footer keeps
+                        // showing the OLD provider while the banner reads
+                        // the new GLOBAL provider — half-changed state.
+                        // 2026-05-28 user report: "[Model changed to
+                        // OpenRouter/qwen]" banner appeared, footer still
+                        // said dialagram. Both now reflect the same change.
+                        if let Some(ref session) = self.current_session {
+                            let session_id = session.id;
+                            let new_provider = self.agent_service.provider();
+                            self.agent_service
+                                .swap_provider_for_session(session_id, new_provider);
+                        }
                         self.sync_session_to_provider().await;
                     }
                     self.switch_mode(AppMode::Chat).await?;
