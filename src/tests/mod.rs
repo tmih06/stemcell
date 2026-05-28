@@ -78,6 +78,7 @@ pub mod onboarding_brain_test;
 pub mod onboarding_field_nav_test;
 pub mod onboarding_keys_test;
 pub mod onboarding_navigation_test;
+pub mod onboarding_no_silent_commit_test;
 pub mod onboarding_types_test;
 pub mod onboarding_welcome_test;
 pub mod onboarding_wizard_test;

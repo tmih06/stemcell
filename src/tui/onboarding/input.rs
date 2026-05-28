@@ -593,9 +593,13 @@ impl OnboardingWizard {
                     self.ps.model_filter.clear();
                     self.ps.selected_model = 0;
                 }
-                KeyCode::Tab => {
-                    self.next_step();
-                }
+                // Tab: deliberately a no-op on Model. Was `self.next_step()`
+                // which silently committed config (disabled every other
+                // provider, enabled this one, rebuilt the agent) when the
+                // user pressed Tab to navigate. 2026-05-28 bug: a single
+                // unintended Tab while inspecting models in /onboard:provider
+                // switched the active provider with no confirmation prompt.
+                // Only Enter commits now.
                 _ => {}
             },
             AuthField::CustomName => match event.code {
@@ -818,12 +822,18 @@ impl OnboardingWizard {
                 KeyCode::Backspace => {
                     self.ps.context_window.pop();
                 }
-                KeyCode::Enter | KeyCode::Tab | KeyCode::Down => {
+                KeyCode::Enter => {
+                    // CustomContextWindow is the LAST step in the custom-
+                    // provider flow. Only Enter commits. Tab and Down used
+                    // to call next_step() and auto-saved without the user
+                    // confirming — same class of bug as Tab on the Model
+                    // field for built-in providers (2026-05-28).
                     self.next_step();
                 }
                 KeyCode::BackTab | KeyCode::Up => {
                     self.auth_field = AuthField::CustomModel;
                 }
+                // Tab / Down: deliberately no-op. See comment on Enter.
                 _ => {}
             },
         }
