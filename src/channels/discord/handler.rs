@@ -293,6 +293,10 @@ pub(crate) async fn handle_message(
         }
     };
 
+    // Follow-up interrupt: cancel any in-flight agent for this session
+    // so the new message replaces the old one (like pressing ESC twice)
+    discord_state.cancel_session(session_id).await;
+
     // Restore session's own provider (each session keeps its provider independently)
     let session_meta = session_svc.get_session(session_id).await.ok().flatten();
     crate::channels::commands::sync_provider_for_session(

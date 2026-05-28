@@ -1275,6 +1275,9 @@ async fn handle_message(
         .await;
     let approval_cb = make_approval_callback(state.slack_state.clone());
 
+    // Follow-up interrupt: cancel any running agent for this session before starting new work
+    state.slack_state.cancel_session(session_id).await;
+
     let cancel_token = tokio_util::sync::CancellationToken::new();
     state
         .slack_state

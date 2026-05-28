@@ -1058,6 +1058,9 @@ pub(crate) async fn handle_message(
         }
     };
 
+    // Follow-up interrupt: cancel any in-flight agent for this session
+    telegram_state.cancel_session(session_id).await;
+
     tracing::info!(
         "Telegram: resolved session={} for {} in {} \"{}\" (chat_id={})",
         session_id,
