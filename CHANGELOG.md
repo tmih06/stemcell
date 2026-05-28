@@ -6,14 +6,93 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
-### Added
-- Custom providers pointed at Qwen / Alibaba endpoints (dashscope, aliyun,
-  aliyuncs, dialagram) or running `qwen-*` models auto-enable Alibaba's
-  ephemeral `cache_control` markers on system prompt, last message
-  (streaming), and last tool. Cache hits bill input tokens at 10% of
-  standard price (≈90% off), 25% surcharge on first creation, 5-minute
-  TTL auto-renewed. Zero user config required — detection runs per-request
-  so mixed-model custom providers only mark Qwen requests.
+## [0.3.30] - 2026-05-28
+
+19 commits since v0.3.29. Minor release closing issues #125 (RTK
+daemon hang from sync Command::new blocking the tokio runtime on
+single-worker profiles) and #126 (/models picker in channels showed
+Claude model names instead of the actual CLI-supported models and
+hid unconfigured providers entirely). The RTK binary detection
+swapped std::sync::OnceLock plus std::process::Command for
+tokio::sync::OnceCell plus tokio::process::Command across
+find_rtk_binary, is_rtk_available, rewrite_command, and
+rewrite_command_string, with the tracker mutex lifted to
+tokio::sync::Mutex and a dedicated no-block regression suite proving
+single-worker runtimes stay responsive. Qwen custom providers get
+zero-config cost savings: a looks_like_qwen_target detector scans
+base_url and model name for Alibaba-shaped endpoints (dashscope,
+aliyun, aliyuncs, dialagram) or qwen-* model prefixes and
+auto-enables ephemeral cache_control markers on the system prompt,
+last streaming message, and last tool, logged once per
+(base_url, model) pair so mixed-model providers only mark Qwen
+requests. Tool-call extraction for qwen-3.7-max-thinking now
+handles bare-args bash calls and Anthropic-shaped <invoke name="X">
+XML nested inside qwen:tool_call wrappers, so the model can emit
+either OpenAI or Anthropic tool-call shapes and the parser still
+lands a clean ToolCall. The /models picker now surfaces unconfigured
+providers as greyed-out entries with a setup hint, and the displayed
+model list comes from a single cli_supported_models source of truth
+pinned per provider so channel footers match what the TUI actually
+offers. generate_image gains an optional image parameter (local path
+or HTTPS URL) that feeds Gemini inlineData parts for img2img editing
+(logo placement, element replacement, restyling) while OpenAI-shaped
+backends reject it with a clear error pointing users at Gemini. Help
+screen got three quality-of-life passes: Esc x2 now reads "Cancel /
+abort immediately" instead of the vague "Clear input",
+/onboard:channels lists Telegram, Slack, Discord, WhatsApp, and
+Trello by name, and the footer carries a docs.opencrabs.com link.
+Two onboarding fixes keep quick-jump mode from committing on
+intermediate Enter presses and swap the per-session provider on
+quick-jump rebuild so the footer reflects the new selection.
+Style-only: assert_eq!(x, false) collapsed to assert!(!x) across
+the test suite.
+
+Closes #125, #126.
+
+33 files changed, +2255/-337.
+
+RTK ASYNC REFACTOR (3 commits, closes #125)
+
+- 309755cf fix(rtk): eliminate sync blocking in async RTK binary detection
+- 09c1a623 refactor(rtk): extract inline tests + switch tracker to `tokio::sync::Mutex`
+- a0968cbd test(rtk): no-block regression tests for single-worker tokio runtime
+
+QWEN TOOL-CALL EXTRACTION (2 commits)
+
+- 590e9f30 fix(custom_openai_compatible): extract bare-args bash tool calls (qwen-3.7-max-thinking)
+- ba9cce4c fix(custom_openai_compatible): extract Anthropic `<invoke name="X">` XML inside `qwen:tool_call`
+
+QWEN CACHE AUTO-ENABLE (5 commits)
+
+- dcdbf2b5 feat(qwen): add `looks_like_qwen_target` detector for auto-cache enablement
+- 1e74db32 feat(qwen): auto-enable ephemeral cache_control for qwen-shaped custom providers
+- 6b14fe5b feat(qwen): log once per (base_url, model) when auto-cache engages
+- 0c937e6a test(qwen): integration test for custom-provider cache auto-enable
+- c794808f docs(qwen): document zero-config Qwen cache auto-enable for custom providers
+
+CLI /MODELS PICKER (3 commits, closes #126)
+
+- 2abebef8 fix(channels): show OpenCode CLI models in /models, not Claude names
+- 2894e57d refactor(providers): single-source CLI model list, pin via `cli_supported_models`
+- 7def942e feat(channels): surface unconfigured providers in /models picker
+
+IMG2IMG FOR GENERATE_IMAGE (1 commit)
+
+- 0fe37205 feat(generate_image): add img2img support for user-uploaded images
+
+HELP SCREEN IMPROVEMENTS (2 commits)
+
+- de119af4 improve(help): clarify Esc x2 abort and list channels in /onboard:channels
+- 7b506322 feat(help): add docs.opencrabs.com link to help screen footer
+
+ONBOARDING FIXES (2 commits)
+
+- 1979e59b fix(onboarding): only Enter on the last step commits in quick-jump mode
+- 1ffac094 fix(tui): swap per-session provider on quick-jump rebuild so footer updates
+
+STYLE (1 commit)
+
+- 90d44b37 fix(tests): use `assert!(!x)` instead of `assert_eq!(x, false)`
 
 ## [0.3.29] - 2026-05-27
 
@@ -1437,7 +1516,8 @@ provider and context budget.
 - **Anti-code-block nudge for local models** — brain instructions explicitly
   tell the model to use `tool_calls`, not markdown code blocks.
 
-[Unreleased]: https://github.com/adolfousier/opencrabs/compare/v0.3.29...HEAD
+[Unreleased]: https://github.com/adolfousier/opencrabs/compare/v0.3.30...HEAD
+[0.3.30]: https://github.com/adolfousier/opencrabs/compare/v0.3.29...v0.3.30
 [0.3.29]: https://github.com/adolfousier/opencrabs/compare/v0.3.28...v0.3.29
 [0.3.28]: https://github.com/adolfousier/opencrabs/compare/v0.3.27...v0.3.28
 [0.3.27]: https://github.com/adolfousier/opencrabs/compare/v0.3.26...v0.3.27
