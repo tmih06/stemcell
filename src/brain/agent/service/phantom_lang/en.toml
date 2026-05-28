@@ -209,6 +209,62 @@ intent_phrases = [
     "now sync",
     "now migrate",
     "now apply",
+    # Deferment stalls — "I need to X", "I have to X", "I must X" —
+    # 2026-05-28: model emitted "I need to read the actual code before
+    # writing concrete task descriptions." and the existing list didn't
+    # cover that shape. These are pre-action narration just like
+    # "let me X" / "I'll X" and never produced a tool call in the same
+    # turn.
+    "i need to read",
+    "i need to check",
+    "i need to look",
+    "i need to examine",
+    "i need to inspect",
+    "i need to verify",
+    "i need to review",
+    "i need to understand",
+    "i need to see",
+    "i need to find",
+    "i need to investigate",
+    "i need to explore",
+    "i need to search",
+    "i need to gather",
+    "i need to fetch",
+    "i need to update",
+    "i need to fix",
+    "i need to modify",
+    "i need to create",
+    "i need to write",
+    "i need to edit",
+    "i need to add",
+    "i need to remove",
+    "i need to delete",
+    "i need to run",
+    "i need to install",
+    "i need to configure",
+    "i need to dig",
+    "i have to read",
+    "i have to check",
+    "i have to look",
+    "i have to verify",
+    "i have to update",
+    "i have to fix",
+    "i have to write",
+    "i have to investigate",
+    "i must read",
+    "i must check",
+    "i must verify",
+    "i must update",
+    "i must fix",
+    "i should read",
+    "i should check",
+    "i should look",
+    "i should verify",
+    "i should update",
+    "i should fix",
+    "i should investigate",
+    "i should examine",
+    "i should review",
 ]
 
 action_verbs = [
@@ -278,7 +334,7 @@ completion_claims = [
 
 # Regex patterns — all use (?im) for case-insensitive multiline matching.
 
-line_start_re = "(?im)^[\\s\\-*•>]*(?:(?:ok|okay|sure|alright|right|hmm|well|actually|so)\\s*,?\\s+)?(?:now\\s+)?(?:let\\s+me|i['\u2019]ll|let['\u2019]s)\\s+\\w"
+line_start_re = "(?im)^[\\s\\-*•>]*(?:(?:ok|okay|sure|alright|right|hmm|well|actually|so)\\s*,?\\s+)?(?:now\\s+)?(?:let\\s+me|i['\u2019]ll|let['\u2019]s|i\\s+need\\s+to|i\\s+have\\s+to|i\\s+must|i\\s+should|i\\s+want\\s+to|i['\u2019]d\\s+need\\s+to)\\s+\\w"
 
 gerund_re = "(?im)(?:^|[.!?]\\s+)\\s*now\\s+(?:updating|fixing|committing|amending|pushing|cherry-picking|merging|rebasing|deploying|building|testing|checking|applying|restarting|creating|writing|editing|adding|removing|deleting|reading|running|starting|finishing|finalizing|installing|configuring|wiring)\\b"
 

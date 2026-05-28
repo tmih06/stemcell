@@ -83,6 +83,7 @@ pub mod onboarding_types_test;
 pub mod onboarding_welcome_test;
 pub mod onboarding_wizard_test;
 pub mod phantom_db_persistence_test;
+pub mod phantom_deferment_test;
 pub mod plan_document_test;
 pub mod post_evolve_test;
 pub mod provider_config_regression_test;

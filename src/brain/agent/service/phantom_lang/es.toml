@@ -55,6 +55,46 @@ intent_phrases = [
     "procedo a",
     "procederé a",
     "ahora procedo a",
+
+    # Deferment stalls — "necesito X" / "tengo que X" / "debo X"
+    # 2026-05-28: parity with the English "i need to X" entries; this is
+    # the same pre-action narration shape in Spanish.
+    "necesito leer",
+    "necesito revisar",
+    "necesito verificar",
+    "necesito comprobar",
+    "necesito inspeccionar",
+    "necesito examinar",
+    "necesito buscar",
+    "necesito encontrar",
+    "necesito entender",
+    "necesito ver",
+    "necesito investigar",
+    "necesito actualizar",
+    "necesito corregir",
+    "necesito arreglar",
+    "necesito modificar",
+    "necesito crear",
+    "necesito escribir",
+    "necesito añadir",
+    "necesito agregar",
+    "necesito eliminar",
+    "tengo que leer",
+    "tengo que revisar",
+    "tengo que verificar",
+    "tengo que actualizar",
+    "tengo que corregir",
+    "tengo que arreglar",
+    "tengo que investigar",
+    "debo leer",
+    "debo revisar",
+    "debo verificar",
+    "debo actualizar",
+    "debo corregir",
+    "debería leer",
+    "debería revisar",
+    "debería verificar",
+    "debería investigar",
 ]
 
 action_verbs = [
@@ -104,7 +144,7 @@ completion_claims = [
     "guardado",
 ]
 
-line_start_re = "(?im)^[\\s\\-*•>]*(?:(?:vale|bien|ok|okey|sí|claro)\\s*,?\\s+)?(?:ahora\\s+)?(?:déjame|voy a|vamos a)\\s+\\w"
+line_start_re = "(?im)^[\\s\\-*•>]*(?:(?:vale|bien|ok|okey|sí|claro)\\s*,?\\s+)?(?:ahora\\s+)?(?:déjame|voy a|vamos a|necesito|tengo que|debo|debería|debería de|debo de)\\s+\\w"
 
 gerund_re = "(?im)(?:^|[.!?]\\s+)\\s*(?:ahora|ya)\\s+(?:actualizando|modificando|corrigiendo|arreglando|creando|añadiendo|agregando|eliminando|borrando|ejecutando|leyendo|buscando)\\b"
 

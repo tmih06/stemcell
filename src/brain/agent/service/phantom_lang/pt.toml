@@ -52,6 +52,43 @@ intent_phrases = [
     "vamos executar",
     "procedo a",
     "agora procedo a",
+
+    # Deferment stalls — "preciso X" / "tenho que X" / "devo X"
+    # 2026-05-28: Portuguese parity with the English "i need to X" entries.
+    "preciso ler",
+    "preciso revisar",
+    "preciso verificar",
+    "preciso checar",
+    "preciso inspecionar",
+    "preciso examinar",
+    "preciso entender",
+    "preciso ver",
+    "preciso encontrar",
+    "preciso investigar",
+    "preciso buscar",
+    "preciso atualizar",
+    "preciso corrigir",
+    "preciso arrumar",
+    "preciso modificar",
+    "preciso criar",
+    "preciso escrever",
+    "preciso adicionar",
+    "preciso remover",
+    "tenho que ler",
+    "tenho que verificar",
+    "tenho que atualizar",
+    "tenho que corrigir",
+    "tenho que investigar",
+    "tenho de ler",
+    "tenho de verificar",
+    "devo ler",
+    "devo verificar",
+    "devo atualizar",
+    "devo corrigir",
+    "devo investigar",
+    "deveria ler",
+    "deveria verificar",
+    "deveria investigar",
 ]
 
 action_verbs = [
@@ -98,7 +135,7 @@ completion_claims = [
     "salvo",
 ]
 
-line_start_re = "(?im)^[\\s\\-*•>]*(?:(?:ok|okay|bem|certo|tá|ta)\\s*,?\\s+)?(?:agora\\s+)?(?:deixe-me|vou|vamos)\\s+\\w"
+line_start_re = "(?im)^[\\s\\-*•>]*(?:(?:ok|okay|bem|certo|tá|ta)\\s*,?\\s+)?(?:agora\\s+)?(?:deixe-me|vou|vamos|preciso|tenho que|devo|deveria|tenho de)\\s+\\w"
 
 gerund_re = "(?im)(?:^|[.!?]\\s+)\\s*(?:agora|já)\\s+(?:atualizando|modificando|corrigindo|consertando|criando|adicionando|removendo|deletando|executando|lendo|buscando)\\b"
 

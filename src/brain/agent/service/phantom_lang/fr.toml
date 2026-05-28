@@ -50,6 +50,48 @@ intent_phrases = [
     "allons exécuter",
     "je procède à",
     "maintenant je procède à",
+
+    # Deferment stalls — "j'ai besoin de X" / "je dois X" / "il faut que je X"
+    # 2026-05-28: French parity with the English "i need to X" entries.
+    "j'ai besoin de lire",
+    "j'ai besoin de vérifier",
+    "j'ai besoin de vérifier",
+    "j'ai besoin de regarder",
+    "j'ai besoin d'examiner",
+    "j'ai besoin de comprendre",
+    "j'ai besoin de voir",
+    "j'ai besoin de trouver",
+    "j'ai besoin d'enquêter",
+    "j'ai besoin de chercher",
+    "j'ai besoin de mettre à jour",
+    "j'ai besoin de corriger",
+    "j'ai besoin de modifier",
+    "j'ai besoin de créer",
+    "j'ai besoin d'écrire",
+    "j'ai besoin d'ajouter",
+    "je dois lire",
+    "je dois vérifier",
+    "je dois regarder",
+    "je dois examiner",
+    "je dois comprendre",
+    "je dois voir",
+    "je dois trouver",
+    "je dois mettre à jour",
+    "je dois corriger",
+    "je dois modifier",
+    "je dois créer",
+    "je dois écrire",
+    "je dois ajouter",
+    "je dois enquêter",
+    "il faut que je lise",
+    "il faut que je vérifie",
+    "il faut que je regarde",
+    "il faut que je trouve",
+    "il faut que je corrige",
+    "je devrais lire",
+    "je devrais vérifier",
+    "je devrais regarder",
+    "je devrais examiner",
 ]
 
 action_verbs = [
@@ -98,7 +140,7 @@ completion_claims = [
     "sauvegardé",
 ]
 
-line_start_re = "(?im)^[\\s\\-*•>]*(?:(?:ok|okay|bon|d'accord|bien|oui)\\s*,?\\s+)?(?:maintenant\\s+)?(?:laissez-moi|je vais|allons)\\s+\\w"
+line_start_re = "(?im)^[\\s\\-*•>]*(?:(?:ok|okay|bon|d'accord|bien|oui)\\s*,?\\s+)?(?:maintenant\\s+)?(?:laissez-moi|je vais|allons|j'ai besoin de|je dois|il faut que je|je devrais)\\s+\\w"
 
 gerund_re = "(?im)(?:^|[.!?]\\s+)\\s*(?:maintenant|déjà)\\s+(?:vérifiant|mettant à jour|modifiant|corrigeant|réparant|créant|ajoutant|supprimant|exécutant|lisant|cherchant)\\b"
 
