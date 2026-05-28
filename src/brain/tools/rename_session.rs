@@ -16,9 +16,12 @@ pub struct RenameSessionTool;
 
 #[derive(Debug, Deserialize)]
 struct RenameInput {
-    /// New title for the session. Pass an empty string to clear the
-    /// title and let downstream lookups fall back to the channel
-    /// default.
+    /// New title for the session. Must be a non-empty, non-whitespace
+    /// string. To revert to the channel-default title, the user has to
+    /// recreate the session — `rename_session` no longer accepts an
+    /// empty string (issue #128: empty rename silently wiped the title
+    /// on Telegram and the session became unidentifiable in
+    /// `/sessions`).
     title: String,
 }
 
@@ -32,7 +35,8 @@ impl Tool for RenameSessionTool {
         "Rename the current session. Use this once a session has enough context that the \
          channel-default title (e.g. 'A2A: <first 60 chars>', 'Telegram: <chat>') is no \
          longer descriptive. Provide a short, specific title (3-8 words) that reflects \
-         the actual work being done. Pass an empty string to clear the title."
+         the actual work being done. The title must be non-empty (whitespace-only is \
+         rejected); to revert to no-title, the session has to be recreated."
     }
 
     fn input_schema(&self) -> Value {
@@ -41,7 +45,8 @@ impl Tool for RenameSessionTool {
             "properties": {
                 "title": {
                     "type": "string",
-                    "description": "New session title. Empty string clears the title back to no-title.",
+                    "description": "New session title (1-200 chars, non-whitespace).",
+                    "minLength": 1,
                     "maxLength": 200
                 }
             },
@@ -64,6 +69,18 @@ impl Tool for RenameSessionTool {
     async fn execute(&self, input: Value, context: &ToolExecutionContext) -> Result<ToolResult> {
         let parsed: RenameInput = serde_json::from_value(input)?;
         let trimmed = parsed.title.trim();
+        if trimmed.is_empty() {
+            // Issue #128: empty/whitespace-only title was silently
+            // accepted and wiped the session's stored title, making
+            // the row appear as "Untitled" in /sessions. Reject so
+            // the model has to provide a real title and can't leave
+            // sessions unlabeled.
+            return Ok(ToolResult::error(
+                "Title cannot be empty or whitespace-only. Provide a short, specific \
+                 title (3-8 words) that reflects the actual work being done."
+                    .into(),
+            ));
+        }
         if trimmed.len() > 200 {
             return Ok(ToolResult::error(
                 "Title too long (max 200 chars). Pick something shorter and more specific.".into(),
@@ -83,23 +100,15 @@ impl Tool for RenameSessionTool {
 
         let session_svc = crate::services::SessionService::new(svc_ctx.clone());
         let session_id = context.session_id;
-        let new_title: Option<String> = if trimmed.is_empty() {
-            None
-        } else {
-            Some(trimmed.to_string())
-        };
+        let new_title = trimmed.to_string();
 
         match session_svc
-            .update_session_title(session_id, new_title.clone())
+            .update_session_title(session_id, Some(new_title.clone()))
             .await
         {
-            Ok(()) => {
-                let summary = match new_title {
-                    Some(t) => format!("Session renamed to '{}'.", t),
-                    None => "Session title cleared.".to_string(),
-                };
-                Ok(ToolResult::success(summary))
-            }
+            Ok(()) => Ok(ToolResult::success(format!(
+                "Session renamed to '{new_title}'."
+            ))),
             Err(e) => Ok(ToolResult::error(format!(
                 "Failed to rename session {}: {}",
                 session_id, e

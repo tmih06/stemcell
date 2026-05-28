@@ -47,29 +47,67 @@ async fn rename_session_updates_title() {
 }
 
 #[tokio::test]
-async fn rename_session_empty_string_clears_title() {
+async fn rename_session_rejects_empty_string() {
+    // Issue #128: empty title was silently accepted and wiped the
+    // session's stored title, leaving it as "Untitled" with no way
+    // to identify the conversation in /sessions.
     let (_db, svc_ctx, sid) = setup().await;
     let mut ctx = ToolExecutionContext::new(sid);
     ctx.service_context = Some(svc_ctx.clone());
 
     let result = RenameSessionTool
-        .execute(json!({ "title": "   " }), &ctx)
+        .execute(json!({ "title": "" }), &ctx)
         .await
         .expect("execute");
 
-    assert!(result.success, "clear should succeed: {:?}", result.error);
+    assert!(!result.success, "empty title must be rejected");
     assert!(
-        result.output.contains("cleared"),
-        "output should mention clearing, got: {}",
-        result.output
+        result
+            .error
+            .as_deref()
+            .unwrap_or_default()
+            .to_lowercase()
+            .contains("empty"),
+        "error must mention empty/whitespace, got: {:?}",
+        result.error
     );
+
+    // Original title must be unchanged.
+    let session = SessionService::new(svc_ctx)
+        .get_session(sid)
+        .await
+        .expect("get_session")
+        .expect("session exists");
+    assert_eq!(
+        session.title.as_deref(),
+        Some("Initial title"),
+        "title must be untouched after rejected empty rename"
+    );
+}
+
+#[tokio::test]
+async fn rename_session_rejects_whitespace_only() {
+    let (_db, svc_ctx, sid) = setup().await;
+    let mut ctx = ToolExecutionContext::new(sid);
+    ctx.service_context = Some(svc_ctx.clone());
+
+    let result = RenameSessionTool
+        .execute(json!({ "title": "   \t \n  " }), &ctx)
+        .await
+        .expect("execute");
+
+    assert!(!result.success, "whitespace-only must be rejected");
 
     let session = SessionService::new(svc_ctx)
         .get_session(sid)
         .await
         .expect("get_session")
         .expect("session exists");
-    assert_eq!(session.title, None, "title must be None after clear");
+    assert_eq!(
+        session.title.as_deref(),
+        Some("Initial title"),
+        "title must be untouched"
+    );
 }
 
 #[tokio::test]
