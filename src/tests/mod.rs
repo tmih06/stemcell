@@ -46,6 +46,12 @@ pub mod context_window_test;
 pub mod cron_test;
 pub mod custom_model_paste_test;
 pub mod custom_provider_cache_autoenable_test;
+// Unix-only: drives Config::load via a temp HOME override. On Windows
+// `dirs::home_dir()` uses the Win32 `SHGetKnownFolderPath` API rather
+// than env vars, so the HomeGuard has no effect and Config::load
+// reads the runner's real profile. The fix would require an explicit
+// test hook in Config::load — out of scope for what the test verifies.
+#[cfg(unix)]
 pub mod custom_provider_no_models_test;
 pub mod custom_provider_test;
 pub mod daemon_health_test;
