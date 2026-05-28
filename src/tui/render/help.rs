@@ -133,6 +133,20 @@ pub(super) fn render_help(f: &mut Frame, app: &App, area: Rect) {
             Span::styled(" Back", Style::default().fg(Color::DarkGray)),
         ]),
         Line::from(""),
+        Line::from(vec![
+            Span::styled(" 📖 ", Style::default().fg(Color::Rgb(215, 100, 20))),
+            Span::styled(
+                "docs.opencrabs.com",
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::UNDERLINED),
+            ),
+            Span::styled(
+                "  Official documentation",
+                Style::default().fg(Color::DarkGray),
+            ),
+        ]),
+        Line::from(""),
     ]);
 
     // ── RIGHT COLUMN ──
