@@ -152,7 +152,7 @@ fn ext_xml_svg() {
 
 #[test]
 fn unknown_ext_returns_octet_stream() {
-    assert_eq!(mime_from_ext("archive.zip"), "application/octet-stream");
+    assert_eq!(mime_from_ext("archive.rar"), "application/octet-stream");
     assert_eq!(mime_from_ext("binary.bin"), "application/octet-stream");
     assert_eq!(mime_from_ext("noext"), "application/octet-stream");
 }

@@ -900,9 +900,29 @@ pub(super) fn render_status_bar(f: &mut Frame, app: &App, area: Rect) {
             provider_model_dir_text,
             Style::default().fg(Color::Rgb(90, 110, 150)),
         ),
-        Span::styled(sep_text, Style::default().fg(Color::DarkGray)),
-        Span::styled(policy_text, Style::default().fg(policy_color)),
     ];
+
+    // Real-time tokens/sec while streaming (output tokens / wall-clock elapsed).
+    // Only shown during an active turn with at least one output token counted —
+    // keeps the footer clean when idle and avoids a division-by-zero on the
+    // very first tick before any StreamingOutputTokens event has landed.
+    if app.is_processing
+        && app.streaming_output_tokens > 0
+        && let Some(started) = app.processing_started_at
+    {
+        let elapsed = started.elapsed().as_secs_f64();
+        if elapsed > 0.0 {
+            let tps = app.streaming_output_tokens as f64 / elapsed;
+            spans.push(Span::styled("  ·  ", Style::default().fg(Color::DarkGray)));
+            spans.push(Span::styled(
+                format!("{:.0} tok/s", tps),
+                Style::default().fg(Color::Rgb(80, 200, 120)),
+            ));
+        }
+    }
+
+    spans.push(Span::styled(sep_text, Style::default().fg(Color::DarkGray)));
+    spans.push(Span::styled(policy_text, Style::default().fg(policy_color)));
 
     // Split pane indicator
     if app.pane_manager.is_split() {

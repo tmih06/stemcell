@@ -83,7 +83,9 @@ pub fn render(f: &mut Frame, app: &mut App) {
         let terminal_width = (f.area().width.saturating_sub(4) as usize).max(1);
         const MAX_CONTENT_ROWS: usize = 8; // 10 cap - 2 borders
         let mut rows = 0usize;
-        for line in app.input_buffer.lines() {
+        // split('\n') preserves empty trailing lines (Ctrl+J / Shift+Enter
+        // newlines), unlike lines() which silently strips them.
+        for line in app.input_buffer.split('\n') {
             rows += if line.is_empty() {
                 1
             } else {

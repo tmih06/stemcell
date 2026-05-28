@@ -9,7 +9,8 @@ use anyhow::Result;
 use crossterm::{
     event::{
         DisableBracketedPaste, DisableFocusChange, DisableMouseCapture, EnableBracketedPaste,
-        EnableFocusChange, EnableMouseCapture,
+        EnableFocusChange, EnableMouseCapture, KeyboardEnhancementFlags,
+        PopKeyboardEnhancementFlags, PushKeyboardEnhancementFlags,
     },
     execute,
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
@@ -89,6 +90,7 @@ fn force_restore_terminal() {
     let _ = disable_raw_mode();
     let _ = execute!(
         io::stdout(),
+        PopKeyboardEnhancementFlags,
         LeaveAlternateScreen,
         DisableBracketedPaste,
         DisableFocusChange,
@@ -146,7 +148,11 @@ pub async fn run(mut app: App) -> Result<()> {
         EnterAlternateScreen,
         EnableBracketedPaste,
         EnableFocusChange,
-        EnableMouseCapture
+        EnableMouseCapture,
+        // Kitty keyboard protocol: enables unambiguous modifier reporting
+        // so Shift+Enter is distinguishable from plain Enter. Silently
+        // ignored by terminals that don't support it (no-op, no errors).
+        PushKeyboardEnhancementFlags(KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES)
     )?;
 
     let backend = CrosstermBackend::new(stdout);
