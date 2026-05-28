@@ -8,48 +8,86 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.3.30] - 2026-05-28
 
-19 commits since v0.3.29. Minor release closing issues #125 (RTK
+31 commits since v0.3.29. Minor release closing issues #125 (RTK
 daemon hang from sync Command::new blocking the tokio runtime on
-single-worker profiles) and #126 (/models picker in channels showed
+single-worker profiles), #126 (/models picker in channels showed
 Claude model names instead of the actual CLI-supported models and
-hid unconfigured providers entirely). The RTK binary detection
-swapped std::sync::OnceLock plus std::process::Command for
-tokio::sync::OnceCell plus tokio::process::Command across
-find_rtk_binary, is_rtk_available, rewrite_command, and
-rewrite_command_string, with the tracker mutex lifted to
-tokio::sync::Mutex and a dedicated no-block regression suite proving
-single-worker runtimes stay responsive. Qwen custom providers get
-zero-config cost savings: a looks_like_qwen_target detector scans
-base_url and model name for Alibaba-shaped endpoints (dashscope,
-aliyun, aliyuncs, dialagram) or qwen-* model prefixes and
-auto-enables ephemeral cache_control markers on the system prompt,
-last streaming message, and last tool, logged once per
+hid unconfigured providers entirely), and #127 (channel_search had
+no way to target a specific Telegram forum topic, so searches across
+supergroups with topics enabled returned a flat undifferentiated
+list). The RTK binary detection swapped std::sync::OnceLock plus
+std::process::Command for tokio::sync::OnceCell plus
+tokio::process::Command across find_rtk_binary, is_rtk_available,
+rewrite_command, and rewrite_command_string, with the tracker mutex
+lifted to tokio::sync::Mutex and a dedicated no-block regression
+suite proving single-worker runtimes stay responsive. Qwen custom
+providers get zero-config cost savings: a looks_like_qwen_target
+detector scans base_url and model name for Alibaba-shaped endpoints
+(dashscope, aliyun, aliyuncs, dialagram) or qwen-* model prefixes
+and auto-enables ephemeral cache_control markers on the system
+prompt, last streaming message, and last tool, logged once per
 (base_url, model) pair so mixed-model providers only mark Qwen
-requests. Tool-call extraction for qwen-3.7-max-thinking now
-handles bare-args bash calls and Anthropic-shaped <invoke name="X">
-XML nested inside qwen:tool_call wrappers, so the model can emit
-either OpenAI or Anthropic tool-call shapes and the parser still
-lands a clean ToolCall. The /models picker now surfaces unconfigured
-providers as greyed-out entries with a setup hint, and the displayed
+requests. Tool-call extraction for qwen-3.7-max-thinking now handles
+bare-args bash calls and Anthropic-shaped <invoke name="X"> XML
+nested inside qwen:tool_call wrappers, so the model can emit either
+OpenAI or Anthropic tool-call shapes and the parser still lands a
+clean ToolCall. The /models picker now surfaces unconfigured
+providers as greyed-out entries with a setup hint, the displayed
 model list comes from a single cli_supported_models source of truth
 pinned per provider so channel footers match what the TUI actually
-offers. generate_image gains an optional image parameter (local path
-or HTTPS URL) that feeds Gemini inlineData parts for img2img editing
-(logo placement, element replacement, restyling) while OpenAI-shaped
-backends reject it with a clear error pointing users at Gemini. Help
-screen got three quality-of-life passes: Esc x2 now reads "Cancel /
-abort immediately" instead of the vague "Clear input",
-/onboard:channels lists Telegram, Slack, Discord, WhatsApp, and
-Trello by name, and the footer carries a docs.opencrabs.com link.
-Two onboarding fixes keep quick-jump mode from committing on
-intermediate Enter presses and swap the per-session provider on
-quick-jump rebuild so the footer reflects the new selection.
-Style-only: assert_eq!(x, false) collapsed to assert!(!x) across
-the test suite.
+offers, and custom providers with no configured models now show a
+helpful empty-state instead of a blank picker. Telegram onboarding
+got a full pass: test_telegram_connection now validates the token via
+getMe before attempting sends (specific errors for invalid token,
+chat not found, blocked bot), auto-detects the user's numeric ID
+from getUpdates when the chat ID field is left empty, persists the
+partial config on Cancel so users don't lose their typed token when
+they back out, and Enter on the RespondTo field no longer requires
+a user ID so you can test with auto-detection. All four channel
+handlers (Telegram, Discord, Slack, WhatsApp) now treat a follow-up
+message during an active agent run as ESC x2 (cancel the running
+agent and start fresh), Telegram "is responding..." status messages
+are now dynamic and context-aware (showing actual tool being called,
+tokens streamed, elapsed time) instead of hardcoded quips, and
+channel_search gained a topic_id filter for Telegram forum
+supergroups so you can search within a specific topic thread.
+Custom provider base URLs are normalized on Enter/Tab/paste during
+onboarding and /models (strips trailing /v1/chat/completions,
+/chat/completions, /v1, /), ZIP file attachments from users are now
+extracted and processed inline (text files inlined, images get
+vision markers, PDFs get text extraction, capped at 50 files and
+10 MB per entry), generate_image gained an optional image parameter
+(local path or HTTPS URL) that feeds Gemini inlineData parts for
+img2img editing while OpenAI-shaped backends reject it with a clear
+error pointing users at Gemini, the self-heal detector now catches
+"I need to X" deferment stalls in all 5 languages (English, Spanish,
+French, German, Portuguese), the RSI self_improve tool rejects
+trivial test content (< 15 chars, "test" descriptions) before it
+can pollute brain files, orphan XML close tags like </tool_result>
+are stripped from streamed output before reaching the TUI, the plan
+widget dynamically hides tasks that don't fit the terminal height
+instead of overflowing, and the TUI footer now shows a real-time
+tok/s throughput metric between the model info and the approval
+policy pill (visible only while streaming, green to match the
+split-pane indicator). Help screen got three quality-of-life
+passes: Esc x2 now reads "Cancel / abort immediately" instead of
+the vague "Clear input", /onboard:channels lists Telegram, Slack,
+Discord, WhatsApp, and Trello by name, the footer carries a
+docs.opencrabs.com link, and Shift+Enter plus Ctrl+J are now
+documented as newline bindings. Terminal setup enables crossterm
+PushKeyboardEnhancementFlags (DISAMBIGUATE_ESCAPE_CODES) so
+Shift+Enter fires on Kitty-protocol terminals (Ghostty, Kitty,
+WezTerm, foot), the input area now expands properly on Ctrl+J
+newline (str::lines() was stripping trailing newlines so the empty
+trailing line wasn't counted; switched to split('\n')), and
+quick-jump mode no longer commits on intermediate Enter presses and
+swaps the per-session provider on rebuild so the footer reflects
+the new selection. Style-only: assert_eq!(x, false) collapsed to
+assert!(!x) across the test suite.
 
-Closes #125, #126.
+Closes #125, #126, #127.
 
-33 files changed, +2255/-337.
+60 files changed, +3541/-468.
 
 RTK ASYNC REFACTOR (3 commits, closes #125)
 
@@ -65,16 +103,17 @@ QWEN TOOL-CALL EXTRACTION (2 commits)
 QWEN CACHE AUTO-ENABLE (5 commits)
 
 - dcdbf2b5 feat(qwen): add `looks_like_qwen_target` detector for auto-cache enablement
-- 1e74db32 feat(qwen): auto-enable ephemeral cache_control for qwen-shaped custom providers
+- 1e74db32 feat(qwen): auto-enable ephemeral `cache_control` for qwen-shaped custom providers
 - 6b14fe5b feat(qwen): log once per (base_url, model) when auto-cache engages
 - 0c937e6a test(qwen): integration test for custom-provider cache auto-enable
 - c794808f docs(qwen): document zero-config Qwen cache auto-enable for custom providers
 
-CLI /MODELS PICKER (3 commits, closes #126)
+CLI /MODELS PICKER (4 commits, closes #126)
 
 - 2abebef8 fix(channels): show OpenCode CLI models in /models, not Claude names
 - 2894e57d refactor(providers): single-source CLI model list, pin via `cli_supported_models`
 - 7def942e feat(channels): surface unconfigured providers in /models picker
+- dc9b2048 fix(channels): custom-provider /models picker returns empty list + help when no models configured
 
 IMG2IMG FOR GENERATE_IMAGE (1 commit)
 
@@ -85,10 +124,30 @@ HELP SCREEN IMPROVEMENTS (2 commits)
 - de119af4 improve(help): clarify Esc x2 abort and list channels in /onboard:channels
 - 7b506322 feat(help): add docs.opencrabs.com link to help screen footer
 
-ONBOARDING FIXES (2 commits)
+ONBOARDING FIXES (4 commits)
 
 - 1979e59b fix(onboarding): only Enter on the last step commits in quick-jump mode
 - 1ffac094 fix(tui): swap per-session provider on quick-jump rebuild so footer updates
+- 956ec366 fix(onboarding): normalize custom provider base URL on entry and paste
+- e5b68823 feat(onboarding): auto-detect Telegram user ID, persist on cancel, better errors
+
+TELEGRAM / CHANNEL FEATURES (4 commits, closes #127)
+
+- 2cc19699 feat(channels): follow-up message cancels running agent (ESC x2 behavior)
+- 3fcb616f feat(telegram): replace hardcoded status quips with dynamic context-aware messages
+- 0adb8c47 feat(channels): topic-aware channel search for Telegram forums
+- 8e8b8135 feat(channels): handle ZIP file attachments from users
+
+TUI FIXES (3 commits)
+
+- f6890440 fix(tui): dynamic plan widget task visibility based on terminal height
+- 66b36d8b feat(tui): real-time tok/s in footer between model info and approval policy
+- ce4bb4d7 fix(sanitize): strip orphan close tags (`</tool_result>` etc.) leaking to TUI
+
+SELF-HEAL HARDENING (2 commits)
+
+- fbb835f6 feat(self-heal): detect "I need to X" deferment stalls in all 5 languages
+- 47d7a0f2 fix(rsi): reject trivial content in self_improve apply action
 
 STYLE (1 commit)
 
