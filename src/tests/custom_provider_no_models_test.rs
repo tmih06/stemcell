@@ -22,27 +22,43 @@ use std::sync::Mutex;
 static HOME_LOCK: Mutex<()> = Mutex::new(());
 
 struct HomeGuard {
-    prev: Option<std::ffi::OsString>,
+    prev_home: Option<std::ffi::OsString>,
+    prev_userprofile: Option<std::ffi::OsString>,
     _lock: std::sync::MutexGuard<'static, ()>,
 }
 
 impl HomeGuard {
     fn new(temp_home: &std::path::Path) -> Self {
         let lock = HOME_LOCK.lock().unwrap_or_else(|p| p.into_inner());
-        let prev = std::env::var_os("HOME");
+        let prev_home = std::env::var_os("HOME");
+        let prev_userprofile = std::env::var_os("USERPROFILE");
         // SAFETY: HOME_LOCK serializes access for the duration of `_lock`.
+        // `dirs::home_dir()` reads HOME on Unix and USERPROFILE on Windows
+        // (with registry fallback) — set both so the override works on both.
+        // Without USERPROFILE the Windows CI test reads the runner's real
+        // profile, which lacks our temp config and falls through to a
+        // different code path. 2026-05-29 Windows CI fix.
         unsafe {
             std::env::set_var("HOME", temp_home);
+            std::env::set_var("USERPROFILE", temp_home);
         }
-        Self { prev, _lock: lock }
+        Self {
+            prev_home,
+            prev_userprofile,
+            _lock: lock,
+        }
     }
 }
 
 impl Drop for HomeGuard {
     fn drop(&mut self) {
-        match self.prev.take() {
+        match self.prev_home.take() {
             Some(v) => unsafe { std::env::set_var("HOME", v) },
             None => unsafe { std::env::remove_var("HOME") },
+        }
+        match self.prev_userprofile.take() {
+            Some(v) => unsafe { std::env::set_var("USERPROFILE", v) },
+            None => unsafe { std::env::remove_var("USERPROFILE") },
         }
     }
 }
