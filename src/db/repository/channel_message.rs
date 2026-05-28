@@ -40,8 +40,8 @@ impl ChannelMessageRepository {
                     "INSERT OR IGNORE INTO channel_messages
                         (id, channel, channel_chat_id, channel_chat_name,
                          sender_id, sender_name, content, message_type,
-                         platform_message_id, created_at)
-                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+                         platform_message_id, created_at, thread_id, topic_name)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
                     params![
                         m.id.to_string(),
                         m.channel,
@@ -53,6 +53,8 @@ impl ChannelMessageRepository {
                         m.message_type,
                         m.platform_message_id,
                         m.created_at.timestamp(),
+                        m.thread_id,
+                        m.topic_name,
                     ],
                 )
             })
@@ -100,24 +102,36 @@ impl ChannelMessageRepository {
             .context("Failed to fetch recent channel messages")
     }
 
-    /// Search messages by content (LIKE-based)
+    /// Search messages by content (LIKE-based) with optional thread_id filter
     pub async fn search(
         &self,
         channel: Option<&str>,
         chat_id: Option<&str>,
         query: &str,
         limit: i64,
+        thread_id: Option<&str>,
     ) -> Result<Vec<ChannelMessage>> {
         let ch = channel.map(|s| s.to_string());
         let cid = chat_id.map(|s| s.to_string());
+        let tid = thread_id.map(|s| s.to_string());
         let pattern = format!("%{query}%");
 
         self.pool
             .get()
             .await
             .context("Failed to get connection")?
-            .interact(move |conn| match (ch, cid) {
-                (Some(ch), Some(cid)) => {
+            .interact(move |conn| match (ch, cid, tid) {
+                (Some(ch), Some(cid), Some(tid)) => {
+                    let mut stmt = conn.prepare_cached(
+                        "SELECT * FROM channel_messages \
+                             WHERE channel = ?1 AND channel_chat_id = ?2 AND content LIKE ?3 AND thread_id = ?4 \
+                             ORDER BY created_at DESC LIMIT ?5",
+                    )?;
+                    let rows =
+                        stmt.query_map(params![ch, cid, pattern, tid, limit], ChannelMessage::from_row)?;
+                    rows.collect::<std::result::Result<Vec<_>, _>>()
+                }
+                (Some(ch), Some(cid), None) => {
                     let mut stmt = conn.prepare_cached(
                         "SELECT * FROM channel_messages \
                              WHERE channel = ?1 AND channel_chat_id = ?2 AND content LIKE ?3 \
@@ -127,7 +141,17 @@ impl ChannelMessageRepository {
                         stmt.query_map(params![ch, cid, pattern, limit], ChannelMessage::from_row)?;
                     rows.collect::<std::result::Result<Vec<_>, _>>()
                 }
-                (Some(ch), None) => {
+                (Some(ch), None, Some(tid)) => {
+                    let mut stmt = conn.prepare_cached(
+                        "SELECT * FROM channel_messages \
+                             WHERE channel = ?1 AND content LIKE ?2 AND thread_id = ?3 \
+                             ORDER BY created_at DESC LIMIT ?4",
+                    )?;
+                    let rows =
+                        stmt.query_map(params![ch, pattern, tid, limit], ChannelMessage::from_row)?;
+                    rows.collect::<std::result::Result<Vec<_>, _>>()
+                }
+                (Some(ch), None, None) => {
                     let mut stmt = conn.prepare_cached(
                         "SELECT * FROM channel_messages \
                              WHERE channel = ?1 AND content LIKE ?2 \
@@ -137,7 +161,17 @@ impl ChannelMessageRepository {
                         stmt.query_map(params![ch, pattern, limit], ChannelMessage::from_row)?;
                     rows.collect::<std::result::Result<Vec<_>, _>>()
                 }
-                (None, Some(cid)) => {
+                (None, Some(cid), Some(tid)) => {
+                    let mut stmt = conn.prepare_cached(
+                        "SELECT * FROM channel_messages \
+                             WHERE channel_chat_id = ?1 AND content LIKE ?2 AND thread_id = ?3 \
+                             ORDER BY created_at DESC LIMIT ?4",
+                    )?;
+                    let rows =
+                        stmt.query_map(params![cid, pattern, tid, limit], ChannelMessage::from_row)?;
+                    rows.collect::<std::result::Result<Vec<_>, _>>()
+                }
+                (None, Some(cid), None) => {
                     let mut stmt = conn.prepare_cached(
                         "SELECT * FROM channel_messages \
                              WHERE channel_chat_id = ?1 AND content LIKE ?2 \
@@ -147,7 +181,17 @@ impl ChannelMessageRepository {
                         stmt.query_map(params![cid, pattern, limit], ChannelMessage::from_row)?;
                     rows.collect::<std::result::Result<Vec<_>, _>>()
                 }
-                (None, None) => {
+                (None, None, Some(tid)) => {
+                    let mut stmt = conn.prepare_cached(
+                        "SELECT * FROM channel_messages \
+                             WHERE content LIKE ?1 AND thread_id = ?2 \
+                             ORDER BY created_at DESC LIMIT ?3",
+                    )?;
+                    let rows =
+                        stmt.query_map(params![pattern, tid, limit], ChannelMessage::from_row)?;
+                    rows.collect::<std::result::Result<Vec<_>, _>>()
+                }
+                (None, None, None) => {
                     let mut stmt = conn.prepare_cached(
                         "SELECT * FROM channel_messages \
                              WHERE content LIKE ?1 \
@@ -254,7 +298,7 @@ mod tests {
         assert_eq!(recent[0].content, "Hello world");
 
         let results = repo
-            .search(Some("telegram"), Some("-100123456"), "Hello", 10)
+            .search(Some("telegram"), Some("-100123456"), "Hello", 10, None)
             .await
             .expect("Failed to search");
         assert_eq!(results.len(), 1);

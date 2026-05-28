@@ -167,7 +167,7 @@ impl Database {
     }
 
     /// Total number of migrations defined below — keep in sync when adding new ones.
-    const MIGRATION_COUNT: usize = 23;
+    const MIGRATION_COUNT: usize = 24;
 
     /// Run database migrations
     pub async fn run_migrations(&self) -> Result<()> {
@@ -238,6 +238,9 @@ impl Database {
             )),
             M::up(include_str!(
                 "../migrations/20260522000001_add_auto_title_attempted.sql"
+            )),
+            M::up(include_str!(
+                "../migrations/20260529000001_add_channel_thread_id.sql"
             )),
         ]);
 

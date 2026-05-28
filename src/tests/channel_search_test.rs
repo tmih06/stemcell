@@ -140,7 +140,7 @@ mod repository {
             .unwrap();
 
         let results = repo
-            .search(Some("telegram"), Some("-100111"), "fox", 10)
+            .search(Some("telegram"), Some("-100111"), "fox", 10, None)
             .await
             .unwrap();
         assert_eq!(results.len(), 1);
@@ -179,19 +179,19 @@ mod repository {
         .unwrap();
 
         // Search all channels, all chats
-        let results = repo.search(None, None, "deploy", 10).await.unwrap();
+        let results = repo.search(None, None, "deploy", 10, None).await.unwrap();
         assert_eq!(results.len(), 3);
 
         // Search telegram only, all chats
         let results = repo
-            .search(Some("telegram"), None, "deploy", 10)
+            .search(Some("telegram"), None, "deploy", 10, None)
             .await
             .unwrap();
         assert_eq!(results.len(), 2);
 
         // Search specific chat only
         let results = repo
-            .search(None, Some("-100111"), "deploy", 10)
+            .search(None, Some("-100111"), "deploy", 10, None)
             .await
             .unwrap();
         assert_eq!(results.len(), 1);
@@ -205,7 +205,7 @@ mod repository {
             .unwrap();
 
         let results = repo
-            .search(Some("telegram"), Some("-100111"), "nonexistent", 10)
+            .search(Some("telegram"), Some("-100111"), "nonexistent", 10, None)
             .await
             .unwrap();
         assert!(results.is_empty());

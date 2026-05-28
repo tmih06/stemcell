@@ -60,6 +60,10 @@ impl Tool for ChannelSearchTool {
                     "type": "integer",
                     "description": "Max results to return (default: 20)",
                     "default": 20
+                },
+                "thread_id": {
+                    "type": "string",
+                    "description": "Filter by thread/topic ID (optional, for Telegram forum topics)"
                 }
             },
             "required": ["operation"]
@@ -173,10 +177,11 @@ impl Tool for ChannelSearchTool {
                 };
 
                 let chat_id = input.get("chat_id").and_then(|v| v.as_str());
+                let thread_id = input.get("thread_id").and_then(|v| v.as_str());
 
                 let messages = self
                     .repo
-                    .search(channel, chat_id, query, n)
+                    .search(channel, chat_id, query, n, thread_id)
                     .await
                     .map_err(|e| super::error::ToolError::Execution(e.to_string()))?;
 
@@ -191,9 +196,19 @@ impl Tool for ChannelSearchTool {
                     .map(|m| {
                         let ts = m.created_at.format("%m-%d %H:%M");
                         let chat = m.channel_chat_name.as_deref().unwrap_or(&m.channel_chat_id);
+                        let thread = m
+                            .thread_id
+                            .as_deref()
+                            .map(|t| format!(" [{}]", t))
+                            .unwrap_or_default();
+                        let topic = m
+                            .topic_name
+                            .as_deref()
+                            .map(|t| format!(" ({})", t))
+                            .unwrap_or_default();
                         format!(
-                            "[{}] [{}:{}] {}: {}",
-                            ts, m.channel, chat, m.sender_name, m.content
+                            "[{}] [{}:{}]{}{}: {}: {}",
+                            ts, m.channel, chat, thread, topic, m.sender_name, m.content
                         )
                     })
                     .collect();

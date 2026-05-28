@@ -420,6 +420,8 @@ pub struct ChannelMessage {
     pub message_type: String,
     pub platform_message_id: Option<String>,
     pub created_at: DateTime<Utc>,
+    pub thread_id: Option<String>,
+    pub topic_name: Option<String>,
 }
 
 impl ChannelMessage {
@@ -435,6 +437,8 @@ impl ChannelMessage {
             message_type: row.get("message_type")?,
             platform_message_id: row.get("platform_message_id")?,
             created_at: timestamp_col(row, "created_at")?,
+            thread_id: row.get("thread_id").unwrap_or(None),
+            topic_name: row.get("topic_name").unwrap_or(None),
         })
     }
 
@@ -460,7 +464,16 @@ impl ChannelMessage {
             message_type,
             platform_message_id,
             created_at: Utc::now(),
+            thread_id: None,
+            topic_name: None,
         }
+    }
+
+    /// Set thread/topic context for forum-aware messages (e.g. Telegram topics)
+    pub fn with_thread(mut self, thread_id: Option<String>, topic_name: Option<String>) -> Self {
+        self.thread_id = thread_id;
+        self.topic_name = topic_name;
+        self
     }
 }
 

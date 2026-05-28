@@ -264,6 +264,7 @@ pub(crate) async fn handle_message(
         let sender_id = user.id.0.to_string();
         let sender_name = user.first_name.clone();
         let msg_id = msg.id.0.to_string();
+        let thread_id = msg.thread_id.map(|t| t.0.to_string());
         async move {
             if text.is_empty() {
                 return;
@@ -277,7 +278,8 @@ pub(crate) async fn handle_message(
                 text,
                 "text".into(),
                 Some(msg_id),
-            );
+            )
+            .with_thread(thread_id, None);
             if let Err(e) = repo.insert(&cm).await {
                 tracing::warn!("Failed to store channel message: {e}");
             }
@@ -2235,6 +2237,7 @@ pub(crate) async fn handle_message(
                     .await
                     .map(|u| format!("@{}", u))
                     .unwrap_or_else(|| "OpenCrabs".to_string());
+                let thread_id = msg.thread_id.map(|t| t.0.to_string());
                 let cm = DbChannelMessage::new(
                     "telegram".to_string(),
                     msg.chat.id.0.to_string(),
@@ -2244,7 +2247,8 @@ pub(crate) async fn handle_message(
                     text_only.clone(),
                     "text".to_string(),
                     None,
-                );
+                )
+                .with_thread(thread_id, None);
                 if let Err(e) = channel_msg_repo.insert(&cm).await {
                     tracing::warn!(
                         "Telegram: failed to record bot reply in channel_messages: {}",
