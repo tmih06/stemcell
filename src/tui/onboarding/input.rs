@@ -358,6 +358,15 @@ impl OnboardingWizard {
                 }
                 AuthField::CustomBaseUrl => {
                     self.ps.base_url.push_str(clean);
+                    // Normalize pasted URL immediately
+                    let normalized = self.ps.base_url.trim_end_matches('/');
+                    let normalized = normalized
+                        .strip_suffix("/v1/chat/completions")
+                        .or_else(|| normalized.strip_suffix("/chat/completions"))
+                        .or_else(|| normalized.strip_suffix("/v1"))
+                        .unwrap_or(normalized)
+                        .to_string();
+                    self.ps.base_url = normalized;
                     if !self.ps.base_url.is_empty() {
                         self.ps.models.clear();
                         self.ps.selected_model = 0;
@@ -637,6 +646,17 @@ impl OnboardingWizard {
                     self.ps.base_url.pop();
                 }
                 KeyCode::Enter | KeyCode::Tab | KeyCode::Down => {
+                    // Normalize base URL: strip trailing slashes, /v1/chat/completions,
+                    // /chat/completions, /v1 suffixes so model fetch and provider
+                    // factory get a clean base. Users paste all sorts of formats.
+                    let normalized = self.ps.base_url.trim_end_matches('/');
+                    let normalized = normalized
+                        .strip_suffix("/v1/chat/completions")
+                        .or_else(|| normalized.strip_suffix("/chat/completions"))
+                        .or_else(|| normalized.strip_suffix("/v1"))
+                        .unwrap_or(normalized)
+                        .to_string();
+                    self.ps.base_url = normalized;
                     self.auth_field = AuthField::CustomApiKey;
                     if !self.ps.base_url.is_empty() {
                         self.ps.models.clear();
