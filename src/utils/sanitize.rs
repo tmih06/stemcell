@@ -586,13 +586,33 @@ pub fn strip_llm_artifacts(text: &str) -> String {
     if result.contains("<!--") {
         result = AgentService::strip_html_comments(&result);
     }
-    // Only strip XML blocks that contain valid tool-call JSON — prose mentions
-    // like "we fixed the <tool_call> bug" must not be eaten.
+    // Two strip paths:
+    //   1. Matched-pair JSON-bearing tool-call blocks — only stripped
+    //      when parse_xml_tool_calls confirms there's real call JSON
+    //      inside, so prose like "we fixed the <tool_call> bug" survives.
+    //   2. Orphan close tags (`</tool_result>`, `</tool_call>`, etc.) —
+    //      always stripped because models routinely emit them alone when
+    //      the opener was eaten by an earlier pass or never produced.
+    //      2026-05-28 user report: `</tool_result>` rendered visibly
+    //      between paragraphs in the TUI.
     if AgentService::has_xml_tool_block(&result) {
         let parsed = AgentService::parse_xml_tool_calls(&result);
         if !parsed.is_empty() {
             result = AgentService::strip_xml_tool_calls(&result);
         }
+    }
+    // Orphan-close pass runs unconditionally — it's safe because it
+    // only matches close tags that are alone on their line (with
+    // optional surrounding whitespace).
+    if result.contains("</tool_result>")
+        || result.contains("</tool_call>")
+        || result.contains("</tool_use>")
+        || result.contains("</invoke>")
+        || result.contains("</function_calls>")
+        || result.contains("</qwen:tool_call>")
+        || result.contains("</minimax:tool_call>")
+    {
+        result = AgentService::strip_xml_tool_calls(&result);
     }
     result
 }

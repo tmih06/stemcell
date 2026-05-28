@@ -1017,10 +1017,35 @@ impl AgentService {
         // Match only properly closed XML tool-call blocks.
         // NO |$ fallback — unclosed tags (prose mentions) must NOT match.
         static TOOL_CALL_BLOCK_RE: LazyLock<Regex> = LazyLock::new(|| {
-            Regex::new(r#"(?s)(<tool_call>.*?</tool_call>|<tool_code>.*?</tool_code>|<StartToolCall>.*?</StartToolCall>|<minimax:tool_call>.*?</minimax:tool_call>|<invoke\b.*?</invoke>|<param(?:eter)?\b[^>]*>.*?</param(?:eter)?>|<tool_use>.*?</tool_use>|<result>.*?</result>)"#).unwrap()
+            Regex::new(r#"(?s)(<tool_call>.*?</tool_call>|<tool_code>.*?</tool_code>|<StartToolCall>.*?</StartToolCall>|<minimax:tool_call>.*?</minimax:tool_call>|<qwen:tool_call>.*?</qwen:tool_call>|<function_calls>.*?</function_calls>|<invoke\b.*?</invoke>|<param(?:eter)?\b[^>]*>.*?</param(?:eter)?>|<tool_use>.*?</tool_use>|<tool_result>.*?</tool_result>|<result>.*?</result>)"#).unwrap()
         });
 
         let result = TOOL_CALL_BLOCK_RE.replace_all(text, "");
+
+        // Orphan close-tag stripping. Models routinely emit standalone
+        // `</tool_result>`, `</tool_call>`, `</invoke>`, `</function_calls>`,
+        // `</qwen:tool_call>` lines without a matching opener — either
+        // because the opener was already stripped by an earlier pass or
+        // the model never produced one. The matched-pair regex above
+        // doesn't catch these and they leak straight to the TUI.
+        // 2026-05-28 user report: `</tool_result>` rendered visibly
+        // between paragraphs of normal prose.
+        static ORPHAN_CLOSE_RE: LazyLock<Regex> = LazyLock::new(|| {
+            Regex::new(r#"(?im)^\s*</(?:tool_result|tool_call|tool_code|tool_use|invoke|function_calls|qwen:tool_call|minimax:tool_call|StartToolCall|param(?:eter)?|result)>\s*$"#).unwrap()
+        });
+        let result = ORPHAN_CLOSE_RE.replace_all(&result, "");
+
+        // Also strip inline orphan close tags that appear mid-line (rare
+        // but happens when the model wraps a paragraph with only the
+        // closing tag at the end). Keep tight wording so we don't eat
+        // prose like "we fixed the </tool_result> bug" — require the
+        // close tag to be the last thing on its line OR surrounded by
+        // whitespace at line edges.
+        static INLINE_ORPHAN_CLOSE_RE: LazyLock<Regex> = LazyLock::new(|| {
+            Regex::new(r#"(?im)\s*</(?:tool_result|tool_call|tool_code|tool_use|invoke|function_calls|qwen:tool_call|minimax:tool_call)>\s*$"#).unwrap()
+        });
+        let result = INLINE_ORPHAN_CLOSE_RE.replace_all(&result, "");
+
         result.trim().to_string()
     }
 

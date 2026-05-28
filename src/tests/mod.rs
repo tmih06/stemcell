@@ -82,6 +82,7 @@ pub mod onboarding_no_silent_commit_test;
 pub mod onboarding_types_test;
 pub mod onboarding_welcome_test;
 pub mod onboarding_wizard_test;
+pub mod orphan_close_tag_strip_test;
 pub mod phantom_db_persistence_test;
 pub mod phantom_deferment_test;
 pub mod plan_document_test;
