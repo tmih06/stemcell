@@ -12,9 +12,6 @@ use ratatui::{
     widgets::{Block, Borders, Paragraph},
 };
 
-/// Maximum number of task rows displayed (excludes header and footer).
-const MAX_VISIBLE_TASKS: usize = 6;
-
 /// Render the plan checklist panel.
 pub(super) fn render_plan_checklist(f: &mut Frame, app: &App, area: Rect) {
     let plan = match app.plan_document.as_ref() {
@@ -61,9 +58,21 @@ pub(super) fn render_plan_checklist(f: &mut Frame, app: &App, area: Rect) {
         ),
     ]);
 
-    let visible: Vec<&crate::tui::plan::PlanTask> =
-        plan.tasks.iter().take(MAX_VISIBLE_TASKS).collect();
-    let overflow = total.saturating_sub(MAX_VISIBLE_TASKS);
+    // Dynamic visible count: area height minus header (1), top border (1),
+    // and reserve 1 line for the overflow indicator if we have more tasks
+    // than available slots.
+    let chrome_lines: usize = 2; // header + top border
+    let available = (area.height as usize).saturating_sub(chrome_lines);
+    let has_overflow = total > available;
+    let max_visible = if has_overflow {
+        available.saturating_sub(1) // reserve line for "... (N more)"
+    } else {
+        available
+    };
+    let max_visible = max_visible.max(1); // always show at least 1
+
+    let visible: Vec<&crate::tui::plan::PlanTask> = plan.tasks.iter().take(max_visible).collect();
+    let overflow = total.saturating_sub(max_visible);
 
     let mut lines: Vec<Line> = vec![header];
 
