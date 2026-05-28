@@ -192,8 +192,9 @@ impl OnboardingWizard {
                 }
                 KeyCode::Enter => {
                     let has_token = !self.telegram_token_input.is_empty();
-                    let has_user_id = !self.telegram_user_id_input.is_empty();
-                    if has_token && has_user_id {
+                    if has_token {
+                        // Token present — test connection. User ID is optional;
+                        // test_telegram_connection auto-detects it via getUpdates.
                         return WizardAction::TestTelegram;
                     }
                     self.next_step();

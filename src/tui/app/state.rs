@@ -2405,7 +2405,12 @@ impl App {
                     wizard.set_whatsapp_error(err);
                 }
             }
-            TuiEvent::ChannelTestResult { success, error, .. } => {
+            TuiEvent::ChannelTestResult {
+                success,
+                error,
+                detected_telegram_user_id,
+                ..
+            } => {
                 if let Some(ref mut wizard) = self.onboarding {
                     wizard.channel_test_status = if success {
                         super::onboarding::ChannelTestStatus::Success
@@ -2414,6 +2419,12 @@ impl App {
                             error.unwrap_or_else(|| "Unknown error".to_string()),
                         )
                     };
+                    // Auto-fill detected Telegram user ID
+                    if let Some(ref uid) = detected_telegram_user_id
+                        && wizard.telegram_user_id_input.is_empty()
+                    {
+                        wizard.telegram_user_id_input = uid.clone();
+                    }
                 }
             }
             TuiEvent::BrainGenerationResult { result } => match result {

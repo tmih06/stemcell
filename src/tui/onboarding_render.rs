@@ -1400,7 +1400,7 @@ fn render_telegram_setup(lines: &mut Vec<Line<'static>>, wizard: &OnboardingWiza
             .add_modifier(Modifier::ITALIC),
     )));
     lines.push(Line::from(Span::styled(
-        "  (Leave empty to allow any user to message the bot.)",
+        "  (Leave empty to auto-detect from your messages, or allow any user.)",
         Style::default()
             .fg(Color::DarkGray)
             .add_modifier(Modifier::ITALIC),

@@ -1825,6 +1825,13 @@ impl App {
             let action = wizard.handle_key(event);
             match action {
                 WizardAction::Cancel => {
+                    // Persist whatever the user entered before dropping the wizard.
+                    // Without this, going back from channel setup loses all typed values.
+                    if let Some(ref wizard) = self.onboarding
+                        && let Err(e) = wizard.apply_config()
+                    {
+                        tracing::warn!("Wizard cancel: partial save failed: {}", e);
+                    }
                     self.onboarding = None;
                     self.switch_mode(AppMode::Chat).await?;
                 }
@@ -2316,6 +2323,7 @@ impl App {
                             channel: "whatsapp".to_string(),
                             success: result.is_ok(),
                             error: result.err(),
+                            detected_telegram_user_id: None,
                         });
                     });
                 }
@@ -2335,10 +2343,15 @@ impl App {
                     let agent = self.agent_service.clone();
                     tokio::spawn(async move {
                         let result = test_telegram_connection(&token, &user_id_str, agent).await;
+                        let detected_uid = result
+                            .as_ref()
+                            .ok()
+                            .and_then(|r| r.detected_user_id.clone());
                         let _ = sender.send(TuiEvent::ChannelTestResult {
                             channel: "telegram".to_string(),
                             success: result.is_ok(),
                             error: result.err(),
+                            detected_telegram_user_id: detected_uid,
                         });
                     });
                 }
@@ -2368,6 +2381,7 @@ impl App {
                             channel: "discord".to_string(),
                             success: result.is_ok(),
                             error: result.err(),
+                            detected_telegram_user_id: None,
                         });
                     });
                 }
@@ -2397,6 +2411,7 @@ impl App {
                             channel: "slack".to_string(),
                             success: result.is_ok(),
                             error: result.err(),
+                            detected_telegram_user_id: None,
                         });
                     });
                 }
@@ -2425,6 +2440,7 @@ impl App {
                             channel: "trello".to_string(),
                             success: result.is_ok(),
                             error: result.err(),
+                            detected_telegram_user_id: None,
                         });
                     });
                 }
@@ -3196,41 +3212,94 @@ pub(crate) async fn ensure_whispercrabs() -> Result<PathBuf> {
     Ok(binary_path)
 }
 
-/// Test Telegram connection by sending a message via the bot API.
+/// Result of a Telegram test connection attempt.
+struct TelegramTestResult {
+    /// Auto-detected user ID from getUpdates (set when user_id was empty)
+    detected_user_id: Option<String>,
+}
+
+/// Test Telegram connection: validate token, auto-detect user ID, send greeting.
 #[cfg(feature = "telegram")]
 async fn test_telegram_connection(
     token: &str,
     user_id_str: &str,
     agent: std::sync::Arc<crate::brain::agent::AgentService>,
-) -> Result<(), String> {
+) -> Result<TelegramTestResult, String> {
     use teloxide::prelude::Requester;
 
-    let trimmed = user_id_str.trim();
-    if trimmed.is_empty() {
-        return Err("Chat ID is empty — paste your numeric chat ID \
-                    (message @userinfobot on Telegram to get it)."
-            .to_string());
-    }
-    let user_id: i64 = trimmed
-        .parse()
-        .map_err(|_| format!("Invalid chat ID '{}': must be a numeric ID.", trimmed))?;
+    // Step 1: Validate the bot token with getMe
+    let bot = teloxide::Bot::new(token);
+    let me = bot.get_me().await.map_err(|e| {
+        let msg = e.to_string();
+        if msg.contains("Unauthorized") || msg.contains("401") {
+            "Invalid bot token. Make sure you copied the full token from @BotFather.".to_string()
+        } else if msg.contains("Forbidden") || msg.contains("403") {
+            "Telegram rejected this token (Forbidden). Check you copied it correctly.".to_string()
+        } else if msg.contains("Not Found") || msg.contains("404") {
+            "Token not recognized by Telegram. It should look like 123456789:ABCdef...".to_string()
+        } else {
+            format!("Failed to verify bot token: {}", msg)
+        }
+    })?;
 
-    // Reject the bot's own numeric ID. Telegram bot tokens are
-    // `<bot_id>:<secret>`, so users sometimes paste the bot id into the
-    // chat id field by mistake. sendMessage to that id returns success
-    // on some paths but never delivers a message anywhere visible.
-    if let Some((bot_id_prefix, _)) = token.split_once(':')
-        && let Ok(bot_id) = bot_id_prefix.trim().parse::<i64>()
-        && bot_id == user_id
-    {
+    tracing::info!(
+        "Telegram bot token validated: @{}",
+        me.username.as_deref().unwrap_or_default()
+    );
+
+    // Step 2: Resolve user ID — auto-detect via getUpdates if empty
+    let trimmed = user_id_str.trim();
+    let user_id: i64 = if trimmed.is_empty() {
+        // Auto-detect: call getUpdates to find the most recent user who messaged the bot
+        match bot.get_updates().await {
+            Ok(updates) => {
+                // Find the most recent message from a non-bot user
+                let detected = updates.iter().rev().find_map(|u| {
+                    if let teloxide::types::UpdateKind::Message(ref m) = u.kind {
+                        if !m.from.as_ref().is_some_and(|f| f.is_bot) {
+                            Some(m.chat.id.0)
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
+                    }
+                });
+                match detected {
+                    Some(id) => {
+                        tracing::info!("Telegram: auto-detected user ID {} from getUpdates", id);
+                        id
+                    }
+                    None => {
+                        return Err(
+                            "No messages found for this bot yet. Message your bot on                              Telegram first (send any text), then retry. Your chat ID                              will be auto-detected."
+                                .to_string(),
+                        );
+                    }
+                }
+            }
+            Err(e) => {
+                return Err(format!(
+                    "Could not check for messages (getUpdates failed: {}).                      Paste your numeric chat ID manually.                      Message @userinfobot on Telegram to get it.",
+                    e
+                ));
+            }
+        }
+    } else {
+        trimmed
+            .parse()
+            .map_err(|_| format!("Invalid chat ID '{}': must be a numeric ID.", trimmed))?
+    };
+
+    // Reject the bot's own numeric ID
+    if me.id.0 as i64 == user_id {
         return Err(
-            "That's the bot's own ID, not yours. Open Telegram, message \
-             @userinfobot, and paste the numeric ID it replies with."
+            "That's the bot's own ID, not yours. Open Telegram, message              @userinfobot, and paste the numeric ID it replies with."
                 .to_string(),
         );
     }
 
-    let bot = teloxide::Bot::new(token);
+    // Step 3: Send greeting
     let greeting = crate::channels::generate_connection_greeting(&agent, "Telegram").await;
     bot.send_message(teloxide::types::ChatId(user_id), greeting)
         .await
@@ -3238,19 +3307,27 @@ async fn test_telegram_connection(
             let msg = e.to_string();
             if msg.contains("chat not found") {
                 format!(
-                    "Telegram says 'chat not found'. You must message your bot \
-                     at least once first so it can deliver messages to you. \
-                     Open Telegram, find your bot, send it any message, then retry. \
-                     (raw: {})",
-                    msg
+                    "Chat ID {} not found. You must message your bot first                      so it can reply to you. Open Telegram, find @{},                      send it any message, then retry.",
+                    user_id,
+                    me.username
+                        .as_deref()
+                        .unwrap_or("your_bot")
                 )
             } else if msg.contains("bot was blocked") {
-                "You blocked the bot — unblock it in Telegram and retry.".to_string()
+                "You blocked the bot. Unblock it in Telegram and retry.".to_string()
             } else {
                 format!("Telegram API error: {}", msg)
             }
         })?;
-    Ok(())
+
+    // Return detected user ID if we auto-detected it
+    let detected_user_id = if trimmed.is_empty() {
+        Some(user_id.to_string())
+    } else {
+        None
+    };
+
+    Ok(TelegramTestResult { detected_user_id })
 }
 
 #[cfg(not(feature = "telegram"))]

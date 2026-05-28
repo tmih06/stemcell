@@ -185,6 +185,8 @@ pub enum TuiEvent {
         channel: String,
         success: bool,
         error: Option<String>,
+        /// Auto-detected Telegram user ID (from getUpdates) — None for non-Telegram channels
+        detected_telegram_user_id: Option<String>,
     },
 
     /// Brain generation completed during onboarding (last step).
