@@ -30,9 +30,49 @@ struct DocParserInput {
     #[serde(skip_serializing_if = "Option::is_none")]
     pages: Option<Vec<usize>>,
 
+    /// Optional: Page range string like "1-30", "5,7,10-15", or
+    /// "1,3,5". Merged with `pages` if both are supplied. Easier for
+    /// the agent to use than `pages` for contiguous spans.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    page_range: Option<String>,
+
     /// Optional: Include metadata in output
     #[serde(skip_serializing_if = "Option::is_none")]
     include_metadata: Option<bool>,
+}
+
+/// Parse a page-range string like `"1-30"`, `"5,7,10-15"` into a
+/// flat `Vec<usize>` of 1-indexed page numbers. Invalid tokens are
+/// silently skipped — the caller's responsibility is to pass a
+/// well-formed string; we don't error on garbage so the tool stays
+/// forgiving when the model emits a slightly malformed value.
+fn parse_page_range(spec: &str) -> Vec<usize> {
+    let mut out: Vec<usize> = Vec::new();
+    for token in spec
+        .split([',', ' '])
+        .map(str::trim)
+        .filter(|t| !t.is_empty())
+    {
+        if let Some((start, end)) = token.split_once('-') {
+            let (Ok(s), Ok(e)) = (start.trim().parse::<usize>(), end.trim().parse::<usize>())
+            else {
+                continue;
+            };
+            if s == 0 || e == 0 || s > e {
+                continue;
+            }
+            for p in s..=e {
+                out.push(p);
+            }
+        } else if let Ok(p) = token.parse::<usize>()
+            && p > 0
+        {
+            out.push(p);
+        }
+    }
+    out.sort_unstable();
+    out.dedup();
+    out
 }
 
 #[derive(Debug, Serialize)]
@@ -54,8 +94,13 @@ impl Tool for DocParserTool {
     }
 
     fn description(&self) -> &str {
-        "Parse and extract text content from documents (PDF, DOCX, TXT, MD, HTML). \
-        Useful for analyzing documents, extracting information, and converting document content to plain text."
+        "Parse and extract text content from documents (PDF, DOCX, TXT, MD, HTML, JSON, XML). \
+        Use this whenever an incoming PDF's inline preview was truncated — the file is \
+        saved at the path included in the preview message; pass that path here with \
+        `page_range` (e.g. \"31-60\") or `pages` to read the rest. \
+        For multi-page PDFs prefer `page_range` (string like \"1-30\" or \"5,7,10-15\") \
+        over `pages` (raw array) — it's shorter and more natural for spans. \
+        Returns full document text with `--- Page N ---` markers when a range is requested."
     }
 
     fn input_schema(&self) -> Value {
@@ -64,21 +109,25 @@ impl Tool for DocParserTool {
             "properties": {
                 "path": {
                     "type": "string",
-                    "description": "Path to the document file (PDF, DOCX, TXT, MD, HTML)"
+                    "description": "Path to the document file (PDF, DOCX, TXT, MD, HTML, JSON, XML)"
                 },
                 "max_chars": {
                     "type": "integer",
-                    "description": "Optional: Maximum characters to extract (default: unlimited)",
+                    "description": "Optional: Maximum characters to extract (default: unlimited). Use for very large documents when you only need a preview.",
                     "minimum": 1
                 },
                 "pages": {
                     "type": "array",
                     "items": {"type": "integer", "minimum": 1},
-                    "description": "Optional: Specific page numbers to extract (PDF only, 1-indexed)"
+                    "description": "Optional: Specific page numbers to extract (PDF only, 1-indexed). Prefer `page_range` for contiguous spans."
+                },
+                "page_range": {
+                    "type": "string",
+                    "description": "Optional: Page range like \"1-30\", \"5,7,10-15\", or \"3\". Easier than `pages` for spans. Merged with `pages` when both are supplied."
                 },
                 "include_metadata": {
                     "type": "boolean",
-                    "description": "Optional: Include document metadata in output (default: false)"
+                    "description": "Optional: Include document metadata (page count, title, author) in output (default: false)"
                 }
             },
             "required": ["path"]
@@ -206,14 +255,30 @@ struct ParsedMetadata {
 }
 
 impl DocParserTool {
-    /// Parse PDF document
+    /// Parse PDF document. When `pages` and/or `page_range` are
+    /// supplied, only those pages (deduped + sorted) are returned
+    /// with `--- Page N ---` headers. If both produce no valid
+    /// page numbers we fall back to the full document.
     async fn parse_pdf(
         &self,
         path: &Path,
         input: &DocParserInput,
     ) -> Result<(String, ParsedMetadata)> {
         let path = path.to_path_buf();
-        let pages = input.pages.clone();
+
+        // Merge `pages` + `page_range` into a single deduped list.
+        let mut requested: Vec<usize> = input.pages.clone().unwrap_or_default();
+        if let Some(ref spec) = input.page_range {
+            requested.extend(parse_page_range(spec));
+        }
+        requested.sort_unstable();
+        requested.dedup();
+        // Empty vec → return all pages.
+        let requested = if requested.is_empty() {
+            None
+        } else {
+            Some(requested)
+        };
 
         // Run PDF parsing in blocking task
         tokio::task::spawn_blocking(move || {
@@ -223,18 +288,30 @@ impl DocParserTool {
             let text = pdf_extract::extract_text_from_mem(&bytes)
                 .map_err(|e| ToolError::Execution(format!("Failed to parse PDF: {}", e)))?;
 
+            // Count pages once so metadata reflects the source doc,
+            // not the filtered slice we return to the agent.
+            let total_pages = text.matches('\u{000C}').count() + 1;
+
             // If specific pages requested, filter them
-            let text = if let Some(page_nums) = pages {
-                // Split by page breaks (form feed character or multiple newlines)
-                let pages: Vec<&str> = text.split("\u{000C}").collect();
+            let text = if let Some(page_nums) = requested {
+                let pages: Vec<&str> = text.split('\u{000C}').collect();
                 let mut selected_text = String::new();
+                let mut skipped: Vec<usize> = Vec::new();
 
                 for page_num in page_nums {
                     if page_num > 0 && page_num <= pages.len() {
-                        selected_text.push_str(&format!("--- Page {} ---\n", page_num));
+                        selected_text.push_str(&format!("--- Page {page_num} ---\n"));
                         selected_text.push_str(pages[page_num - 1].trim());
                         selected_text.push_str("\n\n");
+                    } else {
+                        skipped.push(page_num);
                     }
+                }
+
+                if !skipped.is_empty() {
+                    selected_text.push_str(&format!(
+                        "\n[Requested pages not present in document ({total_pages} total): {skipped:?}]\n"
+                    ));
                 }
 
                 if selected_text.is_empty() {
@@ -246,11 +323,8 @@ impl DocParserTool {
                 text
             };
 
-            // Count pages (rough estimate based on form feeds)
-            let page_count = text.matches("\u{000C}").count() + 1;
-
             let metadata = ParsedMetadata {
-                page_count: Some(page_count),
+                page_count: Some(total_pages),
                 title: None,
                 author: None,
             };
@@ -258,7 +332,7 @@ impl DocParserTool {
             Ok((text.trim().to_string(), metadata))
         })
         .await
-        .map_err(|e| ToolError::Execution(format!("PDF parsing task failed: {}", e)))?
+        .map_err(|e| ToolError::Execution(format!("PDF parsing task failed: {e}")))?
     }
 
     /// Parse DOCX document (Office Open XML)
