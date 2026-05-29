@@ -193,14 +193,17 @@ impl TelegramAgent {
                             // never prompt for the key inline (issue #126, B.1).
                             if let Some(provider_name) = data.strip_prefix("setup:") {
                                 let help = crate::channels::commands::unconfigured_provider_help(provider_name);
-                                if let Some(chat_id) = query.message.as_ref().map(|m| m.chat().id) {
-                                    let _ = bot
-                                        .send_message(
-                                            chat_id,
-                                            crate::channels::telegram::handler::md_to_html(&help),
-                                        )
-                                        .parse_mode(teloxide::types::ParseMode::Html)
-                                        .await;
+                                if let Some(msg_ref) = query.message.as_ref() {
+                                    let chat_id = msg_ref.chat().id;
+                                    let thread_id = msg_ref.regular_message().and_then(|m| m.thread_id);
+                                    let _ = crate::channels::telegram::send::message_in_thread(
+                                        &bot,
+                                        chat_id,
+                                        thread_id,
+                                        crate::channels::telegram::handler::md_to_html(&help),
+                                    )
+                                    .parse_mode(teloxide::types::ParseMode::Html)
+                                    .await;
                                 }
                                 let _ = bot.answer_callback_query(&query.id).await;
                                 return Ok::<(), teloxide::RequestError>(());
@@ -255,15 +258,26 @@ impl TelegramAgent {
                                     if let Some(sid) = session_id {
                                         let agent_clone = agent.clone();
                                         let bot_clone = bot.clone();
-                                        let chat_id = query.message.as_ref().map(|m| m.chat().id).unwrap_or(teloxide::types::ChatId(0));
+                                        let (chat_id, thread_id) = query
+                                            .message
+                                            .as_ref()
+                                            .map(|m| {
+                                                (
+                                                    m.chat().id,
+                                                    m.regular_message().and_then(|r| r.thread_id),
+                                                )
+                                            })
+                                            .unwrap_or((teloxide::types::ChatId(0), None));
                                         tokio::spawn(async move {
                                             match agent_clone.send_message(sid, prompt, None).await {
                                                 Ok(resp) => {
                                                     let clean = crate::utils::sanitize::strip_llm_artifacts(&resp.content);
                                                     let html = crate::channels::telegram::handler::md_to_html(&clean);
-                                                    let _ = bot_clone.send_message(chat_id, html)
-                                                        .parse_mode(teloxide::types::ParseMode::Html)
-                                                        .await;
+                                                    let _ = crate::channels::telegram::send::message_in_thread(
+                                                        &bot_clone, chat_id, thread_id, html,
+                                                    )
+                                                    .parse_mode(teloxide::types::ParseMode::Html)
+                                                    .await;
                                                 }
                                                 Err(e) => {
                                                     tracing::error!("Agent follow-up failed: {}", e);

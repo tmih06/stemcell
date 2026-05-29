@@ -19,6 +19,8 @@ use teloxide::types::{
     ChatAction, ChatKind, InlineKeyboardButton, InlineKeyboardMarkup, InputFile, MessageId,
     ParseMode,
 };
+
+use super::send::{chat_action_in_thread, message_in_thread, photo_in_thread};
 use tokio::sync::Mutex;
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
@@ -149,6 +151,13 @@ pub(crate) async fn handle_message(
 
     let user_id = user.id.0 as i64;
 
+    // Forum-topic thread id (issue #130). Every send back to this chat
+    // must route via send::message_in_thread / photo_in_thread /
+    // chat_action_in_thread so replies land in the SAME topic the user
+    // mentioned us in, not the group's General channel. None for DMs
+    // and non-forum groups.
+    let thread_id = msg.thread_id;
+
     // /start command -- always respond with user ID (for allowlist setup)
     if let Some(text) = msg.text()
         && text.starts_with("/start")
@@ -157,7 +166,7 @@ pub(crate) async fn handle_message(
             "OpenCrabs Telegram Bot\n\nYour user ID: {}\n\nAdd this ID to your config.toml under [channels.telegram] allowed_users to get started.",
             user_id
         );
-        bot.send_message(msg.chat.id, reply).await?;
+        message_in_thread(&bot, msg.chat.id, thread_id, reply).await?;
         tracing::info!(
             "Telegram: /start from user {} ({})",
             user_id,
@@ -185,8 +194,10 @@ pub(crate) async fn handle_message(
             "Telegram: ignoring message from non-allowed user {}",
             user_id
         );
-        bot.send_message(
+        message_in_thread(
+            &bot,
             msg.chat.id,
+            thread_id,
             "You are not authorized. Send /start to get your user ID.",
         )
         .await?;
@@ -348,8 +359,7 @@ pub(crate) async fn handle_message(
     } else if let Some(voice) = msg.voice() {
         // Voice note -- transcribe via STT provider
         if !voice_config.stt_enabled {
-            bot.send_message(msg.chat.id, "Voice notes are not enabled.")
-                .await?;
+            message_in_thread(&bot, msg.chat.id, thread_id, "Voice notes are not enabled.").await?;
             return Ok(());
         }
 
@@ -367,7 +377,7 @@ pub(crate) async fn handle_message(
 
         // Download the voice file from Telegram
         let Some(file) =
-            fetch_file_or_notify(&bot, &voice.file.id, msg.chat.id, "voice note").await
+            fetch_file_or_notify(&bot, &voice.file.id, msg.chat.id, thread_id, "voice note").await
         else {
             return Ok(());
         };
@@ -382,15 +392,25 @@ pub(crate) async fn handle_message(
                 Ok(b) => b.to_vec(),
                 Err(e) => {
                     tracing::error!("Telegram: failed to read voice file bytes: {}", e);
-                    bot.send_message(msg.chat.id, "Failed to download voice note.")
-                        .await?;
+                    message_in_thread(
+                        &bot,
+                        msg.chat.id,
+                        thread_id,
+                        "Failed to download voice note.",
+                    )
+                    .await?;
                     return Ok(());
                 }
             },
             Err(e) => {
                 tracing::error!("Telegram: failed to download voice file: {}", e);
-                bot.send_message(msg.chat.id, "Failed to download voice note.")
-                    .await?;
+                message_in_thread(
+                    &bot,
+                    msg.chat.id,
+                    thread_id,
+                    "Failed to download voice note.",
+                )
+                .await?;
                 return Ok(());
             }
         };
@@ -406,8 +426,13 @@ pub(crate) async fn handle_message(
             }
             Err(e) => {
                 tracing::error!("Telegram: STT error: {}", e);
-                bot.send_message(msg.chat.id, format!("Transcription error: {}", e))
-                    .await?;
+                message_in_thread(
+                    &bot,
+                    msg.chat.id,
+                    thread_id,
+                    format!("Transcription error: {}", e),
+                )
+                .await?;
                 return Ok(());
             }
         }
@@ -424,7 +449,8 @@ pub(crate) async fn handle_message(
             photo.height,
         );
 
-        let Some(file) = fetch_file_or_notify(&bot, &photo.file.id, msg.chat.id, "photo").await
+        let Some(file) =
+            fetch_file_or_notify(&bot, &photo.file.id, msg.chat.id, thread_id, "photo").await
         else {
             return Ok(());
         };
@@ -439,14 +465,14 @@ pub(crate) async fn handle_message(
                 Ok(b) => b.to_vec(),
                 Err(e) => {
                     tracing::error!("Telegram: failed to read photo bytes: {}", e);
-                    bot.send_message(msg.chat.id, "Failed to download photo.")
+                    message_in_thread(&bot, msg.chat.id, thread_id, "Failed to download photo.")
                         .await?;
                     return Ok(());
                 }
             },
             Err(e) => {
                 tracing::error!("Telegram: failed to download photo: {}", e);
-                bot.send_message(msg.chat.id, "Failed to download photo.")
+                message_in_thread(&bot, msg.chat.id, thread_id, "Failed to download photo.")
                     .await?;
                 return Ok(());
             }
@@ -571,7 +597,8 @@ pub(crate) async fn handle_message(
             vid.duration
         );
 
-        let Some(file) = fetch_file_or_notify(&bot, &vid.file.id, msg.chat.id, "video").await
+        let Some(file) =
+            fetch_file_or_notify(&bot, &vid.file.id, msg.chat.id, thread_id, "video").await
         else {
             return Ok(());
         };
@@ -586,14 +613,14 @@ pub(crate) async fn handle_message(
                 Ok(b) => b.to_vec(),
                 Err(e) => {
                     tracing::error!("Telegram: failed to read video bytes: {}", e);
-                    bot.send_message(msg.chat.id, "Failed to download video.")
+                    message_in_thread(&bot, msg.chat.id, thread_id, "Failed to download video.")
                         .await?;
                     return Ok(());
                 }
             },
             Err(e) => {
                 tracing::error!("Telegram: failed to download video: {}", e);
-                bot.send_message(msg.chat.id, "Failed to download video.")
+                message_in_thread(&bot, msg.chat.id, thread_id, "Failed to download video.")
                     .await?;
                 return Ok(());
             }
@@ -626,7 +653,8 @@ pub(crate) async fn handle_message(
             anim.duration
         );
 
-        let Some(file) = fetch_file_or_notify(&bot, &anim.file.id, msg.chat.id, "animation").await
+        let Some(file) =
+            fetch_file_or_notify(&bot, &anim.file.id, msg.chat.id, thread_id, "animation").await
         else {
             return Ok(());
         };
@@ -641,15 +669,25 @@ pub(crate) async fn handle_message(
                 Ok(b) => b.to_vec(),
                 Err(e) => {
                     tracing::error!("Telegram: failed to read animation bytes: {}", e);
-                    bot.send_message(msg.chat.id, "Failed to download animation.")
-                        .await?;
+                    message_in_thread(
+                        &bot,
+                        msg.chat.id,
+                        thread_id,
+                        "Failed to download animation.",
+                    )
+                    .await?;
                     return Ok(());
                 }
             },
             Err(e) => {
                 tracing::error!("Telegram: failed to download animation: {}", e);
-                bot.send_message(msg.chat.id, "Failed to download animation.")
-                    .await?;
+                message_in_thread(
+                    &bot,
+                    msg.chat.id,
+                    thread_id,
+                    "Failed to download animation.",
+                )
+                .await?;
                 return Ok(());
             }
         };
@@ -674,7 +712,7 @@ pub(crate) async fn handle_message(
         );
 
         let Some(file) =
-            fetch_file_or_notify(&bot, &vnote.file.id, msg.chat.id, "video note").await
+            fetch_file_or_notify(&bot, &vnote.file.id, msg.chat.id, thread_id, "video note").await
         else {
             return Ok(());
         };
@@ -689,15 +727,25 @@ pub(crate) async fn handle_message(
                 Ok(b) => b.to_vec(),
                 Err(e) => {
                     tracing::error!("Telegram: failed to read video_note bytes: {}", e);
-                    bot.send_message(msg.chat.id, "Failed to download video note.")
-                        .await?;
+                    message_in_thread(
+                        &bot,
+                        msg.chat.id,
+                        thread_id,
+                        "Failed to download video note.",
+                    )
+                    .await?;
                     return Ok(());
                 }
             },
             Err(e) => {
                 tracing::error!("Telegram: failed to download video_note: {}", e);
-                bot.send_message(msg.chat.id, "Failed to download video note.")
-                    .await?;
+                message_in_thread(
+                    &bot,
+                    msg.chat.id,
+                    thread_id,
+                    "Failed to download video note.",
+                )
+                .await?;
                 return Ok(());
             }
         };
@@ -729,7 +777,8 @@ pub(crate) async fn handle_message(
             mime
         );
 
-        let Some(file) = fetch_file_or_notify(&bot, &doc.file.id, msg.chat.id, "document").await
+        let Some(file) =
+            fetch_file_or_notify(&bot, &doc.file.id, msg.chat.id, thread_id, "document").await
         else {
             return Ok(());
         };
@@ -744,15 +793,14 @@ pub(crate) async fn handle_message(
                 Ok(b) => b.to_vec(),
                 Err(e) => {
                     tracing::error!("Telegram: failed to read document bytes: {}", e);
-                    bot.send_message(msg.chat.id, "Failed to download file.")
+                    message_in_thread(&bot, msg.chat.id, thread_id, "Failed to download file.")
                         .await?;
                     return Ok(());
                 }
             },
             Err(e) => {
                 tracing::error!("Telegram: failed to download document: {}", e);
-                bot.send_message(msg.chat.id, "Failed to download file.")
-                    .await?;
+                message_in_thread(&bot, msg.chat.id, thread_id, "Failed to download file.").await?;
                 return Ok(());
             }
         };
@@ -820,7 +868,7 @@ pub(crate) async fn handle_message(
         let cancel = typing_cancel.clone();
         async move {
             loop {
-                let _ = bot.send_chat_action(chat, ChatAction::Typing).await;
+                let _ = chat_action_in_thread(&bot, chat, thread_id, ChatAction::Typing).await;
                 tokio::select! {
                     _ = cancel.cancelled() => break,
                     _ = tokio::time::sleep(std::time::Duration::from_secs(4)) => {}
@@ -906,8 +954,13 @@ pub(crate) async fn handle_message(
                     }
                     Err(e) => {
                         tracing::error!("Telegram: failed to create session: {}", e);
-                        bot.send_message(msg.chat.id, "Internal error creating session.")
-                            .await?;
+                        message_in_thread(
+                            &bot,
+                            msg.chat.id,
+                            thread_id,
+                            "Internal error creating session.",
+                        )
+                        .await?;
                         return Ok(());
                     }
                 }
@@ -993,8 +1046,13 @@ pub(crate) async fn handle_message(
                         }
                         Err(e) => {
                             tracing::error!("Telegram: failed to create session: {}", e);
-                            bot.send_message(msg.chat.id, "Internal error creating session.")
-                                .await?;
+                            message_in_thread(
+                                &bot,
+                                msg.chat.id,
+                                thread_id,
+                                "Internal error creating session.",
+                            )
+                            .await?;
                             return Ok(());
                         }
                     }
@@ -1049,8 +1107,13 @@ pub(crate) async fn handle_message(
                     }
                     Err(e) => {
                         tracing::error!("Telegram: failed to create session: {}", e);
-                        bot.send_message(msg.chat.id, "Internal error creating session.")
-                            .await?;
+                        message_in_thread(
+                            &bot,
+                            msg.chat.id,
+                            thread_id,
+                            "Internal error creating session.",
+                        )
+                        .await?;
                         return Ok(());
                     }
                 }
@@ -1095,7 +1158,7 @@ pub(crate) async fn handle_message(
 
         // Handle simple text-response commands (Help, Usage, Evolve, Doctor, etc.)
         if let Some(reply) = commands::try_execute_text_command(&cmd).await {
-            bot.send_message(msg.chat.id, md_to_html(&reply))
+            message_in_thread(&bot, msg.chat.id, thread_id, md_to_html(&reply))
                 .parse_mode(ParseMode::Html)
                 .await?;
             return Ok(());
@@ -1126,7 +1189,7 @@ pub(crate) async fn handle_message(
                     })
                     .collect();
                 let keyboard = InlineKeyboardMarkup::new(rows);
-                bot.send_message(msg.chat.id, md_to_html(&resp.text))
+                message_in_thread(&bot, msg.chat.id, thread_id, md_to_html(&resp.text))
                     .parse_mode(ParseMode::Html)
                     .reply_markup(keyboard)
                     .await?;
@@ -1183,7 +1246,7 @@ pub(crate) async fn handle_message(
                         let ctx_max = agent.context_limit_for_session(new_session.id);
                         let footer = crate::utils::format_ctx_footer(baseline, ctx_max);
                         let msg_text = format!("✅ New session started.\n\n{footer}");
-                        bot.send_message(msg.chat.id, &msg_text).await?;
+                        message_in_thread(&bot, msg.chat.id, thread_id, &msg_text).await?;
                         tracing::info!(
                             "Telegram /new: sent ctx footer='{}' (baseline={}, ctx_max={})",
                             footer,
@@ -1193,8 +1256,13 @@ pub(crate) async fn handle_message(
                     }
                     Err(e) => {
                         tracing::error!("Telegram: failed to create session: {}", e);
-                        bot.send_message(msg.chat.id, "Failed to create session.")
-                            .await?;
+                        message_in_thread(
+                            &bot,
+                            msg.chat.id,
+                            thread_id,
+                            "Failed to create session.",
+                        )
+                        .await?;
                     }
                 }
                 return Ok(());
@@ -1216,7 +1284,7 @@ pub(crate) async fn handle_message(
                     })
                     .collect();
                 let keyboard = InlineKeyboardMarkup::new(rows);
-                bot.send_message(msg.chat.id, md_to_html(&resp.text))
+                message_in_thread(&bot, msg.chat.id, thread_id, md_to_html(&resp.text))
                     .parse_mode(ParseMode::Html)
                     .reply_markup(keyboard)
                     .await?;
@@ -1229,12 +1297,11 @@ pub(crate) async fn handle_message(
                 } else {
                     "No operation in progress."
                 };
-                bot.send_message(msg.chat.id, reply).await?;
+                message_in_thread(&bot, msg.chat.id, thread_id, reply).await?;
                 return Ok(());
             }
             ChannelCommand::Compact => {
-                bot.send_message(msg.chat.id, "⏳ Compacting context...")
-                    .await?;
+                message_in_thread(&bot, msg.chat.id, thread_id, "⏳ Compacting context...").await?;
                 text = "[SYSTEM: Compact context now. Summarize this conversation for continuity.]"
                     .to_string();
                 // fall through to agent
@@ -1596,7 +1663,7 @@ pub(crate) async fn handle_message(
                                         let mut sent_ids: Vec<MessageId> = Vec::new();
                                         let mut all_ok = true;
                                         for chunk in &chunks {
-                                            match send_html_or_plain(&bot, chat, chunk).await {
+                                            match send_html_or_plain(&bot, chat, thread_id, chunk).await {
                                                 Ok(id) => sent_ids.push(id),
                                                 Err(e) => {
                                                     tracing::warn!(
@@ -1669,7 +1736,7 @@ pub(crate) async fn handle_message(
                                     snap.processing,
                                 );
 
-                                if let Ok(m) = bot.send_message(chat, &status).await {
+                                if let Ok(m) = message_in_thread(&bot, chat, thread_id,  &status).await {
                                     let mut s = st.lock().unwrap_or_else(|e| e.into_inner());
                                     s.status_msg_id = Some(m.id);
                                     s.status_shown_at = Some(now);
@@ -1705,7 +1772,7 @@ pub(crate) async fn handle_message(
                                     s.msg_id
                                 };
                                 if current_msg_id.is_none()
-                                    && let Ok(m) = bot.send_message(chat, "\u{258b}").await
+                                    && let Ok(m) = message_in_thread(&bot, chat, thread_id,  "\u{258b}").await
                                 {
                                     let mut s = st.lock().unwrap_or_else(|e| e.into_inner());
                                     s.msg_id = Some(m.id);
@@ -1726,7 +1793,7 @@ pub(crate) async fn handle_message(
                         }
 
                         // Re-send typing indicator after any bot message
-                        let _ = bot.send_chat_action(chat, ChatAction::Typing).await;
+                        let _ = chat_action_in_thread(&bot, chat, thread_id,  ChatAction::Typing).await;
                     }
                 }
             }
@@ -1749,7 +1816,8 @@ pub(crate) async fn handle_message(
                     let bot = bot_typing.clone();
                     let chat = chat_typing;
                     tokio::spawn(async move {
-                        let _ = bot.send_chat_action(chat, ChatAction::Typing).await;
+                        let _ =
+                            chat_action_in_thread(&bot, chat, thread_id, ChatAction::Typing).await;
                     });
                 }
                 ProgressEvent::ReasoningChunk { text } => {
@@ -2047,7 +2115,7 @@ pub(crate) async fn handle_message(
                     let mut sent_ids: Vec<MessageId> = Vec::new();
                     let mut all_ok = true;
                     for chunk in &chunks {
-                        match send_html_or_plain(&bot, msg.chat.id, chunk).await {
+                        match send_html_or_plain(&bot, msg.chat.id, thread_id, chunk).await {
                             Ok(id) => sent_ids.push(id),
                             Err(e) => {
                                 tracing::warn!(
@@ -2134,7 +2202,9 @@ pub(crate) async fn handle_message(
             for img_path in img_paths {
                 match tokio::fs::read(&img_path).await {
                     Ok(bytes) => {
-                        if let Err(e) = bot.send_photo(msg.chat.id, InputFile::memory(bytes)).await
+                        if let Err(e) =
+                            photo_in_thread(&bot, msg.chat.id, thread_id, InputFile::memory(bytes))
+                                .await
                         {
                             tracing::error!("Telegram: failed to send generated image: {}", e);
                         }
@@ -2184,7 +2254,9 @@ pub(crate) async fn handle_message(
                                     "Telegram: edit retry failed ({e}), falling back to delete+send"
                                 );
                                 let _ = bot.delete_message(msg.chat.id, mid).await;
-                                let _ = send_html_or_plain(&bot, msg.chat.id, &chunks[0]).await;
+                                let _ =
+                                    send_html_or_plain(&bot, msg.chat.id, thread_id, &chunks[0])
+                                        .await;
                             }
                         }
                         Err(e) => {
@@ -2192,7 +2264,8 @@ pub(crate) async fn handle_message(
                                 "Telegram: edit final failed ({e}), falling back to delete+send"
                             );
                             let _ = bot.delete_message(msg.chat.id, mid).await;
-                            let _ = send_html_or_plain(&bot, msg.chat.id, &chunks[0]).await;
+                            let _ =
+                                send_html_or_plain(&bot, msg.chat.id, thread_id, &chunks[0]).await;
                         }
                     }
                 } else {
@@ -2201,7 +2274,7 @@ pub(crate) async fn handle_message(
                         let _ = bot.delete_message(msg.chat.id, mid).await;
                     }
                     for chunk in &chunks {
-                        let _ = send_html_or_plain(&bot, msg.chat.id, chunk).await;
+                        let _ = send_html_or_plain(&bot, msg.chat.id, thread_id, chunk).await;
                     }
                 }
             } else if let Some(mid) = streaming_msg_id {
@@ -2287,7 +2360,7 @@ pub(crate) async fn handle_message(
             tokio::time::sleep(std::time::Duration::from_secs(2)).await;
             let ctx_max = agent.context_limit_for_session(session_id);
             let footer = crate::utils::format_ctx_footer(response.context_tokens, ctx_max);
-            if let Err(e) = bot.send_message(msg.chat.id, &footer).await {
+            if let Err(e) = message_in_thread(&bot, msg.chat.id, thread_id, &footer).await {
                 tracing::warn!("Telegram: failed to send ctx footer: {}", e);
             } else {
                 tracing::info!(
@@ -2313,8 +2386,7 @@ pub(crate) async fn handle_message(
                     .edit_message_text(msg.chat.id, mid, format!("Error: {}", e))
                     .await;
             } else {
-                bot.send_message(msg.chat.id, format!("Error: {}", e))
-                    .await?;
+                message_in_thread(&bot, msg.chat.id, thread_id, format!("Error: {}", e)).await?;
             }
         }
     }
@@ -2327,6 +2399,7 @@ pub(crate) async fn handle_message(
 pub(crate) async fn resume_session(
     bot: Bot,
     chat_id: ChatId,
+    thread_id: Option<teloxide::types::ThreadId>,
     session_id: Uuid,
     prompt: String,
     agent: Arc<AgentService>,
@@ -2348,7 +2421,7 @@ pub(crate) async fn resume_session(
                 tokio::select! {
                     _ = cancel.cancelled() => break,
                     _ = tokio::time::sleep(std::time::Duration::from_secs(4)) => {
-                        let _ = bot.send_chat_action(chat_id, ChatAction::Typing).await;
+                        let _ = chat_action_in_thread(&bot, chat_id, thread_id,  ChatAction::Typing).await;
                     }
                 }
             }
@@ -2470,7 +2543,7 @@ pub(crate) async fn resume_session(
                                         let mut sent_ids: Vec<MessageId> = Vec::new();
                                         let mut all_ok = true;
                                         for chunk in &chunks {
-                                            match send_html_or_plain(&bot, chat_id, chunk).await {
+                                            match send_html_or_plain(&bot, chat_id, thread_id, chunk).await {
                                                 Ok(id) => sent_ids.push(id),
                                                 Err(e) => {
                                                     tracing::warn!(
@@ -2506,7 +2579,7 @@ pub(crate) async fn resume_session(
                                     s.msg_id
                                 };
                                 if current_msg_id.is_none()
-                                    && let Ok(m) = bot.send_message(chat_id, "\u{258b}").await
+                                    && let Ok(m) = message_in_thread(&bot, chat_id, thread_id,  "\u{258b}").await
                                 {
                                     let mut s = st.lock().unwrap_or_else(|e| e.into_inner());
                                     s.msg_id = Some(m.id);
@@ -2526,7 +2599,7 @@ pub(crate) async fn resume_session(
                             }
                         }
 
-                        let _ = bot.send_chat_action(chat_id, ChatAction::Typing).await;
+                        let _ = chat_action_in_thread(&bot, chat_id, thread_id,  ChatAction::Typing).await;
                     }
                 }
             }
@@ -2545,7 +2618,7 @@ pub(crate) async fn resume_session(
                 let bot = bot_typing.clone();
                 let chat = chat_typing;
                 tokio::spawn(async move {
-                    let _ = bot.send_chat_action(chat, ChatAction::Typing).await;
+                    let _ = chat_action_in_thread(&bot, chat, thread_id, ChatAction::Typing).await;
                 });
             }
             ProgressEvent::ReasoningChunk { text } => {
@@ -2732,7 +2805,7 @@ pub(crate) async fn resume_session(
                     let mut sent_ids: Vec<MessageId> = Vec::new();
                     let mut all_ok = true;
                     for chunk in &chunks {
-                        match send_html_or_plain(&bot, chat_id, chunk).await {
+                        match send_html_or_plain(&bot, chat_id, thread_id, chunk).await {
                             Ok(id) => sent_ids.push(id),
                             Err(e) => {
                                 tracing::warn!(
@@ -2792,7 +2865,8 @@ pub(crate) async fn resume_session(
 
             for img_path in img_paths {
                 if let Ok(bytes) = tokio::fs::read(&img_path).await {
-                    let _ = bot.send_photo(chat_id, InputFile::memory(bytes)).await;
+                    let _ =
+                        photo_in_thread(&bot, chat_id, thread_id, InputFile::memory(bytes)).await;
                 }
             }
 
@@ -2813,14 +2887,14 @@ pub(crate) async fn resume_session(
                     {
                         tracing::warn!("Telegram resume: edit failed ({e}), falling back to send");
                         let _ = bot.delete_message(chat_id, mid).await;
-                        let _ = send_html_or_plain(&bot, chat_id, &chunks[0]).await;
+                        let _ = send_html_or_plain(&bot, chat_id, thread_id, &chunks[0]).await;
                     }
                 } else {
                     if let Some(mid) = streaming_msg_id {
                         let _ = bot.delete_message(chat_id, mid).await;
                     }
                     for chunk in &chunks {
-                        let _ = send_html_or_plain(&bot, chat_id, chunk).await;
+                        let _ = send_html_or_plain(&bot, chat_id, thread_id, chunk).await;
                     }
                 }
             } else if let Some(mid) = streaming_msg_id {
@@ -2846,7 +2920,7 @@ pub(crate) async fn resume_session(
                     .edit_message_text(chat_id, mid, format!("Error: {}", e))
                     .await;
             } else {
-                let _ = bot.send_message(chat_id, format!("Error: {}", e)).await;
+                let _ = message_in_thread(&bot, chat_id, thread_id, format!("Error: {}", e)).await;
             }
         }
     }
@@ -2948,6 +3022,7 @@ async fn fetch_file_or_notify(
     bot: &Bot,
     file_id: &str,
     chat_id: ChatId,
+    thread_id: Option<teloxide::types::ThreadId>,
     kind: &str,
 ) -> Option<teloxide::types::File> {
     use teloxide::payloads::SendMessageSetters;
@@ -2965,8 +3040,7 @@ async fn fetch_file_or_notify(
                 format!("Failed to fetch {kind}: {s}")
             };
             tracing::warn!("Telegram: get_file failed for {}: {}", kind, s);
-            if let Err(send_err) = bot
-                .send_message(chat_id, reply)
+            if let Err(send_err) = message_in_thread(bot, chat_id, thread_id, reply)
                 .disable_notification(true)
                 .await
             {
@@ -2986,10 +3060,10 @@ async fn fetch_file_or_notify(
 async fn send_html_or_plain(
     bot: &Bot,
     chat_id: ChatId,
+    thread_id: Option<teloxide::types::ThreadId>,
     html: &str,
 ) -> std::result::Result<MessageId, teloxide::RequestError> {
-    match bot
-        .send_message(chat_id, html)
+    match message_in_thread(bot, chat_id, thread_id, html)
         .parse_mode(ParseMode::Html)
         .await
     {
@@ -3001,8 +3075,7 @@ async fn send_html_or_plain(
             );
             tokio::time::sleep(secs.duration()).await;
             // Retry as HTML after waiting
-            match bot
-                .send_message(chat_id, html)
+            match message_in_thread(bot, chat_id, thread_id, html)
                 .parse_mode(ParseMode::Html)
                 .await
             {
@@ -3010,14 +3083,18 @@ async fn send_html_or_plain(
                 Err(e) => {
                     tracing::warn!("Telegram: HTML retry failed ({e}), sending as plain text");
                     let plain = strip_html_tags(html);
-                    bot.send_message(chat_id, plain).await.map(|m| m.id)
+                    message_in_thread(bot, chat_id, thread_id, plain)
+                        .await
+                        .map(|m| m.id)
                 }
             }
         }
         Err(e) => {
             tracing::warn!("Telegram: HTML send failed ({e}), retrying as plain text");
             let plain = strip_html_tags(html);
-            bot.send_message(chat_id, plain).await.map(|m| m.id)
+            message_in_thread(bot, chat_id, thread_id, plain)
+                .await
+                .map(|m| m.id)
         }
     }
 }

@@ -1056,8 +1056,13 @@ async fn cmd_chat_inner(
                                         where you left off naturally. Do not mention the restart or \
                                         any interruption — just pick up seamlessly.]"
                                         .to_string();
+                                // thread_id=None for startup resume — the
+                                // proactive-send commit (follow-up to #130)
+                                // will look it up from the session's stored
+                                // channel metadata so resumed turns land in
+                                // the originating forum topic too.
                                 if let Err(e) = crate::channels::telegram::handler::resume_session(
-                                    bot, chat, session_id, prompt, agent, tg,
+                                    bot, chat, None, session_id, prompt, agent, tg,
                                 )
                                 .await
                                 {
