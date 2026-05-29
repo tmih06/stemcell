@@ -282,11 +282,7 @@ pub fn process_file_with_vision(
 
     // ── PDFs ──
     if effective == "application/pdf" {
-        if has_vision {
-            return process_pdf_vision(bytes, filename);
-        }
-        // No vision → text extraction with user notice
-        return extract_pdf_text(bytes, filename);
+        return process_pdf_smart(bytes, filename, has_vision);
     }
 
     // ── ZIP archives ──
@@ -313,6 +309,75 @@ pub fn process_file_with_vision(
     ))
 }
 
+/// Minimum chars / page for a PDF to count as "text-rich". Below
+/// this we assume the doc is scanned or image-only and reach for
+/// vision. Tuned to catch even sparse layouts (e.g. one paragraph
+/// per page in a slide deck) while rejecting OCR-empty scans.
+const PDF_TEXT_DENSITY_MIN_CHARS_PER_PAGE: usize = 100;
+/// Minimum total chars before we trust `pdf_extract` enough to
+/// avoid the vision path. Combined with the per-page floor this
+/// rejects PDFs where the metadata bled into the first page as a
+/// single short line.
+const PDF_TEXT_DENSITY_MIN_TOTAL: usize = 500;
+
+/// Route a PDF to the right backend based on extractable text density.
+///
+/// Always tries `pdf_extract` first. For text-rich PDFs (~95% of
+/// real-world reports, contracts, papers, books) this returns the
+/// text inline + the saved PDF path so the agent can call
+/// `parse_document` for any remaining pages. No page images are
+/// bundled — the request body stays small (typically ~200 KB),
+/// providers never hit body-size limits, and vision tokens are not
+/// burned on every page upfront.
+///
+/// Only when `pdf_extract` returns empty or sparse text (likely a
+/// scanned PDF) do we render pages via the vision pipeline. Even
+/// then, the rendered page paths are surfaced as a list for the
+/// agent to call `analyze_image` on lazily — one page per tool
+/// call, never bundled.
+fn process_pdf_smart(bytes: &[u8], filename: &str, has_vision: bool) -> FileContent {
+    let raw_text = pdf_extract::extract_text_from_mem(bytes).ok();
+    let trimmed = raw_text
+        .as_ref()
+        .map(|t| t.trim().to_string())
+        .unwrap_or_default();
+    let char_count = trimmed.chars().count();
+    let total_pages = if trimmed.is_empty() {
+        0
+    } else {
+        trimmed.matches('\u{000C}').count() + 1
+    };
+    let chars_per_page = char_count.checked_div(total_pages).unwrap_or(0);
+    let has_readable_text = char_count >= PDF_TEXT_DENSITY_MIN_TOTAL
+        && chars_per_page >= PDF_TEXT_DENSITY_MIN_CHARS_PER_PAGE;
+
+    if has_readable_text {
+        tracing::debug!(
+            "PDF {filename}: {char_count} chars / {total_pages} pages \
+             ({chars_per_page}/page) — using text path"
+        );
+        return extract_pdf_text(bytes, filename);
+    }
+
+    if !has_vision {
+        tracing::warn!(
+            "PDF {filename}: sparse text ({char_count} chars / {total_pages} pages) and no \
+             vision configured — surfacing as Unsupported"
+        );
+        return FileContent::Unsupported(format!(
+            "[File received: {filename} (PDF, {total_pages} pages) — only {char_count} chars extracted (~{chars_per_page}/page). \
+             Likely a scanned/image-based PDF that needs a vision model. \
+             Enable `[image.vision]` in config.toml or set `vision_model` on your provider.]"
+        ));
+    }
+
+    tracing::info!(
+        "PDF {filename}: sparse text ({char_count} chars / {total_pages} pages) — \
+         rendering pages for lazy vision"
+    );
+    process_pdf_vision(bytes, filename)
+}
+
 fn process_pdf_vision(bytes: &[u8], filename: &str) -> FileContent {
     // Save PDF to temp so pdfium-render can read it
     let pdf_path = match save_to_temp(bytes, filename) {
@@ -334,15 +399,27 @@ fn process_pdf_vision(bytes: &[u8], filename: &str) -> FileContent {
         Ok(paths) if !paths.is_empty() => {
             let page_count = paths.len();
             let label = if page_count == 1 {
-                "PDF".to_string()
+                "scanned PDF".to_string()
             } else {
-                format!("{page_count}-page-PDF")
+                format!("scanned {page_count}-page PDF")
             };
             FileContent::PdfPages { paths, label }
         }
-        Ok(_) | Err(_) => {
-            // Pdfium/pdftoppm failed — fall back to text extraction
-            extract_pdf_text(bytes, filename)
+        other => {
+            // Vision render failed AND text path already failed
+            // (else we wouldn't be here). Surface a clear error so
+            // operators know neither backend worked.
+            let render_err = match other {
+                Ok(_) => "renderer produced no output".to_string(),
+                Err(e) => e,
+            };
+            tracing::warn!(
+                "PDF {filename}: vision render failed: {render_err}; text path also empty"
+            );
+            FileContent::Unsupported(format!(
+                "[File received: {filename} (PDF) — neither text extraction nor vision render \
+                 produced content. Vision error: {render_err}]"
+            ))
         }
     }
 }
@@ -351,9 +428,13 @@ fn process_pdf_vision(bytes: &[u8], filename: &str) -> FileContent {
 
 /// Format `FileContent` into an injectable string for the agent prompt.
 ///
-/// Returns `(text, needs_vision)` where `needs_vision` is true when the
-/// result contains `<<IMG:...>>` or `<<VID:...>>` markers that should
-/// trigger attachment-aware tool calls.
+/// Returns `(text, needs_vision)` where `needs_vision` is true when
+/// the result contains `<<IMG:...>>` or `<<VID:...>>` markers that
+/// `build_user_message` will base64-inline into the user Message.
+/// PdfPages deliberately does NOT use those markers — see the
+/// comment on that branch for why — so for scanned PDFs the bool is
+/// false and the agent reaches images via per-page `analyze_image`
+/// tool calls instead.
 pub fn inject_file_content(content: &FileContent) -> (String, bool) {
     match content {
         FileContent::Image(path) => {
@@ -366,15 +447,31 @@ pub fn inject_file_content(content: &FileContent) -> (String, bool) {
             )
         }
         FileContent::PdfPages { paths, label } => {
-            let markers: String = paths
+            // Surface page paths as a plain text list. We deliberately
+            // do NOT emit `<<IMG:...>>` markers here — those would
+            // make `build_user_message` base64-inline every page
+            // image into a single user Message, which on a 32-page
+            // PDF balloons the request body past most providers'
+            // limits (Dialagram caps at 10 MB; OpenRouter 20 MB).
+            // Instead, the agent calls `analyze_image` per page as
+            // it needs them, so each request ships at most one
+            // image and vision tokens are paid only for pages
+            // actually read.
+            let path_list: String = paths
                 .iter()
-                .map(|p| format!("<<IMG:{}>>", p.to_string_lossy()))
-                .collect();
+                .enumerate()
+                .map(|(i, p)| format!("- Page {}: {}", i + 1, p.to_string_lossy()))
+                .collect::<Vec<_>>()
+                .join("\n");
             (
                 format!(
-                    "[User attached a {label}. Call analyze_image for EACH page path below, then combine the results.]\n{markers}"
+                    "[User attached a {label} ({n} page(s)). No extractable text — pages were \
+                     rendered as images. Call `analyze_image(image='<path>', question='...')` \
+                     ONE PAGE AT A TIME as you need content. Do NOT try to read all pages in \
+                     one turn — providers cap request body size and bundling fails.]\n{path_list}",
+                    n = paths.len(),
                 ),
-                true,
+                false,
             )
         }
         FileContent::Video(path) => {
@@ -504,11 +601,20 @@ fn extract_zip_contents(bytes: &[u8], archive_name: &str, config: &Config) -> Fi
                 parts.push(format!("<<VID:{}>>", path.display()));
             }
             FileContent::PdfPages { paths, label } => {
-                // PDF pages rendered as images — inject as vision markers
-                parts.push(label);
-                for path in paths {
-                    parts.push(format!("<<IMG:{}>>", path.display()));
-                }
+                // Same reasoning as the `inject_file_content`
+                // PdfPages branch: list page paths as plain text so
+                // the agent calls `analyze_image` per page on
+                // demand, instead of base64-inlining every page
+                // upfront and busting provider body limits.
+                let path_list: String = paths
+                    .iter()
+                    .enumerate()
+                    .map(|(i, p)| format!("- Page {}: {}", i + 1, p.display()))
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                parts.push(format!(
+                    "[{label} from zip] Call `analyze_image` per page as needed:\n{path_list}"
+                ));
             }
             FileContent::Unsupported(msg) => {
                 parts.push(msg);
