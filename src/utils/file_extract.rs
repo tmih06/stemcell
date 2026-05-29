@@ -45,7 +45,18 @@ pub enum FileContent {
 
 // ── Helpers ──
 
+/// Generic text file inline cap. Keeps short notes / small source
+/// files fully visible without burning the entire context window on
+/// a single ingestion. PDFs use the larger `PDF_TEXT_LIMIT` below
+/// because PDFs commonly contain whole documents that the agent
+/// needs end-to-end.
 const TEXT_LIMIT: usize = 8_000;
+/// Inline cap for extracted PDF text. Sized so a ~60-page report
+/// fits without forcing the agent to chase pages through tool calls.
+/// When exceeded we still save the original PDF to temp and tell the
+/// agent how to call `parse_document` with `pages=[...]` for the
+/// remainder, so nothing is silently lost.
+const PDF_TEXT_LIMIT: usize = 200_000;
 const MAX_PDF_PAGES: usize = 100;
 
 /// Determine whether a MIME type is a text file.
@@ -137,31 +148,78 @@ fn save_to_temp(bytes: &[u8], filename: &str) -> Result<PathBuf, String> {
     Ok(path)
 }
 
-/// Extract text from PDF bytes, truncated to TEXT_LIMIT.
+/// Extract text from PDF bytes. The inline content is capped at
+/// `PDF_TEXT_LIMIT` chars (~60 pages of a typical report). The
+/// original PDF is also saved to `~/.opencrabs/tmp/files/` and the
+/// path is included in the message so the agent can call
+/// `parse_document(path, pages=[...])` to pull the remainder
+/// without losing fidelity. Form-feed (`\u{000C}`) page boundaries
+/// are preserved so `parse_document`'s `pages` filter works on the
+/// same text the agent already saw.
 fn extract_pdf_text(bytes: &[u8], filename: &str) -> FileContent {
-    match pdf_extract::extract_text_from_mem(bytes) {
-        Ok(text) => {
-            let trimmed = text.trim().to_string();
-            if trimmed.is_empty() {
-                FileContent::Unsupported(format!(
-                    "[File received: {filename} (PDF) — no extractable text found, may be image-based]"
-                ))
-            } else {
-                let truncated = if trimmed.len() > TEXT_LIMIT {
-                    format!(
-                        "{}…[truncated]",
-                        trimmed.chars().take(TEXT_LIMIT).collect::<String>()
-                    )
-                } else {
-                    trimmed
-                };
-                FileContent::Text(format!("[File: {filename}]\n```\n{truncated}\n```"))
-            }
+    let raw = match pdf_extract::extract_text_from_mem(bytes) {
+        Ok(t) => t,
+        Err(e) => {
+            tracing::warn!("pdf_extract failed for {filename}: {e} — surfacing as unsupported");
+            return FileContent::Unsupported(format!(
+                "[File received: {filename} (PDF) — failed to extract text: {e}]"
+            ));
         }
-        Err(_) => FileContent::Unsupported(format!(
-            "[File received: {filename} (PDF) — failed to extract text]"
-        )),
+    };
+    let trimmed = raw.trim().to_string();
+    if trimmed.is_empty() {
+        return FileContent::Unsupported(format!(
+            "[File received: {filename} (PDF) — no extractable text found, may be image-based]"
+        ));
     }
+
+    // Save the original PDF so the agent has a path to pass to
+    // `parse_document` when it needs pages we truncated. We always
+    // save (not only on truncation) so the agent can re-query for
+    // any page even when the inline preview was complete — it can
+    // verify a quote, paginate, or pull just one page for focused
+    // analysis without re-uploading.
+    let saved_path = save_to_temp(bytes, filename).ok();
+
+    let full_len = trimmed.chars().count();
+    let total_pages = trimmed.matches('\u{000C}').count() + 1;
+    let truncated_text = if full_len > PDF_TEXT_LIMIT {
+        let preview: String = trimmed.chars().take(PDF_TEXT_LIMIT).collect();
+        let preview_pages = preview.matches('\u{000C}').count() + 1;
+        let path_hint = saved_path
+            .as_ref()
+            .map(|p| {
+                format!(
+                    "\n\n[Inline preview shows pages 1-{preview_pages} of {total_pages} (~{} of {} chars). \
+                     Original PDF saved at: {}\n\
+                     Call `parse_document(path='{}', pages=[{}, ...])` for the remaining pages.]",
+                    PDF_TEXT_LIMIT,
+                    full_len,
+                    p.display(),
+                    p.display(),
+                    preview_pages + 1,
+                )
+            })
+            .unwrap_or_else(|| {
+                format!(
+                    "\n\n[Inline preview truncated at {PDF_TEXT_LIMIT} of {full_len} chars; \
+                     full PDF could not be saved to disk for `parse_document` follow-up.]"
+                )
+            });
+        format!("{preview}…{path_hint}")
+    } else if let Some(ref p) = saved_path {
+        format!(
+            "{trimmed}\n\n[Full PDF saved at: {} — call `parse_document(path='{}', pages=[N])` to re-query any specific page.]",
+            p.display(),
+            p.display()
+        )
+    } else {
+        trimmed
+    };
+
+    FileContent::Text(format!(
+        "[File: {filename} ({total_pages} pages)]\n```\n{truncated_text}\n```"
+    ))
 }
 
 // ── Vision-aware pipeline ──
