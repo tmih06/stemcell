@@ -1316,12 +1316,15 @@ pub(crate) async fn handle_message(
         }
     }
 
-    // Extract replied-to message context so the agent knows what the user is referencing.
+    // Extract replied-to message context so the agent knows what the
+    // user is referencing. When the user used Telegram's quote-reply
+    // feature to highlight a specific excerpt (msg.quote()), prefer
+    // that excerpt over the full message text — otherwise the agent
+    // only sees the whole replied-to message and misses which part
+    // the user is actually asking about (issue #131).
     let reply_context = msg.reply_to_message().and_then(|reply| {
-        let reply_text = reply.text().or(reply.caption()).unwrap_or("").trim();
-        if reply_text.is_empty() {
-            return None;
-        }
+        let full_text = reply.text().or(reply.caption()).unwrap_or("");
+        let quote_text = msg.quote().map(|q| q.text.as_str()).unwrap_or("");
         let reply_sender = reply
             .from
             .as_ref()
@@ -1333,7 +1336,7 @@ pub(crate) async fn handle_message(
                 }
             })
             .unwrap_or_else(|| "unknown".to_string());
-        Some(format!("[Replying to {reply_sender}: \"{reply_text}\"]"))
+        format_reply_context(&reply_sender, full_text, quote_text)
     });
 
     // Build the human-readable display text (used for DB persistence + TUI).
@@ -2926,6 +2929,37 @@ pub(crate) async fn resume_session(
     }
 
     Ok(())
+}
+
+/// Format a reply-to context line for the agent prompt.
+///
+/// When a Telegram user replies to a message they can optionally
+/// highlight a specific quote inside it (Telegram's quote-reply
+/// feature, surfaced as `msg.quote()` in teloxide). The agent needs
+/// to see which excerpt the user actually pointed at — not just the
+/// full replied-to message — otherwise it picks the wrong part to
+/// answer (issue #131).
+///
+/// Returns `None` when there is no usable text on either side.
+pub(crate) fn format_reply_context(
+    sender: &str,
+    reply_full_text: &str,
+    quote_text: &str,
+) -> Option<String> {
+    let full = reply_full_text.trim();
+    let quote = quote_text.trim();
+    if full.is_empty() && quote.is_empty() {
+        return None;
+    }
+    if !quote.is_empty() && quote != full && !full.is_empty() {
+        Some(format!(
+            "[Replying to {sender}, user highlighted: \"{quote}\"\nFull message: \"{full}\"]"
+        ))
+    } else if !quote.is_empty() {
+        Some(format!("[Replying to {sender}: \"{quote}\"]"))
+    } else {
+        Some(format!("[Replying to {sender}: \"{full}\"]"))
+    }
 }
 
 /// Convert simple markdown (`*bold*`, `` `code` ``) to Telegram HTML.

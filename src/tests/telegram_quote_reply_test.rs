@@ -1,0 +1,132 @@
+//! Tests for `format_reply_context` — the helper that produces the
+//! "[Replying to ...]" line the agent sees when a user replies to a
+//! previous Telegram message, optionally highlighting a specific
+//! excerpt via Telegram's quote-reply feature (issue #131).
+//!
+//! Before the fix the agent only saw the full text of the
+//! replied-to message; users highlighting a single sentence inside
+//! a long forwarded thread got a generic answer because the model
+//! had no idea which sentence was being pointed at.
+
+use crate::channels::telegram::handler::format_reply_context;
+
+#[test]
+fn no_quote_falls_back_to_full_text() {
+    let result = format_reply_context("Alice", "Hello, world!", "");
+    assert_eq!(
+        result,
+        Some(r#"[Replying to Alice: "Hello, world!"]"#.into())
+    );
+}
+
+#[test]
+fn quote_alone_surfaces_only_quote() {
+    // No full text (rare; reply target was a photo with no caption
+    // but quote was somehow extracted from a related entity). The
+    // formatter shouldn't synthesize an empty Full message: line.
+    let result = format_reply_context("Bob", "", "selected text");
+    assert_eq!(result, Some(r#"[Replying to Bob: "selected text"]"#.into()));
+}
+
+#[test]
+fn quote_differs_from_full_text_shows_both() {
+    let result = format_reply_context(
+        "Carol",
+        "The roof needs urgent repair. The walls are stable.",
+        "The roof needs urgent repair.",
+    );
+    assert_eq!(
+        result,
+        Some(
+            r#"[Replying to Carol, user highlighted: "The roof needs urgent repair."
+Full message: "The roof needs urgent repair. The walls are stable."]"#
+                .into()
+        )
+    );
+}
+
+#[test]
+fn quote_equals_full_text_shows_once() {
+    // When the user highlighted the entire message Telegram still
+    // sends a quote; we shouldn't duplicate it in the prompt.
+    let result = format_reply_context("Dave", "hi there", "hi there");
+    assert_eq!(result, Some(r#"[Replying to Dave: "hi there"]"#.into()));
+}
+
+#[test]
+fn whitespace_around_quote_is_trimmed() {
+    // The Telegram client sometimes includes leading/trailing
+    // whitespace in quote excerpts depending on how the user
+    // highlighted (drag past a word boundary, double-tap on a
+    // sentence end, etc.). The prompt should be clean.
+    let result = format_reply_context("Eve", "full body of the message", "   highlighted   ");
+    assert_eq!(
+        result,
+        Some(
+            r#"[Replying to Eve, user highlighted: "highlighted"
+Full message: "full body of the message"]"#
+                .into()
+        )
+    );
+}
+
+#[test]
+fn whitespace_around_full_text_is_trimmed() {
+    let result = format_reply_context("Frank", "  spaced text  ", "");
+    assert_eq!(result, Some(r#"[Replying to Frank: "spaced text"]"#.into()));
+}
+
+#[test]
+fn empty_both_returns_none() {
+    assert_eq!(format_reply_context("Grace", "", ""), None);
+    assert_eq!(format_reply_context("Grace", "   ", "   "), None);
+}
+
+#[test]
+fn quote_matches_full_text_after_trim() {
+    // Edge case: the quote field had trailing whitespace but
+    // logically matches the full text. Should fold to single
+    // surface, not the dual "user highlighted: / Full message:"
+    // format.
+    let result = format_reply_context("Henry", "exact text", "exact text  ");
+    assert_eq!(result, Some(r#"[Replying to Henry: "exact text"]"#.into()));
+}
+
+#[test]
+fn assistant_sender_format_is_preserved() {
+    // The caller maps bot replies to the literal "assistant" so
+    // the model understands it's seeing its own prior turn.
+    let result = format_reply_context("assistant", "I think we should refactor", "");
+    assert_eq!(
+        result,
+        Some(r#"[Replying to assistant: "I think we should refactor"]"#.into())
+    );
+}
+
+#[test]
+fn multiline_full_message_with_short_quote() {
+    let full = "Here is paragraph one.\nHere is paragraph two.\nHere is paragraph three.";
+    let quote = "paragraph two";
+    let result = format_reply_context("Iris", full, quote);
+    let expected =
+        format!("[Replying to Iris, user highlighted: \"{quote}\"\nFull message: \"{full}\"]");
+    assert_eq!(result, Some(expected));
+}
+
+#[test]
+fn unicode_quote_is_preserved() {
+    // Common case in the user's groups — French/Spanish text.
+    let result = format_reply_context(
+        "Jules",
+        "Le toit nécessite des réparations urgentes.",
+        "réparations urgentes",
+    );
+    assert_eq!(
+        result,
+        Some(
+            r#"[Replying to Jules, user highlighted: "réparations urgentes"
+Full message: "Le toit nécessite des réparations urgentes."]"#
+                .into()
+        )
+    );
+}
