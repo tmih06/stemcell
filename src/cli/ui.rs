@@ -538,6 +538,19 @@ async fn cmd_chat_inner(
                     progress_sender.send(TuiEvent::TokenCountUpdated { session_id, count })
                 }
                 ProgressEvent::ReasoningChunk { text } => {
+                    // Reasoning/thinking chunks ARE model output and must count
+                    // toward the live tok/s footer. 2026-05-29 user report:
+                    // a 38s reasoning-heavy turn showed 65 tok total / 3 tok/s
+                    // because only StreamingChunk (final completion text)
+                    // emitted token-count events, while the 1000+ tokens of
+                    // visible thinking went silent on the meter. Per the
+                    // user's spec: "should count only when its outputting
+                    // tokens like thinking or completion or tool calls".
+                    let chunk_tokens = crate::brain::tokenizer::count_tokens(&text) as u32;
+                    let _ = progress_sender.send(TuiEvent::StreamingOutputTokens {
+                        session_id,
+                        tokens: chunk_tokens,
+                    });
                     progress_sender.send(TuiEvent::ReasoningChunk { session_id, text })
                 }
                 ProgressEvent::QueuedUserMessage { text } => {
