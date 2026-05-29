@@ -46,9 +46,16 @@ struct DocParserInput {
 /// silently skipped — the caller's responsibility is to pass a
 /// well-formed string; we don't error on garbage so the tool stays
 /// forgiving when the model emits a slightly malformed value.
-fn parse_page_range(spec: &str) -> Vec<usize> {
+pub(crate) fn parse_page_range(spec: &str) -> Vec<usize> {
+    // Normalise space around the dash so verbose model output like
+    // `"1 - 5"` doesn't get split as three tokens (`"1"`, `"-"`,
+    // `"5"`) and silently drop pages 2-4. We only collapse spaces
+    // *immediately adjacent* to a dash; spaces elsewhere still
+    // separate tokens, so `"1-3 5-7"` continues to parse as two
+    // ranges.
+    let normalised = spec.replace(" -", "-").replace("- ", "-");
     let mut out: Vec<usize> = Vec::new();
-    for token in spec
+    for token in normalised
         .split([',', ' '])
         .map(str::trim)
         .filter(|t| !t.is_empty())
