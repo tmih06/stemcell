@@ -160,6 +160,7 @@ pub mod whatsapp_state_test;
 // Channel handler tests (moved from inline #[cfg(test)] modules)
 pub mod channel_commands_test;
 pub mod discord_handler_test;
+pub mod pdf_vision_test;
 pub mod slack_handler_test;
 pub mod telegram_handler_test;
 pub mod telegram_photo_batching_test;

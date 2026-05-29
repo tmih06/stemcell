@@ -10,8 +10,6 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-/// Default maximum number of pages to render before skipping.
-const DEFAULT_MAX_PAGES: usize = 100;
 /// Number of pages processed per batch to limit memory.
 const BATCH_SIZE: usize = 10;
 
@@ -43,7 +41,11 @@ pub fn render_pdf_pages(
 
     let result = render_pdf_pages_inner(&pdf, max_pages, &out);
 
-    // On failure, clean up any partial renders.
+    // On total failure (no pages rendered at all), clean up any stray
+    // partial renders from earlier strategies. A partial success
+    // (Ok with some pages) is preserved by `render_pdf_pages_inner`
+    // — losing the good pages because the last batch failed was the
+    // bug that surfaced as "PDFs truncated after page 5".
     if let Err(ref err) = result {
         tracing::warn!("PDF render failed, cleaning up partial output: {}", err);
         cleanup_dir(&out);
@@ -78,6 +80,27 @@ fn render_pdf_pages_inner(
          'pdfium-render' feature."
             .into(),
     )
+}
+
+/// Return total page count for `pdf_path`, or `None` if it can't be
+/// determined (no `pdfinfo` available, malformed PDF, etc.). Used to
+/// bound the pdftoppm render loop so we don't ask for pages past EOF.
+fn pdf_page_count(pdf_path: &Path) -> Option<usize> {
+    let path_str = pdf_path.to_str()?;
+    let out = std::process::Command::new("pdfinfo")
+        .arg(path_str)
+        .output()
+        .ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let text = String::from_utf8_lossy(&out.stdout);
+    for line in text.lines() {
+        if let Some(rest) = line.strip_prefix("Pages:") {
+            return rest.trim().parse::<usize>().ok();
+        }
+    }
+    None
 }
 
 // ---------------------------------------------------------------------------
@@ -177,14 +200,32 @@ fn render_with_pdftoppm(
         .to_str()
         .ok_or_else(|| "Output directory path is not valid UTF-8".to_string())?;
 
+    // Bound the render loop to the document's actual page count when
+    // pdfinfo is available. Without this, batches past EOF make
+    // pdftoppm error with "Wrong page range given: the first page (N)
+    // can not be after the last page (M)" — the whole render then
+    // returns Err and the caller wipes the already-rendered batches.
+    // When pdfinfo isn't installed we fall back to max_pages and rely
+    // on per-batch error tolerance below.
+    let effective_max = match pdf_page_count(pdf_path) {
+        Some(total) => total.min(max_pages),
+        None => max_pages,
+    };
+    if effective_max == 0 {
+        return Err("pdftoppm: PDF reports zero pages".into());
+    }
+
     // pdftoppm generates files named <prefix>-01.png, <prefix>-02.png, …
     let prefix = "page";
-    let mut rendered: Vec<PathBuf> = Vec::with_capacity(max_pages.min(DEFAULT_MAX_PAGES));
+    let mut rendered: Vec<PathBuf> = Vec::with_capacity(effective_max);
 
-    // Process in batches: pdftoppm renders ranges efficiently.
+    // Process in batches. We tolerate per-batch errors: a partial render
+    // (early pages succeed, a late batch fails) is more useful than no
+    // pages at all. Only return Err if every batch fails.
     let mut start = 1;
-    while start <= max_pages {
-        let batch_end = (start + BATCH_SIZE - 1).min(max_pages);
+    let mut last_err: Option<String> = None;
+    while start <= effective_max {
+        let batch_end = (start + BATCH_SIZE - 1).min(effective_max);
 
         let output = std::process::Command::new("pdftoppm")
             .args([
@@ -203,15 +244,38 @@ fn render_with_pdftoppm(
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(format!("pdftoppm failed: {}", stderr.trim()));
+            tracing::warn!(
+                "pdftoppm batch {}-{} failed: {} — keeping earlier pages",
+                start,
+                batch_end,
+                stderr.trim()
+            );
+            last_err = Some(stderr.trim().to_string());
+            // Don't return — try the next batch. PDFs with corrupt
+            // pages in the middle still surface their good pages.
+            start = batch_end + 1;
+            continue;
         }
 
-        // Collect the generated files for this batch.
+        // Collect the generated files for this batch. pdftoppm uses
+        // 2-digit zero-padding under 100 pages and widens automatically
+        // for larger docs, so try both widths.
         for page_num in start..=batch_end {
-            let file_name = format!("{}-{:02}.png", prefix, page_num);
-            let file_path = output_dir.join(&file_name);
-            if file_path.exists() {
-                rendered.push(file_path);
+            let file_path = output_dir
+                .join(format!("{}-{:02}.png", prefix, page_num))
+                .canonicalize()
+                .or_else(|_| {
+                    output_dir
+                        .join(format!("{}-{:03}.png", prefix, page_num))
+                        .canonicalize()
+                })
+                .or_else(|_| {
+                    output_dir
+                        .join(format!("{}-{:04}.png", prefix, page_num))
+                        .canonicalize()
+                });
+            if let Ok(p) = file_path {
+                rendered.push(p);
             }
         }
 
@@ -219,7 +283,12 @@ fn render_with_pdftoppm(
     }
 
     if rendered.is_empty() {
-        return Err("pdftoppm produced no output files".into());
+        return Err(format!(
+            "pdftoppm produced no output files{}",
+            last_err
+                .map(|e| format!(" (last error: {e})"))
+                .unwrap_or_default()
+        ));
     }
 
     Ok(rendered)
