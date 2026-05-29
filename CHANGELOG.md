@@ -6,152 +6,161 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
-## [0.3.30] - 2026-05-28
+## [0.3.30] - 2026-05-29
 
-31 commits since v0.3.29. Minor release closing issues #125 (RTK
-daemon hang from sync Command::new blocking the tokio runtime on
-single-worker profiles), #126 (/models picker in channels showed
-Claude model names instead of the actual CLI-supported models and
-hid unconfigured providers entirely), and #127 (channel_search had
-no way to target a specific Telegram forum topic, so searches across
-supergroups with topics enabled returned a flat undifferentiated
-list). The RTK binary detection swapped std::sync::OnceLock plus
-std::process::Command for tokio::sync::OnceCell plus
-tokio::process::Command across find_rtk_binary, is_rtk_available,
-rewrite_command, and rewrite_command_string, with the tracker mutex
-lifted to tokio::sync::Mutex and a dedicated no-block regression
+36 commits since v0.3.29. Minor release closing issues #125 (RTK
+daemon hang from sync `Command::new` blocking the tokio runtime on
+single-worker profiles), #126 (/models picker hid unconfigured
+providers entirely and showed Claude model names for OpenCode CLI),
+#127 (channel_search had no way to target a specific Telegram forum
+topic, so searches across topic-enabled supergroups returned a flat
+undifferentiated list), #128 (rename_session silently accepted empty
+titles and wiped the session label so it showed as "Untitled" in
+/sessions), and #129 (Telegram /sessions response printed every
+session in the message body AND as inline-keyboard buttons —
+pure duplication). The RTK binary detection swapped `std::sync::OnceLock`
+plus `std::process::Command` for `tokio::sync::OnceCell` plus
+`tokio::process::Command` across `find_rtk_binary`, `is_rtk_available`,
+`rewrite_command`, and `rewrite_command_string`, with the tracker mutex
+lifted to `tokio::sync::Mutex` and a dedicated no-block regression
 suite proving single-worker runtimes stay responsive. Qwen custom
-providers get zero-config cost savings: a looks_like_qwen_target
+providers get zero-config cost savings: a `looks_like_qwen_target`
 detector scans base_url and model name for Alibaba-shaped endpoints
-(dashscope, aliyun, aliyuncs, dialagram) or qwen-* model prefixes
-and auto-enables ephemeral cache_control markers on the system
+(dashscope, aliyun, aliyuncs, dialagram) or `qwen-*` model prefixes
+and auto-enables ephemeral `cache_control` markers on the system
 prompt, last streaming message, and last tool, logged once per
 (base_url, model) pair so mixed-model providers only mark Qwen
 requests. Tool-call extraction for qwen-3.7-max-thinking now handles
-bare-args bash calls and Anthropic-shaped <invoke name="X"> XML
-nested inside qwen:tool_call wrappers, so the model can emit either
-OpenAI or Anthropic tool-call shapes and the parser still lands a
-clean ToolCall. The /models picker now surfaces unconfigured
-providers as greyed-out entries with a setup hint, the displayed
-model list comes from a single cli_supported_models source of truth
-pinned per provider so channel footers match what the TUI actually
-offers, and custom providers with no configured models now show a
-helpful empty-state instead of a blank picker. Telegram onboarding
-got a full pass: test_telegram_connection now validates the token via
-getMe before attempting sends (specific errors for invalid token,
-chat not found, blocked bot), auto-detects the user's numeric ID
-from getUpdates when the chat ID field is left empty, persists the
-partial config on Cancel so users don't lose their typed token when
-they back out, and Enter on the RespondTo field no longer requires
-a user ID so you can test with auto-detection. All four channel
+bare-args bash calls AND Anthropic-shaped `<invoke name="X">` XML
+nested inside `<qwen:tool_call>` wrappers (verbatim user-screenshot
+malformations preserved as regression tests), and orphan close tags
+like `</tool_result>` are stripped from streamed output before
+reaching the TUI. The /models picker now surfaces every known
+provider including unconfigured ones with a 🔒 lock + setup help
+text (never asks users to paste API keys inline — Telegram bots can't
+delete DM history), the displayed CLI model list comes from a single
+`cli_supported_models` source of truth pinned per provider so
+channel footers match what the TUI actually offers, custom providers
+with no configured models show a helpful empty-state instead of a
+single inert button, and the Telegram /sessions body was trimmed to
+header + current-session indicator so it no longer duplicates the
+inline keyboard. Telegram onboarding got a full pass: auto-detect
+the user's numeric ID from getUpdates when the chat ID field is
+empty, persist partial config on Cancel so users don't lose typed
+tokens when they back out, and the quick-jump wizard no longer
+commits on intermediate Enter presses (Tab on Model/CustomContextWindow
+used to silently rewrite ~30 config keys; now only explicit Enter on
+the last step commits, and rebuild swaps the per-session provider so
+the footer reflects the new selection immediately). All four channel
 handlers (Telegram, Discord, Slack, WhatsApp) now treat a follow-up
-message during an active agent run as ESC x2 (cancel the running
-agent and start fresh), Telegram "is responding..." status messages
-are now dynamic and context-aware (showing actual tool being called,
-tokens streamed, elapsed time) instead of hardcoded quips, and
-channel_search gained a topic_id filter for Telegram forum
-supergroups so you can search within a specific topic thread.
-Custom provider base URLs are normalized on Enter/Tab/paste during
-onboarding and /models (strips trailing /v1/chat/completions,
-/chat/completions, /v1, /), ZIP file attachments from users are now
-extracted and processed inline (text files inlined, images get
-vision markers, PDFs get text extraction, capped at 50 files and
-10 MB per entry), generate_image gained an optional image parameter
-(local path or HTTPS URL) that feeds Gemini inlineData parts for
+message during an active agent run as ESC x2 (cancel and start fresh),
+Telegram status messages are dynamic and context-aware (actual tool
+being called, tokens streamed, elapsed time) instead of hardcoded
+quips, ZIP attachments from users are extracted and processed inline
+(text files inlined, images get vision markers, PDFs get text
+extraction, capped at 50 files / 10 MB per entry), and
+channel_search gained a `topic_id` filter for Telegram forum
+supergroups. Custom provider base URLs are normalized on Enter/Tab/
+paste (strips trailing `/v1/chat/completions`, `/chat/completions`,
+`/v1`, `/`). `generate_image` gained an optional `image` parameter
+(local path or HTTPS URL) that feeds Gemini `inlineData` parts for
 img2img editing while OpenAI-shaped backends reject it with a clear
-error pointing users at Gemini, the self-heal detector now catches
-"I need to X" deferment stalls in all 5 languages (English, Spanish,
-French, German, Portuguese), the RSI self_improve tool rejects
-trivial test content (< 15 chars, "test" descriptions) before it
-can pollute brain files, orphan XML close tags like </tool_result>
-are stripped from streamed output before reaching the TUI, the plan
-widget dynamically hides tasks that don't fit the terminal height
-instead of overflowing, and the TUI footer now shows a real-time
-tok/s throughput metric between the model info and the approval
-policy pill (visible only while streaming, green to match the
-split-pane indicator). Help screen got three quality-of-life
-passes: Esc x2 now reads "Cancel / abort immediately" instead of
-the vague "Clear input", /onboard:channels lists Telegram, Slack,
-Discord, WhatsApp, and Trello by name, the footer carries a
-docs.opencrabs.com link, and Shift+Enter plus Ctrl+J are now
-documented as newline bindings. Terminal setup enables crossterm
-PushKeyboardEnhancementFlags (DISAMBIGUATE_ESCAPE_CODES) so
-Shift+Enter fires on Kitty-protocol terminals (Ghostty, Kitty,
-WezTerm, foot), the input area now expands properly on Ctrl+J
-newline (str::lines() was stripping trailing newlines so the empty
-trailing line wasn't counted; switched to split('\n')), and
-quick-jump mode no longer commits on intermediate Enter presses and
-swaps the per-session provider on rebuild so the footer reflects
-the new selection. Style-only: assert_eq!(x, false) collapsed to
-assert!(!x) across the test suite.
+error pointing users at Gemini. The self-heal detector now catches
+"I need to X" / "I have to X" / "I must X" / "I should X" deferment
+stalls in all five supported languages (en/es/pt/fr/ru); the RSI
+self_improve tool rejects trivial test content before it can pollute
+brain files; `rename_session` rejects empty / whitespace-only titles
+so sessions can't become unidentifiable. TUI gets a real-time tok/s
+throughput meter in the footer (between model info and approval
+policy pill) that counts ONLY active streaming time — tool execution,
+approval waits, between-stream network round-trips, and compaction
+delays are excluded — and persists the last finalized rate so the
+footer keeps showing the previous turn's tok/s during idle until
+the next turn produces its first token. The plan widget dynamically
+hides tasks that don't fit the terminal height instead of overflowing.
+Help screen: Esc x2 reads "Cancel / abort immediately" instead of
+the vague "Clear input", /onboard:channels lists every channel by
+name, and the footer carries a `docs.opencrabs.com` link. Style:
+`assert_eq!(x, false)` collapsed to `assert!(!x)` across the suite.
+CI/test infra: in-memory test pool fix + Unix-gated tests that
+depended on a temp `$HOME` (Windows uses `SHGetKnownFolderPath`
+instead of env vars).
 
-Closes #125, #126, #127.
+Closes #125, #126, #127, #128, #129.
 
-60 files changed, +3541/-468.
+64 files changed, +3996/-501.
 
 RTK ASYNC REFACTOR (3 commits, closes #125)
 
-- 309755cf fix(rtk): eliminate sync blocking in async RTK binary detection
-- 09c1a623 refactor(rtk): extract inline tests + switch tracker to `tokio::sync::Mutex`
-- a0968cbd test(rtk): no-block regression tests for single-worker tokio runtime
+- 5d88479a fix(rtk): eliminate sync blocking in async RTK binary detection
+- 95bbaa60 refactor(rtk): extract inline tests + switch tracker to `tokio::sync::Mutex`
+- 66df474c test(rtk): no-block regression tests for single-worker tokio runtime
 
-QWEN TOOL-CALL EXTRACTION (2 commits)
+QWEN TOOL-CALL EXTRACTION (3 commits)
 
-- 590e9f30 fix(custom_openai_compatible): extract bare-args bash tool calls (qwen-3.7-max-thinking)
-- ba9cce4c fix(custom_openai_compatible): extract Anthropic `<invoke name="X">` XML inside `qwen:tool_call`
+- 61ba04a0 fix(custom_openai_compatible): extract bare-args bash tool calls (qwen-3.7-max-thinking)
+- b609e2d2 fix(custom_openai_compatible): extract Anthropic `<invoke name="X">` XML inside `<qwen:tool_call>`
+- 93f53c15 fix(sanitize): strip orphan close tags (`</tool_result>` etc.) leaking to TUI
 
 QWEN CACHE AUTO-ENABLE (5 commits)
 
-- dcdbf2b5 feat(qwen): add `looks_like_qwen_target` detector for auto-cache enablement
-- 1e74db32 feat(qwen): auto-enable ephemeral `cache_control` for qwen-shaped custom providers
-- 6b14fe5b feat(qwen): log once per (base_url, model) when auto-cache engages
-- 0c937e6a test(qwen): integration test for custom-provider cache auto-enable
-- c794808f docs(qwen): document zero-config Qwen cache auto-enable for custom providers
+- 3263c44b feat(qwen): add `looks_like_qwen_target` detector for auto-cache enablement
+- e3bdf591 feat(qwen): auto-enable ephemeral `cache_control` for qwen-shaped custom providers
+- c5630977 feat(qwen): log once per (base_url, model) when auto-cache engages
+- 14ec9bce test(qwen): integration test for custom-provider cache auto-enable
+- aafa6899 docs(qwen): document zero-config Qwen cache auto-enable for custom providers
 
-CLI /MODELS PICKER (4 commits, closes #126)
+CHANNEL UI / MODELS + SESSIONS PICKER (5 commits, closes #126, #129)
 
-- 2abebef8 fix(channels): show OpenCode CLI models in /models, not Claude names
-- 2894e57d refactor(providers): single-source CLI model list, pin via `cli_supported_models`
-- 7def942e feat(channels): surface unconfigured providers in /models picker
-- dc9b2048 fix(channels): custom-provider /models picker returns empty list + help when no models configured
+- 9d10d939 fix(channels): show OpenCode CLI models in /models, not Claude names
+- b2f2033c refactor(providers): single-source CLI model list, pin via `cli_supported_models`
+- 06be28b4 feat(channels): surface unconfigured providers in /models picker (closes #126)
+- 4b2cc8a3 fix(channels): custom-provider /models picker returns empty list + help when no models configured
+- 15206f86 fix(channels): /sessions body no longer duplicates inline-keyboard labels (closes #129)
 
 IMG2IMG FOR GENERATE_IMAGE (1 commit)
 
-- 0fe37205 feat(generate_image): add img2img support for user-uploaded images
+- c71ddd25 feat(generate_image): add img2img support for user-uploaded images
 
 HELP SCREEN IMPROVEMENTS (2 commits)
 
-- de119af4 improve(help): clarify Esc x2 abort and list channels in /onboard:channels
-- 7b506322 feat(help): add docs.opencrabs.com link to help screen footer
+- c77aaaa6 improve(help): clarify Esc x2 abort and list channels in /onboard:channels
+- cc536cbb feat(help): add docs.opencrabs.com link to help screen footer
 
 ONBOARDING FIXES (4 commits)
 
-- 1979e59b fix(onboarding): only Enter on the last step commits in quick-jump mode
-- 1ffac094 fix(tui): swap per-session provider on quick-jump rebuild so footer updates
-- 956ec366 fix(onboarding): normalize custom provider base URL on entry and paste
-- e5b68823 feat(onboarding): auto-detect Telegram user ID, persist on cancel, better errors
+- d3e90f0e fix(onboarding): only Enter on the last step commits in quick-jump mode
+- 6a1bf3ab fix(tui): swap per-session provider on quick-jump rebuild so footer updates
+- d2dcfbd9 fix(onboarding): normalize custom provider base URL on entry and paste
+- 60150336 feat(onboarding): auto-detect Telegram user ID, persist on cancel, better errors
 
 TELEGRAM / CHANNEL FEATURES (4 commits, closes #127)
 
-- 2cc19699 feat(channels): follow-up message cancels running agent (ESC x2 behavior)
-- 3fcb616f feat(telegram): replace hardcoded status quips with dynamic context-aware messages
-- 0adb8c47 feat(channels): topic-aware channel search for Telegram forums
-- 8e8b8135 feat(channels): handle ZIP file attachments from users
+- 95cacc03 feat(channels): follow-up message cancels running agent (ESC x2 behavior)
+- 512bf002 feat(telegram): replace hardcoded status quips with dynamic context-aware messages
+- 94419a7e feat(channels): topic-aware channel search for Telegram forums (closes #127)
+- 10094519 feat(channels): handle ZIP file attachments from users
+
+RENAME SESSION (1 commit, closes #128)
+
+- 4e7ad6a8 fix(rename_session): reject empty / whitespace-only titles
 
 TUI FIXES (3 commits)
 
-- f6890440 fix(tui): dynamic plan widget task visibility based on terminal height
-- 66b36d8b feat(tui): real-time tok/s in footer between model info and approval policy
-- ce4bb4d7 fix(sanitize): strip orphan close tags (`</tool_result>` etc.) leaking to TUI
+- 4bfc20b4 fix(tui): dynamic plan widget task visibility based on terminal height
+- f04684ef feat(tui): real-time tok/s in footer between model info and approval policy
+- cb3d35f3 fix(tui): tok/s footer counts only active streaming time + persists last rate
 
 SELF-HEAL HARDENING (2 commits)
 
-- fbb835f6 feat(self-heal): detect "I need to X" deferment stalls in all 5 languages
-- 47d7a0f2 fix(rsi): reject trivial content in self_improve apply action
+- 899683a4 feat(self-heal): detect "I need to X" deferment stalls in all 5 languages
+- aea1ef25 fix(rsi): reject trivial content in self_improve apply action
 
-STYLE (1 commit)
+TEST / CI INFRA (3 commits)
 
-- 90d44b37 fix(tests): use `assert!(!x)` instead of `assert_eq!(x, false)`
+- 6a747ec5 fix(tests): use `assert!(!x)` instead of `assert_eq!(x, false)`
+- 388065e6 fix(test): set USERPROFILE alongside HOME so Windows CI sees the temp config
+- 6dc273fd fix(test): gate `custom_provider_no_models_test` to Unix (Windows uses Win32 API)
 
 ## [0.3.29] - 2026-05-27
 
