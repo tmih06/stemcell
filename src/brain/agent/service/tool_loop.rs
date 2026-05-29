@@ -3696,6 +3696,7 @@ impl AgentService {
                                     self.record_tool_feedback(
                                         session_id,
                                         &tool_name,
+                                        Some(&tool_input_for_progress),
                                         false,
                                         Some("user_denied_approval"),
                                     );
@@ -3793,6 +3794,7 @@ impl AgentService {
                                         self.record_tool_feedback(
                                             session_id,
                                             &tool_name,
+                                            Some(&tool_input_for_progress),
                                             success,
                                             if success { None } else { Some(&content) },
                                         );
@@ -3864,6 +3866,7 @@ impl AgentService {
                                         self.record_tool_feedback(
                                             session_id,
                                             &tool_name,
+                                            Some(&tool_input_for_progress),
                                             false,
                                             Some(&err_msg),
                                         );
@@ -3998,6 +4001,7 @@ impl AgentService {
                         self.record_tool_feedback(
                             session_id,
                             &tool_name,
+                            Some(&tool_input_for_progress),
                             success,
                             if success { None } else { Some(&content) },
                         );
@@ -4056,7 +4060,13 @@ impl AgentService {
                         let err_msg = format!("Tool execution error: {}", e);
                         // GRANULAR LOG: Direct tool execution error
                         tracing::error!("[TOOL_EXEC] 💥 Tool '{}' error: {}", tool_name, err_msg);
-                        self.record_tool_feedback(session_id, &tool_name, false, Some(&err_msg));
+                        self.record_tool_feedback(
+                            session_id,
+                            &tool_name,
+                            Some(&tool_input_for_progress),
+                            false,
+                            Some(&err_msg),
+                        );
                         // Record tool execution for usage dashboard
                         if let Some(pool) = crate::db::global_pool() {
                             let tool_repo =

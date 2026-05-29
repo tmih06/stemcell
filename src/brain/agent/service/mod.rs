@@ -6,7 +6,7 @@
 mod builder;
 mod compaction;
 mod context;
-mod feedback;
+pub(crate) mod feedback;
 mod gaslighting;
 pub(crate) mod helpers;
 mod messaging;
