@@ -205,9 +205,21 @@ impl Tool for TelegramSendTool {
             "send" => {
                 let text = pget!(get_str(&input, "message")).to_string();
                 let chat_id = pget!(chat_or_err(&input, &self.telegram_state).await);
+                // Look up the chat's most recent thread_id so proactive
+                // sends in forum topics land in the originating topic
+                // (issue #130 proactive path). None for non-forum chats.
+                let thread_id =
+                    crate::channels::telegram::send::latest_thread_id_for_chat(chat_id).await;
                 let chunks = crate::channels::telegram::handler::split_message(&text, 4096);
                 for chunk in chunks {
-                    if let Err(e) = bot.send_message(ChatId(chat_id), chunk).await {
+                    if let Err(e) = crate::channels::telegram::send::message_in_thread(
+                        &bot,
+                        ChatId(chat_id),
+                        thread_id,
+                        chunk,
+                    )
+                    .await
+                    {
                         return Ok(ToolResult::error(format!("Failed to send: {e}")));
                     }
                 }
@@ -221,10 +233,16 @@ impl Tool for TelegramSendTool {
                 let text = pget!(get_str(&input, "message")).to_string();
                 let chat_id = pget!(chat_or_err(&input, &self.telegram_state).await);
                 let message_id = pget!(get_id(&input, "message_id"));
-                match bot
-                    .send_message(ChatId(chat_id), text)
-                    .reply_parameters(ReplyParameters::new(MessageId(message_id as i32)))
-                    .await
+                let thread_id =
+                    crate::channels::telegram::send::latest_thread_id_for_chat(chat_id).await;
+                match crate::channels::telegram::send::message_in_thread(
+                    &bot,
+                    ChatId(chat_id),
+                    thread_id,
+                    text,
+                )
+                .reply_parameters(ReplyParameters::new(MessageId(message_id as i32)))
+                .await
                 {
                     Ok(_) => Ok(ToolResult::success(format!(
                         "Reply sent to message {message_id}."

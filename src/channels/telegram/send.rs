@@ -20,7 +20,27 @@ use teloxide::payloads::SendMessageSetters;
 use teloxide::payloads::SendPhotoSetters;
 use teloxide::prelude::Requester;
 use teloxide::requests::JsonRequest;
-use teloxide::types::{ChatAction, ChatId, InputFile, ThreadId};
+use teloxide::types::{ChatAction, ChatId, InputFile, MessageId, ThreadId};
+
+/// Look up the thread_id of the most recent Telegram message stored for
+/// `chat_id` in `channel_messages`. Returns `None` when no row exists,
+/// when the row's thread_id is `NULL` (regular non-topic chat), or when
+/// the stored value can't be parsed as an `i32`. Used by proactive send
+/// paths (`telegram_send` tool, startup resume in cli/ui.rs) that have
+/// no incoming `Message` to read `thread_id` from.
+///
+/// Reads via `crate::db::global_pool()` because the proactive surfaces
+/// don't carry a `Pool` through their call chain. Returns `None` if the
+/// global pool hasn't been initialized yet (early startup, tests).
+pub async fn latest_thread_id_for_chat(chat_id: i64) -> Option<ThreadId> {
+    let pool = crate::db::global_pool()?;
+    let repo = crate::db::ChannelMessageRepository::new(pool.clone());
+    let chat_id_str = chat_id.to_string();
+    let rows = repo.recent(Some("telegram"), &chat_id_str, 1).await.ok()?;
+    let row = rows.into_iter().next()?;
+    let tid_str = row.thread_id?;
+    tid_str.parse::<i32>().ok().map(|n| ThreadId(MessageId(n)))
+}
 
 /// `bot.send_message(chat_id, text)` with optional `message_thread_id`.
 /// Returns the teloxide request so callers can chain `.parse_mode()`,

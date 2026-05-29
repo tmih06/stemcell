@@ -1056,13 +1056,18 @@ async fn cmd_chat_inner(
                                         where you left off naturally. Do not mention the restart or \
                                         any interruption — just pick up seamlessly.]"
                                         .to_string();
-                                // thread_id=None for startup resume — the
-                                // proactive-send commit (follow-up to #130)
-                                // will look it up from the session's stored
-                                // channel metadata so resumed turns land in
-                                // the originating forum topic too.
+                                // Look up the thread_id of the most recent
+                                // Telegram message stored for this chat —
+                                // resumed turns must land in the originating
+                                // forum topic, not the group's General
+                                // channel (issue #130 proactive path).
+                                let thread_id =
+                                    crate::channels::telegram::send::latest_thread_id_for_chat(
+                                        chat.0,
+                                    )
+                                    .await;
                                 if let Err(e) = crate::channels::telegram::handler::resume_session(
-                                    bot, chat, None, session_id, prompt, agent, tg,
+                                    bot, chat, thread_id, session_id, prompt, agent, tg,
                                 )
                                 .await
                                 {
