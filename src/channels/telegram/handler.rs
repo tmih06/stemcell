@@ -3233,13 +3233,53 @@ fn strip_html_tags(html: &str) -> String {
 
 /// Convert markdown to Telegram-safe HTML.
 /// Handles: code blocks, inline code, bold, italic, underscore italic,
-/// strikethrough, headers, links, and list items. Escapes HTML entities.
+/// strikethrough, headers, links, list items, and plan-tool summary
+/// blocks. Escapes HTML entities.
+///
+/// Plan blocks are emitted by the `plan` tool's `summary` op and
+/// look like:
+///   📊 Plan Summary
+///   Plan: ...
+///   Tasks (N total):
+///     ✅ 1. Foo
+///     ▶️ 2. Bar
+///   Progress: ... — ✅1 ❌0 ...
+///   Success Rate: ...
+/// Without special handling Telegram's HTML mode strips the leading
+/// 2-space task indent and the emoji + number alignment collapses
+/// into one busy line. We wrap the entire block in `<pre>...</pre>`
+/// from the `📊 Plan Summary` header through the `Success Rate:`
+/// footer so the indent and emoji icons render in a clean monospace
+/// box, like a status panel.
 pub(crate) fn markdown_to_telegram_html(text: &str) -> String {
     let mut result = String::with_capacity(text.len() + 256);
     let mut in_code_block = false;
+    let mut in_plan_block = false;
     let mut code_lang;
 
     for line in text.lines() {
+        // ── Plan-tool summary block: wrap in <pre> for monospace ──
+        if !in_code_block && !in_plan_block && line.trim_start().starts_with("📊 Plan Summary") {
+            result.push_str("<pre>");
+            result.push_str(&escape_html(line));
+            result.push('\n');
+            in_plan_block = true;
+            continue;
+        }
+        if in_plan_block {
+            result.push_str(&escape_html(line));
+            result.push('\n');
+            // The `Success Rate:` line is always the last line of a
+            // plan-summary block — see plan_tool.rs::execute summary
+            // op. Close the <pre> and resume normal markdown
+            // processing for any text that follows.
+            if line.trim_start().starts_with("Success Rate:") {
+                result.push_str("</pre>\n");
+                in_plan_block = false;
+            }
+            continue;
+        }
+
         if line.starts_with("```") {
             if in_code_block {
                 result.push_str("</code></pre>\n");
@@ -3297,6 +3337,12 @@ pub(crate) fn markdown_to_telegram_html(text: &str) -> String {
 
     if in_code_block {
         result.push_str("</code></pre>\n");
+    }
+    if in_plan_block {
+        // Plan summary truncated mid-stream (rare — the agent's
+        // message got cut off before the Success Rate: footer).
+        // Close the <pre> so Telegram doesn't reject the HTML.
+        result.push_str("</pre>\n");
     }
 
     result.trim_end().to_string()
