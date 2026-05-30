@@ -29,19 +29,23 @@ use uuid::Uuid;
 /// then gets the 500-char outer cap below.
 pub(crate) fn enrich_metadata(
     tool_name: &str,
-    success: bool,
     error_snippet: Option<&str>,
     tool_input: Option<&serde_json::Value>,
 ) -> Option<String> {
     let snippet = error_snippet.unwrap_or("");
-    let cmd_suffix = if !success
-        && tool_name == "bash"
+    let cmd_suffix = if tool_name == "bash"
         && let Some(input) = tool_input
         && let Some(cmd) = input.get("command").and_then(|v| v.as_str())
         && !cmd.is_empty()
     {
         // Cap the command alone at 300 chars so the error snippet
         // still gets meaningful room within the outer 500-char cap.
+        //
+        // Enriched on BOTH success and failure so RSI's
+        // success-pattern detection pass can group bash invocations
+        // by subsystem (gh, git, docker, ...) — without this, only
+        // failures would carry the command and RSI couldn't see
+        // patterns in the (much more common) successful calls.
         let cmd_short: String = cmd.chars().take(300).collect();
         Some(format!(" | cmd={cmd_short}"))
     } else {
@@ -81,7 +85,7 @@ impl AgentService {
         let pool = self.context.pool();
         let sid = session_id.to_string();
         let tname = tool_name.to_string();
-        let enriched = enrich_metadata(tool_name, success, error_snippet, tool_input);
+        let enriched = enrich_metadata(tool_name, error_snippet, tool_input);
         let meta = enriched.map(|s| s.chars().take(500).collect::<String>());
         tokio::spawn(async move {
             let repo = crate::db::repository::FeedbackLedgerRepository::new(pool);

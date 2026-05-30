@@ -688,6 +688,75 @@ pub fn spawn_rsi_engine(
                 opportunities.push(desc);
             }
 
+            // Successful bash patterns — high-frequency subsystems
+            // (gh, git, docker, …) flag tool-extraction candidates.
+            // RSI's previous passes only walked failures, which meant
+            // a workflow the agent ran 50 times successfully (e.g.
+            // `gh issue comment`) never surfaced as an improvement
+            // opportunity. This pass closes that gap: cmd= metadata
+            // (now recorded on both success + failure events) is
+            // classified by `rsi_subsystem` and grouped — subsystems
+            // above PROMOTE_BASH_THRESHOLD bubble up so the RSI
+            // agent can decide whether to file a tool / skill
+            // proposal via rsi_propose.
+            //
+            // The threshold is deliberately high (~15 in a 24h
+            // window) so we don't propose tools for trivial
+            // one-offs. If the agent ran the same subsystem 15+
+            // times in a day, it's a real pattern worth codifying.
+            const PROMOTE_BASH_THRESHOLD: usize = 15;
+            if let Ok(successes) = repo.by_event_type("tool_success", 2000).await {
+                use std::collections::HashMap;
+                let mut by_subsystem: HashMap<&'static str, Vec<&str>> = HashMap::new();
+                for e in &successes {
+                    if e.dimension != "bash" {
+                        continue;
+                    }
+                    // Stay inside the analysis window so old data
+                    // doesn't dominate the count.
+                    if e.created_at.to_rfc3339() < window_since {
+                        continue;
+                    }
+                    let Some(meta) = e.metadata.as_deref() else {
+                        continue;
+                    };
+                    let Some(cmd) = crate::brain::rsi_subsystem::extract_cmd_from_meta(meta) else {
+                        continue;
+                    };
+                    if let Some(subsystem) = crate::brain::rsi_subsystem::classify_bash_command(cmd)
+                    {
+                        by_subsystem.entry(subsystem).or_default().push(cmd);
+                    }
+                }
+                // Stable order so the dedup hash below doesn't churn
+                // on equivalent state.
+                let mut subsystems: Vec<(&'static str, Vec<&str>)> =
+                    by_subsystem.into_iter().collect();
+                subsystems.sort_by(|a, b| b.1.len().cmp(&a.1.len()).then(a.0.cmp(b.0)));
+                for (subsystem, cmds) in subsystems {
+                    if cmds.len() < PROMOTE_BASH_THRESHOLD {
+                        continue;
+                    }
+                    let sample: Vec<String> = cmds
+                        .iter()
+                        .take(5)
+                        .map(|c| c.chars().take(140).collect::<String>())
+                        .collect();
+                    let desc = format!(
+                        "Bash subsystem '{subsystem}' has {} successful invocations in the window. \
+                         Promotion candidate: file a tool (rsi_propose kind=tool) for the recurring \
+                         command shape, or a skill (kind=skill) for the workflow it codifies. \
+                         The right shape depends on whether the calls share a parameterised invocation \
+                         (→ tool) or are a multi-step sequence (→ skill). \
+                         Sample invocations:\n  - {}",
+                        cmds.len(),
+                        sample.join("\n  - "),
+                    );
+                    tracing::info!("RSI opportunity: {}", desc);
+                    opportunities.push(desc);
+                }
+            }
+
             // 3. Dedup: hash the assembled opportunity descriptions and
             // compare against the previous cycle's hash. When identical,
             // the autonomous agent would have nothing new to act on — its

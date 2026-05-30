@@ -21,6 +21,23 @@
 //!   - `src/brain/tools/feedback_analyze.rs`, for surfacing
 //!     subsystem-level success/failure rates in agent-facing queries.
 
+/// Pull the bash command text out of a feedback-ledger meta string.
+///
+/// `enrich_metadata` in `brain/agent/service/feedback.rs` appends
+/// `| cmd=<text>` to bash event metadata (for both success and
+/// failure). This helper reverses that encoding so RSI can fetch
+/// the command back for classification. Returns `None` when the
+/// meta doesn't carry a `cmd=` marker — e.g. a non-bash event, or
+/// a bash event recorded before commit 2b4d7c86 enriched the path.
+pub fn extract_cmd_from_meta(meta: &str) -> Option<&str> {
+    // The marker is `cmd=` either at the start (no preceding
+    // snippet) or after ` | ` (joined with an error snippet).
+    // Take everything after `cmd=` to the end of the meta string,
+    // since the command is always the last field appended.
+    let after = meta.split_once("cmd=").map(|(_, rest)| rest)?;
+    if after.is_empty() { None } else { Some(after) }
+}
+
 /// Subsystem this command targets, or `None` if it doesn't match a
 /// known CLI tool. The returned strings are stable lowercase slugs
 /// safe to use as group keys.
