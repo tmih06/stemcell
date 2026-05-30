@@ -101,10 +101,13 @@ fn card_lines(item: &McInboxItem, card_w: usize, selected: bool) -> Vec<Line<'st
     let label_pad = 1;
     // Tool kind = orange (brand colour, matches the title accent on
     // sessions.rs); Command kind = teal (matches the inbox panel
-    // focus accent so commands feel native to this panel).
+    // focus accent so commands feel native to this panel); Skill
+    // kind = soft amber so it sits between tool and command without
+    // colliding with either focus colour.
     let kind_color = match item.kind {
         McInboxKind::ProposedTool => theme::ORANGE,
         McInboxKind::ProposedCommand => theme::TEAL,
+        McInboxKind::ProposedSkill => ratatui::style::Color::Rgb(190, 160, 70),
     };
 
     // Header: label (bold) + kind badge

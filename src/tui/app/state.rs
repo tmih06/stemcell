@@ -1081,14 +1081,18 @@ impl App {
         }
 
         // Notify user if the autonomous RSI loop has filed proposals
-        // they haven't reviewed yet. Surfaces at session start so the
-        // user can ask "show me proposed" / "implement them" without
-        // having to remember to check the inbox manually.
+        // they haven't reviewed yet. The banner points at the
+        // direct-action path (Mission Control's Inbox panel, where
+        // `a` applies and `r` rejects) first, then mentions the
+        // agent-driven path as a fallback for users who prefer the
+        // chat surface.
         let pending = crate::brain::rsi_proposals::ProposalsStore::new().pending_count();
         if pending > 0 {
             self.push_system_message(format!(
-                "🔧 RSI proposed {pending} new tool(s)/command(s). \
-                 Ask me to \"show proposed\" or \"implement proposed\" to review."
+                "🔧 RSI proposed {pending} new item(s) (tools / commands / skills). \
+                 Open Mission Control with `/mission-control` → Inbox to review \
+                 (press `a` to apply, `r` to reject), or ask me to \"show proposed\" \
+                 / \"implement proposed\" if you'd rather work from the chat."
             ));
         }
 

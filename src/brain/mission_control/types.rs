@@ -33,6 +33,9 @@ pub enum McInboxKind {
     ProposedTool,
     /// RSI-proposed slash command (lands in `commands.toml` on apply).
     ProposedCommand,
+    /// RSI-proposed skill (lands at `~/.opencrabs/skills/<name>/SKILL.md`
+    /// on apply, with YAML frontmatter wrapping the proposed body).
+    ProposedSkill,
 }
 
 impl McInboxKind {
@@ -40,6 +43,7 @@ impl McInboxKind {
         match self {
             Self::ProposedTool => "tool",
             Self::ProposedCommand => "command",
+            Self::ProposedSkill => "skill",
         }
     }
 }

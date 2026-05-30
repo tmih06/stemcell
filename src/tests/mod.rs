@@ -136,6 +136,7 @@ pub mod mission_control_inbox_service_test;
 pub mod mission_control_input_test;
 pub mod mission_control_layout_test;
 pub mod mission_control_schedule_service_test;
+pub mod mission_control_skill_inbox_test;
 pub mod model_fetch_test;
 pub mod profile_test;
 pub mod rsi_git_history_test;

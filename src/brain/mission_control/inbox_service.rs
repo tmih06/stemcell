@@ -7,9 +7,9 @@
 //! see `rsi_proposals` module docs).
 
 use super::types::{McInboxItem, McInboxKind};
-use crate::brain::rsi_proposals::{CommandProposal, ProposalsStore, ToolProposal};
+use crate::brain::rsi_proposals::{CommandProposal, ProposalsStore, SkillProposal, ToolProposal};
 
-/// Read every pending tool + command proposal, sorted newest-first.
+/// Read every pending tool + command + skill proposal, sorted newest-first.
 pub fn list() -> Vec<McInboxItem> {
     list_with_store(&ProposalsStore::new())
 }
@@ -26,6 +26,12 @@ pub fn list_with_store(store: &ProposalsStore) -> Vec<McInboxItem> {
                 .list_command_proposals()
                 .into_iter()
                 .map(item_from_command),
+        )
+        .chain(
+            store
+                .list_skill_proposals()
+                .into_iter()
+                .map(item_from_skill),
         )
         .collect();
     items.sort_by_key(|i| std::cmp::Reverse(i.created_at));
@@ -62,6 +68,21 @@ fn item_from_command(p: CommandProposal) -> McInboxItem {
         label: p.command.name,
         summary,
         kind: McInboxKind::ProposedCommand,
+        source: p.proposer,
+        created_at: p.created_at,
+    }
+}
+
+fn item_from_skill(p: SkillProposal) -> McInboxItem {
+    // For the inbox card the description is the most useful peek —
+    // it's the one-line summary the LLM dispatcher would see anyway,
+    // and the multi-line body is too long to fit a card. The kind
+    // badge already says "skill" so we don't repeat that here.
+    McInboxItem {
+        id: p.id,
+        label: p.skill.name,
+        summary: p.skill.description,
+        kind: McInboxKind::ProposedSkill,
         source: p.proposer,
         created_at: p.created_at,
     }
