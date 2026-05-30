@@ -164,6 +164,15 @@ pub struct OnboardingWizard {
     /// user manually re-ran it via /onboard (false). Used to decide whether
     /// to send the first-time welcome message on completion.
     pub is_first_time: bool,
+
+    /// Extra vertical scroll the user requested manually via Page Up /
+    /// Page Down. Added on top of the focus-driven scroll computed each
+    /// frame in `render_onboarding` so the user can peek at fields below
+    /// the current focus without having to Tab through them — important
+    /// when the terminal is small enough that the form's last 1-3 fields
+    /// fall below the visible viewport. Cleared on step changes so each
+    /// new screen starts at the top.
+    pub user_scroll_offset: u16,
 }
 
 impl Default for OnboardingWizard {
@@ -468,6 +477,7 @@ impl OnboardingWizard {
             quick_jump: false,
             quick_jump_done: false,
             is_first_time: false,
+            user_scroll_offset: 0,
         };
 
         // Load existing brain files from workspace if available

@@ -24,6 +24,21 @@ impl OnboardingWizard {
             return WizardAction::None;
         }
 
+        // Global: Page Up / Page Down let the user scroll the wizard
+        // body independently of focus. Important on small terminals
+        // where the form's last fields (API Key, Model, Context for
+        // custom providers) fall below the viewport even though the
+        // user hasn't Tabbed to them yet. Without this they had to
+        // guess fields existed below.
+        if event.code == KeyCode::PageDown {
+            self.user_scroll_offset = self.user_scroll_offset.saturating_add(5);
+            return WizardAction::None;
+        }
+        if event.code == KeyCode::PageUp {
+            self.user_scroll_offset = self.user_scroll_offset.saturating_sub(5);
+            return WizardAction::None;
+        }
+
         let action = match self.step {
             OnboardingStep::ModeSelect => self.handle_mode_select_key(event),
             OnboardingStep::ProviderAuth => self.handle_provider_auth_key(event),

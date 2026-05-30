@@ -89,6 +89,7 @@ pub mod onboarding_keys_test;
 pub mod onboarding_navigation_test;
 pub mod onboarding_no_silent_commit_test;
 pub mod onboarding_types_test;
+pub mod onboarding_user_scroll_test;
 pub mod onboarding_welcome_test;
 pub mod onboarding_wizard_test;
 pub mod orphan_close_tag_strip_test;

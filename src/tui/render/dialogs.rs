@@ -357,10 +357,15 @@ pub(super) fn render_model_selector(f: &mut Frame, app: &App, area: Rect) {
         4 + model_count as u16 + 4 // key/filter chrome + model list + footer
     };
     let content_lines = provider_lines + form_lines;
-    let max_height = (area.height * 3 / 4).max(20); // cap at 75% of terminal
+    // Use up to 95% of the terminal so the last 1-3 form fields
+    // (API Key / Model / Context for custom providers) don't get
+    // clipped on small or zoomed-in terminals. Previous 75% cap left
+    // a fixed 25% of vertical space unused, which on a 20-row terminal
+    // was exactly the 2-3 fields users couldn't reach.
+    let max_height = area.height.saturating_mul(19) / 20;
     let dialog_height = content_lines
         .min(max_height)
-        .min(area.height.saturating_sub(4));
+        .min(area.height.saturating_sub(2));
     let dialog_width = 64u16.min(area.width * 9 / 10).max(40u16.min(area.width));
 
     let v_chunks = Layout::default()

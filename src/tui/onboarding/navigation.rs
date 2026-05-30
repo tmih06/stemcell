@@ -6,6 +6,10 @@ impl OnboardingWizard {
     pub fn next_step(&mut self) {
         self.error_message = None;
         self.focused_field = 0;
+        // Reset manual scroll so each new step starts at the top —
+        // a Page Down on the previous step shouldn't leave the user
+        // mid-scroll on a step they haven't seen yet.
+        self.user_scroll_offset = 0;
 
         // In quick_jump mode, completing a step exits back to chat
         // instead of advancing through the wizard flow.
@@ -100,6 +104,7 @@ impl OnboardingWizard {
     pub fn prev_step(&mut self) -> bool {
         self.error_message = None;
         self.focused_field = 0;
+        self.user_scroll_offset = 0;
 
         match self.step {
             OnboardingStep::ModeSelect => {

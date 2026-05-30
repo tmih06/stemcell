@@ -284,28 +284,30 @@ pub fn render_onboarding(f: &mut Frame, wizard: &OnboardingWizard) {
         })
         .collect();
 
-    // Calculate actual content height: lines + 2 for top/bottom border
+    // Calculate actual content height: lines + 2 for top/bottom border.
+    // Allow the dialog to take up to ~95% of the terminal so small /
+    // zoomed-in windows don't truncate the form's last fields. The
+    // previous 90% cap left ~3 rows wasted at the bottom which on a
+    // 20-row terminal was exactly the 2-3 fields users reported losing.
     let content_height = (centered_lines.len() as u16).saturating_add(2);
-    // Clamp to available area
-    let box_height = content_height.min(area.height.saturating_sub(2));
+    let max_box_height = area.height.saturating_mul(19) / 20;
+    let box_height = content_height.min(max_box_height);
     // Inner visible rows (no borders) — used for scroll calculation
     let visible_rows = box_height.saturating_sub(2) as usize;
-    // For ProviderAuth: scroll so the focused element stays visible,
-    // but always keep at least 1 blank line at top for padding.
-    let scroll_offset: u16 = if focused_line > 2 && centered_lines.len() > visible_rows {
-        let target = focused_line.saturating_sub(2);
-        let max_scroll = centered_lines.len().saturating_sub(visible_rows);
-        // Never scroll past line 1 so the top padding line (index 0) stays visible
-        let clamped = target.min(max_scroll);
-        // Keep at least 1 line of top padding visible
-        if clamped > 0 {
-            clamped.saturating_sub(0) as u16
-        } else {
-            0
-        }
+    // Combine the focus-driven scroll (keeps the focused field
+    // visible) with the user's manual Page Up / Page Down offset
+    // (lets them peek at fields below focus on small terminals).
+    // Without the manual offset the bottom of the form was reachable
+    // only by Tab-cycling all the way down — confusing UX when the
+    // user just wanted to confirm a value is still there.
+    let max_scroll = centered_lines.len().saturating_sub(visible_rows);
+    let focus_scroll: usize = if focused_line > 2 && centered_lines.len() > visible_rows {
+        focused_line.saturating_sub(2).min(max_scroll)
     } else {
         0
     };
+    let user_extra = wizard.user_scroll_offset as usize;
+    let scroll_offset: u16 = focus_scroll.saturating_add(user_extra).min(max_scroll) as u16;
 
     // Center the wizard box on screen using Flex::Center
     let v_chunks = Layout::default()
