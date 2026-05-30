@@ -545,18 +545,62 @@ impl AgentService {
             );
         }
 
-        // Detect premature stream termination — if we accumulated blocks but never
-        // got a stop_reason, the connection likely dropped before [DONE]/MessageStop.
-        // Return a StreamError so the tool_loop's retry logic can re-issue the request
-        // instead of silently returning partial/empty content to the user.
+        // Detect premature stream termination — if we accumulated blocks
+        // but never got a stop_reason, the connection MAY have dropped
+        // before [DONE]/MessageStop. BUT not every provider honours the
+        // `[DONE]` protocol; some (observed: dialagram + qwen-3.7-max-
+        // thinking, 2026-05-30) simply close the TCP connection at end
+        // of response without emitting `finish_reason` or `[DONE]`.
+        //
+        // Treating those as failures triggered the user-visible
+        // pathology: a complete response rendered in the chat, then 3
+        // pointless retries (~minutes each) regenerating the same
+        // content, then a fallback-provider switch — all while the
+        // "is responding..." indicator climbed past 8 minutes.
+        //
+        // Discriminator: if the response carries a tool_use block, we
+        // MUST retry — incomplete tool calls produce broken state. For
+        // text-only responses, check whether the accumulated text
+        // looks structurally complete (ends with terminal punctuation,
+        // closing fence, etc.) and synthesise stop_reason = EndTurn
+        // when it does. Only bail to retry when the content truly
+        // looks mid-sentence.
         if stop_reason.is_none() && !block_states.is_empty() {
-            let msg = format!(
-                "Stream ended without [DONE]: {} content blocks, {} output tokens — connection likely dropped",
-                block_states.len(),
-                output_tokens,
-            );
-            tracing::warn!("⚠️ {}", msg);
-            return Err(crate::brain::provider::ProviderError::StreamError(msg));
+            let has_tool_use = block_states
+                .iter()
+                .any(|bs| matches!(&bs.block, ContentBlock::ToolUse { .. }));
+            let text: String = block_states
+                .iter()
+                .filter_map(|bs| match &bs.block {
+                    ContentBlock::Text { text } => Some(text.as_str()),
+                    _ => None,
+                })
+                .collect();
+            if !has_tool_use && crate::utils::text_complete::text_looks_complete(&text) {
+                tracing::info!(
+                    "Stream ended without [DONE] but text looks complete \
+                     ({} blocks, {} output tokens, last 40 chars: {:?}) — \
+                     synthesising EndTurn instead of retrying",
+                    block_states.len(),
+                    output_tokens,
+                    text.chars()
+                        .rev()
+                        .take(40)
+                        .collect::<String>()
+                        .chars()
+                        .rev()
+                        .collect::<String>(),
+                );
+                stop_reason = Some(StopReason::EndTurn);
+            } else {
+                let msg = format!(
+                    "Stream ended without [DONE]: {} content blocks, {} output tokens — connection likely dropped",
+                    block_states.len(),
+                    output_tokens,
+                );
+                tracing::warn!("⚠️ {}", msg);
+                return Err(crate::brain::provider::ProviderError::StreamError(msg));
+            }
         }
 
         // Self-heal: detect truncated responses disguised as complete.
