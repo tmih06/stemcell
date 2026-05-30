@@ -97,6 +97,17 @@ struct StreamingState {
     /// True from start until first response text arrives — enables rolling messages for CLI providers
     /// where tools complete instantly (ToolStarted+ToolCompleted back-to-back)
     processing: bool,
+    /// Short preview of the user's incoming message, captured once at
+    /// handler start. Drives the pre-tool rolling status line: when
+    /// the model hasn't streamed any reasoning yet AND no tool is
+    /// running, we still want to surface SOMETHING context-aware to
+    /// the user (e.g. "Working on: how do I add a topic? (5s)")
+    /// rather than going silent. Silence here was the regression —
+    /// the original status pipeline never went quiet, it just had
+    /// nothing real to show; build_status_message uses this preview
+    /// as honest content derived from the real user input rather
+    /// than reintroducing hardcoded filler quips.
+    user_message_preview: Option<String>,
 }
 
 impl StreamingState {
@@ -1486,6 +1497,7 @@ pub(crate) async fn handle_message(
     );
 
     // ── Streaming setup ───────────────────────────────────────────────────────
+    let user_message_preview = build_user_message_preview(&text);
     let streaming = Arc::new(std::sync::Mutex::new(StreamingState {
         msg_id: None,
         thinking: String::new(),
@@ -1502,6 +1514,7 @@ pub(crate) async fn handle_message(
         intermediate_msg_ids: Vec::new(),
         voice_msg_ids: Vec::new(),
         processing: true,
+        user_message_preview,
     }));
 
     let edit_cancel = CancellationToken::new();
@@ -1545,6 +1558,11 @@ pub(crate) async fn handle_message(
                             /// phase. Falls back to a fun-quip rotation when
                             /// reasoning hasn't started yet.
                             thinking_excerpt: Option<String>,
+                            /// Snapshot of `StreamingState.user_message_preview`
+                            /// — the truncated user input that drives the
+                            /// rolling status line when no tool/reasoning
+                            /// signal is yet available.
+                            user_message_preview: Option<String>,
                         }
 
                         let snap = {
@@ -1604,6 +1622,7 @@ pub(crate) async fn handle_message(
                                 has_intermediates,
                                 processing,
                                 thinking_excerpt: thinking_status_excerpt(&s.thinking),
+                                user_message_preview: s.user_message_preview.clone(),
                             };
 
                             // Pre-clear state that will be handled
@@ -1797,6 +1816,7 @@ pub(crate) async fn handle_message(
                                     elapsed_total,
                                     snap.processing,
                                     snap.thinking_excerpt.as_deref(),
+                                    snap.user_message_preview.as_deref(),
                                 ) && let Ok(m) = message_in_thread(&bot, chat, thread_id, &status).await
                                 {
                                     let mut s = st.lock().unwrap_or_else(|e| e.into_inner());
@@ -2507,6 +2527,12 @@ pub(crate) async fn resume_session(
         intermediate_msg_ids: Vec::new(),
         voice_msg_ids: Vec::new(),
         processing: true,
+        // resume_session restarts an interrupted turn; the user did
+        // not just type a fresh message, so there's no preview to
+        // surface in the rolling status line. The status path in
+        // resume_session also doesn't currently emit rolling
+        // messages — left as None for forward compatibility.
+        user_message_preview: None,
     }));
 
     let edit_cancel = CancellationToken::new();
@@ -3090,20 +3116,21 @@ pub(crate) fn thinking_status_excerpt(thinking: &str) -> Option<String> {
 
 /// Build a context-aware status message for Telegram rolling updates.
 ///
-/// Returns `None` when there is no real signal worth showing — the
-/// caller skips sending a status message that tick. Hardcoded
-/// filler ("Thinking through this...", "Warming up the neurons",
-/// "Processing...") is deliberately not emitted: when the model
-/// hasn't streamed reasoning yet AND no tool is running, silence
-/// is better than fake activity. The response or first tool call
-/// arrives within seconds and shows real state.
+/// All branches derive their text from real execution state — never
+/// hardcoded filler. Priority order:
+///   1. Tool(s) actively running → name the tool(s).
+///   2. Tools finished, next step pending → name the last completed.
+///   3. Pre-tool reasoning phase WITH a live reasoning excerpt →
+///      show the excerpt (latest sentence from the model).
+///   4. Pre-tool reasoning phase WITHOUT an excerpt, but the user
+///      message preview is available → roll a phrase derived from
+///      what the user actually asked (handled by `pre_tool_rolling`).
+///   5. Nothing real to say → `None` (caller skips this tick).
 ///
-/// Returned in `Some` only when one of these is true:
-///   * tools are actively running (we know what they are);
-///   * tools have just completed (we name the last one);
-///   * the model is in the pre-tool reasoning phase AND we have a
-///     live excerpt from its reasoning to show (no excerpt, no
-///     status — see `thinking_status_excerpt`).
+/// The rolling effect comes from two sources: (a) the elapsed-time
+/// counter advances each tick (~2s); (b) `pre_tool_rolling` rotates
+/// its leading verb across elapsed buckets so the line visibly
+/// changes shape even before tools or reasoning chunks arrive.
 fn build_status_message(
     active_tools: &[(&str, &str)],
     last_completed: Option<(&str, &str)>,
@@ -3111,6 +3138,7 @@ fn build_status_message(
     elapsed_secs: u64,
     processing: bool,
     thinking_excerpt: Option<&str>,
+    user_message_preview: Option<&str>,
 ) -> Option<String> {
     let elapsed = if elapsed_secs >= 60 {
         let mins = elapsed_secs / 60;
@@ -3133,16 +3161,16 @@ fn build_status_message(
             format!("Running {} tools: {}", active_tools.len(), names.join(", "))
         }
     } else if processing && tool_round_count == 0 {
-        // Pre-tool reasoning phase. Show the model's actual reasoning
-        // excerpt if we have one; otherwise emit no status at all —
-        // hardcoded filler ("Thinking..." / "Warming up the neurons"
-        // / quip rotation) was the bug that motivated this whole
-        // pipeline; do not bring it back as a fallback.
-        let excerpt = thinking_excerpt?.trim();
-        if excerpt.is_empty() {
-            return None;
+        // Pre-tool reasoning phase. Prefer a live reasoning excerpt
+        // (real-time signal from the model). When the model has not
+        // streamed any reasoning yet, fall back to a rolling phrase
+        // derived from the user's actual question — still context-
+        // aware, never hardcoded filler.
+        if let Some(excerpt) = thinking_excerpt.map(str::trim).filter(|e| !e.is_empty()) {
+            excerpt.to_string()
+        } else {
+            pre_tool_rolling(user_message_preview, elapsed_secs)?
         }
-        excerpt.to_string()
     } else if tool_round_count > 0 {
         if let Some((name, _ctx)) = last_completed {
             format!("{} done, moving to next step", name)
@@ -3162,6 +3190,65 @@ fn build_status_message(
     } else {
         format!("⚙️ {}", action)
     })
+}
+
+/// Pre-tool rolling phrase for the status line, derived from the user
+/// message preview + elapsed time. Returns `None` when there is no
+/// preview to anchor to OR when not enough time has elapsed to make
+/// a status worth showing (the typing-indicator dots cover the first
+/// ~5s on their own).
+///
+/// The leading verb rotates across four elapsed buckets so the line
+/// visibly changes as time passes:
+///
+///   5-14s : "Working on: ..."
+///   15-29s: "Still working on: ..."
+///   30-59s: "Long one — still on: ..."
+///   60s+  : "Marathon mode — still on: ..."
+///
+/// All four use the same user-derived body so the user can always
+/// tell exactly which of their questions the agent is chewing on.
+pub(crate) fn pre_tool_rolling(preview: Option<&str>, elapsed_secs: u64) -> Option<String> {
+    let preview = preview?.trim();
+    if preview.is_empty() || elapsed_secs < 5 {
+        return None;
+    }
+    let lead = if elapsed_secs >= 60 {
+        "Marathon mode — still on"
+    } else if elapsed_secs >= 30 {
+        "Long one — still on"
+    } else if elapsed_secs >= 15 {
+        "Still working on"
+    } else {
+        "Working on"
+    };
+    Some(format!("{}: {}", lead, preview))
+}
+
+/// Build the short preview of the user's incoming message used by
+/// the rolling status line.
+///
+/// Strategy:
+///   * Take the first non-empty line (multi-line messages get cut at
+///     the first paragraph break so the status line stays compact).
+///   * Collapse internal whitespace.
+///   * Cap at 60 visible chars with an ellipsis when truncated.
+///   * Return `None` if there's nothing meaningful left (empty after
+///     trim, or only whitespace) — the caller treats `None` as
+///     "no rolling status, stay silent."
+pub(crate) fn build_user_message_preview(text: &str) -> Option<String> {
+    let line = text.lines().map(str::trim).find(|l| !l.is_empty())?;
+    let collapsed: String = line.split_whitespace().collect::<Vec<_>>().join(" ");
+    if collapsed.is_empty() {
+        return None;
+    }
+    let char_count = collapsed.chars().count();
+    if char_count <= 60 {
+        Some(collapsed)
+    } else {
+        let capped: String = collapsed.chars().take(60).collect();
+        Some(format!("{}…", capped))
+    }
 }
 
 /// Shorthand — delegates to the shared utility in `crate::utils`.
