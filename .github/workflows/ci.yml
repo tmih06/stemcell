@@ -51,7 +51,7 @@ jobs:
         run: cargo fmt --all -- --check
 
       - name: Clippy
-        run: cargo clippy --lib --bins --tests --all-features -- -D warnings
+        run: cargo clippy --locked --lib --bins --tests --all-features -- -D warnings
 
   # ── Stage 2: Build verification (parallel, gated on lint) ────────────────
   # Cross-platform BUILD on Windows + macOS confirms target compatibility
@@ -108,14 +108,14 @@ jobs:
         if: runner.os == 'Windows'
         env:
           AWS_LC_SYS_CMAKE_BUILDER: "1"
-        run: cargo build --profile ci --target ${{ matrix.target }} ${{ matrix.features }}
+        run: cargo build --locked --profile ci --target ${{ matrix.target }} ${{ matrix.features }}
 
       - name: Build (macOS)
         if: runner.os == 'macOS'
         env:
           CFLAGS: -march=armv8-a+crypto
           CXXFLAGS: -march=armv8-a+crypto
-        run: cargo build --profile ci --target ${{ matrix.target }} ${{ matrix.features }}
+        run: cargo build --locked --profile ci --target ${{ matrix.target }} ${{ matrix.features }}
 
   # ── Stage 3: Test on Linux (gated on lint, parallel with build) ──────────
   # Tests run on Linux only — Windows/macOS get build verification via
@@ -152,7 +152,7 @@ jobs:
         env:
           CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER: clang
           CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS: "-C link-arg=-fuse-ld=mold"
-        run: cargo test --profile ci --all-features --verbose
+        run: cargo test --locked --profile ci --all-features --verbose
 
   # ── Stage 4: Security (parallel with test/build, gated on lint) ──────────
 
@@ -173,10 +173,6 @@ jobs:
         uses: taiki-e/install-action@v2
         with:
           tool: cargo-audit
-
-      - name: Generate Cargo.lock
-        # Cargo.lock is gitignored in this repo; cargo-audit needs one.
-        run: cargo generate-lockfile
 
       - name: Run cargo audit
         # Ignored advisory:
@@ -219,7 +215,7 @@ jobs:
           tool: cargo-tarpaulin
 
       - name: Generate coverage
-        run: cargo tarpaulin --out Xml --no-default-features --features "telegram,whatsapp,discord,slack,trello"
+        run: cargo tarpaulin --locked --out Xml --no-default-features --features "telegram,whatsapp,discord,slack,trello"
         # Note: local-stt excluded — tarpaulin uses rust-lld which can't handle
         # duplicate ggml symbols from whisper-rs-sys + llama-cpp-sys-2.
         # local-tts added when feature lands on main.

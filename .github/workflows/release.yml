@@ -144,7 +144,7 @@ jobs:
           CFLAGS: ${{ matrix.target == 'aarch64-apple-darwin' && '-march=armv8-a+crypto' || '' }}
           CXXFLAGS: ${{ matrix.target == 'aarch64-apple-darwin' && '-march=armv8-a+crypto' || '' }}
           AWS_LC_SYS_CMAKE_BUILDER: ${{ matrix.os == 'windows-latest' && '1' || '' }}
-        run: cargo build --release --target ${{ matrix.target }} --all-features
+        run: cargo build --locked --release --target ${{ matrix.target }} --all-features
 
       - name: Download and bundle RTK 0.40.0
         shell: bash

@@ -2,7 +2,9 @@
 /target/
 **/*.rs.bk
 *.pdb
-Cargo.lock
+# Cargo.lock IS committed — this is an application crate, not a library.
+# Committed lockfile guarantees reproducible builds across machines and CI,
+# and lets `cargo audit` / `--locked` flags work without a generate step.
 
 # Debug files
 *.dSYM/
@@ -54,8 +56,6 @@ Desktop.ini
 
 # GitHub workflows (temporarily ignored)
 .github/workflows/opencrabs-review.yml
-# Lock files (keep for libraries, ignore for binaries)
-# Cargo.lock
 
 # Release artifacts
 /dist/
