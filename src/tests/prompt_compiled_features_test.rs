@@ -111,13 +111,12 @@ fn all_cargo_features_are_listed() {
     let mut source_features: BTreeSet<String> = BTreeSet::new();
     for line in fn_body.lines() {
         let trimmed = line.trim();
-        if trimmed.contains("cfg!(feature") {
-            if let Some(start) = trimmed.find("\"") {
-                if let Some(end) = trimmed[start + 1..].find("\"") {
-                    let name = &trimmed[start + 1..start + 1 + end];
-                    source_features.insert(name.to_string());
-                }
-            }
+        if trimmed.contains("cfg!(feature")
+            && let Some(start) = trimmed.find('"')
+            && let Some(end) = trimmed[start + 1..].find('"')
+        {
+            let name = &trimmed[start + 1..start + 1 + end];
+            source_features.insert(name.to_string());
         }
     }
 
