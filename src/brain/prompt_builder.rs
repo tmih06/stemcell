@@ -358,6 +358,7 @@ impl BrainLoader {
                 "Timestamp: {}\n",
                 chrono::Utc::now().format("%Y-%m-%d %H:%M:%S UTC")
             ));
+            push_known_paths(&mut prompt);
             prompt.push('\n');
         }
 
@@ -478,6 +479,36 @@ fn push_home_anchor_and_expansion_rule(prompt: &mut String) {
         "Path expansion: when invoking shell tools (bash, etc.), pass `~/...` paths verbatim — \
          the shell expands `~` for you. Do NOT substitute `/Users/<name>/...` yourself; if you \
          need an absolute form, copy the `Home:` line above exactly.\n",
+    );
+}
+
+/// Append a "Known paths" section to the runtime info so when the
+/// user says "check the logs" the agent knows EXACTLY where to look
+/// instead of grepping random places in the working directory.
+///
+/// All paths are anchored under `~/.opencrabs/` (the same root the
+/// home-anchor line teaches the agent to expand to). We list the
+/// surfaces the agent reaches for repeatedly:
+/// - logs (rotated daily; the agent always wants today's file)
+/// - config & keys (when the user asks about settings)
+/// - brain files (already enumerated elsewhere but listed here as
+///   the canonical disk path)
+/// - in-flight plans (per-session JSON the plan tool persists)
+///
+/// Keep this list short. Anything that's not a recurring user
+/// question stays out; the goal is "next time you're told 'check
+/// the logs' you don't grep .git/".
+pub(crate) fn push_known_paths(prompt: &mut String) {
+    prompt.push_str(
+        "\nKnown paths (under ~/.opencrabs/):\n\
+         - Logs: ~/.opencrabs/logs/opencrabs.YYYY-MM-DD (daily, today is the most relevant)\n\
+         - Config: ~/.opencrabs/config.toml\n\
+         - Keys: ~/.opencrabs/keys.toml\n\
+         - Brain files: ~/.opencrabs/{SOUL,USER,AGENTS,TOOLS,MEMORY,CODE}.md\n\
+         - Plans: ~/.opencrabs/agents/session/.opencrabs_plan_<session-id>.json\n\
+         When the user asks to check logs, read today's file at \
+         ~/.opencrabs/logs/opencrabs.<today UTC date>. Do NOT grep the repo \
+         working directory for log files — opencrabs never writes logs there.\n",
     );
 }
 
