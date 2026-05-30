@@ -38,6 +38,7 @@ use crate::brain::tools::dynamic::tool::DynamicToolDef;
 
 const PROPOSED_TOOLS_FILE: &str = "proposed_tools.toml";
 const PROPOSED_COMMANDS_FILE: &str = "proposed_commands.toml";
+const PROPOSED_SKILLS_FILE: &str = "proposed_skills.toml";
 const APPLIED_DIR: &str = "applied";
 const REJECTED_DIR: &str = "rejected";
 
@@ -70,6 +71,41 @@ pub struct CommandProposal {
     pub command: UserCommand,
 }
 
+/// A pending skill proposal authored by the autonomous RSI loop.
+///
+/// Skills are SKILL.md files that capture a multi-step workflow the
+/// agent should follow when invoked via `/<name>` or auto-selected by
+/// description. They're cheaper to author than dynamic tools (no
+/// schema, no executor wiring) and a natural fit when the pattern
+/// RSI observed is "this sequence of bash + http calls keeps coming
+/// up — codify it as a workflow".
+///
+/// On apply, the user writes the body to
+/// `~/.opencrabs/skills/<name>/SKILL.md` with the description in
+/// YAML frontmatter.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SkillProposal {
+    pub id: String,
+    pub created_at: DateTime<Utc>,
+    pub proposer: String,
+    pub rationale: String,
+    pub skill: ProposedSkill,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProposedSkill {
+    /// Slug used both for the skill directory name and the `/<name>`
+    /// invocation. snake_case or kebab-case, no spaces.
+    pub name: String,
+    /// One-line summary used by the LLM to decide when to auto-invoke
+    /// the skill. Also rendered in the slash-command palette.
+    pub description: String,
+    /// Full markdown body of the SKILL.md file (everything below the
+    /// YAML frontmatter). May span multiple steps, include shell
+    /// snippets, etc.
+    pub body: String,
+}
+
 #[derive(Debug, Default, Serialize, Deserialize)]
 struct ToolProposalsFile {
     #[serde(default)]
@@ -80,6 +116,12 @@ struct ToolProposalsFile {
 struct CommandProposalsFile {
     #[serde(default)]
     proposals: Vec<CommandProposal>,
+}
+
+#[derive(Debug, Default, Serialize, Deserialize)]
+struct SkillProposalsFile {
+    #[serde(default)]
+    proposals: Vec<SkillProposal>,
 }
 
 /// On-disk store for proposals. Stateless — every method re-reads the
@@ -121,12 +163,20 @@ impl ProposalsStore {
         self.rsi_dir.join(PROPOSED_COMMANDS_FILE)
     }
 
+    fn skills_path(&self) -> PathBuf {
+        self.rsi_dir.join(PROPOSED_SKILLS_FILE)
+    }
+
     fn read_tools(&self) -> ToolProposalsFile {
         Self::read_file(&self.tools_path()).unwrap_or_default()
     }
 
     fn read_commands(&self) -> CommandProposalsFile {
         Self::read_file(&self.commands_path()).unwrap_or_default()
+    }
+
+    fn read_skills(&self) -> SkillProposalsFile {
+        Self::read_file(&self.skills_path()).unwrap_or_default()
     }
 
     fn read_file<T: serde::de::DeserializeOwned>(path: &Path) -> Option<T> {
@@ -151,6 +201,13 @@ impl ProposalsStore {
         self.ensure_dirs()?;
         let toml_str = toml::to_string_pretty(file)?;
         fs::write(self.commands_path(), toml_str)?;
+        Ok(())
+    }
+
+    fn write_skills(&self, file: &SkillProposalsFile) -> Result<()> {
+        self.ensure_dirs()?;
+        let toml_str = toml::to_string_pretty(file)?;
+        fs::write(self.skills_path(), toml_str)?;
         Ok(())
     }
 
@@ -201,6 +258,29 @@ impl ProposalsStore {
         Ok(id)
     }
 
+    /// Append a skill proposal. Same dedup-by-name semantics as
+    /// `add_tool_proposal` — a fresh proposal for `name=github_workflow`
+    /// supersedes the previous one so RSI cycles don't pile up retries.
+    pub fn add_skill_proposal(
+        &self,
+        proposer: impl Into<String>,
+        rationale: impl Into<String>,
+        skill: ProposedSkill,
+    ) -> Result<String> {
+        let mut file = self.read_skills();
+        let id = generate_id("skill", &skill.name);
+        file.proposals.retain(|p| p.skill.name != skill.name);
+        file.proposals.push(SkillProposal {
+            id: id.clone(),
+            created_at: Utc::now(),
+            proposer: proposer.into(),
+            rationale: rationale.into(),
+            skill,
+        });
+        self.write_skills(&file)?;
+        Ok(id)
+    }
+
     pub fn list_tool_proposals(&self) -> Vec<ToolProposal> {
         self.read_tools().proposals
     }
@@ -209,10 +289,16 @@ impl ProposalsStore {
         self.read_commands().proposals
     }
 
-    /// Total number of pending entries across both inboxes — used by
-    /// the TUI session-start banner.
+    pub fn list_skill_proposals(&self) -> Vec<SkillProposal> {
+        self.read_skills().proposals
+    }
+
+    /// Total number of pending entries across all three inboxes —
+    /// used by the TUI session-start banner.
     pub fn pending_count(&self) -> usize {
-        self.read_tools().proposals.len() + self.read_commands().proposals.len()
+        self.read_tools().proposals.len()
+            + self.read_commands().proposals.len()
+            + self.read_skills().proposals.len()
     }
 
     /// Remove a tool proposal by id and return it (so the caller can
@@ -239,6 +325,17 @@ impl ProposalsStore {
         Ok(Some(taken))
     }
 
+    pub fn take_skill_proposal(&self, id: &str) -> Result<Option<SkillProposal>> {
+        let mut file = self.read_skills();
+        let pos = file.proposals.iter().position(|p| p.id == id);
+        let Some(idx) = pos else {
+            return Ok(None);
+        };
+        let taken = file.proposals.remove(idx);
+        self.write_skills(&file)?;
+        Ok(Some(taken))
+    }
+
     /// Append an applied tool proposal to the daily archive
     /// (`applied/YYYY-MM-DD-tools.toml`).
     pub fn archive_applied_tool(&self, proposal: &ToolProposal) -> Result<()> {
@@ -247,6 +344,23 @@ impl ProposalsStore {
 
     pub fn archive_applied_command(&self, proposal: &CommandProposal) -> Result<()> {
         self.archive(APPLIED_DIR, "commands", proposal)
+    }
+
+    pub fn archive_applied_skill(&self, proposal: &SkillProposal) -> Result<()> {
+        self.archive(APPLIED_DIR, "skills", proposal)
+    }
+
+    pub fn archive_rejected_skill(
+        &self,
+        proposal: &SkillProposal,
+        reason: Option<&str>,
+    ) -> Result<()> {
+        let mut wrapped = ArchivedProposal {
+            inner: proposal.clone(),
+            reason: reason.map(str::to_string),
+        };
+        wrapped.reason = reason.map(str::to_string);
+        self.archive(REJECTED_DIR, "skills", &wrapped)
     }
 
     pub fn archive_rejected_tool(

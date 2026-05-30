@@ -14,7 +14,7 @@
 use super::error::Result;
 use super::r#trait::{Tool, ToolCapability, ToolExecutionContext, ToolResult};
 use crate::brain::commands::UserCommand;
-use crate::brain::rsi_proposals::ProposalsStore;
+use crate::brain::rsi_proposals::{ProposalsStore, ProposedSkill};
 use crate::brain::tools::dynamic::tool::{DynamicToolDef, ExecutorType, ParamDef};
 use async_trait::async_trait;
 use serde_json::Value;
@@ -28,11 +28,19 @@ impl Tool for RsiProposeTool {
     }
 
     fn description(&self) -> &str {
-        "Propose a new dynamic tool or slash command for the user to install. \
+        "Propose a new dynamic tool, slash command, or skill for the user to install. \
          Proposals are written to the inbox at ~/.opencrabs/rsi/ — they DO NOT \
          install live. The user (or the user-facing agent on their behalf) reviews \
-         and applies proposals via rsi_proposals. Use this when feedback analysis \
-         shows the agent repeatedly worked around a missing tool/command."
+         and applies proposals via rsi_proposals. \
+         \n\nWHEN TO USE EACH KIND: \
+         \n- `tool` for a well-scoped, parameterised invocation worth wrapping with a schema \
+         (e.g. an HTTP API call, a shell command with named params like `docker logs <container>`). \
+         \n- `command` for a slash-trigger that runs a fixed prompt (e.g. `/standup` that asks \
+         the agent for a 3-bullet summary of yesterday's commits). \
+         \n- `skill` for a multi-step workflow the agent should follow (e.g. \"release pipeline\" \
+         that covers branch check → changelog draft → tag → publish). Skills are cheaper to \
+         author than tools (no schema, no executor wiring) and a natural fit when the pattern \
+         RSI observed is a SEQUENCE of existing tool calls rather than one missing primitive."
     }
 
     fn input_schema(&self) -> Value {
@@ -41,8 +49,8 @@ impl Tool for RsiProposeTool {
             "properties": {
                 "kind": {
                     "type": "string",
-                    "enum": ["tool", "command"],
-                    "description": "What to propose: a dynamic tool (tools.toml) or a slash command (commands.toml)"
+                    "enum": ["tool", "command", "skill"],
+                    "description": "What to propose: a dynamic tool (tools.toml), a slash command (commands.toml), or a skill (~/.opencrabs/skills/<name>/SKILL.md)"
                 },
                 "rationale": {
                     "type": "string",
@@ -101,6 +109,10 @@ impl Tool for RsiProposeTool {
                     "enum": ["prompt", "system"],
                     "description": "(command only) Command kind: 'prompt' sends to LLM, 'system' displays inline. Defaults to 'prompt'.",
                     "default": "prompt"
+                },
+                "body": {
+                    "type": "string",
+                    "description": "(skill only) Full markdown body of the SKILL.md file. Goes verbatim below the YAML frontmatter the user writes on apply. May span multiple steps, include shell snippets, code blocks, and explicit references to other tools (e.g. 'call bash with X', 'call parse_document with the saved path')."
                 }
             },
             "required": ["kind", "rationale", "name", "description"]
@@ -284,8 +296,50 @@ impl Tool for RsiProposeTool {
                     Err(e) => Ok(ToolResult::error(format!("Failed to write proposal: {e}"))),
                 }
             }
+            "skill" => {
+                let body = input
+                    .get("body")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .trim()
+                    .to_string();
+                if body.is_empty() {
+                    return Ok(ToolResult::error(
+                        "body is required for skill proposals — the multi-step \
+                         workflow markdown that goes into SKILL.md below the \
+                         YAML frontmatter"
+                            .to_string(),
+                    ));
+                }
+                // Normalise the skill slug — strip any leading slash the
+                // model emitted by analogy with command names, since
+                // skills are stored under a directory not a slash prefix.
+                let normalised_name = name.trim_start_matches('/').to_string();
+                if normalised_name.is_empty()
+                    || normalised_name
+                        .chars()
+                        .any(|c| !c.is_ascii_alphanumeric() && c != '-' && c != '_')
+                {
+                    return Ok(ToolResult::error(format!(
+                        "skill name must be alphanumeric / dashes / underscores (got '{name}')"
+                    )));
+                }
+
+                let skill = ProposedSkill {
+                    name: normalised_name.clone(),
+                    description: description.clone(),
+                    body,
+                };
+
+                match store.add_skill_proposal(proposer, &rationale, skill) {
+                    Ok(id) => Ok(ToolResult::success(format!(
+                        "Skill proposal filed: {id} (name={normalised_name}). On apply it lands at ~/.opencrabs/skills/{normalised_name}/SKILL.md."
+                    ))),
+                    Err(e) => Ok(ToolResult::error(format!("Failed to write proposal: {e}"))),
+                }
+            }
             other => Ok(ToolResult::error(format!(
-                "kind must be 'tool' or 'command', got '{other}'"
+                "kind must be 'tool', 'command', or 'skill', got '{other}'"
             ))),
         }
     }
