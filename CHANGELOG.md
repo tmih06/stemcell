@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.3.31] - 2026-05-30
 
-41 commits since v0.3.30. Minor release closing issues #130 (Telegram
+44 commits since v0.3.30. Minor release closing issues #130 (Telegram
 forum topic routing was broken: proactive sends and startup resumes
 landed in general chat instead of the originating topic, and replies
 to messages within a topic also routed to general chat instead of
@@ -45,12 +45,18 @@ system prompt with a check-first directive so the agent stops
 reimplementing built-ins like local STT/TTS (a `Known paths` section
 was also added so "check the logs" always lands at
 `~/.opencrabs/logs/opencrabs.YYYY-MM-DD` instead of guessing). Telegram
-UX polish: pre-tool status line is now dynamic and context-aware
-(actual tool name + tokens + elapsed) instead of the hardcoded
-"Thinking through this...", plan-tool summaries render as monospace
-`<pre>` panels for readability, the invented `THINKING_QUIPS` fallback
-was removed (silence over filler), and forum topic names are captured
-so `list_topics` can return human-readable labels. Prompt safety
+UX polish: pre-tool status line is now fully context-aware — when a
+tool is running it names the tool + elapsed, when the model is in
+the pre-reasoning phase it surfaces a live excerpt from the
+streaming reasoning, and when neither signal exists yet it rolls a
+phrase anchored on a 60-char preview of the user's own message with
+a leading verb that escalates across elapsed buckets ("Working on:"
+→ "Still working on:" → "Long one — still on:" → "Marathon mode —
+still on:") so the status visibly evolves on long turns without ever
+falling back to hardcoded filler; the invented `THINKING_QUIPS`
+array was deleted along the way. Plan-tool summaries render as
+monospace `<pre>` panels for readability, and forum topic names are
+captured so `list_topics` can return human-readable labels. Prompt safety
 hardened: hallucinated `CODE_EDIT_BLOCK` fences are stripped from
 streamed output before channel delivery, and IDE-style inline edit
 formats (Cursor-style `search_and_replace`, Aider conflict markers,
@@ -76,12 +82,20 @@ incident), and missing-[DONE] is accepted when text-only response
 looks complete. CI/build: `[profile.ci]` tuned for wall-clock instead
 of runtime perf, `Cargo.lock` committed for reproducible builds,
 stage-gated workflow with Linux-only tests and main-only coverage.
-Compaction defaults to silent continuation, falling back to the fun
-message only when the post-compact state is genuinely ambiguous.
+Compaction defaults to the fun POST-COMPACTION PROTOCOL prompts
+(in-character one-liners after recovery — users have specifically
+called out those moments as a delight feature, including organic
+per-language personality like Russian мат in frustration scenarios)
+with a new `[agent] silent_compaction = true` opt-out in
+`config.toml` for formal or customer-facing deployments where
+mid-session profanity would be inappropriate; all four compaction
+sites (regular async, mid-loop, emergency, post-tool) now route
+through a single `compaction_prompts` module so the fun and silent
+variants stay byte-for-byte aligned.
 
 Closes #130, #131, #132.
 
-79 files changed, +17,071/-486.
+84 files changed, +17,746/-518.
 
 ## [0.3.30] - 2026-05-29
 
