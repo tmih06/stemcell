@@ -207,6 +207,17 @@ inherits = "release"
 opt-level = "z"
 strip = true
 
+# Tuned for CI: release-mode correctness checks (catches release-only
+# bugs that dev builds miss) but optimised for wall-clock speed on
+# CI runners rather than runtime perf. Thin LTO compiles ~3-4x faster
+# than fat LTO with most of the optimisation; 16 codegen units use
+# the runner's full parallelism. Used by `cargo build --profile ci`
+# and `cargo nextest run --cargo-profile ci` in .github/workflows/ci.yml.
+[profile.ci]
+inherits = "release"
+lto = "thin"
+codegen-units = 16
+
 [[bin]]
 name = "opencrabs"
 path = "src/main.rs"
