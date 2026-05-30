@@ -169,6 +169,7 @@ pub mod slack_handler_test;
 pub mod telegram_handler_test;
 pub mod telegram_photo_batching_test;
 pub mod telegram_quote_reply_test;
+pub mod telegram_status_message_test;
 pub mod telegram_thread_id_lookup_test;
 pub mod tui_tool_stack_test;
 #[cfg(feature = "local-tts")]

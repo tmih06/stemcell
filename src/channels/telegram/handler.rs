@@ -1490,6 +1490,11 @@ pub(crate) async fn handle_message(
                             has_active_tools: bool,
                             has_intermediates: bool,
                             processing: bool,
+                            /// Short excerpt of the latest reasoning chunk used as
+                            /// a context-aware status line during the pre-tool
+                            /// phase. Falls back to a fun-quip rotation when
+                            /// reasoning hasn't started yet.
+                            thinking_excerpt: Option<String>,
                         }
 
                         let snap = {
@@ -1548,6 +1553,7 @@ pub(crate) async fn handle_message(
                                 has_active_tools,
                                 has_intermediates,
                                 processing,
+                                thinking_excerpt: thinking_status_excerpt(&s.thinking),
                             };
 
                             // Pre-clear state that will be handled
@@ -1737,6 +1743,7 @@ pub(crate) async fn handle_message(
                                     snap.tool_round_count,
                                     elapsed_total,
                                     snap.processing,
+                                    snap.thinking_excerpt.as_deref(),
                                 );
 
                                 if let Ok(m) = message_in_thread(&bot, chat, thread_id,  &status).await {
@@ -2985,15 +2992,80 @@ pub(crate) fn md_to_html(s: &str) -> String {
     out
 }
 
+/// Fun-quip rotation used ONLY when the agent is in the pre-tool
+/// reasoning phase AND no live reasoning text is available yet (the
+/// very first second or two of a turn). Each call selects a different
+/// quip based on `elapsed_secs / 4` so the user sees movement.
+const THINKING_QUIPS: &[&str] = &[
+    "🧠 Warming up the neurons",
+    "🦀 Sharpening the pincers",
+    "🌊 Gathering thoughts",
+    "✨ Connecting the dots",
+    "🔍 Sizing up the problem",
+    "🎯 Lining up the approach",
+    "📚 Flipping through context",
+    "🛠️ Picking the right tool",
+];
+
+/// Extract a short, status-line-friendly excerpt from the agent's
+/// in-flight reasoning text. Returns `None` when the reasoning buffer
+/// is empty or too sparse to be informative.
+///
+/// We grab the LAST non-trivial sentence (the model just produced it,
+/// so it reflects the current focus rather than a stale lead-in),
+/// strip "I am" / "I'm" / "Let me" prefixes that read awkwardly as a
+/// status, and cap at 80 chars so the Telegram message stays compact.
+pub(crate) fn thinking_status_excerpt(thinking: &str) -> Option<String> {
+    let trimmed = thinking.trim();
+    if trimmed.len() < 20 {
+        return None;
+    }
+    // Walk sentences right-to-left, pick the latest non-trivial one.
+    let mut sentences: Vec<&str> = trimmed
+        .split(['.', '?', '!', '\n'])
+        .map(str::trim)
+        .filter(|s| s.len() >= 12)
+        .collect();
+    let last = sentences.pop()?;
+    let cleaned = last
+        .strip_prefix("I am ")
+        .or_else(|| last.strip_prefix("I'm "))
+        .or_else(|| last.strip_prefix("I will "))
+        .or_else(|| last.strip_prefix("Let me "))
+        .or_else(|| last.strip_prefix("Let us "))
+        .unwrap_or(last)
+        .trim();
+    if cleaned.is_empty() {
+        return None;
+    }
+    // Capitalise the first letter so "assessing X" → "Assessing X".
+    let mut chars = cleaned.chars();
+    let first = chars.next()?;
+    let rest: String = chars.collect();
+    let pretty = format!("{}{}", first.to_uppercase(), rest);
+    let capped: String = pretty.chars().take(80).collect();
+    Some(if pretty.chars().count() > 80 {
+        format!("{}…", capped)
+    } else {
+        capped
+    })
+}
+
 /// Build a context-aware status message for Telegram rolling updates.
 /// Replaces hardcoded filler quips with functional messages that tell the user
 /// what is happening right now based on actual tool execution state.
+///
+/// `thinking_excerpt` is the latest reasoning snippet from the agent
+/// (see `thinking_status_excerpt`). When tools are not yet running,
+/// we prefer it over the quip rotation — the user sees the agent's
+/// actual current focus instead of a filler line.
 fn build_status_message(
     active_tools: &[(&str, &str)],
     last_completed: Option<(&str, &str)>,
     tool_round_count: usize,
     elapsed_secs: u64,
     processing: bool,
+    thinking_excerpt: Option<&str>,
 ) -> String {
     let elapsed = if elapsed_secs >= 60 {
         let mins = elapsed_secs / 60;
@@ -3016,7 +3088,19 @@ fn build_status_message(
             format!("Running {} tools: {}", active_tools.len(), names.join(", "))
         }
     } else if processing && tool_round_count == 0 {
-        "Thinking through this...".to_string()
+        // Hybrid: prefer the live reasoning snippet when we have one
+        // (it tells the user exactly what the agent is focused on
+        // right now), otherwise rotate through a small set of fun
+        // quips so the first second or two of a turn doesn't show
+        // the same hardcoded string every time.
+        if let Some(excerpt) = thinking_excerpt
+            && !excerpt.is_empty()
+        {
+            excerpt.to_string()
+        } else {
+            let idx = (elapsed_secs as usize / 4) % THINKING_QUIPS.len();
+            THINKING_QUIPS[idx].to_string()
+        }
     } else if tool_round_count > 0 {
         if let Some((name, _ctx)) = last_completed {
             format!("{} done, moving to next step", name)
