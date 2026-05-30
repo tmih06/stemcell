@@ -11,6 +11,7 @@ pub mod provider;
 pub mod rsi;
 pub mod rsi_git_history;
 pub mod rsi_proposals;
+pub mod rsi_subsystem;
 pub mod rsi_sync;
 pub mod self_update;
 pub mod skills;

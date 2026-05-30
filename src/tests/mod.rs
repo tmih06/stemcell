@@ -138,6 +138,7 @@ pub mod profile_test;
 pub mod rsi_git_history_test;
 pub mod rsi_proposals_test;
 pub mod rsi_skill_proposals_test;
+pub mod rsi_subsystem_test;
 pub mod rsi_sync_test;
 pub mod rsi_test;
 pub mod runtime_info_home_anchor_test;
