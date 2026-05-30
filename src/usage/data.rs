@@ -416,6 +416,7 @@ async fn fetch_projects(pool: &Pool, since: Option<i64>) -> Result<Vec<ProjectSt
 ///
 /// MUST stay byte-for-byte equivalent to the SQL CTE chain inside
 /// `fetch_model_entries` — anything different and grouped rows split.
+#[cfg(test)]
 pub(crate) fn sql_normalize_model(raw: &str) -> String {
     let m1 = if raw.contains('/') {
         raw.rsplit('/').next().unwrap_or(raw).to_lowercase()
@@ -537,7 +538,7 @@ async fn fetch_model_entries(pool: &Pool, since: Option<i64>) -> Result<Vec<Mode
                  WHEN m3 IN ('opus', 'opus-4-6') THEN 'opus-4-6' \
                  WHEN m3 IN ('sonnet', 'sonnet-4-6') THEN 'sonnet-4-6' \
                  WHEN m3 IN ('haiku', 'haiku-4-5', 'haiku-4-5-20251001') THEN 'haiku-4-5' \
-                 WHEN m3 IN ('qwen-3.7-max', 'qwen3.7-max', 'qwen-3-7-max', 'qwen3-7-max', 'qwen-3.7-max-preview', 'qwen3.7-max-preview', 'qwen-3.7-max-20260520', 'qwen3.7-max-20260520', 'qwen-latest-series', 'qwen-latest-series-invite') THEN 'qwen-3.7-max' \
+                 WHEN m3 IN ('qwen-3.7-max', 'qwen3.7-max', 'qwen-3-7-max', 'qwen3-7-max', 'qwen-3.7-max-preview', 'qwen3.7-max-preview', 'qwen-3.7-max-20260520', 'qwen3.7-max-20260520', 'qwen-latest-series', 'qwen-latest-series-invite', 'qwen-latest-series-invite-beta-v34') THEN 'qwen-3.7-max' \
                  WHEN m3 IN ('qwen-3.7-plus', 'qwen3.7-plus', 'qwen-3.7-plus-preview', 'qwen3.7-plus-preview') THEN 'qwen-3.7-plus' \
                  WHEN m3 IN ('qwen-3.6-max-preview', 'qwen3.6-max-preview', 'qwen-3-6-max-preview', 'qwen3-6-max-preview', 'qwen-max-preview') THEN 'qwen-3.6-max-preview' \
                  WHEN m3 IN ('coder-model', 'qwen3.6-plus', 'qwen-3.6-plus') THEN 'qwen-3.6-plus' \
@@ -551,20 +552,21 @@ async fn fetch_model_entries(pool: &Pool, since: Option<i64>) -> Result<Vec<Mode
                  WHEN m3 IN ('glm-5-turbo', 'zhipu') THEN 'glm-5-turbo' \
                  ELSE m3 \
                END AS normalized_model, \
+               m3 AS raw_model, \
                COALESCE(SUM(token_count), 0), \
                COUNT(*) \
              FROM spaced \
-             GROUP BY normalized_model \
+             GROUP BY normalized_model, m3 \
              ORDER BY SUM(token_count) DESC"
         );
         let mut stmt = conn.prepare(&query)?;
-        let rows: Vec<(String, i64, i64)> = if let Some(s) = since {
+        let rows: Vec<(String, String, i64, i64)> = if let Some(s) = since {
             stmt.query_map(params![s], |row| {
-                Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?, row.get::<_, i64>(2)?))
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?, row.get::<_, i64>(2)?, row.get::<_, i64>(3)?))
             })?.collect::<std::result::Result<Vec<_>, _>>()?
         } else {
             stmt.query_map([], |row| {
-                Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?, row.get::<_, i64>(2)?))
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?, row.get::<_, i64>(2)?, row.get::<_, i64>(3)?))
             })?.collect::<std::result::Result<Vec<_>, _>>()?
         };
         Ok::<_, rusqlite::Error>(rows)
@@ -576,9 +578,9 @@ async fn fetch_model_entries(pool: &Pool, since: Option<i64>) -> Result<Vec<Mode
     // Group by base model (normalize away quantization suffixes)
     let mut groups: std::collections::HashMap<String, Vec<(String, i64, i64)>> =
         std::collections::HashMap::new();
-    for (model, tokens, calls) in raw {
-        let base = normalize_model_for_grouping(&sql_normalize_model(&model));
-        groups.entry(base).or_default().push((model, tokens, calls));
+    for (normalized, raw, tokens, calls) in raw {
+        let base = normalize_model_for_grouping(&normalized);
+        groups.entry(base).or_default().push((raw, tokens, calls));
     }
 
     // Build ModelEntry tree, sorted by total tokens descending
