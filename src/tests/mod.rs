@@ -96,6 +96,7 @@ pub mod phantom_db_persistence_test;
 pub mod phantom_deferment_test;
 pub mod plan_document_test;
 pub mod plan_tool_description_test;
+pub mod plan_window_test;
 pub mod post_evolve_test;
 pub mod provider_config_regression_test;
 pub mod provider_error_proxy_test;

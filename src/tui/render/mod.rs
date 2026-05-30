@@ -11,6 +11,7 @@ pub(crate) mod mission_control;
 pub(crate) mod palette;
 mod panes;
 mod plan_widget;
+pub(crate) mod plan_window;
 mod sessions;
 pub(crate) mod skills_dialog;
 mod tools;
@@ -100,12 +101,22 @@ pub fn render(f: &mut Frame, app: &mut App) {
     };
 
     // Show the plan checklist only while tasks are actively executing.
-    // Any other status means the plan is not running (user moved on, cancelled, etc.).
+    // Any other status means the plan is not running (user moved on,
+    // cancelled, etc.).
+    //
+    // Sizing:
+    //   - chrome (header + border) takes 2 lines.
+    //   - For ≤10 tasks: grow the panel so all tasks fit (no truncation
+    //     for the common case — most plans are 3-10 steps).
+    //   - For >10 tasks: cap at 12 lines (10 task rows + chrome) and
+    //     let `plan_widget` scroll a window centered on the current
+    //     task. The "… (N before, M after)" indicator inside the widget
+    //     tells the user there's more above/below.
     let plan_height = app
         .plan_document
         .as_ref()
         .filter(|p| p.status == crate::tui::plan::PlanStatus::InProgress)
-        .map(|p| (p.tasks.len() + 2).min(8) as u16)
+        .map(|p| (p.tasks.len() + 2).min(12) as u16)
         .unwrap_or(0);
 
     let chunks = Layout::default()

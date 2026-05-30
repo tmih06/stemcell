@@ -3,6 +3,7 @@
 //! Renders a live-updating checklist of plan tasks above the input box.
 
 use super::super::app::App;
+use super::plan_window::{current_task_index, pick_visible_window};
 use crate::tui::plan::TaskStatus;
 use ratatui::{
     Frame,
@@ -58,23 +59,33 @@ pub(super) fn render_plan_checklist(f: &mut Frame, app: &App, area: Rect) {
         ),
     ]);
 
-    // Dynamic visible count: area height minus header (1), top border (1),
-    // and reserve 1 line for the overflow indicator if we have more tasks
-    // than available slots.
+    // Dynamic visible count: area height minus header (1), top border (1).
+    // For plans that fit we just show everything. For overflowing plans
+    // we scroll a window centered on the current InProgress task and
+    // emit a leading and/or trailing "… (N more)" indicator that
+    // consumes a visible slot in each direction it applies.
     let chrome_lines: usize = 2; // header + top border
     let available = (area.height as usize).saturating_sub(chrome_lines);
-    let has_overflow = total > available;
-    let max_visible = if has_overflow {
-        available.saturating_sub(1) // reserve line for "... (N more)"
-    } else {
-        available
-    };
-    let max_visible = max_visible.max(1); // always show at least 1
+    let current_idx = current_task_index(&plan.tasks);
+    let window = pick_visible_window(total, available, current_idx);
 
-    let visible: Vec<&crate::tui::plan::PlanTask> = plan.tasks.iter().take(max_visible).collect();
-    let overflow = total.saturating_sub(max_visible);
+    let visible: Vec<&crate::tui::plan::PlanTask> = plan
+        .tasks
+        .iter()
+        .skip(window.start)
+        .take(window.len)
+        .collect();
+    let hidden_before = window.start;
+    let hidden_after = total.saturating_sub(window.start + window.len);
 
     let mut lines: Vec<Line> = vec![header];
+
+    if hidden_before > 0 {
+        lines.push(Line::from(Span::styled(
+            format!("  … ({} above)", hidden_before),
+            Style::default().fg(Color::DarkGray),
+        )));
+    }
 
     for task in &visible {
         let (icon, color) = match &task.status {
@@ -102,9 +113,9 @@ pub(super) fn render_plan_checklist(f: &mut Frame, app: &App, area: Rect) {
         ]));
     }
 
-    if overflow > 0 {
+    if hidden_after > 0 {
         lines.push(Line::from(Span::styled(
-            format!("  ... ({} more)", overflow),
+            format!("  … ({} below)", hidden_after),
             Style::default().fg(Color::DarkGray),
         )));
     }
