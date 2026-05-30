@@ -639,21 +639,18 @@ impl AgentService {
 
             let mut cont_text =
                 "[SYSTEM: Context was auto-compacted. The summary above includes a snapshot \
-                 of recent messages before compaction.\n\
-                 POST-COMPACTION PROTOCOL (follow in order):\n\
-                 1. Read the compaction summary and the recent message snapshot to understand \
-                 the current task, tools in use, and what you were doing.\n\
-                 2. If the summary references older context you don't have in the snapshot, use \
-                 `session_search` with specific keywords to find those messages. Example: if the \
-                 summary mentions \"vision fallback investigation\", run session_search with that \
-                 query to recover the details.\n\
-                 3. If you need specific brain context, selectively load ONLY the relevant \
-                 brain file (e.g. TOOLS.md, SOUL.md, USER.md). NEVER use name=\"all\".\n\
-                 4. IMMEDIATELY continue the task described in the \"IMMEDIATE TASK\" section \
-                 of the compaction summary. This is NOT optional — you MUST pick up exactly \
-                 where you left off. Do NOT start a new topic. Do NOT ask what to do next. \
-                 Do NOT deviate to unrelated work. If the IMMEDIATE TASK section says \
-                 \"CONTINUE: fixing X\", then fix X.]"
+                 of recent messages before compaction.\n\n\
+                 Silently continue the IMMEDIATE TASK from the summary as if nothing happened. \
+                 Do NOT announce, narrate, apologise for, or acknowledge the compaction. The \
+                 user does not know it happened and does not need to. Any file you were about \
+                 to read or edit can simply be re-read on the next tool call — that's normal, \
+                 not worth narrating.\n\n\
+                 Use `session_search` with specific keywords if the snapshot lacks older context. \
+                 Selectively load brain files (TOOLS.md / SOUL.md / USER.md) only if the task \
+                 needs them — never name=\"all\".\n\n\
+                 FALLBACK: only if the summary genuinely doesn't make the next step clear, send \
+                 ONE short cheeky line (\"brain refresh — what was I working on?\") and ask. \
+                 Default behaviour is silent continuation.]"
                     .to_string();
             if !self.auto_approve_tools {
                 cont_text.push_str("\n\nCRITICAL: Tool approval is REQUIRED. You MUST wait for user approval before EVERY tool execution. Do NOT batch tool calls without approval.");
@@ -863,14 +860,13 @@ impl AgentService {
 
                 let mut cont_text =
                     "[SYSTEM: Context was auto-compacted mid-loop. The summary above includes \
-                     a snapshot of recent messages. POST-COMPACTION PROTOCOL:\n\
-                     1. Review the summary and snapshot to understand current task state.\n\
-                     2. Use `session_search` with keywords from the summary if you need older \
-                     context not in the snapshot.\n\
-                     3. IMMEDIATELY continue the task described in the \"IMMEDIATE TASK\" section \
-                     of the compaction summary. This is NOT optional — you MUST pick up exactly \
-                     where you left off. Do NOT start a new topic. Do NOT ask what to do next. \
-                     Do NOT deviate to unrelated work.]"
+                     a snapshot of recent messages.\n\n\
+                     Silently continue the IMMEDIATE TASK exactly where you left off. Do NOT \
+                     announce or narrate the compaction. Any file you were mid-edit on can be \
+                     silently re-read on the next tool call — that's normal, not worth \
+                     mentioning. Do NOT restart, ask what to do, or deviate.\n\n\
+                     Use `session_search` with keywords from the summary if older context is \
+                     missing from the snapshot.]"
                         .to_string();
                 if !self.auto_approve_tools {
                     cont_text.push_str("\n\nCRITICAL: Tool approval is REQUIRED. You MUST wait for user approval before EVERY tool execution. Do NOT batch tool calls without approval.");
@@ -989,12 +985,17 @@ impl AgentService {
                             }
 
                             let mut cont_text =
-                                "[SYSTEM: Emergency compaction — provider rejected the prompt as \
-                                 too large. Context has been compacted. POST-COMPACTION PROTOCOL:\n\
-                                 1. Review the summary to understand where you left off.\n\
-                                 2. Use `session_search` with keywords if you need older context.\n\
-                                 3. Briefly acknowledge the compaction with a fun/cheeky remark, \
-                                 then resume the task. Do NOT repeat completed work.]"
+                                "[SYSTEM: Emergency compaction — the prompt was too large and got \
+                                 compacted. The summary above contains the recovered state.\n\n\
+                                 Silently resume from the IMMEDIATE TASK in the summary. Do NOT \
+                                 acknowledge or apologise for the compaction — the user does not \
+                                 know it happened. Re-read any file you were mid-edit on without \
+                                 narrating it. Do NOT repeat completed work.\n\n\
+                                 Use `session_search` with specific keywords if older context is \
+                                 missing.\n\n\
+                                 FALLBACK: only if the next step is genuinely unclear from the \
+                                 summary, send ONE short cheeky line (\"brain refresh — what was \
+                                 I doing?\") and ask. Default behaviour is silent continuation.]"
                                     .to_string();
                             if !self.auto_approve_tools {
                                 cont_text.push_str("\n\nCRITICAL: Tool approval is REQUIRED. You MUST wait for user approval before EVERY tool execution. Do NOT batch tool calls without approval.");
