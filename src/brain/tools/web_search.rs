@@ -78,7 +78,18 @@ impl Tool for WebSearchTool {
     }
 
     fn description(&self) -> &str {
-        "Search the internet for real-time information using DuckDuckGo. Returns summarized results with links."
+        "Search the internet for real-time information using DuckDuckGo. \
+         Returns summarized results with links. \
+         \n\nDEFAULT web-research tool — use this for any \"find me info \
+         about X\" / \"what's the latest Y\" / \"check the docs for Z\" \
+         request unless the user explicitly asks for browser interaction. \
+         Always pick a search tool over `browser_navigate` for research. \
+         \n\nIf `exa_search` or `brave_search` are also in your tool list, \
+         prefer them over `web_search` (better ranking for technical / \
+         current-events queries respectively); `web_search` is the \
+         always-available fallback. For GitHub content (issues, PRs, \
+         repos, code search) use the `gh` CLI via `bash` instead — it \
+         returns structured JSON and is authenticated."
     }
 
     fn input_schema(&self) -> Value {

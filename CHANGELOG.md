@@ -91,7 +91,23 @@ with a new `[agent] silent_compaction = true` opt-out in
 mid-session profanity would be inappropriate; all four compaction
 sites (regular async, mid-loop, emergency, post-tool) now route
 through a single `compaction_prompts` module so the fun and silent
-variants stay byte-for-byte aligned.
+variants stay byte-for-byte aligned. Tool routing tightened: the
+agent was reaching for `browser_navigate` on "check the GitHub PR"
+or "look up the docs for X" when the right surfaces were the `gh`
+CLI and one of the search tools respectively — tool descriptions
+now carry explicit pick-me-when guidance (`web_search` announces
+itself as the default research tool; `exa_search` / `brave_search`
+announce "PREFERRED over web_search" with their strengths;
+`browser_navigate` is explicitly framed as last-resort for
+research and forbidden for GitHub; `bash` calls out the `gh` CLI
+as the GitHub surface with `--json` / `--jq` examples), and a new
+WEB / GITHUB / BROWSER ROUTING block in `BRAIN_PREAMBLE` puts the
+rule in the system prompt every turn instead of only when
+`TOOLS.md` is loaded. Release workflow `wait-for-ci` now gates on
+the stable `CI Required Gate` check name instead of the brittle
+`Test (ubuntu-latest)` filter that broke silently when the test
+job was renamed to `Test (Linux)` (that's what caused the v0.3.31
+release retry to spin 30 min and time out).
 
 Closes #130, #131, #132.
 

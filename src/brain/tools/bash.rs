@@ -174,7 +174,16 @@ impl Tool for BashTool {
          use non-interactive flags (-A, -m, --no-edit) or pipe input via heredoc/echo. \
          Each call is a fresh shell — `cd` does not persist across calls; chain with \
          `&&` or use `git -C <path> <cmd>` for cross-directory work. Use carefully \
-         as this can modify system state."
+         as this can modify system state. \
+         \n\nGITHUB OPERATIONS: use the `gh` CLI via this tool for \
+         everything GitHub — issues, PRs, releases, comments, file \
+         fetches, repo / code search, workflow runs, checks. `gh` is \
+         preinstalled and authenticated; it returns structured JSON \
+         (--json flag) and respects --jq for filtering. Never reach \
+         for `browser_navigate` to inspect or act on a GitHub URL. \
+         Examples: `gh pr view 123 --json title,body,comments`, \
+         `gh issue list --label bug --json number,title`, \
+         `gh api repos/OWNER/REPO/commits/SHA/check-runs`."
     }
 
     fn input_schema(&self) -> Value {

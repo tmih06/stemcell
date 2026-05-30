@@ -39,9 +39,26 @@ impl Tool for BrowserNavigateTool {
     }
 
     fn description(&self) -> &str {
-        "Navigate to a URL in the browser. Returns the page title, final URL \
-         (after redirects), and an automatic screenshot of the page. \
-         Supports both headless and headed (visible) mode."
+        "Open a URL in a real browser (Chrome DevTools Protocol). Returns \
+         page title, final URL after redirects, and an automatic \
+         screenshot. Supports headless and headed mode. \
+         \n\nUSE THIS ONLY when one of these is true: \
+         (1) the user explicitly asks to open / view / interact with a \
+         page in a browser; \
+         (2) the task requires interaction the search tools cannot do \
+         (click, type, submit a form, scroll, screenshot live DOM, run \
+         JavaScript against the page); \
+         (3) last resort — every search route (`exa_search`, \
+         `brave_search`, `web_search`, and for GitHub the `gh` CLI \
+         via `bash`) has been tried and could not surface the needed \
+         information. \
+         \n\nDO NOT use for research, reading articles, fetching \
+         documentation, checking package versions, looking up Stack \
+         Overflow answers, or any GitHub operation (issues, PRs, \
+         releases, comments, file contents, search) — those route \
+         through the search tools or `gh` CLI. Browser is slow, \
+         visible to the user (steals window focus in headed mode), \
+         and consumes far more tokens than a search call."
     }
 
     fn input_schema(&self) -> Value {

@@ -57,7 +57,16 @@ impl Tool for BraveSearchTool {
     }
 
     fn description(&self) -> &str {
-        "Search the internet using Brave Search for real-time web results with privacy focus."
+        "Search the internet using Brave Search — privacy-focused, \
+         independently-indexed, strong on current events, news, and \
+         time-sensitive queries (\"what happened today\", recent \
+         releases, breaking changes). \
+         \n\nPREFERRED over `web_search` when both are available. Pick \
+         `exa_search` instead for technical documentation / API \
+         references / conceptual queries (neural ranking wins there). \
+         Pick the `gh` CLI via `bash` for GitHub-specific lookups. Use \
+         `browser_navigate` only when the user explicitly asks for \
+         browser interaction or every search route has been exhausted."
     }
 
     fn input_schema(&self) -> Value {

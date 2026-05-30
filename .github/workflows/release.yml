@@ -23,10 +23,18 @@ jobs:
         run: |
           SHA="${{ github.sha }}"
           REPO="${{ github.repository }}"
-          echo "Waiting for CI workflow to complete on $SHA..."
+          # Gate on `CI Required Gate` (ci.yml line 233) — the
+          # authoritative summary check whose only purpose is "all
+          # required CI jobs passed for this commit." Filtering on
+          # an individual job name (e.g. `Test (Linux)`) breaks
+          # silently when that job is renamed — v0.3.31 release
+          # spun 30 min looking for `Test (ubuntu-latest)` after
+          # the test job was renamed to `Test (Linux)`. The gate
+          # name is stable because branch protection depends on it.
+          echo "Waiting for 'CI Required Gate' on $SHA..."
           for i in $(seq 1 60); do
             STATUS=$(gh api "repos/$REPO/commits/$SHA/check-runs" \
-              --jq '.check_runs[] | select(.name == "Test (ubuntu-latest)") | .conclusion' 2>/dev/null || echo "pending")
+              --jq '.check_runs[] | select(.name == "CI Required Gate") | .conclusion' 2>/dev/null || echo "pending")
             if [ "$STATUS" = "success" ]; then
               echo "CI passed!"
               exit 0

@@ -120,6 +120,11 @@ Before proposing to implement a feature from scratch (STT, TTS, browser automati
 3. Check the relevant brain file (TOOLS.md for tool usage, AGENTS.md for project conventions) before deciding the right surface.
 Skipping these checks wastes the user's time, ships duplicate code, and makes the agent look unaware of its own runtime.
 
+WEB / GITHUB / BROWSER ROUTING — pick the right surface, not the heaviest one:
+- Web research, docs, "what's the latest X", "find me info about Y": use `exa_search` (if available) → `brave_search` (if available) → `web_search`. Never reach for `browser_navigate` to read pages.
+- Anything on GitHub (issues, PRs, releases, comments, file contents, commits, checks, code search, workflow runs): use the `gh` CLI via `bash`. It is preinstalled, authenticated, returns structured JSON (`--json`, `--jq`), and is far cheaper than navigating github.com in a browser.
+- `browser_navigate` is for: (a) the user explicitly asking you to open / interact with a page, (b) tasks that require clicking / typing / submitting / scrolling / running JS against live DOM, (c) genuine last resort after every search route has been tried and failed. It is slow, token-heavy, and steals window focus in headed mode — never the default.
+
 RECURSIVE SELF-IMPROVEMENT:
 You have three tools for improving yourself over time:
 - feedback_analyze: Query your performance history (tool success rates, failure patterns, recent events). Call with query='summary' or query='tool_stats' or query='failures'.

@@ -426,7 +426,17 @@ impl Tool for ExaSearchTool {
     }
 
     fn description(&self) -> &str {
-        "Search the internet using EXA AI for high-quality, neural-powered web search results."
+        "Search the internet using EXA AI — neural / semantic ranking \
+         that beats keyword search for technical documentation, API \
+         references, code examples, research papers, and conceptual \
+         queries. \
+         \n\nPREFERRED over `web_search` when both are available. Use \
+         for any research / docs / \"how does X work\" question. Pick \
+         `brave_search` instead for current events / news / time-sensitive \
+         queries. Pick the `gh` CLI via `bash` for GitHub-specific \
+         lookups. Use `browser_navigate` only when the user explicitly \
+         asks for browser interaction or every search route has been \
+         exhausted."
     }
 
     fn input_schema(&self) -> Value {

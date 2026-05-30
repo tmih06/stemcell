@@ -170,6 +170,7 @@ pub mod usage_ledger_test;
 pub mod voice_onboarding_test;
 pub mod voice_stt_dispatch_test;
 pub mod wait_agent_resolver_test;
+pub mod web_browser_routing_test;
 pub mod whatsapp_state_test;
 
 // Channel handler tests (moved from inline #[cfg(test)] modules)
