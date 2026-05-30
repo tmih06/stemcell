@@ -19,13 +19,14 @@ env:
   CARGO_INCREMENTAL: 0
 
 jobs:
-  test:
-    name: Test
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+  # ── Stage 1: Lint (fast gate — fails early before burning compute) ────────
+  # Pattern lifted from ZeroClaw: run fmt + clippy first. If either fails,
+  # every downstream job is skipped. Avoids burning ~25 min on the
+  # cross-platform build/test matrix for a PR that won't lint anyway.
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
 
@@ -40,6 +41,61 @@ jobs:
           cache-on-failure: true
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
+      - name: Install ALSA dev (for local-stt feature)
+        run: sudo apt-get update -qq && sudo apt-get install -y libasound2-dev
+
+      - name: Check formatting
+        # Soft-fail: legacy un-formatted code blocks shouldn't block PRs
+        # yet. Promote to hard-fail once a fmt sweep lands on main.
+        continue-on-error: true
+        run: cargo fmt --all -- --check
+
+      - name: Clippy
+        run: cargo clippy --lib --bins --tests --all-features -- -D warnings
+
+  # ── Stage 2: Build verification (parallel, gated on lint) ────────────────
+  # Cross-platform BUILD on Windows + macOS confirms target compatibility
+  # without running tests there (tests run on Linux only — see `test`
+  # below). Why: Windows runners are 3-5x slower than Linux for cargo,
+  # and most of our test surface is platform-independent. ZeroClaw uses
+  # the same pattern. If a Windows/macOS-specific test ever regresses
+  # we can promote it via the matrix.
+  build:
+    name: Build (${{ matrix.target }})
+    needs: [lint]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            # release.yml uses --all-features on Windows too (line 147),
+            # so the local-stt/local-tts crate chain DOES build on
+            # windows-msvc. Mirror that here to catch any platform
+            # regression before release time.
+            features: --all-features
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            features: --all-features
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust (from rust-toolchain.toml)
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: stable
+          targets: ${{ matrix.target }}
+
+      # rust-cache deliberately skipped on Windows — ZeroClaw confirmed
+      # the cache rarely pays off there and sometimes flakes the runner.
+      - uses: swatinem/rust-cache@v2
+        if: runner.os != 'Windows'
+        with:
+          cache-on-failure: true
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+
       - name: Install CMake (Windows)
         if: runner.os == 'Windows'
         uses: lukka/get-cmake@latest
@@ -48,72 +104,63 @@ jobs:
         if: runner.os == 'Windows'
         uses: ilammy/setup-nasm@v1
 
-      - name: Run tests (Windows)
+      - name: Build (Windows)
         if: runner.os == 'Windows'
         env:
           AWS_LC_SYS_CMAKE_BUILDER: "1"
-        run: cargo test --all-features --release --verbose
+        run: cargo build --profile ci --target ${{ matrix.target }} ${{ matrix.features }}
 
-      - name: Run tests (macOS)
+      - name: Build (macOS)
         if: runner.os == 'macOS'
         env:
           CFLAGS: -march=armv8-a+crypto
           CXXFLAGS: -march=armv8-a+crypto
-        run: cargo test --all-features --verbose
+        run: cargo build --profile ci --target ${{ matrix.target }} ${{ matrix.features }}
 
-      - name: Install mold + ALSA dev (Linux)
-        if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y mold clang libasound2-dev
-
-      - name: Run tests (Linux)
-        if: runner.os == 'Linux'
-        env:
-          CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER: clang
-          CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS: "-C link-arg=-fuse-ld=mold"
-        run: cargo test --all-features --verbose
-
-  clippy:
-    name: Clippy
+  # ── Stage 3: Test on Linux (gated on lint, parallel with build) ──────────
+  # Tests run on Linux only — Windows/macOS get build verification via
+  # the `build` job above. ZeroClaw uses the same split because the
+  # cross-platform matrix triples wall-clock for little extra coverage
+  # on this codebase (most tests are platform-independent).
+  #
+  # Stays on `cargo test` for now: a few timing-sensitive tests
+  # (rate_limiter pacing) rely on cargo test's threadpool semantics
+  # and fail under nextest's process-per-test isolation. nextest
+  # migration is a follow-up once those tests are made portable.
+  test:
+    name: Test (Linux)
+    needs: [lint]
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
+
+      - name: Install Rust (from rust-toolchain.toml)
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: stable
 
       - uses: swatinem/rust-cache@v2
         with:
           cache-on-failure: true
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
-      - name: Install Rust (from rust-toolchain.toml)
-        uses: dtolnay/rust-toolchain@master
-        with:
-          toolchain: stable
-          components: clippy
+      - name: Install mold + ALSA dev (Linux)
+        run: sudo apt-get update -qq && sudo apt-get install -y mold clang libasound2-dev
 
-      - name: Install ALSA dev
-        run: sudo apt-get update && sudo apt-get install -y libasound2-dev
+      - name: Run tests
+        env:
+          CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER: clang
+          CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS: "-C link-arg=-fuse-ld=mold"
+        run: cargo test --profile ci --all-features --verbose
 
-      - name: Run clippy
-        run: cargo clippy --lib --bins --tests --all-features -- -D warnings
-
-  fmt:
-    name: Format
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install Rust (from rust-toolchain.toml)
-        uses: dtolnay/rust-toolchain@master
-        with:
-          toolchain: stable
-          components: rustfmt
-
-      - name: Check formatting
-        continue-on-error: true
-        run: cargo fmt --all -- --check
+  # ── Stage 4: Security (parallel with test/build, gated on lint) ──────────
 
   audit:
     name: Cargo Audit
+    needs: [lint]
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
 
@@ -140,9 +187,16 @@ jobs:
         #     0.13.x.
         run: cargo audit --ignore RUSTSEC-2024-0437
 
+  # ── Stage 5: Coverage (gated on lint, runs only on main pushes) ──────────
+  # Coverage runs only on main to save PR wall-clock — tarpaulin is the
+  # slowest job (~12 min). PRs still get full test coverage via the
+  # `test` job above; this job just publishes the report.
   coverage:
     name: Code Coverage
+    needs: [lint]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
 
@@ -157,10 +211,12 @@ jobs:
           toolchain: stable
 
       - name: Install ALSA dev
-        run: sudo apt-get update && sudo apt-get install -y libasound2-dev
+        run: sudo apt-get update -qq && sudo apt-get install -y libasound2-dev
 
       - name: Install tarpaulin
-        run: cargo install cargo-tarpaulin
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-tarpaulin
 
       - name: Generate coverage
         run: cargo tarpaulin --out Xml --no-default-features --features "telegram,whatsapp,discord,slack,trello"
@@ -172,3 +228,20 @@ jobs:
         uses: codecov/codecov-action@v4
         with:
           file: ./cobertura.xml
+
+  # ── Required gate ────────────────────────────────────────────────────────
+  # Single status check for branch protection. Internal job structure
+  # can change without touching branch protection settings.
+  # Coverage is intentionally excluded — it's main-only.
+  ci-gate:
+    name: CI Required Gate
+    if: always()
+    needs: [lint, build, test, audit]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check results
+        run: |
+          if [[ "${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}" == "true" ]]; then
+            echo "::error::One or more CI jobs failed or were cancelled"
+            exit 1
+          fi
