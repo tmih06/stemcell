@@ -10,6 +10,15 @@ use std::sync::Arc;
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
+/// How many consecutive primary-provider failures (each rescued by
+/// a successful fallback) before the fallback gets persisted into
+/// the session as the new active provider. Below this, every primary
+/// failure triggers a one-shot rescue and the primary is restored for
+/// the next request — so a brief outage doesn't permanently demote
+/// the primary. User-stated intent (2026-05-30): "if fallback 3
+/// times consecutively successfully, the 4th it sticks".
+const STICKY_FALLBACK_THRESHOLD: u32 = 4;
+
 /// Strip ANSI escape codes from raw tool output before persisting to DB.
 /// Prevents garbled artifacts in session history.
 /// Build the content string sent to the LLM for a tool result.
@@ -921,7 +930,18 @@ impl AgentService {
                 )
                 .await
             {
-                Ok(resp) => resp,
+                Ok(resp) => {
+                    // Primary succeeded on first try (no retry / no
+                    // fallback rescue needed). Reset the consecutive-
+                    // failure streak so a future hiccup starts fresh
+                    // at 1 instead of inheriting a count from an
+                    // unrelated earlier outage. Without this, a
+                    // primary that hit 3 transient failures days ago
+                    // would stick the fallback on the NEXT failure
+                    // even though it's been working flawlessly since.
+                    self.reset_primary_failure_streak(session_id);
+                    resp
+                }
                 Err(ref e)
                     if e.to_string().contains("prompt is too long")
                         || e.to_string().contains("too many tokens")
@@ -1685,46 +1705,78 @@ impl AgentService {
                                 .await;
                             match fb_result {
                                 Ok(resp) => {
-                                    // Disable restore — the swap must stick.
-                                    restore_guard.original = None;
+                                    // Streak gate: only stick the fallback as
+                                    // the session's persistent provider after
+                                    // STICKY_FALLBACK_THRESHOLD consecutive
+                                    // rescues. Most primary outages are
+                                    // transient (network blip, model warm-up,
+                                    // brief 5xx), so making the first rescue
+                                    // sticky meant a 5-second hiccup
+                                    // permanently demoted the primary until
+                                    // the user noticed and reset via /models.
+                                    // 4-rescues-in-a-row matches the user's
+                                    // intent: "if fallback rescues 3 times
+                                    // consecutively successfully, the 4th it
+                                    // sticks".
+                                    let streak = self.bump_primary_failure_streak(session_id);
+                                    let sticky = streak >= STICKY_FALLBACK_THRESHOLD;
+                                    if sticky {
+                                        // Disable restore — the swap stays.
+                                        restore_guard.original = None;
+                                    }
+                                    // Either way: dropping the guard either
+                                    // restores the primary (non-sticky) or is
+                                    // a no-op (sticky). Done either way before
+                                    // emitting events so the post-event state
+                                    // matches what callers see.
                                     drop(restore_guard);
                                     stream_succeeded = Some(resp);
-                                    // Emit ProviderSwitched so the TUI persists
-                                    // the swap to the session DB and updates the
-                                    // footer (matches rate-limit sticky path).
                                     if let Some(ref cb) = progress_callback {
                                         let primary_from_name =
                                             self.provider_name_for_session(session_id);
                                         cb(
                                             session_id,
                                             ProgressEvent::SelfHealingAlert {
-                                                message: format!(
-                                                    "Stream error → switched to {}/{}",
-                                                    fb_name, fb_model
-                                                ),
+                                                message: if sticky {
+                                                    format!(
+                                                        "Stream error → switched to {}/{} (sticky after {} consecutive rescues)",
+                                                        fb_name, fb_model, streak
+                                                    )
+                                                } else {
+                                                    format!(
+                                                        "Stream error → rescued by {}/{} ({}/{} consecutive; primary will be tried again next turn)",
+                                                        fb_name,
+                                                        fb_model,
+                                                        streak,
+                                                        STICKY_FALLBACK_THRESHOLD
+                                                    )
+                                                },
                                             },
                                         );
-                                        cb(
+                                        if sticky {
+                                            cb(
+                                                session_id,
+                                                ProgressEvent::ProviderSwitched {
+                                                    from_name: primary_from_name,
+                                                    from_model: self
+                                                        .provider_model_for_session(session_id),
+                                                    to_name: fb_name.to_string(),
+                                                    to_model: fb_model.to_string(),
+                                                    reason: "stream_error".to_string(),
+                                                },
+                                            );
+                                        }
+                                    }
+                                    // Persist the locked pair to DB only on
+                                    // sticky — a transient rescue should not
+                                    // mutate persistent session state.
+                                    if sticky {
+                                        self.persist_sticky_pair(
                                             session_id,
-                                            ProgressEvent::ProviderSwitched {
-                                                from_name: primary_from_name,
-                                                from_model: self
-                                                    .provider_model_for_session(session_id),
-                                                to_name: fb_name.to_string(),
-                                                to_model: fb_model.to_string(),
-                                                reason: "stream_error".to_string(),
-                                            },
+                                            fb_name.to_string(),
+                                            fb_model.to_string(),
                                         );
                                     }
-                                    // Persist the locked pair to DB
-                                    // independently of the progress callback
-                                    // (channel cbs historically dropped this
-                                    // event — see persist_sticky_pair docs).
-                                    self.persist_sticky_pair(
-                                        session_id,
-                                        fb_name.to_string(),
-                                        fb_model.to_string(),
-                                    );
                                     break;
                                 }
                                 Err(fb_err) => {
@@ -1933,30 +1985,61 @@ impl AgentService {
                                         fb_model
                                     );
                                     stream_succeeded = Some(resp);
-                                    // Sticky swap so subsequent iterations use this provider
-                                    self.swap_provider_for_session(session_id, (*fallback).clone());
-                                    // Emit ProviderSwitched so the TUI persists
-                                    // the swap to the session DB and updates the footer
+                                    // Same streak gate as the stream-error
+                                    // path: only swap the session's provider
+                                    // permanently after the threshold.
+                                    let streak = self.bump_primary_failure_streak(session_id);
+                                    let sticky = streak >= STICKY_FALLBACK_THRESHOLD;
                                     if let Some(ref cb) = progress_callback {
                                         let primary_from_name =
                                             self.provider_name_for_session(session_id);
                                         cb(
                                             session_id,
-                                            ProgressEvent::ProviderSwitched {
-                                                from_name: primary_from_name,
-                                                from_model: self
-                                                    .provider_model_for_session(session_id),
-                                                to_name: fb_name.clone(),
-                                                to_model: fb_model.clone(),
-                                                reason: "5xx_error".to_string(),
+                                            ProgressEvent::SelfHealingAlert {
+                                                message: if sticky {
+                                                    format!(
+                                                        "5xx error → switched to {}/{} (sticky after {} consecutive rescues)",
+                                                        fb_name, fb_model, streak
+                                                    )
+                                                } else {
+                                                    format!(
+                                                        "5xx error → rescued by {}/{} ({}/{} consecutive; primary will be tried again next turn)",
+                                                        fb_name,
+                                                        fb_model,
+                                                        streak,
+                                                        STICKY_FALLBACK_THRESHOLD
+                                                    )
+                                                },
                                             },
                                         );
+                                        if sticky {
+                                            cb(
+                                                session_id,
+                                                ProgressEvent::ProviderSwitched {
+                                                    from_name: primary_from_name,
+                                                    from_model: self
+                                                        .provider_model_for_session(session_id),
+                                                    to_name: fb_name.clone(),
+                                                    to_model: fb_model.clone(),
+                                                    reason: "5xx_error".to_string(),
+                                                },
+                                            );
+                                        }
                                     }
-                                    self.persist_sticky_pair(
-                                        session_id,
-                                        fb_name.clone(),
-                                        fb_model.clone(),
-                                    );
+                                    if sticky {
+                                        // Sticky: swap session provider AND
+                                        // persist so subsequent iterations +
+                                        // future turns use the fallback.
+                                        self.swap_provider_for_session(
+                                            session_id,
+                                            (*fallback).clone(),
+                                        );
+                                        self.persist_sticky_pair(
+                                            session_id,
+                                            fb_name.clone(),
+                                            fb_model.clone(),
+                                        );
+                                    }
                                     break;
                                 }
                                 Err(fb_err) => {

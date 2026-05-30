@@ -74,6 +74,7 @@ pub mod recent_paths_test;
 pub mod sanitize_code_edit_block_test;
 pub mod sanitize_redaction_test;
 //pub mod error_scenarios_test;
+pub mod fallback_streak_test;
 pub mod fallback_vision_test;
 pub mod file_extract_test;
 pub mod handshake_timeout_test;

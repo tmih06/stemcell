@@ -50,6 +50,22 @@ pub struct AgentService {
     /// pane). Mirrors the `session_providers` pattern.
     pub(super) session_context_limits: std::sync::RwLock<HashMap<Uuid, u32>>,
 
+    /// Per-session counter of consecutive primary-provider failures
+    /// that needed a successful fallback rescue. Used to delay the
+    /// "stick the fallback as session's provider" decision until we
+    /// have strong evidence the primary is genuinely broken — not
+    /// just temporarily blipping. Resets to 0 on any primary success
+    /// (which is the common case for transient outages where the
+    /// primary recovers on the very next request).
+    ///
+    /// When the count reaches `STICKY_FALLBACK_THRESHOLD` (4 — see
+    /// the fallback-success commit site in `tool_loop.rs`), the
+    /// fallback gets persisted into `session_providers` and the
+    /// per-session model override; before then the fallback rescues
+    /// only this single request and the primary is restored for the
+    /// next one.
+    pub(super) session_primary_failure_streak: std::sync::RwLock<HashMap<Uuid, u32>>,
+
     /// Service context for database operations
     pub(super) context: ServiceContext,
 
@@ -126,6 +142,7 @@ impl AgentService {
             session_providers: std::sync::RwLock::new(HashMap::new()),
             session_models: std::sync::RwLock::new(HashMap::new()),
             session_context_limits: std::sync::RwLock::new(HashMap::new()),
+            session_primary_failure_streak: std::sync::RwLock::new(HashMap::new()),
             context,
             tool_registry: Arc::new(ToolRegistry::new()),
             max_tool_iterations: 0, // 0 = unlimited (loop detection is the safety net)
@@ -483,6 +500,53 @@ impl AgentService {
             .write()
             .expect("session_context_limits lock poisoned")
             .remove(&session_id);
+        self.session_primary_failure_streak
+            .write()
+            .expect("session_primary_failure_streak lock poisoned")
+            .remove(&session_id);
+    }
+
+    /// Record one primary-provider failure that was rescued by a
+    /// successful fallback. Returns the new streak count.
+    ///
+    /// Bumped only when the fallback ACTUALLY succeeded — failures
+    /// where both primary and fallback errored out don't count, since
+    /// no rescue happened and the situation is exceptional rather
+    /// than evidence of a chronically broken primary.
+    pub fn bump_primary_failure_streak(&self, session_id: Uuid) -> u32 {
+        let mut map = self
+            .session_primary_failure_streak
+            .write()
+            .expect("session_primary_failure_streak lock poisoned");
+        let entry = map.entry(session_id).or_insert(0);
+        *entry += 1;
+        *entry
+    }
+
+    /// Reset the per-session primary-failure streak. Called after any
+    /// successful PRIMARY stream so a single recovery wipes the count
+    /// — the threshold meaning becomes "N consecutive rescues with
+    /// no primary success in between", which matches the user intent
+    /// ("if the fallback runs 3 times in a row successfully, the 4th
+    /// it sticks").
+    pub fn reset_primary_failure_streak(&self, session_id: Uuid) {
+        self.session_primary_failure_streak
+            .write()
+            .expect("session_primary_failure_streak lock poisoned")
+            .remove(&session_id);
+    }
+
+    /// Read current streak without mutating. Used by the fallback
+    /// commit site to decide between "rescue this request only" vs
+    /// "stick the fallback permanently".
+    #[allow(dead_code)]
+    pub fn peek_primary_failure_streak(&self, session_id: Uuid) -> u32 {
+        self.session_primary_failure_streak
+            .read()
+            .expect("session_primary_failure_streak lock poisoned")
+            .get(&session_id)
+            .copied()
+            .unwrap_or(0)
     }
 
     /// Snapshot of every per-session provider binding. Used by
