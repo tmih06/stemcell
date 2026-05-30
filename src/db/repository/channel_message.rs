@@ -261,6 +261,72 @@ impl ChannelMessageRepository {
             .map_err(interact_err)?
             .context("Failed to list channel chats")
     }
+
+    /// Return all distinct forum topics seen in a chat — the
+    /// (thread_id, topic_name) pairs captured from incoming messages.
+    ///
+    /// The bot only learns topic names from two sources:
+    ///
+    /// - `forum_topic_created` service messages it witnesses
+    /// - the `reply_to_message().forum_topic_created()` chain that
+    ///   Telegram includes on every regular topic message
+    ///
+    /// So this list only contains topics the bot has seen activity
+    /// in. Telegram's Bot API exposes no `listForumTopics` endpoint
+    /// — there is no way to enumerate all topics in a supergroup,
+    /// only learn them passively as messages arrive.
+    ///
+    /// Used by `telegram_send`'s `list_topics` action so the agent
+    /// can map user-typed names like "#announcements" back to the
+    /// numeric `thread_id` it needs to pass to `message_in_thread`.
+    pub async fn topics_for_chat(&self, channel: &str, chat_id: &str) -> Result<Vec<TopicSummary>> {
+        let ch = channel.to_string();
+        let cid = chat_id.to_string();
+        self.pool
+            .get()
+            .await
+            .context("Failed to get connection")?
+            .interact(move |conn| {
+                let mut stmt = conn.prepare_cached(
+                    "SELECT thread_id, \
+                            MAX(topic_name) as topic_name, \
+                            COUNT(*) as message_count, \
+                            MAX(created_at) as last_message_at \
+                     FROM channel_messages \
+                     WHERE channel = ?1 AND channel_chat_id = ?2 AND thread_id IS NOT NULL \
+                     GROUP BY thread_id \
+                     ORDER BY last_message_at DESC",
+                )?;
+                let rows = stmt.query_map(params![ch, cid], |row| {
+                    Ok(TopicSummary {
+                        thread_id: row.get::<_, Option<String>>(0)?.unwrap_or_default(),
+                        topic_name: row.get(1)?,
+                        message_count: row.get(2)?,
+                        last_message_at: row.get(3)?,
+                    })
+                })?;
+                rows.collect::<std::result::Result<Vec<_>, _>>()
+            })
+            .await
+            .map_err(interact_err)?
+            .context("Failed to list topics for chat")
+    }
+}
+
+/// A forum topic the bot has seen activity in. Surfaced by
+/// `ChannelMessageRepository::topics_for_chat` so the agent can
+/// translate user-typed topic names to numeric thread_ids.
+#[derive(Debug, Clone)]
+pub struct TopicSummary {
+    pub thread_id: String,
+    /// `None` for topics where we only ever saw messages but never
+    /// the topic-creation service message and never a reply chain
+    /// carrying it. The thread_id is still usable for sending.
+    pub topic_name: Option<String>,
+    pub message_count: i64,
+    /// Unix epoch seconds — matches the column type
+    /// `created_at INTEGER` used by every other query in this file.
+    pub last_message_at: i64,
 }
 
 #[cfg(test)]

@@ -255,6 +255,26 @@ pub(crate) async fn handle_message(
         let sender_name = user.first_name.clone();
         let msg_id = msg.id.0.to_string();
         let thread_id = msg.thread_id.map(|t| t.0.to_string());
+        // Capture the topic name from one of two sources:
+        //   1. `forum_topic_created` service message — the topic
+        //      creation itself; only fires once per topic.
+        //   2. `reply_to_message().forum_topic_created()` — for every
+        //      REGULAR message inside a topic, Telegram includes the
+        //      topic-creation service message as the reply target. So
+        //      we learn the topic name from every message in that
+        //      topic, not just the one-time creation event. Critical
+        //      for the `list_topics` mapping (issue #130 follow-up
+        //      by leshchenko1979) because the agent needs to map
+        //      user-typed names like "#announcements" back to numeric
+        //      thread_ids it can pass to telegram_send.
+        let topic_name = msg
+            .forum_topic_created()
+            .map(|t| t.name.clone())
+            .or_else(|| {
+                msg.reply_to_message()
+                    .and_then(|r| r.forum_topic_created())
+                    .map(|t| t.name.clone())
+            });
         async move {
             if text.is_empty() {
                 return;
@@ -269,7 +289,7 @@ pub(crate) async fn handle_message(
                 "text".into(),
                 Some(msg_id),
             )
-            .with_thread(thread_id, None);
+            .with_thread(thread_id, topic_name);
             if let Err(e) = repo.insert(&cm).await {
                 tracing::warn!("Failed to store channel message: {e}");
             }

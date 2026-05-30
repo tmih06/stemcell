@@ -132,9 +132,13 @@ impl Tool for TelegramSendTool {
                         "forward", "send_photo", "send_document", "send_location",
                         "send_poll", "send_buttons", "get_chat",
                         "get_chat_administrators", "get_chat_member_count", "get_chat_member",
-                        "ban_user", "unban_user", "set_reaction"
+                        "ban_user", "unban_user", "set_reaction", "list_topics"
                     ],
-                    "description": "The Telegram action to perform"
+                    "description": "The Telegram action to perform. \
+                        `list_topics` returns the (thread_id, topic_name) pairs the bot has \
+                        observed in a forum-enabled supergroup — use this to translate a \
+                        user-typed topic name like \"#announcements\" to the numeric thread_id \
+                        you then pass to `send` / `reply` / `send_photo` via the `thread_id` field."
                 },
                 "message": {
                     "type": "string",
@@ -636,11 +640,64 @@ impl Tool for TelegramSendTool {
                 }
             }
 
+            // ── list_topics ──────────────────────────────────────────────────
+            "list_topics" => {
+                let chat_id = pget!(chat_or_err(&input, &self.telegram_state).await);
+                let Some(pool) = crate::db::global_pool() else {
+                    return Ok(ToolResult::error(
+                        "Channel message store unavailable (DB not initialised).".to_string(),
+                    ));
+                };
+                let repo = crate::db::ChannelMessageRepository::new(pool.clone());
+                let chat_id_str = chat_id.to_string();
+                let topics = match repo.topics_for_chat("telegram", &chat_id_str).await {
+                    Ok(t) => t,
+                    Err(e) => {
+                        return Ok(ToolResult::error(format!("Failed to list topics: {e}")));
+                    }
+                };
+                if topics.is_empty() {
+                    return Ok(ToolResult::success(format!(
+                        "No forum topics observed yet for chat {chat_id}. \
+                         Telegram's Bot API has no listForumTopics endpoint — the bot only \
+                         learns topic names from messages it sees. Ask a user to post once in \
+                         each topic so the bot can capture their names, then retry."
+                    )));
+                }
+                // Render a compact human/agent-readable table.
+                let mut out = format!(
+                    "Topics in chat {chat_id} (only those the bot has seen activity in):\n"
+                );
+                out.push_str("  thread_id | topic_name              | messages | last_seen\n");
+                for t in &topics {
+                    let name = t.topic_name.as_deref().unwrap_or("(unknown)");
+                    // Convert epoch seconds (the schema's storage
+                    // format for created_at) to a human-readable
+                    // UTC timestamp so the agent and any user
+                    // reading the output don't have to decode.
+                    let last_seen = chrono::DateTime::from_timestamp(t.last_message_at, 0)
+                        .map(|dt| dt.format("%Y-%m-%d %H:%M UTC").to_string())
+                        .unwrap_or_else(|| t.last_message_at.to_string());
+                    out.push_str(&format!(
+                        "  {:<9} | {:<23} | {:>8} | {}\n",
+                        t.thread_id,
+                        name.chars().take(23).collect::<String>(),
+                        t.message_count,
+                        last_seen,
+                    ));
+                }
+                out.push_str(
+                    "\nPass the thread_id back into `send` / `reply` / `send_photo` etc. \
+                     via the optional `thread_id` field to route a message into a specific topic.",
+                );
+                Ok(ToolResult::success(out))
+            }
+
             unknown => Ok(ToolResult::error(format!(
                 "Unknown action '{unknown}'. Valid actions: send, reply, edit, delete, pin, \
                  unpin, forward, send_photo, send_document, send_location, send_poll, \
                  send_buttons, get_chat, get_chat_administrators, get_chat_member_count, \
-                 get_chat_member, ban_user, unban_user, set_reaction"
+                 get_chat_member, ban_user, unban_user, set_reaction, list_topics"
             ))),
         }
     }
