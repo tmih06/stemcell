@@ -53,6 +53,35 @@ fn get_id(input: &Value, key: &str) -> std::result::Result<i64, ToolResult> {
 
 /// Resolve chat_id: explicit param or owner fallback.
 #[allow(clippy::result_large_err)]
+/// Resolve a forum-topic `thread_id` for a proactive Telegram send.
+///
+/// Precedence:
+///   1. Explicit `thread_id` field in the tool input — the agent
+///      asked for a specific topic, honour it. Lets cron jobs / the
+///      agent route messages to a topic OTHER than the most recent
+///      one (e.g. "post the release notes in #announcements even
+///      though the last message came from #dev").
+///   2. Auto-lookup via `latest_thread_id_for_chat(chat_id)` — the
+///      fallback that closed #130, picking up the most recently
+///      stored topic so non-forum chats and routine replies still
+///      land in the right place without the agent having to know.
+///
+/// Returns `None` when neither path produces a value (non-forum
+/// chat, empty channel history, explicit value outside i32 range).
+pub(crate) async fn resolve_thread_id(
+    input: &Value,
+    chat_id: i64,
+) -> Option<teloxide::types::ThreadId> {
+    if let Some(tid) = input.get("thread_id").and_then(|v| v.as_i64())
+        && let Ok(tid_i32) = i32::try_from(tid)
+    {
+        return Some(teloxide::types::ThreadId(teloxide::types::MessageId(
+            tid_i32,
+        )));
+    }
+    crate::channels::telegram::send::latest_thread_id_for_chat(chat_id).await
+}
+
 async fn chat_or_err(input: &Value, state: &TelegramState) -> std::result::Result<i64, ToolResult> {
     if let Some(id) = input.get("chat_id").and_then(|v| v.as_i64()) {
         return Ok(id);
@@ -114,6 +143,10 @@ impl Tool for TelegramSendTool {
                 "chat_id": {
                     "type": "integer",
                     "description": "Telegram chat ID. Omit to use owner's chat."
+                },
+                "thread_id": {
+                    "type": "integer",
+                    "description": "Optional forum-topic ID for groups with topics enabled. Omit to auto-route to the most recent topic seen in the chat (the usual case for replies to ongoing conversations). Pass an explicit value to route to a DIFFERENT topic — e.g. post a release announcement in #announcements when the latest message came from #dev. Ignored for non-forum chats."
                 },
                 "message_id": {
                     "type": "integer",
@@ -205,11 +238,9 @@ impl Tool for TelegramSendTool {
             "send" => {
                 let text = pget!(get_str(&input, "message")).to_string();
                 let chat_id = pget!(chat_or_err(&input, &self.telegram_state).await);
-                // Look up the chat's most recent thread_id so proactive
-                // sends in forum topics land in the originating topic
-                // (issue #130 proactive path). None for non-forum chats.
-                let thread_id =
-                    crate::channels::telegram::send::latest_thread_id_for_chat(chat_id).await;
+                // Explicit `thread_id` wins; auto-lookup is the
+                // fallback for the common case (#130).
+                let thread_id = resolve_thread_id(&input, chat_id).await;
                 let chunks = crate::channels::telegram::handler::split_message(&text, 4096);
                 for chunk in chunks {
                     if let Err(e) = crate::channels::telegram::send::message_in_thread(
@@ -233,8 +264,7 @@ impl Tool for TelegramSendTool {
                 let text = pget!(get_str(&input, "message")).to_string();
                 let chat_id = pget!(chat_or_err(&input, &self.telegram_state).await);
                 let message_id = pget!(get_id(&input, "message_id"));
-                let thread_id =
-                    crate::channels::telegram::send::latest_thread_id_for_chat(chat_id).await;
+                let thread_id = resolve_thread_id(&input, chat_id).await;
                 match crate::channels::telegram::send::message_in_thread(
                     &bot,
                     ChatId(chat_id),
