@@ -232,26 +232,19 @@ pub fn render_onboarding(f: &mut Frame, wizard: &OnboardingWizard) {
         lines.len() // no footer to center separately
     };
 
-    // Center the step content block as a whole: find max width of content
-    // lines and add uniform left padding to shift the whole block to center.
-    let content_max_width: usize = lines[header_end..footer_start]
-        .iter()
-        .map(|line| {
-            line.spans
-                .iter()
-                .map(|s| {
-                    use unicode_width::UnicodeWidthStr;
-                    s.content.width()
-                })
-                .sum::<usize>()
-        })
-        .max()
-        .unwrap_or(0);
-    let content_pad = if content_max_width > 0 && content_max_width < inner_width {
-        (inner_width - content_max_width) / 2
-    } else {
-        0
-    };
+    // Step content stays LEFT-ALIGNED (matches the /models picker
+    // layout). The previous behavior computed a per-frame
+    // `content_pad` from the widest line of the currently-rendered
+    // content and used it to horizontally center the whole content
+    // block — but the widest line varied with the selected provider
+    // (a custom provider's `https://...` base URL is far wider than
+    // a vanilla provider's `API Key: ***` line). That made the
+    // whole list re-indent on every Up/Down keypress, which the
+    // user surfaced as "the position keeps changing on every
+    // navigation". Left-aligning with a small uniform pad keeps the
+    // list rows in the same column regardless of which provider is
+    // selected.
+    let content_pad: usize = 2;
 
     let centered_lines: Vec<Line<'static>> = lines
         .into_iter()
@@ -272,6 +265,7 @@ pub fn render_onboarding(f: &mut Frame, wizard: &OnboardingWizard) {
 
             if i < header_end || i >= footer_start {
                 // Header and footer: center each line independently
+                // so the title bar / nav line stay visually balanced.
                 if line_width >= inner_width {
                     line
                 } else {
@@ -281,14 +275,11 @@ pub fn render_onboarding(f: &mut Frame, wizard: &OnboardingWizard) {
                     Line::from(spans)
                 }
             } else {
-                // Step content: uniform left padding so the block stays aligned
-                if content_pad > 0 {
-                    let mut spans = vec![Span::raw(" ".repeat(content_pad))];
-                    spans.extend(line.spans);
-                    Line::from(spans)
-                } else {
-                    line
-                }
+                // Step content: fixed small left pad so columns are
+                // stable across selections.
+                let mut spans = vec![Span::raw(" ".repeat(content_pad))];
+                spans.extend(line.spans);
+                Line::from(spans)
             }
         })
         .collect();
