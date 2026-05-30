@@ -577,6 +577,12 @@ pub fn redact_secrets(text: &str) -> String {
 /// Removes:
 /// - HTML comments (`<!-- tools-v2: ... -->`, `<!-- lens -->`, etc.)
 /// - XML tool-call blocks (`<tool_call>`, `<tool_code>`, `<minimax:tool_call>`, etc.)
+/// - Cursor / Aider / Cline-style `CODE_EDIT_BLOCK` fenced blocks that
+///   some fine-tuned models (qwen-3.7-max-thinking observed 2026-05-30
+///   14:13) emit as text instead of calling `edit_file`. They look
+///   like ```` ```lang|CODE_EDIT_BLOCK|/abs/path/to/file ```` and leak
+///   the full file contents to whichever channel renders the
+///   response.
 ///
 /// Use this on any text sent to Telegram, HTTP webhooks, or other external channels.
 pub fn strip_llm_artifacts(text: &str) -> String {
@@ -585,6 +591,9 @@ pub fn strip_llm_artifacts(text: &str) -> String {
     let mut result = text.to_string();
     if result.contains("<!--") {
         result = AgentService::strip_html_comments(&result);
+    }
+    if result.contains("CODE_EDIT_BLOCK") {
+        result = strip_code_edit_block_fences(&result);
     }
     // Two strip paths:
     //   1. Matched-pair JSON-bearing tool-call blocks — only stripped
@@ -615,6 +624,76 @@ pub fn strip_llm_artifacts(text: &str) -> String {
         result = AgentService::strip_xml_tool_calls(&result);
     }
     result
+}
+
+/// Strip `CODE_EDIT_BLOCK`-style fenced blocks the LLM emits as text
+/// when it confuses a Cursor/Aider/Cline IDE edit format with an
+/// actual tool call.
+///
+/// Pattern:
+/// ```text
+/// ```<language>|CODE_EDIT_BLOCK|<absolute path>
+/// <file contents — often hundreds of lines>
+/// ```
+/// ```
+///
+/// Replace the whole block (header line + body + closing fence) with
+/// a single short notice so the user knows the agent TRIED to edit a
+/// file but used the wrong format — and so the chat doesn't leak the
+/// full file contents through Telegram / Slack / Discord etc. The
+/// notice mentions the path so the user can verify nothing weird was
+/// attempted.
+///
+/// Why not silently drop the path too: the path is the one piece of
+/// signal worth keeping (the user can audit what file the agent
+/// thought it was touching). The body is just regurgitated file
+/// content with zero new information.
+pub(crate) fn strip_code_edit_block_fences(text: &str) -> String {
+    let lines: Vec<&str> = text.lines().collect();
+    let mut out: Vec<String> = Vec::with_capacity(lines.len());
+    let mut i = 0;
+    while i < lines.len() {
+        let line = lines[i];
+        if is_code_edit_block_open(line) {
+            let path = extract_code_edit_block_path(line).unwrap_or("(unknown)");
+            // Skip ahead to the closing ``` fence. If the model
+            // forgot the closer (truncated stream) we still drop the
+            // rest of the input so partial file contents don't leak.
+            let mut j = i + 1;
+            while j < lines.len() && !lines[j].trim_start().starts_with("```") {
+                j += 1;
+            }
+            out.push(format!(
+                "[Agent attempted to edit `{path}` using an unsupported \
+                 inline-edit format. The change was NOT applied — agent \
+                 should retry via the `edit_file` tool.]"
+            ));
+            // j points at the closing ```; skip past it (or to EOF
+            // if the closer was missing).
+            i = j.saturating_add(1);
+            continue;
+        }
+        out.push(line.to_string());
+        i += 1;
+    }
+    out.join("\n")
+}
+
+/// True for a line that opens a `CODE_EDIT_BLOCK` fenced block.
+/// Tolerant of leading whitespace and unknown language tags — the
+/// `CODE_EDIT_BLOCK` marker is the load-bearing piece.
+fn is_code_edit_block_open(line: &str) -> bool {
+    let trimmed = line.trim_start();
+    trimmed.starts_with("```") && trimmed.contains("CODE_EDIT_BLOCK")
+}
+
+/// Extract the path component from a `CODE_EDIT_BLOCK` opener line.
+/// Format: ` ```<lang>|CODE_EDIT_BLOCK|<path>`. Returns None when
+/// the path slot is missing.
+fn extract_code_edit_block_path(line: &str) -> Option<&str> {
+    let after = line.split("CODE_EDIT_BLOCK").nth(1)?;
+    let path = after.trim_start_matches('|').trim();
+    if path.is_empty() { None } else { Some(path) }
 }
 
 /// Redact values inside a headers object for known sensitive header names.
