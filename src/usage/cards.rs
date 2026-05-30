@@ -306,11 +306,21 @@ pub fn render_models(f: &mut Frame, models: &[ModelEntry], area: Rect, focused: 
             Span::styled(format!("{:>width$} req", m.calls, width = calls_width), DIM),
         ]));
 
-        // Child rows (variant breakdown) — only show tree when there are actual quant variants
-        let has_real_variants = m.variants.len() > 1
-            || m.variants.first().is_some_and(|v| {
+        // Child rows (variant breakdown) — only show the tree when
+        // there's something MEANINGFUL to break down. A variant
+        // whose name is a cosmetic alias of the parent (only
+        // separator/case differences, e.g. `qwen3.7-max` vs
+        // `qwen-3.7-max`) carries zero information and just
+        // duplicates the parent line visually.
+        let meaningful_variants: Vec<&_> = m
+            .variants
+            .iter()
+            .filter(|v| {
                 crate::usage::data::normalize_model_for_grouping(&v.name) != m.model
-            });
+                    && !crate::usage::data::is_cosmetic_alias_of_parent(&v.name, &m.model)
+            })
+            .collect();
+        let has_real_variants = !meaningful_variants.is_empty();
 
         if has_real_variants {
             // Tree prefix: box-drawing glyph + 1 trailing space = 3 display
@@ -322,8 +332,8 @@ pub fn render_models(f: &mut Frame, models: &[ModelEntry], area: Rect, focused: 
             // row's right-hand column edges.
             const TREE_PREFIX_CHARS: usize = 3;
             let max_child_name = name_width.saturating_sub(TREE_PREFIX_CHARS);
-            for (vidx, v) in m.variants.iter().enumerate() {
-                let is_last = vidx == m.variants.len() - 1;
+            for (vidx, v) in meaningful_variants.iter().enumerate() {
+                let is_last = vidx == meaningful_variants.len() - 1;
                 let prefix = if is_last { "└─ " } else { "├─ " };
                 // Keep child variant names as the raw API id so the
                 // operator sees exactly what was recorded (e.g.

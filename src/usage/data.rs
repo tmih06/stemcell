@@ -198,6 +198,30 @@ pub fn normalize_model_for_grouping(name: &str) -> String {
     n
 }
 
+/// True when a raw model name is a trivial cosmetic alias of its
+/// parent group — same model written with different separator
+/// punctuation, case, etc. Examples that return true: `qwen3.7-max`
+/// vs `qwen-3.7-max`; `Qwen 3.7 Max` vs `qwen-3.7-max`.
+///
+/// Used by the usage breakdown to suppress noise: when a normalized
+/// group like `qwen-3.7-max` contains a child whose name is just a
+/// cosmetic alias of the group, there's no information value in
+/// showing it — same model reported twice with different
+/// punctuation. Meaningful variants (`qwen-3.7-max-preview`, dated
+/// snapshots, `qwen-latest-series-invite-beta-v34`) have different
+/// canonical forms and survive this check.
+///
+/// Canonical form: alphanumeric ASCII only, lowercased.
+pub fn is_cosmetic_alias_of_parent(variant: &str, parent: &str) -> bool {
+    fn canonical(s: &str) -> String {
+        s.chars()
+            .filter(|c| c.is_ascii_alphanumeric())
+            .flat_map(|c| c.to_lowercase())
+            .collect()
+    }
+    canonical(variant) == canonical(parent)
+}
+
 // ── Activity classifier ──────────────────────────────────────────────────────
 
 /// Classify a session title into an activity category using keyword heuristics.
