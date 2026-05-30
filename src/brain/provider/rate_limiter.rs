@@ -112,6 +112,18 @@ impl RateLimiter {
             }
         }
     }
+
+    /// Pretend a slot was granted exactly NOW. Used by tests that need
+    /// deterministic pacing without relying on the scheduler to keep
+    /// two consecutive `wait()` calls within `min_interval`. Under
+    /// heavy CI contention (nextest's per-binary parallel scheduling)
+    /// real-time tests for "second call paces" become flaky because
+    /// the inter-call gap can spuriously exceed `min_interval`; this
+    /// helper lets tests assert pacing arithmetically instead.
+    #[cfg(test)]
+    pub(crate) fn force_grant_now(&self) {
+        self.last_granted.store(Self::now_ns(), Ordering::Release);
+    }
 }
 
 /// Global registry that hands out per-model rate limiters.

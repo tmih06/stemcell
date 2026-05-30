@@ -38,25 +38,36 @@ async fn first_request_instant() {
 
 #[tokio::test]
 async fn second_request_paces() {
-    // Under heavy parallel-test CPU contention the tokio scheduler can
-    // delay >90 ms between the first `wait()` returning and the second
-    // `Instant::now()` — making the second call see `elapsed >= interval`
-    // and skip its sleep, tripping the `>= 90 ms` floor. Widen the gap
-    // to 500 ms and also assert on the *returned* sleep duration (what
-    // the limiter computed before actually sleeping), which is
-    // scheduler-independent.
+    // Deterministic pacing test. Previously this called wait() twice
+    // and timed the gap, but under heavy parallel-test CPU contention
+    // (especially nextest's per-binary scheduling) the inter-call gap
+    // would spuriously exceed `min_interval`, making the second wait()
+    // skip its sleep and trip the >=300ms assertion.
+    //
+    // Now we inject "a slot was just granted" via `force_grant_now()`
+    // and immediately call `wait()`. The limiter must compute a sleep
+    // for the full gap (minus the tiny delta between `force_grant_now`
+    // and the wait's `now_ns()` read). Asserts on the *returned*
+    // sleep duration only — scheduler-independent — and bounds the
+    // wall-clock at "must have waited a meaningful chunk".
     let gap = Duration::from_millis(500);
     let limiter = RateLimiter::new(gap);
 
-    limiter.wait().await; // first — instant
+    limiter.force_grant_now();
 
     let start = Instant::now();
-    let returned = limiter.wait().await; // second — must sleep
+    let returned = limiter.wait().await;
     let elapsed = start.elapsed();
 
     assert!(
-        returned >= Duration::from_millis(300),
-        "limiter should have computed ≥300 ms sleep, got {:?}",
+        returned >= gap.saturating_sub(Duration::from_millis(50)),
+        "limiter should have computed ~{:?} sleep, got {:?}",
+        gap,
+        returned
+    );
+    assert!(
+        returned <= gap,
+        "limiter must never sleep more than min_interval, got {:?}",
         returned
     );
     assert!(
@@ -75,22 +86,35 @@ async fn second_request_paces() {
 
 #[tokio::test]
 async fn multiple_arcs_share_state() {
-    let limiter = Arc::new(RateLimiter::new(Duration::from_millis(80)));
+    // Same nextest contention concern as `second_request_paces`: timing
+    // the gap between `a.wait()` returning and `b.wait()` starting is
+    // unreliable under heavy parallel scheduling. Inject a fresh grant
+    // via `force_grant_now()` so the b.wait() must pace from a known
+    // baseline, then assert on the returned sleep duration.
+    //
+    // Wide tolerance (100ms): comment on `concurrent_callers_serialise`
+    // notes the scheduler can delay >90ms between calls. With a 500ms
+    // gap and 100ms tolerance, even worst-case contention still leaves
+    // returned ≥400ms, which proves the shared-Arc pacing happened.
+    let gap = Duration::from_millis(500);
+    let limiter = Arc::new(RateLimiter::new(gap));
 
     let a = Arc::clone(&limiter);
     let b = Arc::clone(&limiter);
 
-    a.wait().await; // slot claimed
+    a.force_grant_now(); // simulate "a just claimed a slot"
 
-    // b must wait because it shares the same AtomicU64
-    let start = Instant::now();
-    b.wait().await;
-    let elapsed = start.elapsed();
-
+    let returned = b.wait().await;
     assert!(
-        elapsed >= Duration::from_millis(70),
-        "shared Arc should enforce the gap, got {:?}",
-        elapsed
+        returned >= gap.saturating_sub(Duration::from_millis(100)),
+        "b should have computed ~{:?} sleep (shared AtomicU64), got {:?}",
+        gap,
+        returned
+    );
+    assert!(
+        returned <= gap,
+        "b must never sleep more than the gap, got {:?}",
+        returned
     );
 }
 
