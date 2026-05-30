@@ -81,6 +81,13 @@ pub struct AgentService {
     /// Whether to auto-approve tool execution
     pub(super) auto_approve_tools: bool,
 
+    /// When true, suppress the playful post-compaction narration.
+    /// Mirrors `[agent] silent_compaction` from config.toml. Default
+    /// is `false` — users have called out the post-compaction
+    /// one-liners as a delight feature; corporate / customer-facing
+    /// deployments can opt out by setting the flag.
+    pub(super) silent_compaction: bool,
+
     /// Context window limit in tokens from config
     pub(super) context_limit: u32,
 
@@ -148,6 +155,7 @@ impl AgentService {
             max_tool_iterations: 0, // 0 = unlimited (loop detection is the safety net)
             default_system_brain: None,
             auto_approve_tools: false,
+            silent_compaction: config.agent.silent_compaction,
             context_limit: config.agent.context_limit,
             max_tokens: config.agent.max_tokens,
             approval_callback: None,

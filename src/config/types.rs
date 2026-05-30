@@ -535,6 +535,22 @@ pub struct AgentConfig {
     /// Prefer cheap, fast models for autonomous analysis — results are deterministic.
     #[serde(default)]
     pub self_improvement_model: Option<String>,
+
+    /// Suppress the agent's playful post-compaction narration. Default
+    /// `false` (= keep the personality moments). When true, the
+    /// compaction-recovery prompts switch to a silent-continuation
+    /// variant that tells the model to resume without acknowledging
+    /// the compaction at all.
+    ///
+    /// Why default fun: users have specifically called out post-
+    /// compaction one-liners as something they enjoy and forward to
+    /// friends — emergent character per-language (e.g. Russian мат in
+    /// frustration moments) generates the "this thing has personality"
+    /// signal that's hard to fake. The flag exists for formal /
+    /// corporate / customer-facing deployments where dropping mid-
+    /// session profanity would be inappropriate.
+    #[serde(default)]
+    pub silent_compaction: bool,
 }
 
 fn default_approval_policy() -> String {
@@ -569,6 +585,7 @@ impl Default for AgentConfig {
             auto_update: default_auto_update(),
             self_improvement_provider: None,
             self_improvement_model: None,
+            silent_compaction: false,
         }
     }
 }

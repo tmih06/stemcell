@@ -646,24 +646,11 @@ impl AgentService {
                 tracing::error!("Failed to persist compaction marker to DB: {}", e);
             }
 
-            let mut cont_text =
-                "[SYSTEM: Context was auto-compacted. The summary above includes a snapshot \
-                 of recent messages before compaction.\n\n\
-                 Silently continue the IMMEDIATE TASK from the summary as if nothing happened. \
-                 Do NOT announce, narrate, apologise for, or acknowledge the compaction. The \
-                 user does not know it happened and does not need to. Any file you were about \
-                 to read or edit can simply be re-read on the next tool call — that's normal, \
-                 not worth narrating.\n\n\
-                 Use `session_search` with specific keywords if the snapshot lacks older context. \
-                 Selectively load brain files (TOOLS.md / SOUL.md / USER.md) only if the task \
-                 needs them — never name=\"all\".\n\n\
-                 FALLBACK: only if the summary genuinely doesn't make the next step clear, send \
-                 ONE short cheeky line (\"brain refresh — what was I working on?\") and ask. \
-                 Default behaviour is silent continuation.]"
-                    .to_string();
-            if !self.auto_approve_tools {
-                cont_text.push_str("\n\nCRITICAL: Tool approval is REQUIRED. You MUST wait for user approval before EVERY tool execution. Do NOT batch tool calls without approval.");
-            }
+            let cont_text = super::compaction_prompts::build_continuation(
+                super::compaction_prompts::CompactionKind::Regular,
+                self.silent_compaction,
+                self.auto_approve_tools,
+            );
             context.add_message(Message::user(cont_text));
         }
 
@@ -867,19 +854,11 @@ impl AgentService {
                     tracing::error!("Failed to persist mid-loop compaction marker to DB: {}", e);
                 }
 
-                let mut cont_text =
-                    "[SYSTEM: Context was auto-compacted mid-loop. The summary above includes \
-                     a snapshot of recent messages.\n\n\
-                     Silently continue the IMMEDIATE TASK exactly where you left off. Do NOT \
-                     announce or narrate the compaction. Any file you were mid-edit on can be \
-                     silently re-read on the next tool call — that's normal, not worth \
-                     mentioning. Do NOT restart, ask what to do, or deviate.\n\n\
-                     Use `session_search` with keywords from the summary if older context is \
-                     missing from the snapshot.]"
-                        .to_string();
-                if !self.auto_approve_tools {
-                    cont_text.push_str("\n\nCRITICAL: Tool approval is REQUIRED. You MUST wait for user approval before EVERY tool execution. Do NOT batch tool calls without approval.");
-                }
+                let cont_text = super::compaction_prompts::build_continuation(
+                    super::compaction_prompts::CompactionKind::MidLoop,
+                    self.silent_compaction,
+                    self.auto_approve_tools,
+                );
                 context.add_message(Message::user(cont_text));
             }
 
@@ -1004,22 +983,11 @@ impl AgentService {
                                 );
                             }
 
-                            let mut cont_text =
-                                "[SYSTEM: Emergency compaction — the prompt was too large and got \
-                                 compacted. The summary above contains the recovered state.\n\n\
-                                 Silently resume from the IMMEDIATE TASK in the summary. Do NOT \
-                                 acknowledge or apologise for the compaction — the user does not \
-                                 know it happened. Re-read any file you were mid-edit on without \
-                                 narrating it. Do NOT repeat completed work.\n\n\
-                                 Use `session_search` with specific keywords if older context is \
-                                 missing.\n\n\
-                                 FALLBACK: only if the next step is genuinely unclear from the \
-                                 summary, send ONE short cheeky line (\"brain refresh — what was \
-                                 I doing?\") and ask. Default behaviour is silent continuation.]"
-                                    .to_string();
-                            if !self.auto_approve_tools {
-                                cont_text.push_str("\n\nCRITICAL: Tool approval is REQUIRED. You MUST wait for user approval before EVERY tool execution. Do NOT batch tool calls without approval.");
-                            }
+                            let cont_text = super::compaction_prompts::build_continuation(
+                                super::compaction_prompts::CompactionKind::Emergency,
+                                self.silent_compaction,
+                                self.auto_approve_tools,
+                            );
                             context.add_message(Message::user(cont_text));
 
                             // Notify user about emergency compaction
@@ -4347,20 +4315,11 @@ impl AgentService {
                     tracing::error!("Failed to persist post-tool compaction marker to DB: {}", e);
                 }
 
-                let mut cont_text =
-                    "[SYSTEM: Mid-loop context compaction complete. The summary above has \
-                     full context of everything done so far. POST-COMPACTION PROTOCOL:\n\
-                     1. Review the summary to understand current task state.\n\
-                     2. Use `session_search` with keywords if you need older context.\n\
-                     Briefly acknowledge the compaction to the user with a fun/cheeky remark (be \
-                     creative, surprise them — cursing allowed), then IMMEDIATELY continue the task \
-                     described in the \"IMMEDIATE TASK\" section of the compaction summary. \
-                     Do NOT start a new topic. Do NOT deviate to unrelated work. \
-                     Do NOT re-do completed work.]"
-                        .to_string();
-                if !self.auto_approve_tools {
-                    cont_text.push_str("\n\nCRITICAL: Tool approval is REQUIRED. You MUST wait for user approval before EVERY tool execution. Do NOT batch tool calls without approval.");
-                }
+                let cont_text = super::compaction_prompts::build_continuation(
+                    super::compaction_prompts::CompactionKind::PostTool,
+                    self.silent_compaction,
+                    self.auto_approve_tools,
+                );
                 context.add_message(Message::user(cont_text));
             }
 

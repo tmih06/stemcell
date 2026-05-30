@@ -5,6 +5,7 @@
 
 mod builder;
 mod compaction;
+pub(crate) mod compaction_prompts;
 mod context;
 pub(crate) mod feedback;
 mod gaslighting;
