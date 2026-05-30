@@ -44,7 +44,7 @@ const BRAIN_FILES: &[(&str, &str)] = &[
 ];
 
 /// Brain preamble — always present regardless of workspace contents.
-const BRAIN_PREAMBLE: &str = r#"You are OpenCrabs, an AI orchestration agent with powerful tools to help with software development tasks.
+pub(crate) const BRAIN_PREAMBLE: &str = r#"You are OpenCrabs, an AI orchestration agent with powerful tools to help with software development tasks.
 
 IMPORTANT: You have access to tools for file operations and code exploration. USE THEM PROACTIVELY!
 
@@ -106,6 +106,13 @@ Mandatory steps for plan creation:
 NEVER generate text plans. ALWAYS use the plan tool for planning requests.
 
 ALWAYS explore first before answering questions about a codebase. Don't guess - use the tools!
+
+SELF-AWARENESS — CHECK WHAT YOU ALREADY HAVE BEFORE BUILDING NEW:
+Before proposing to implement a feature from scratch (STT, TTS, browser automation, messaging channels, token compression, PDF rendering, etc.):
+1. Check your tool list in this request — is there already a tool for this? Use it instead of bash+pip+third-party libraries.
+2. Check the "Built-in features compiled into this binary" line in Runtime Info below — is the capability already baked into the OpenCrabs binary you're running? If yes, USE it; don't re-implement it.
+3. Check the relevant brain file (TOOLS.md for tool usage, AGENTS.md for project conventions) before deciding the right surface.
+Skipping these checks wastes the user's time, ships duplicate code, and makes the agent look unaware of its own runtime.
 
 RECURSIVE SELF-IMPROVEMENT:
 You have three tools for improving yourself over time:
@@ -359,6 +366,7 @@ impl BrainLoader {
                 chrono::Utc::now().format("%Y-%m-%d %H:%M:%S UTC")
             ));
             push_known_paths(&mut prompt);
+            push_compiled_features(&mut prompt);
             prompt.push('\n');
         }
 
@@ -480,6 +488,74 @@ fn push_home_anchor_and_expansion_rule(prompt: &mut String) {
          the shell expands `~` for you. Do NOT substitute `/Users/<name>/...` yourself; if you \
          need an absolute form, copy the `Home:` line above exactly.\n",
     );
+}
+
+/// List of OpenCrabs features compiled into this binary. Built at
+/// runtime from `cfg!(feature = "...")` checks against every feature
+/// declared in `Cargo.toml::[features]`. Used to teach the agent
+/// what it already has — without this, newly-onboarded users get
+/// told "let me implement local STT from scratch" when local-stt is
+/// already a default feature with a working backend.
+///
+/// If you add a new feature to `Cargo.toml`, add it here too — the
+/// `prompt_compiled_features_test::all_cargo_features_are_listed`
+/// sentinel will fail otherwise.
+pub(crate) fn compiled_features() -> Vec<&'static str> {
+    let mut out = Vec::new();
+    if cfg!(feature = "telegram") {
+        out.push("telegram");
+    }
+    if cfg!(feature = "whatsapp") {
+        out.push("whatsapp");
+    }
+    if cfg!(feature = "discord") {
+        out.push("discord");
+    }
+    if cfg!(feature = "slack") {
+        out.push("slack");
+    }
+    if cfg!(feature = "trello") {
+        out.push("trello");
+    }
+    if cfg!(feature = "local-stt") {
+        out.push("local-stt");
+    }
+    if cfg!(feature = "local-tts") {
+        out.push("local-tts");
+    }
+    if cfg!(feature = "browser") {
+        out.push("browser");
+    }
+    if cfg!(feature = "rtk") {
+        out.push("rtk");
+    }
+    if cfg!(feature = "pdfium") {
+        out.push("pdfium");
+    }
+    if cfg!(feature = "profiling") {
+        out.push("profiling");
+    }
+    out
+}
+
+/// Append the "Built-in features" line that surfaces what's compiled
+/// into this binary so the agent reaches for existing capabilities
+/// instead of writing new ones from scratch (issue: new user asked
+/// for "local STT/TTS implementation" and the agent started coding
+/// when both are default features with working backends).
+pub(crate) fn push_compiled_features(prompt: &mut String) {
+    let features = compiled_features();
+    if features.is_empty() {
+        return;
+    }
+    prompt.push_str(&format!(
+        "Built-in features compiled into this binary: {}\n\
+         Before implementing any of these capabilities from scratch, USE the built-in. \
+         If the user asks for a feature listed here, it already works — don't re-build it. \
+         If they ask for a Cargo feature NOT in this list (e.g. `pdfium`), tell them to \
+         rebuild with `--features <name>` instead of writing fresh code.\n",
+        features.join(", ")
+    ));
 }
 
 /// Append a "Known paths" section to the runtime info so when the
