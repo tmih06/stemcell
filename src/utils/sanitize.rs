@@ -631,11 +631,11 @@ pub fn strip_llm_artifacts(text: &str) -> String {
 /// actual tool call.
 ///
 /// Pattern:
-/// ```text
+/// ````text
 /// ```<language>|CODE_EDIT_BLOCK|<absolute path>
-/// <file contents — often hundreds of lines>
+/// <file contents -- often hundreds of lines>
 /// ```
-/// ```
+/// ````
 ///
 /// Replace the whole block (header line + body + closing fence) with
 /// a single short notice so the user knows the agent TRIED to edit a

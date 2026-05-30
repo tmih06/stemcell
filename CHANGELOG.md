@@ -6,6 +6,83 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
+## [0.3.31] - 2026-05-30
+
+41 commits since v0.3.30. Minor release closing issues #130 (Telegram
+forum topic routing was broken: proactive sends and startup resumes
+landed in general chat instead of the originating topic, and replies
+to messages within a topic also routed to general chat instead of
+back to the topic they came from; both reactive and proactive paths
+now carry `thread_id` through the full send pipeline, and a new
+`list_topics` action surfaces the (thread_id, topic_name) pairs the
+bot has observed so the agent can translate `#announcements` into
+the numeric ID it passes via the new optional `thread_id` parameter
+on `send` / `reply` / `send_photo`), #131 (Telegram reply context did
+not surface the exact quote the user highlighted when replying to a
+message, so the agent had no visibility into which specific paragraph
+was being discussed; reply context now extracts the quoted span from
+`reply_to_message` entities and includes it in the user turn), and
+#132 (RSI feedback ledger had no visibility into which bash commands
+the agent actually ran, so downstream pattern analysis could only see
+success/failure counts with no way to identify recurring command
+shapes; command text is now appended to event metadata, a subsystem
+classifier tags each command by category (git, cargo, docker, ssh,
+fs, net, build, test, etc.), and successful subsystem patterns are
+surfaced as tool / command / skill proposals in Mission Control so
+recurring workflows can be extracted into first-class capabilities).
+PDF handling got a full overhaul: new `page_range` parameter accepts
+`"1-30"`, `"5,7,10-15"` spans so the agent can target specific pages
+without burning tokens on the whole document, text-first routing
+skips Gemini vision entirely for text-native PDFs (fixes the 10 MB /
+HTTP 413 incident where large PDFs were sent to vision without size
+guarding), inline cap raised from ~20 to ~60 pages with the PDF saved
+to disk so the agent can fetch the remainder via `parse_document`,
+partial vision renders are now preserved when `pdftoppm` fails mid-loop
+instead of discarding all rendered pages, and the `pdftoppm` loop is
+bounded to the actual page count from the PDF trailer. Agent
+self-awareness leveled up: compiled features are now surfaced in the
+system prompt with a check-first directive so the agent stops
+reimplementing built-ins like local STT/TTS (a `Known paths` section
+was also added so "check the logs" always lands at
+`~/.opencrabs/logs/opencrabs.YYYY-MM-DD` instead of guessing). Telegram
+UX polish: pre-tool status line is now dynamic and context-aware
+(actual tool name + tokens + elapsed) instead of the hardcoded
+"Thinking through this...", plan-tool summaries render as monospace
+`<pre>` panels for readability, the invented `THINKING_QUIPS` fallback
+was removed (silence over filler), and forum topic names are captured
+so `list_topics` can return human-readable labels. Prompt safety
+hardened: hallucinated `CODE_EDIT_BLOCK` fences are stripped from
+streamed output before channel delivery, and IDE-style inline edit
+formats (Cursor-style `search_and_replace`, Aider conflict markers,
+unified-diff dumps with file headers) are now explicitly forbidden in
+`BRAIN_PREAMBLE` so the agent stops leaking file contents to channels.
+Usage dashboard consolidated all Qwen 3.7 Max variants (including
+`qwen-latest-series`, `qwen-latest-series-invite`,
+`qwen-latest-series-invite-beta-v34`, dated snapshots, and preview
+channels) into a single `qwen-3.7-max` parent row with indented
+breakdown showing genuinely distinct variants (35B-A3B style), and
+all model names normalized to kebab-case lowercase for consistency.
+TUI/onboarding: provider list no longer re-indents on every Up/Down
+keypress, `/onboard:provider` and `/models` stop truncating the last
+fields on small terminals, plan checklist grew to ~10 visible tasks
+with scrolling for longer plans, and the tok/s footer now counts
+reasoning chunks toward the live rate. Plan tool description gained
+concrete trigger criteria (3+ steps, dependencies, multi-file). RSI
+self-heal gained a third proposal kind (`skill`) alongside tool and
+command, and skill proposals are surfaced in Mission Control with an
+apply path that writes a `SKILL.md` brain file. Provider stability:
+fallback only sticks after 4 consecutive rescues (not on first
+incident), and missing-[DONE] is accepted when text-only response
+looks complete. CI/build: `[profile.ci]` tuned for wall-clock instead
+of runtime perf, `Cargo.lock` committed for reproducible builds,
+stage-gated workflow with Linux-only tests and main-only coverage.
+Compaction defaults to silent continuation, falling back to the fun
+message only when the post-compact state is genuinely ambiguous.
+
+Closes #130, #131, #132.
+
+79 files changed, +17,071/-486.
+
 ## [0.3.30] - 2026-05-29
 
 36 commits since v0.3.29. Minor release closing issues #125 (RTK
@@ -4742,3 +4819,4 @@ fixes.
 [0.1.2]: https://github.com/adolfousier/opencrabs/releases/tag/v0.1.2
 [0.1.1]: https://github.com/adolfousier/opencrabs/releases/tag/v0.1.1
 [0.1.0]: https://github.com/adolfousier/opencrabs/releases/tag/v0.1.0
+[0.3.31]: https://github.com/adolfousier/opencrabs/compare/v0.3.30...v0.3.31
