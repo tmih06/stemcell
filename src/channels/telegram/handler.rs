@@ -1787,16 +1787,18 @@ pub(crate) async fn handle_message(
                                     .collect();
                                 let last_ref = snap.last_completed_tool.as_ref()
                                     .map(|(n, c)| (n.as_str(), c.as_str()));
-                                let status = build_status_message(
+                                // build_status_message returns None when
+                                // there is no real signal — skip the send
+                                // entirely rather than ship hardcoded filler.
+                                if let Some(status) = build_status_message(
                                     &active_refs,
                                     last_ref,
                                     snap.tool_round_count,
                                     elapsed_total,
                                     snap.processing,
                                     snap.thinking_excerpt.as_deref(),
-                                );
-
-                                if let Ok(m) = message_in_thread(&bot, chat, thread_id,  &status).await {
+                                ) && let Ok(m) = message_in_thread(&bot, chat, thread_id, &status).await
+                                {
                                     let mut s = st.lock().unwrap_or_else(|e| e.into_inner());
                                     s.status_msg_id = Some(m.id);
                                     s.status_shown_at = Some(now);
@@ -3042,21 +3044,6 @@ pub(crate) fn md_to_html(s: &str) -> String {
     out
 }
 
-/// Fun-quip rotation used ONLY when the agent is in the pre-tool
-/// reasoning phase AND no live reasoning text is available yet (the
-/// very first second or two of a turn). Each call selects a different
-/// quip based on `elapsed_secs / 4` so the user sees movement.
-const THINKING_QUIPS: &[&str] = &[
-    "🧠 Warming up the neurons",
-    "🦀 Sharpening the pincers",
-    "🌊 Gathering thoughts",
-    "✨ Connecting the dots",
-    "🔍 Sizing up the problem",
-    "🎯 Lining up the approach",
-    "📚 Flipping through context",
-    "🛠️ Picking the right tool",
-];
-
 /// Extract a short, status-line-friendly excerpt from the agent's
 /// in-flight reasoning text. Returns `None` when the reasoning buffer
 /// is empty or too sparse to be informative.
@@ -3102,13 +3089,21 @@ pub(crate) fn thinking_status_excerpt(thinking: &str) -> Option<String> {
 }
 
 /// Build a context-aware status message for Telegram rolling updates.
-/// Replaces hardcoded filler quips with functional messages that tell the user
-/// what is happening right now based on actual tool execution state.
 ///
-/// `thinking_excerpt` is the latest reasoning snippet from the agent
-/// (see `thinking_status_excerpt`). When tools are not yet running,
-/// we prefer it over the quip rotation — the user sees the agent's
-/// actual current focus instead of a filler line.
+/// Returns `None` when there is no real signal worth showing — the
+/// caller skips sending a status message that tick. Hardcoded
+/// filler ("Thinking through this...", "Warming up the neurons",
+/// "Processing...") is deliberately not emitted: when the model
+/// hasn't streamed reasoning yet AND no tool is running, silence
+/// is better than fake activity. The response or first tool call
+/// arrives within seconds and shows real state.
+///
+/// Returned in `Some` only when one of these is true:
+///   * tools are actively running (we know what they are);
+///   * tools have just completed (we name the last one);
+///   * the model is in the pre-tool reasoning phase AND we have a
+///     live excerpt from its reasoning to show (no excerpt, no
+///     status — see `thinking_status_excerpt`).
 fn build_status_message(
     active_tools: &[(&str, &str)],
     last_completed: Option<(&str, &str)>,
@@ -3116,7 +3111,7 @@ fn build_status_message(
     elapsed_secs: u64,
     processing: bool,
     thinking_excerpt: Option<&str>,
-) -> String {
+) -> Option<String> {
     let elapsed = if elapsed_secs >= 60 {
         let mins = elapsed_secs / 60;
         let secs = elapsed_secs % 60;
@@ -3138,19 +3133,16 @@ fn build_status_message(
             format!("Running {} tools: {}", active_tools.len(), names.join(", "))
         }
     } else if processing && tool_round_count == 0 {
-        // Hybrid: prefer the live reasoning snippet when we have one
-        // (it tells the user exactly what the agent is focused on
-        // right now), otherwise rotate through a small set of fun
-        // quips so the first second or two of a turn doesn't show
-        // the same hardcoded string every time.
-        if let Some(excerpt) = thinking_excerpt
-            && !excerpt.is_empty()
-        {
-            excerpt.to_string()
-        } else {
-            let idx = (elapsed_secs as usize / 4) % THINKING_QUIPS.len();
-            THINKING_QUIPS[idx].to_string()
+        // Pre-tool reasoning phase. Show the model's actual reasoning
+        // excerpt if we have one; otherwise emit no status at all —
+        // hardcoded filler ("Thinking..." / "Warming up the neurons"
+        // / quip rotation) was the bug that motivated this whole
+        // pipeline; do not bring it back as a fallback.
+        let excerpt = thinking_excerpt?.trim();
+        if excerpt.is_empty() {
+            return None;
         }
+        excerpt.to_string()
     } else if tool_round_count > 0 {
         if let Some((name, _ctx)) = last_completed {
             format!("{} done, moving to next step", name)
@@ -3158,16 +3150,18 @@ fn build_status_message(
             format!("{} tools done, preparing next step", tool_round_count)
         }
     } else {
-        "Processing...".to_string()
+        // Neither processing nor any tool round seen — nothing
+        // meaningful to say. Stay silent.
+        return None;
     };
 
-    if tool_round_count > 0 && elapsed_secs >= 5 {
+    Some(if tool_round_count > 0 && elapsed_secs >= 5 {
         format!("⚙️ {} (tool {}, {})", action, tool_round_count, elapsed)
     } else if elapsed_secs >= 5 {
         format!("⚙️ {} ({})", action, elapsed)
     } else {
         format!("⚙️ {}", action)
-    }
+    })
 }
 
 /// Shorthand — delegates to the shared utility in `crate::utils`.
