@@ -22,10 +22,13 @@ fn telegram_feature_is_compiled_in_test_build() {
     );
 }
 
+#[cfg(all(feature = "local-stt", feature = "local-tts"))]
 #[test]
 fn local_stt_and_tts_are_default_features_in_test_build() {
     // The exact case from the regression — agent shouldn't re-build
     // these when both are default features.
+    // Gated behind cfg! because tarpaulin excludes local-stt/local-tts
+    // due to ggml linker conflicts (see ci.yml tarpaulin command).
     let features = compiled_features();
     assert!(
         features.contains(&"local-stt"),
@@ -42,6 +45,11 @@ fn local_stt_and_tts_are_default_features_in_test_build() {
 /// `compiled_features`, this test fails so the omission gets caught
 /// in CI rather than weeks later when the agent confidently asks for
 /// help implementing a feature that's already there.
+///
+/// Parses the source file directly for `cfg!(feature = "X")` patterns
+/// instead of relying on runtime output, so it works under tarpaulin's
+/// limited feature set (which excludes local-stt/local-tts due to
+/// ggml linker conflicts).
 #[test]
 fn all_cargo_features_are_listed() {
     use std::collections::BTreeSet;
@@ -78,16 +86,45 @@ fn all_cargo_features_are_listed() {
         }
     }
 
-    // Build the set of names our helper knows about, by calling it
-    // and also by walking the source — we can't introspect cfg!() so
-    // we just check the helper output under --all-features.
-    let helper_features: BTreeSet<String> =
-        compiled_features().iter().map(|s| s.to_string()).collect();
+    // Parse the source file for cfg!(feature = "X") patterns in the
+    // compiled_features function. This works regardless of which
+    // features are actually enabled at test time.
+    let source = fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/src/brain/prompt_builder.rs"
+    ))
+    .expect("prompt_builder.rs must be readable");
 
-    let missing: Vec<&String> = cargo_features.difference(&helper_features).collect();
+    // Find the compiled_features function body.
+    let fn_start = source
+        .find("fn compiled_features()")
+        .expect("compiled_features function must exist");
+    let fn_body = &source[fn_start..];
+    // Find the closing brace of the function (first `}` after the opening).
+    let fn_end = fn_body
+        .find("\n}\n")
+        .or_else(|| fn_body.find("\n}"))
+        .unwrap_or(fn_body.len());
+    let fn_body = &fn_body[..fn_end];
+
+    // Extract feature names from cfg!(feature = "X") patterns.
+    let mut source_features: BTreeSet<String> = BTreeSet::new();
+    for line in fn_body.lines() {
+        let trimmed = line.trim();
+        if trimmed.contains("cfg!(feature") {
+            if let Some(start) = trimmed.find("\"") {
+                if let Some(end) = trimmed[start + 1..].find("\"") {
+                    let name = &trimmed[start + 1..start + 1 + end];
+                    source_features.insert(name.to_string());
+                }
+            }
+        }
+    }
+
+    let missing: Vec<&String> = cargo_features.difference(&source_features).collect();
     assert!(
         missing.is_empty(),
-        "compiled_features() is missing entries for Cargo.toml [features]: {missing:?}. \
+        "compiled_features() source is missing cfg! branches for Cargo.toml [features]: {missing:?}. \
          Add `if cfg!(feature = \"<name>\") {{ out.push(\"<name>\"); }}` to \
          `compiled_features` in src/brain/prompt_builder.rs."
     );
