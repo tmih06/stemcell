@@ -101,6 +101,7 @@ pub mod plan_tool_description_test;
 pub mod plan_window_test;
 pub mod post_evolve_test;
 pub mod prompt_compiled_features_test;
+pub mod prompt_inline_edit_directive_test;
 pub mod prompt_known_paths_test;
 pub mod provider_config_regression_test;
 pub mod provider_error_proxy_test;
