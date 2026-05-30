@@ -67,10 +67,17 @@ fn strips_dot_gguf_with_no_quant_tag() {
 
 #[test]
 fn leaves_unrelated_names_alone() {
-    assert_eq!(normalize_model_for_grouping("qwen3.6-plus"), "qwen3.6-plus");
+    // Note: canonical form is now kebab-case with dash after the family
+    // version (`qwen-3.6-*`, not `qwen3.6-*`). `normalize_model_for_grouping`
+    // itself is a no-op on these (it only strips GGUF quant suffixs);
+    // the dash is introduced by `sql_normalize_model` upstream.
     assert_eq!(
-        normalize_model_for_grouping("qwen3.6-max-preview"),
-        "qwen3.6-max-preview"
+        normalize_model_for_grouping("qwen-3.6-plus"),
+        "qwen-3.6-plus"
+    );
+    assert_eq!(
+        normalize_model_for_grouping("qwen-3.6-max-preview"),
+        "qwen-3.6-max-preview"
     );
     assert_eq!(
         normalize_model_for_grouping("qwen3.6-35b-a3b"),
@@ -100,11 +107,11 @@ fn does_not_strip_dot_gguf_in_middle_of_name() {
 fn sql_normalize_strips_dialagram_colon_prefix() {
     assert_eq!(
         sql_normalize_model("dialagram:qwen-3.6-max-preview-thinking"),
-        "qwen3.6-max-preview"
+        "qwen-3.6-max-preview"
     );
     assert_eq!(
         sql_normalize_model("dialagram:qwen-3.6-max-preview"),
-        "qwen3.6-max-preview"
+        "qwen-3.6-max-preview"
     );
 }
 
@@ -112,22 +119,23 @@ fn sql_normalize_strips_dialagram_colon_prefix() {
 fn sql_normalize_strips_opencodeiolo_colon_prefix() {
     assert_eq!(
         sql_normalize_model("opencodeiolo-qwen:qwen3.6-plus"),
-        "qwen3.6-plus"
+        "qwen-3.6-plus"
     );
 }
 
 #[test]
 fn sql_normalize_keeps_slash_handling() {
-    assert_eq!(sql_normalize_model("qwen/qwen3.6-plus"), "qwen3.6-plus");
+    assert_eq!(sql_normalize_model("qwen/qwen3.6-plus"), "qwen-3.6-plus");
     assert_eq!(
         sql_normalize_model("opencode/qwen3.6-plus-free"),
-        "qwen3.6-plus"
+        "qwen-3.6-plus"
     );
     // The `/` strip runs first and the `:free` suffix strip kicks in
-    // BEFORE the colon-prefix split, so this stays canonical.
+    // BEFORE the colon-prefix split, so the input reaches the match
+    // block as bare `qwen3.6-plus` and normalizes to the kebab canonical.
     assert_eq!(
         sql_normalize_model("qwen/qwen3.6-plus:free"),
-        "qwen3.6-plus"
+        "qwen-3.6-plus"
     );
 }
 
@@ -138,19 +146,106 @@ fn sql_normalize_strips_thinking_then_colon_prefix() {
     // and still carry the suffix, breaking the canonical-match arms.
     assert_eq!(
         sql_normalize_model("dialagram:qwen-3.6-plus-thinking"),
-        "qwen3.6-plus"
+        "qwen-3.6-plus"
     );
 }
 
 #[test]
 fn sql_normalize_leaves_canonical_names_alone() {
-    assert_eq!(sql_normalize_model("qwen3.6-plus"), "qwen3.6-plus");
+    assert_eq!(sql_normalize_model("qwen-3.6-plus"), "qwen-3.6-plus");
     assert_eq!(
-        sql_normalize_model("qwen3.6-max-preview"),
-        "qwen3.6-max-preview"
+        sql_normalize_model("qwen-3.6-max-preview"),
+        "qwen-3.6-max-preview"
     );
     assert_eq!(sql_normalize_model("opus-4-6"), "opus-4-6");
     assert_eq!(sql_normalize_model("haiku-4-5-20251001"), "haiku-4-5");
+}
+
+// --- Qwen 3.7 family consolidation + kebab-case canonicals ---
+// 2026-05-30: the /usage dashboard rendered `qwen-3.7-max`,
+// `qwen3.7-max`, `qwen-3.7-max-preview`, `qwen3.7-max-20260520`,
+// `qwen-latest-series`, and `qwen-latest-series-invite` as six
+// separate top-level rows. They are all the same model — collapse to
+// one canonical `qwen-3.7-max` bucket. Same for the 3.7 Plus family.
+// Also: all canonicals now use kebab-case with a dash after the family
+// version (`qwen-3.6-max-preview`, not `qwen3.6-max-preview`), so the
+// dashboard has one consistent naming pattern.
+
+#[test]
+fn sql_normalize_consolidates_qwen_37_max_family() {
+    for variant in [
+        "qwen-3.7-max",
+        "qwen3.7-max",
+        "qwen-3.7-max-preview",
+        "qwen3.7-max-preview",
+        "qwen-3.7-max-20260520",
+        "qwen3.7-max-20260520",
+        "qwen-latest-series",
+        "qwen-latest-series-invite",
+    ] {
+        assert_eq!(
+            sql_normalize_model(variant),
+            "qwen-3.7-max",
+            "variant {variant:?} did not collapse to qwen-3.7-max"
+        );
+    }
+}
+
+#[test]
+fn sql_normalize_consolidates_qwen_37_plus_family() {
+    for variant in [
+        "qwen-3.7-plus",
+        "qwen3.7-plus",
+        "qwen-3.7-plus-preview",
+        "qwen3.7-plus-preview",
+    ] {
+        assert_eq!(
+            sql_normalize_model(variant),
+            "qwen-3.7-plus",
+            "variant {variant:?} did not collapse to qwen-3.7-plus"
+        );
+    }
+}
+
+#[test]
+fn sql_normalize_strips_thinking_then_consolidates_37() {
+    // `-thinking` strip runs first, then the 3.7 family match.
+    assert_eq!(sql_normalize_model("qwen-3.7-max-thinking"), "qwen-3.7-max");
+    assert_eq!(
+        sql_normalize_model("dialagram:qwen-3.7-max-preview-thinking"),
+        "qwen-3.7-max"
+    );
+    assert_eq!(
+        sql_normalize_model("qwen-latest-series-thinking"),
+        "qwen-3.7-max"
+    );
+}
+
+#[test]
+fn sql_normalize_normalizes_display_names_with_spaces() {
+    // Display-name variants ("Qwen 3.7 Max") must fold into the same
+    // kebab-case stream as the CLI names. Lowercasing already happens
+    // upstream; this verifies the space → dash swap + family match.
+    assert_eq!(sql_normalize_model("Qwen 3.7 Max"), "qwen-3.7-max");
+    assert_eq!(
+        sql_normalize_model("Qwen 3.6 Max Preview"),
+        "qwen-3.6-max-preview"
+    );
+    assert_eq!(sql_normalize_model("Qwen 3.5 Plus"), "qwen-3.5-plus");
+    assert_eq!(sql_normalize_model("Qwen 3.7 Plus"), "qwen-3.7-plus");
+}
+
+#[test]
+fn sql_normalize_renames_old_no_dash_canonicals_to_kebab() {
+    // Legacy canonicals (`qwen3.6-max-preview`, `qwen3.6-plus`,
+    // `qwen3.5-plus`) are now accepted as input aliases but the
+    // OUTPUT is the kebab form with dash after the family version.
+    assert_eq!(
+        sql_normalize_model("qwen3.6-max-preview"),
+        "qwen-3.6-max-preview"
+    );
+    assert_eq!(sql_normalize_model("qwen3.6-plus"), "qwen-3.6-plus");
+    assert_eq!(sql_normalize_model("qwen3.5-plus"), "qwen-3.5-plus");
 }
 
 #[test]

@@ -438,17 +438,41 @@ pub(crate) fn sql_normalize_model(raw: &str) -> String {
     // stripped above before reaching this step.
     let m2 = m2.split_once(':').map(|(_, after)| after).unwrap_or(m2);
     let m3 = m2.strip_prefix("claude-").unwrap_or(m2);
+    // Normalize display-name variants with spaces to kebab-case so that
+    // "Qwen 3.7 Max", "Qwen 3.6 Max Preview", "Qwen 3.5 Plus" etc. fold
+    // into the same stream as their CLI cousins. Lowercasing already
+    // happened above; this just swaps spaces for dashes.
+    let m3_owned = m3.replace(' ', "-");
+    let m3 = m3_owned.as_str();
     match m3 {
         "opus" | "opus-4-6" => "opus-4-6".to_string(),
         "sonnet" | "sonnet-4-6" => "sonnet-4-6".to_string(),
         "haiku" | "haiku-4-5" | "haiku-4-5-20251001" => "haiku-4-5".to_string(),
+        // Qwen 3.7 Max family: consolidate every surface form (dash /
+        // no-dash after `qwen`, preview channel, dated snapshot,
+        // `latest-series` aliases, display-name with spaces) into one
+        // canonical kebab-case bucket.
+        "qwen-3.7-max"
+        | "qwen3.7-max"
+        | "qwen-3-7-max"
+        | "qwen3-7-max"
+        | "qwen-3.7-max-preview"
+        | "qwen3.7-max-preview"
+        | "qwen-3.7-max-20260520"
+        | "qwen3.7-max-20260520"
+        | "qwen-latest-series"
+        | "qwen-latest-series-invite" => "qwen-3.7-max".to_string(),
+        // Qwen 3.7 Plus family.
+        "qwen-3.7-plus" | "qwen3.7-plus" | "qwen-3.7-plus-preview" | "qwen3.7-plus-preview" => {
+            "qwen-3.7-plus".to_string()
+        }
         "qwen-3.6-max-preview"
         | "qwen3.6-max-preview"
         | "qwen-3-6-max-preview"
         | "qwen3-6-max-preview"
-        | "qwen-max-preview" => "qwen3.6-max-preview".to_string(),
-        "coder-model" | "qwen3.6-plus" | "qwen-3.6-plus" => "qwen3.6-plus".to_string(),
-        "qwen3.5-plus" | "qwen-3.5-plus" => "qwen3.5-plus".to_string(),
+        | "qwen-max-preview" => "qwen-3.6-max-preview".to_string(),
+        "coder-model" | "qwen3.6-plus" | "qwen-3.6-plus" => "qwen-3.6-plus".to_string(),
+        "qwen3.5-plus" | "qwen-3.5-plus" => "qwen-3.5-plus".to_string(),
         "minimax-m2.5" => "minimax-m2.5".to_string(),
         "minimax-m2.7" => "minimax-m2.7".to_string(),
         "mimo-v2-omni" | "mimo-v2-omni-free" => "mimo-v2-omni".to_string(),
@@ -502,17 +526,22 @@ async fn fetch_model_entries(pool: &Pool, since: Option<i64>) -> Result<Vec<Mode
              ), \
              prefixed AS ( \
                SELECT *, \
-                 CASE WHEN m2 LIKE 'claude-%' THEN SUBSTR(m2, 8) ELSE m2 END AS m3 \
+                 CASE WHEN m2 LIKE 'claude-%' THEN SUBSTR(m2, 8) ELSE m2 END AS m3_pre \
                FROM namespaced \
+             ), \
+             spaced AS ( \
+               SELECT *, REPLACE(m3_pre, ' ', '-') AS m3 FROM prefixed \
              ) \
              SELECT \
                CASE \
                  WHEN m3 IN ('opus', 'opus-4-6') THEN 'opus-4-6' \
                  WHEN m3 IN ('sonnet', 'sonnet-4-6') THEN 'sonnet-4-6' \
                  WHEN m3 IN ('haiku', 'haiku-4-5', 'haiku-4-5-20251001') THEN 'haiku-4-5' \
-                 WHEN m3 IN ('qwen-3.6-max-preview', 'qwen3.6-max-preview', 'qwen-3-6-max-preview', 'qwen3-6-max-preview', 'qwen-max-preview') THEN 'qwen3.6-max-preview' \
-                 WHEN m3 IN ('coder-model', 'qwen3.6-plus', 'qwen-3.6-plus') THEN 'qwen3.6-plus' \
-                 WHEN m3 IN ('qwen3.5-plus', 'qwen-3.5-plus') THEN 'qwen3.5-plus' \
+                 WHEN m3 IN ('qwen-3.7-max', 'qwen3.7-max', 'qwen-3-7-max', 'qwen3-7-max', 'qwen-3.7-max-preview', 'qwen3.7-max-preview', 'qwen-3.7-max-20260520', 'qwen3.7-max-20260520', 'qwen-latest-series', 'qwen-latest-series-invite') THEN 'qwen-3.7-max' \
+                 WHEN m3 IN ('qwen-3.7-plus', 'qwen3.7-plus', 'qwen-3.7-plus-preview', 'qwen3.7-plus-preview') THEN 'qwen-3.7-plus' \
+                 WHEN m3 IN ('qwen-3.6-max-preview', 'qwen3.6-max-preview', 'qwen-3-6-max-preview', 'qwen3-6-max-preview', 'qwen-max-preview') THEN 'qwen-3.6-max-preview' \
+                 WHEN m3 IN ('coder-model', 'qwen3.6-plus', 'qwen-3.6-plus') THEN 'qwen-3.6-plus' \
+                 WHEN m3 IN ('qwen3.5-plus', 'qwen-3.5-plus') THEN 'qwen-3.5-plus' \
                  WHEN m3 IN ('minimax-m2.5') THEN 'minimax-m2.5' \
                  WHEN m3 IN ('minimax-m2.7') THEN 'minimax-m2.7' \
                  WHEN m3 IN ('mimo-v2-omni', 'mimo-v2-omni-free') THEN 'mimo-v2-omni' \
@@ -524,7 +553,7 @@ async fn fetch_model_entries(pool: &Pool, since: Option<i64>) -> Result<Vec<Mode
                END AS normalized_model, \
                COALESCE(SUM(token_count), 0), \
                COUNT(*) \
-             FROM prefixed \
+             FROM spaced \
              GROUP BY normalized_model \
              ORDER BY SUM(token_count) DESC"
         );

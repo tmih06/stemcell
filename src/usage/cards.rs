@@ -265,7 +265,12 @@ pub fn render_models(f: &mut Frame, models: &[ModelEntry], area: Rect, focused: 
 
     let mut lines: Vec<Line> = Vec::new();
     for m in all_models.iter() {
-        let display = crate::tui::provider_selector::model_display_label(&m.model).to_string();
+        // Render the parent-row name as the normalized kebab-case id so
+        // every entry in the dashboard follows one consistent pattern
+        // (`family-X.Y-tier`, all lowercase, dashes between segments).
+        // Prettified labels ("Qwen 3.7 Max") belong in /models and
+        // onboarding, not the usage ledger.
+        let display = m.model.clone();
         let name = if display.len() > name_width {
             format!(
                 "{}...",
@@ -320,8 +325,11 @@ pub fn render_models(f: &mut Frame, models: &[ModelEntry], area: Rect, focused: 
             for (vidx, v) in m.variants.iter().enumerate() {
                 let is_last = vidx == m.variants.len() - 1;
                 let prefix = if is_last { "└─ " } else { "├─ " };
-                let v_display =
-                    crate::tui::provider_selector::model_display_label(&v.name).to_string();
+                // Keep child variant names as the raw API id so the
+                // operator sees exactly what was recorded (e.g.
+                // `qwen3.7-max-20260520`), matching the parent row's
+                // lowercase-kebab convention.
+                let v_display = v.name.clone();
                 let v_name = if v_display.chars().count() > max_child_name {
                     format!(
                         "{}…",
