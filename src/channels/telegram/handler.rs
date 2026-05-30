@@ -1322,6 +1322,11 @@ pub(crate) async fn handle_message(
     // that excerpt over the full message text — otherwise the agent
     // only sees the whole replied-to message and misses which part
     // the user is actually asking about (issue #131).
+    //
+    // Logged at INFO so we can diagnose "agent didn't see my quote"
+    // reports in the field: the log shows whether Telegram actually
+    // sent us `reply_to_message` and `quote`, and what we threaded
+    // into the agent prompt.
     let reply_context = msg.reply_to_message().and_then(|reply| {
         let full_text = reply.text().or(reply.caption()).unwrap_or("");
         let quote_text = msg.quote().map(|q| q.text.as_str()).unwrap_or("");
@@ -1336,8 +1341,33 @@ pub(crate) async fn handle_message(
                 }
             })
             .unwrap_or_else(|| "unknown".to_string());
-        format_reply_context(&reply_sender, full_text, quote_text)
+        let ctx = format_reply_context(&reply_sender, full_text, quote_text);
+        tracing::info!(
+            "Telegram reply context: chat_id={}, has_reply_to=true, \
+             has_quote={}, quote_is_manual={:?}, quote_text_len={}, \
+             full_text_len={}, ctx={:?}",
+            msg.chat.id.0,
+            msg.quote().is_some(),
+            msg.quote().map(|q| q.is_manual),
+            quote_text.chars().count(),
+            full_text.chars().count(),
+            ctx,
+        );
+        ctx
     });
+    if msg.reply_to_message().is_none() && msg.quote().is_some() {
+        // Should never happen per Telegram Bot API contract, but log
+        // it loudly if it does — would mean we're missing the quote
+        // entirely because we only check quote inside the reply_to
+        // branch above.
+        tracing::warn!(
+            "Telegram: msg.quote() is Some but reply_to_message() is None — \
+             impossible per Bot API; quote will not be surfaced to agent. \
+             chat_id={}, quote={:?}",
+            msg.chat.id.0,
+            msg.quote().map(|q| q.text.as_str()),
+        );
+    }
 
     // Build the human-readable display text (used for DB persistence + TUI).
     // For DM owner: bare user text. Other cases get a `Sender: text` prefix
