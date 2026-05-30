@@ -191,7 +191,16 @@ impl Tool for PlanTool {
     fn description(&self) -> &str {
         "Manage structured task plans with full plan-and-execute capabilities. Create plans, add tasks, \
          execute them step-by-step, reflect on results, and adjust as needed. Supports dependency tracking, \
-         execution history, and automatic retry logic."
+         execution history, and automatic retry logic. \
+         \n\nWHEN TO USE: call `plan` BEFORE starting any task that has 3+ distinct steps, dependencies \
+         between steps, or touches multiple files. Always plan when: \
+         (a) the user explicitly asks for a plan or roadmap, \
+         (b) a request describes >2 deliverables (\"add X, then refactor Y, then test Z\"), \
+         (c) the work spans multiple files or commits, \
+         (d) you need to retry steps independently if some fail, \
+         (e) the user is going to step away while you work. \
+         Skip planning only for trivial single-tool answers (one read, one search, one edit). \
+         The plan stays visible across compactions, so it doubles as memory for long sessions."
     }
 
     fn input_schema(&self) -> Value {
