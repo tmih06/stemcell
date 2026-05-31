@@ -6,6 +6,83 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
+## [0.3.32] - 2026-05-31
+
+8 commits since v0.3.31. Hardening release closing #135, #136. Heavily
+contributor-driven: Alexey Leshchenko (`leshchenko1979`) authored 7 of 8
+commits via PRs #135, #137.
+
+**Evolve / self-update (closes #136):** hit a silent no-op restart on
+systemd when the running binary was busy. `std::fs::rename` was replaced
+with a remove-then-rename pair so Linux no longer blocks the swap, and a
+delayed `systemd-run` restart is now scheduled after the swap so the
+running daemon picks up the new inode. A pre-flight
+`count_matching_systemd_units` check skips the spawn entirely when zero
+units match the glob and tells the user to restart manually, instead of
+lying "Restarting..." when nothing was actually scheduled. Every failure
+branch (GitHub API, download, filesystem, rollback) now emits structured
+tracing with status codes, rate-limit headers, target paths, and body
+excerpts, replacing the generic "rate limited or unavailable" suffix
+that masked 404s, 5xxs, and genuine rate limits alike.
+
+**Stream / sanitize:** caught a Qwen 3 regression where the model echoed
+its own SentencePiece `<|tool▁...|>` markers (using U+2581 word-boundary
+chars that render as `_` in most fonts) into `content` alongside the
+proper `tool_calls` field. Four new opener patterns plus a regex safety
+net in `strip_llm_artifacts` catch the whole marker family and any
+future variants.
+
+**CI / release workflow (closes #135):** CI now skips on docs-only
+changes (`.md`, `LICENSE`, `CHANGELOG`) and the release workflow walks
+ancestors to find the last green `CI Required Gate` check, so a
+docs-only commit no longer blocks a release.
+
+**Docs / changelog:** restructured v0.3.31 with categorized sections,
+fixed em-dashes in v0.3.30 prose, normalized URL refs, and broke both
+wall-of-text entries into themed paragraphs for readability.
+
+Closes #135, #136.
+
+10 files changed, +1,477/-266.
+
+EVOLVE / SELF-UPDATE (4 commits, closes #136)
+
+Hardening pass after a user hit a silent no-op restart on systemd.
+`std::fs::rename` replaced with remove+rename so busy binaries on Linux
+no longer block the swap. Delayed `systemd-run` restart scheduled after
+the swap. Pre-flight unit-count check skips the spawn when zero units
+match the glob. Every failure branch emits structured tracing.
+
+- 1f817de1 fix(evolve): replace rename with remove+rename and add systemd delayed restart
+- 824d454b fix(evolve): honest error branching + structured tracing on every failure path
+- 923bf51c fix(evolve): log failures of remove_file + systemd-run instead of swallowing them
+- 732c97c6 fix(evolve): pre-flight unit-count check + honest message + restart-arg tests
+
+STREAM / SANITIZE (1 commit)
+
+Qwen 3 SentencePiece `<|tool▁...|>` marker family (U+2581 boundary
+chars) stopped from leaking to channels via four new opener patterns
+plus a regex safety net in `strip_llm_artifacts`.
+
+- cdb92580 fix(stream/sanitize): stop Qwen `<|tool▁...|>` marker family from leaking to channels
+
+CI / RELEASE WORKFLOW (1 commit, closes #135)
+
+CI skips on docs-only changes. Release workflow walks ancestors for the
+last green `CI Required Gate` check so docs-only commits no longer block
+a release.
+
+- 7b077928 ci: skip CI for docs-only changes; release: walk ancestors for last green (#135)
+
+DOCS / CHANGELOG (2 commits)
+
+v0.3.31 restructured with categorized sections, v0.3.30 em-dashes
+fixed, URL refs normalized, and both wall-of-text entries broken into
+themed paragraphs.
+
+- 9fc537fc docs(changelog): restructure v0.3.31 with categorized sections, fix v0.3.30 em-dashes, normalize URL refs
+- 9581d4c2 docs(changelog): break v0.3.30 + v0.3.31 wall-of-text into themed paragraphs
+
 ## [0.3.31] - 2026-05-30
 
 48 commits since v0.3.30. Minor release closing issues #130, #131, #132.
@@ -1863,7 +1940,8 @@ provider and context budget.
 - **Anti-code-block nudge for local models** — brain instructions explicitly
   tell the model to use `tool_calls`, not markdown code blocks.
 
-[Unreleased]: https://github.com/adolfousier/opencrabs/compare/v0.3.31...HEAD
+[Unreleased]: https://github.com/adolfousier/opencrabs/compare/v0.3.32...HEAD
+[0.3.32]: https://github.com/adolfousier/opencrabs/compare/v0.3.31...v0.3.32
 [0.3.31]: https://github.com/adolfousier/opencrabs/compare/v0.3.30...v0.3.31
 [0.3.30]: https://github.com/adolfousier/opencrabs/compare/v0.3.29...v0.3.30
 [0.3.29]: https://github.com/adolfousier/opencrabs/compare/v0.3.28...v0.3.29
