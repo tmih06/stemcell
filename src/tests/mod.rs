@@ -100,6 +100,7 @@ pub mod onboarding_wizard_test;
 pub mod orphan_close_tag_strip_test;
 pub mod phantom_db_persistence_test;
 pub mod phantom_deferment_test;
+pub mod phantom_post_success_exemption_test;
 pub mod plan_document_test;
 pub mod plan_tool_description_test;
 pub mod plan_window_test;

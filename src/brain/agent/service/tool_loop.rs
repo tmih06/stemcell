@@ -678,6 +678,18 @@ impl AgentService {
 
         // Tool execution loop
         let mut iteration = 0;
+        // Number of tools that completed SUCCESSFULLY in this turn so
+        // far. Drives the post-success exemption in the phantom-tool-call
+        // detector below: once the turn has produced at least one real
+        // tool result, a subsequent text-only iteration is a completion
+        // acknowledgement ("Done.", "Pushed.", "Committed."), not
+        // phantom intent. Without this counter the detector mistook
+        // every successful turn's wrap-up text for "model narrated
+        // without executing", forced retries, eventually rolled the
+        // self-heal budget, and produced minute-long loops on already-
+        // completed work (logged in user reports as "phantom detected"
+        // x8+ after a clean commit+push).
+        let mut tool_calls_completed_this_turn: usize = 0;
         let mut total_input_tokens = 0u32;
         let mut total_output_tokens = 0u32;
         let mut total_cache_creation = 0u32;
@@ -2957,8 +2969,30 @@ impl AgentService {
                 // tool calls from text-shaped leak formats already runs
                 // upstream, so zero tool_uses + no intent phrases is a
                 // legitimate text answer that must pass through.
+                //
+                // POST-SUCCESS EXEMPTION: if at least one tool already
+                // succeeded in this turn, the text-only iteration is a
+                // completion acknowledgement ("Done.", "Pushed.",
+                // "Committed.") — not phantom intent. Without this
+                // guard the detector mistook every successful turn's
+                // wrap-up for "described actions without executing",
+                // forced phantom retries, eventually rolled the
+                // self-heal budget, and switched providers — all on
+                // already-completed work. Symptom: 8+ "Phantom tool
+                // calls detected" alerts after a clean commit+push,
+                // 293s and 4683 tokens wasted finalising nothing.
+                let phantom_eligible = !is_cli_provider && tool_calls_completed_this_turn == 0;
+                if !phantom_eligible && tool_calls_completed_this_turn > 0 {
+                    tracing::info!(
+                        target: "phantom",
+                        tools_completed = tool_calls_completed_this_turn,
+                        text_len = iteration_text.len(),
+                        "phantom detection skipped: turn already produced successful tool calls; \
+                         text-only iteration is a completion acknowledgement, not phantom intent"
+                    );
+                }
                 let stuck_loop_now =
-                    !is_cli_provider && super::phantom::is_stuck_in_intent_loop(&iteration_text);
+                    phantom_eligible && super::phantom::is_stuck_in_intent_loop(&iteration_text);
                 if stuck_loop_now {
                     let reps = super::phantom::count_intent_line_starts(&iteration_text);
                     tracing::warn!(
@@ -2983,7 +3017,7 @@ impl AgentService {
                 // condition means the current provider can't reach its
                 // tool-call channel for this prompt and another nudge
                 // won't help.
-                let should_force_fallback = !is_cli_provider
+                let should_force_fallback = phantom_eligible
                     && !phantom_sticky_swap_done
                     && super::phantom::has_phantom_tool_intent_no_tools(&iteration_text)
                     && (phantom_retries_used >= MAX_PHANTOM_RETRIES
@@ -3037,7 +3071,7 @@ impl AgentService {
                     }
                 }
                 if phantom_retries_used < MAX_PHANTOM_RETRIES
-                    && !is_cli_provider
+                    && phantom_eligible
                     && super::phantom::has_phantom_tool_intent_no_tools(&iteration_text)
                 {
                     phantom_retries_used += 1;
@@ -3101,7 +3135,7 @@ impl AgentService {
                 // swap (no fallback left, or already swapped once).
                 // Reset the counter and keep nudging the active provider
                 // — user presses Stop if they want out.
-                if !is_cli_provider
+                if phantom_eligible
                     && phantom_retries_used >= MAX_PHANTOM_RETRIES
                     && super::phantom::has_phantom_tool_intent_no_tools(&iteration_text)
                 {
@@ -3828,6 +3862,7 @@ impl AgentService {
                                             // on its own merits, not on debt
                                             // accumulated earlier in the turn.
                                             phantom_retries_used = 0;
+                                            tool_calls_completed_this_turn += 1;
                                             // Persist the touched path so a later
                                             // session on this project can re-anchor
                                             // on real paths instead of guessing.
@@ -4039,6 +4074,12 @@ impl AgentService {
                             // last real tool execution" rather than "phantom
                             // count across the entire turn".
                             phantom_retries_used = 0;
+                            // Mark the turn as having produced real work so
+                            // the subsequent text-only wrap-up iteration is
+                            // exempt from phantom-tool-call detection. See
+                            // the comment on the `tool_calls_completed_this_turn`
+                            // declaration at the top of `run_tool_loop_inner`.
+                            tool_calls_completed_this_turn += 1;
                             // Persist the touched path (same rationale as the
                             // approval-path branch above).
                             if let Some(p) = extract_path_for_recent_buffer(
