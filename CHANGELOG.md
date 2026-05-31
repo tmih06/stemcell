@@ -8,110 +8,214 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.3.31] - 2026-05-30
 
-44 commits since v0.3.30. Minor release closing issues #130 (Telegram
+48 commits since v0.3.30. Minor release closing issues #130 (Telegram
 forum topic routing was broken: proactive sends and startup resumes
 landed in general chat instead of the originating topic, and replies
-to messages within a topic also routed to general chat instead of
-back to the topic they came from; both reactive and proactive paths
-now carry `thread_id` through the full send pipeline, and a new
-`list_topics` action surfaces the (thread_id, topic_name) pairs the
-bot has observed so the agent can translate `#announcements` into
-the numeric ID it passes via the new optional `thread_id` parameter
-on `send` / `reply` / `send_photo`), #131 (Telegram reply context did
-not surface the exact quote the user highlighted when replying to a
-message, so the agent had no visibility into which specific paragraph
-was being discussed; reply context now extracts the quoted span from
-`reply_to_message` entities and includes it in the user turn), and
-#132 (RSI feedback ledger had no visibility into which bash commands
-the agent actually ran, so downstream pattern analysis could only see
-success/failure counts with no way to identify recurring command
-shapes; command text is now appended to event metadata, a subsystem
-classifier tags each command by category (git, cargo, docker, ssh,
-fs, net, build, test, etc.), and successful subsystem patterns are
-surfaced as tool / command / skill proposals in Mission Control so
-recurring workflows can be extracted into first-class capabilities).
-PDF handling got a full overhaul: new `page_range` parameter accepts
-`"1-30"`, `"5,7,10-15"` spans so the agent can target specific pages
-without burning tokens on the whole document, text-first routing
+to messages within a topic also routed to general chat; both reactive
+and proactive paths now carry `thread_id` through the full send
+pipeline, and a new `list_topics` action surfaces the (thread_id,
+topic_name) pairs so the agent can translate `#announcements` into
+the numeric ID), #131 (Telegram reply context did not surface the
+exact quote the user highlighted, so the agent had no visibility into
+which specific paragraph was being discussed; reply context now
+extracts the quoted span from `reply_to_message` entities), and #132
+(RSI feedback ledger had no visibility into which bash commands the
+agent actually ran; command text is now appended to event metadata
+with a subsystem classifier tagging each command by category, and
+successful patterns surface as tool / command / skill proposals in
+Mission Control). PDF handling got a full overhaul: new `page_range`
+parameter accepts `"1-30"`, `"5,7,10-15"` spans, text-first routing
 skips Gemini vision entirely for text-native PDFs (fixes the 10 MB /
-HTTP 413 incident where large PDFs were sent to vision without size
-guarding), inline cap raised from ~20 to ~60 pages with the PDF saved
-to disk so the agent can fetch the remainder via `parse_document`,
-partial vision renders are now preserved when `pdftoppm` fails mid-loop
-instead of discarding all rendered pages, and the `pdftoppm` loop is
-bounded to the actual page count from the PDF trailer. Agent
-self-awareness leveled up: compiled features are now surfaced in the
-system prompt with a check-first directive so the agent stops
-reimplementing built-ins like local STT/TTS (a `Known paths` section
-was also added so "check the logs" always lands at
-`~/.opencrabs/logs/opencrabs.YYYY-MM-DD` instead of guessing). Telegram
-UX polish: pre-tool status line is now fully context-aware — when a
-tool is running it names the tool + elapsed, when the model is in
-the pre-reasoning phase it surfaces a live excerpt from the
-streaming reasoning, and when neither signal exists yet it rolls a
-phrase anchored on a 60-char preview of the user's own message with
-a leading verb that escalates across elapsed buckets ("Working on:"
-→ "Still working on:" → "Long one — still on:" → "Marathon mode —
-still on:") so the status visibly evolves on long turns without ever
-falling back to hardcoded filler; the invented `THINKING_QUIPS`
-array was deleted along the way. Plan-tool summaries render as
-monospace `<pre>` panels for readability, and forum topic names are
-captured so `list_topics` can return human-readable labels. Prompt safety
-hardened: hallucinated `CODE_EDIT_BLOCK` fences are stripped from
-streamed output before channel delivery, and IDE-style inline edit
-formats (Cursor-style `search_and_replace`, Aider conflict markers,
-unified-diff dumps with file headers) are now explicitly forbidden in
-`BRAIN_PREAMBLE` so the agent stops leaking file contents to channels.
-Usage dashboard consolidated all Qwen 3.7 Max variants (including
-`qwen-latest-series`, `qwen-latest-series-invite`,
-`qwen-latest-series-invite-beta-v34`, dated snapshots, and preview
-channels) into a single `qwen-3.7-max` parent row with indented
-breakdown showing genuinely distinct variants (35B-A3B style), and
-all model names normalized to kebab-case lowercase for consistency.
-TUI/onboarding: provider list no longer re-indents on every Up/Down
-keypress, `/onboard:provider` and `/models` stop truncating the last
-fields on small terminals, plan checklist grew to ~10 visible tasks
-with scrolling for longer plans, and the tok/s footer now counts
-reasoning chunks toward the live rate. Plan tool description gained
-concrete trigger criteria (3+ steps, dependencies, multi-file). RSI
-self-heal gained a third proposal kind (`skill`) alongside tool and
-command, and skill proposals are surfaced in Mission Control with an
-apply path that writes a `SKILL.md` brain file. Provider stability:
-fallback only sticks after 4 consecutive rescues (not on first
-incident), and missing-[DONE] is accepted when text-only response
-looks complete. CI/build: `[profile.ci]` tuned for wall-clock instead
-of runtime perf, `Cargo.lock` committed for reproducible builds,
-stage-gated workflow with Linux-only tests and main-only coverage.
-Compaction defaults to the fun POST-COMPACTION PROTOCOL prompts
-(in-character one-liners after recovery — users have specifically
-called out those moments as a delight feature, including organic
-per-language personality like Russian мат in frustration scenarios)
-with a new `[agent] silent_compaction = true` opt-out in
-`config.toml` for formal or customer-facing deployments where
-mid-session profanity would be inappropriate; all four compaction
-sites (regular async, mid-loop, emergency, post-tool) now route
-through a single `compaction_prompts` module so the fun and silent
-variants stay byte-for-byte aligned. Tool routing tightened: the
-agent was reaching for `browser_navigate` on "check the GitHub PR"
-or "look up the docs for X" when the right surfaces were the `gh`
-CLI and one of the search tools respectively — tool descriptions
-now carry explicit pick-me-when guidance (`web_search` announces
-itself as the default research tool; `exa_search` / `brave_search`
-announce "PREFERRED over web_search" with their strengths;
-`browser_navigate` is explicitly framed as last-resort for
-research and forbidden for GitHub; `bash` calls out the `gh` CLI
-as the GitHub surface with `--json` / `--jq` examples), and a new
-WEB / GITHUB / BROWSER ROUTING block in `BRAIN_PREAMBLE` puts the
-rule in the system prompt every turn instead of only when
-`TOOLS.md` is loaded. Release workflow `wait-for-ci` now gates on
-the stable `CI Required Gate` check name instead of the brittle
-`Test (ubuntu-latest)` filter that broke silently when the test
-job was renamed to `Test (Linux)` (that's what caused the v0.3.31
-release retry to spin 30 min and time out).
+HTTP 413 incident), inline cap raised from ~20 to ~60 pages with the
+PDF saved to disk for remainder fetching, partial vision renders are
+preserved when `pdftoppm` fails mid-loop, and the `pdftoppm` loop is
+bounded to the actual page count. Agent self-awareness leveled up:
+compiled features surfaced in the system prompt with a check-first
+directive, and a `Known paths` section ensures "check the logs"
+always lands at `~/.opencrabs/logs/opencrabs.YYYY-MM-DD`. Telegram
+UX polish: pre-tool status line is fully context-aware (tool name +
+elapsed, live reasoning excerpt, or rolling phrase anchored on user
+input with escalating verbs). Plan-tool summaries render as monospace
+`<pre>` panels. Prompt safety hardened: hallucinated `CODE_EDIT_BLOCK`
+fences stripped before channel delivery, IDE-style inline edit
+formats explicitly forbidden in `BRAIN_PREAMBLE`, Qwen `<|tool|>`
+marker family stripped from streams. Usage dashboard consolidated all
+Qwen 3.7 Max variants (including `qwen-latest-series` family) into a
+single parent row with indented breakdown, all model names normalized
+to kebab-case lowercase. TUI/onboarding: provider list stopped
+re-indenting on Up/Down, `/onboard:provider` and `/models` stopped
+truncating on small terminals, plan checklist grew to ~10 visible
+tasks with scrolling, tok/s footer counts reasoning chunks. RSI
+gained skill proposals as a third proposal kind with an apply path
+writing `SKILL.md`. Provider stability: fallback only sticks after 4
+consecutive rescues, missing-[DONE] accepted when text-only response
+looks complete. CI/build: `[profile.ci]` for wall-clock, `Cargo.lock`
+committed, stage-gated workflow with Linux-only tests. Compaction
+defaults to silent continuation with fun POST-COMPACTION PROTOCOL
+fallback only when ambiguous, new `[agent] silent_compaction = true`
+opt-out. Tool routing tightened with explicit pick-me-when guidance
+and a WEB / GITHUB / BROWSER ROUTING block in `BRAIN_PREAMBLE`.
 
 Closes #130, #131, #132.
 
-84 files changed, +17,746/-518.
+94 files changed, +18,690/-592.
+
+PDF / DOCUMENT PARSER OVERHAUL (6 commits)
+
+New `page_range` parameter accepts `"1-30"`, `"5,7,10-15"` spans so
+the agent can target specific pages without burning tokens on the
+whole document. Text-first routing skips Gemini vision entirely for
+text-native PDFs, fixing the 10 MB / HTTP 413 incident. Inline cap
+raised from ~20 to ~60 pages with the PDF saved to disk. Partial
+vision renders preserved when `pdftoppm` fails mid-loop. The
+`pdftoppm` loop bounded to actual page count from the PDF trailer.
+
+- f3a4095e feat(doc_parser): page_range param + agent-facing guidance for paginated PDFs
+- 0eaee829 fix(pdf): text-first routing + lazy per-page vision (closes 10 MB / 413 incident)
+- 1e46cd26 fix(pdf): raise inline cap to ~60 pages + save PDF so agent can fetch the rest
+- c40f03f5 fix(pdf): keep partial vision renders + bound pdftoppm loop to actual page count
+- a9b0d399 docs(tools): document page_range + fix wrong pages-as-string hint
+- 62baba8d test(pdf): 25 direct cases for parse_page_range + normalise spaces around dash
+
+TELEGRAM FORUM TOPICS + UX (10 commits, closes #130, #131)
+
+Both proactive and reactive forum topic routing fixed: sends, startup
+resumes, and replies carry `thread_id` through the full pipeline so
+they land in the originating topic. A new `list_topics` action
+surfaces (thread_id, topic_name) pairs. Reply context extracts the
+quoted span from `reply_to_message` entities. Pre-tool status line is
+context-aware: tool name + elapsed, live reasoning excerpt, or rolling
+phrase anchored on user input. Plan-tool summaries render as monospace
+`<pre>` panels. The invented `THINKING_QUIPS` array was deleted.
+
+- 82362383 fix(telegram): route proactive sends and startup resumes into forum topic (closes #130)
+- ce0d2597 fix(telegram): route forum-topic replies back to the originating topic (closes #130, reactive path)
+- 066a54de feat(telegram): capture forum topic names + list_topics action (#130 follow-up)
+- 5120d79c feat(telegram_send): expose optional thread_id override for proactive sends
+- 93ee4004 fix(telegram): surface user-highlighted quote in reply context (closes #131)
+- e035de24 fix(telegram): make pre-tool status line dynamic instead of hardcoded "Thinking through this..."
+- f6d915e3 fix(telegram): render plan-tool summary as monospace panel via <pre>
+- 60a0fef1 fix(telegram): remove the invented THINKING_QUIPS fallback, silence > filler
+- 8399d84e fix(telegram): restore pre-tool rolling status, anchored on user input
+- 02dd7fb0 chore(telegram): log quote-reply context construction for #131 diagnosis
+
+PROMPT SAFETY (3 commits)
+
+Hallucinated `CODE_EDIT_BLOCK` fences stripped from streamed output
+before channel delivery. IDE-style inline edit formats (Cursor-style
+`search_and_replace`, Aider conflict markers, unified-diff dumps with
+file headers) explicitly forbidden in `BRAIN_PREAMBLE`. Qwen
+`<|tool...|>` marker family stripped before channel delivery.
+
+- b339a8c7 fix(sanitize): strip hallucinated CODE_EDIT_BLOCK fences before channel delivery
+- 42ada9ed feat(prompt): forbid IDE-style inline edit formats in BRAIN_PREAMBLE
+- 0f909959 fix(stream/sanitize): stop Qwen `<|tool...|>` marker family from leaking to channels
+
+AGENT SELF-AWARENESS (2 commits)
+
+Compiled features surfaced in the system prompt with a check-first
+directive so the agent stops reimplementing built-ins like local
+STT/TTS. A `Known paths` section ensures "check the logs" lands at
+`~/.opencrabs/logs/opencrabs.YYYY-MM-DD` instead of guessing.
+
+- b17f06c1 feat(prompt): surface compiled features + check-first directive so agent stops reimplementing built-ins
+- b19f1c7d feat(prompt): add Known paths section so "check the logs" lands at the right file
+
+USAGE DASHBOARD (3 commits)
+
+Consolidated all Qwen 3.7 Max variants (including `qwen-latest-series`
+family) into a single parent row with indented breakdown showing
+genuinely distinct variants (35B-A3B style). All model names normalized
+to kebab-case lowercase. Cosmetic-alias variants suppressed from the
+breakdown tree.
+
+- 9362c385 fix(usage): consolidate qwen-3.7 family and normalize all model names to kebab-case
+- a6196b6c fix(usage): group qwen-latest-series variants under qwen-3.7-max with indented breakdown
+- a3b722b3 fix(usage): suppress cosmetic-alias variants from /usage breakdown tree
+
+RSI / SELF-HEAL (5 commits, closes #132)
+
+Bash command text appended to feedback ledger event metadata. A
+subsystem classifier tags each command by category (git, cargo, docker,
+ssh, fs, net, build, test, etc.). Successful patterns surface as
+tool / command / skill proposals in Mission Control. Skill proposals
+are a new third kind alongside tool and command, with an apply path
+writing a `SKILL.md` brain file.
+
+- 2b4d7c86 feat(rsi): append bash command text to feedback ledger metadata (closes #132)
+- d2805778 feat(rsi): bash command subsystem classifier for pattern aggregation
+- 5d523530 feat(rsi): detect successful bash subsystem patterns + propose tool/skill extraction
+- 8c9d959b feat(rsi): add skill as a third proposal kind alongside tool / command
+- 3ba6a8ae fix(rsi): surface skill proposals in Mission Control + add apply path (SKILL.md writer)
+
+TUI / ONBOARDING (4 commits)
+
+Provider list stopped re-indenting on every Up/Down keypress.
+`/onboard:provider` and `/models` stopped truncating last fields on
+small terminals. Plan checklist grew to ~10 visible tasks with
+scrolling. The tok/s footer counts reasoning chunks toward the live
+rate.
+
+- 029832e6 fix(onboarding): stop the provider list re-indenting on every Up/Down keypress
+- 55a68039 fix(tui): stop truncating last fields of /onboard:provider and /models on small terminals
+- 27e0a642 fix(tui): grow plan checklist to ~10 tasks + add scrolling for longer plans
+- 0abf41ee fix(tui): count reasoning chunks toward live tok/s footer
+
+CI / BUILD (5 commits)
+
+`[profile.ci]` tuned for wall-clock instead of runtime perf.
+`Cargo.lock` committed for reproducible builds. Stage-gated workflow
+with Linux-only tests and main-only coverage. Deterministic pacing
+tests via `force_grant_now` helper.
+
+- 7c8968e7 build: add [profile.ci] tuned for CI wall-clock instead of runtime perf
+- f6a0e77e build: commit Cargo.lock + switch CI to --locked for reproducible builds
+- 201d7ec3 ci: stage-gated workflow, Linux-only tests, [profile.ci], main-only coverage
+- ab29d48f test(rate_limiter): deterministic pacing tests via force_grant_now helper
+- 0a393987 chore(tests): collapse nested if-let in prompt_compiled_features sentinel
+
+PROVIDER STABILITY (3 commits)
+
+Fallback only sticks after 4 consecutive rescues, not on first
+incident. Missing-[DONE] accepted when text-only response looks
+complete. Evolve tool got honest error branching and structured tracing
+on every failure path.
+
+- 05fcf43c fix(fallback): only stick the fallback after 4 consecutive rescues, not on first incident
+- 97683fb0 fix(stream): accept missing-[DONE] when text-only response looks complete
+- 457cff3d fix(evolve): honest error branching + structured tracing on every failure path
+
+TOOL ROUTING (1 commit)
+
+Agent was reaching for `browser_navigate` on "check the GitHub PR" or
+"look up the docs for X" when the right surfaces were the `gh` CLI
+and search tools. Tool descriptions now carry explicit pick-me-when
+guidance and a WEB / GITHUB / BROWSER ROUTING block in `BRAIN_PREAMBLE`
+puts the rule in the system prompt every turn.
+
+- b25c1cc8 fix: route research to search, GitHub to gh CLI, browser to last resort
+
+COMPACTION (2 commits)
+
+Defaults to silent continuation with fun POST-COMPACTION PROTOCOL
+fallback only when the post-compact state is genuinely ambiguous. New
+`[agent] silent_compaction = true` opt-out for formal deployments.
+All four compaction sites route through a single module.
+
+- fb325fb5 fix(compaction): silent continuation by default, fun fallback only when unclear
+- d3c239c1 feat(agent): restore fun post-compaction narration, add silent_compaction opt-out
+
+PLAN TOOL (1 commit)
+
+- 79c05b56 feat(plan): add concrete trigger criteria to plan tool description
+
+TEST (1 commit)
+
+- e65eb82f test(prompt): gate local-stt/tts test + parse source for feature list under tarpaulin
+
+DOCS (1 commit)
+
+- 882361cf docs(changelog): align v0.3.31 entry with shipped compaction + rolling-status behaviour
 
 ## [0.3.30] - 2026-05-29
 
@@ -124,7 +228,7 @@ topic, so searches across topic-enabled supergroups returned a flat
 undifferentiated list), #128 (rename_session silently accepted empty
 titles and wiped the session label so it showed as "Untitled" in
 /sessions), and #129 (Telegram /sessions response printed every
-session in the message body AND as inline-keyboard buttons —
+session in the message body AND as inline-keyboard buttons,
 pure duplication). The RTK binary detection swapped `std::sync::OnceLock`
 plus `std::process::Command` for `tokio::sync::OnceCell` plus
 `tokio::process::Command` across `find_rtk_binary`, `is_rtk_available`,
@@ -144,7 +248,7 @@ malformations preserved as regression tests), and orphan close tags
 like `</tool_result>` are stripped from streamed output before
 reaching the TUI. The /models picker now surfaces every known
 provider including unconfigured ones with a 🔒 lock + setup help
-text (never asks users to paste API keys inline — Telegram bots can't
+text (never asks users to paste API keys inline, Telegram bots can't
 delete DM history), the displayed CLI model list comes from a single
 `cli_supported_models` source of truth pinned per provider so
 channel footers match what the TUI actually offers, custom providers
@@ -179,9 +283,9 @@ self_improve tool rejects trivial test content before it can pollute
 brain files; `rename_session` rejects empty / whitespace-only titles
 so sessions can't become unidentifiable. TUI gets a real-time tok/s
 throughput meter in the footer (between model info and approval
-policy pill) that counts ONLY active streaming time — tool execution,
+policy pill) that counts ONLY active streaming time, tool execution,
 approval waits, between-stream network round-trips, and compaction
-delays are excluded — and persists the last finalized rate so the
+delays are excluded, and persists the last finalized rate so the
 footer keeps showing the previous turn's tok/s during idle until
 the next turn produces its first token. The plan widget dynamically
 hides tasks that don't fit the terminal height instead of overflowing.
@@ -1691,7 +1795,8 @@ provider and context budget.
 - **Anti-code-block nudge for local models** — brain instructions explicitly
   tell the model to use `tool_calls`, not markdown code blocks.
 
-[Unreleased]: https://github.com/adolfousier/opencrabs/compare/v0.3.30...HEAD
+[Unreleased]: https://github.com/adolfousier/opencrabs/compare/v0.3.31...HEAD
+[0.3.31]: https://github.com/adolfousier/opencrabs/compare/v0.3.30...v0.3.31
 [0.3.30]: https://github.com/adolfousier/opencrabs/compare/v0.3.29...v0.3.30
 [0.3.29]: https://github.com/adolfousier/opencrabs/compare/v0.3.28...v0.3.29
 [0.3.28]: https://github.com/adolfousier/opencrabs/compare/v0.3.27...v0.3.28
@@ -4849,4 +4954,3 @@ fixes.
 [0.1.2]: https://github.com/adolfousier/opencrabs/releases/tag/v0.1.2
 [0.1.1]: https://github.com/adolfousier/opencrabs/releases/tag/v0.1.1
 [0.1.0]: https://github.com/adolfousier/opencrabs/releases/tag/v0.1.0
-[0.3.31]: https://github.com/adolfousier/opencrabs/compare/v0.3.30...v0.3.31
