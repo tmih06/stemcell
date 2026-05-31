@@ -12,14 +12,47 @@ use std::path::PathBuf;
 
 /// Returns `true` if any provider has a `vision_model` configured,
 /// or if `image.vision` is enabled with an API key.
+///
+/// When this returns `false`, channel handlers route incoming images
+/// to the "unsupported format" notice — and previously the user got
+/// no clue WHY. We now log each failed branch at `info` so a user
+/// asking "the bot ignored my image, what happened?" can read the
+/// log instead of source-diving (#141).
 pub fn is_vision_available(config: &Config) -> bool {
     if crate::brain::provider::factory::active_provider_vision(config).is_some() {
         return true;
     }
-    if config.image.vision.enabled
-        && let Some(ref key) = config.image.vision.api_key
-    {
-        return !key.is_empty();
+    if config.image.vision.enabled {
+        match config.image.vision.api_key.as_deref() {
+            Some(k) if !k.is_empty() => return true,
+            Some(_) => {
+                tracing::info!(
+                    target: "vision",
+                    "vision unavailable: [image.vision] enabled but api_key is empty — \
+                     keys.toml `[image]` section is the place to put the Gemini key \
+                     (config.toml `[image.vision] api_key` is silently ignored, the \
+                     field carries `#[serde(skip)]`)"
+                );
+            }
+            None => {
+                tracing::info!(
+                    target: "vision",
+                    "vision unavailable: [image.vision] enabled but no api_key loaded — \
+                     add a Gemini key to keys.toml `[image]` section"
+                );
+            }
+        }
+    } else {
+        let (provider, _model) = config.providers.active_provider_and_model();
+        tracing::info!(
+            target: "vision",
+            active_provider = %provider,
+            "vision unavailable: active provider has no `vision_model` set AND \
+             [image.vision] is disabled. Two fixes: (1) set `vision_model = \"<model>\"` \
+             on [providers.{provider}] in config.toml (preferred — uses the same \
+             provider for chat + vision), or (2) run /onboard:image to enable Gemini \
+             vision globally"
+        );
     }
     false
 }

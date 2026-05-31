@@ -936,69 +936,73 @@ impl ProviderConfigs {
         self.custom.as_ref()?.get(&normalized)
     }
 
+    /// Single source of truth for built-in provider iteration. Both
+    /// `active_provider_and_model` (factory routing) and
+    /// `resolve_provider_from_config` (display) walk this list, so adding a
+    /// new provider field above only needs ONE new entry here — no more
+    /// hardcoded if-else ladders silently omitting providers (the bug that
+    /// hid `opencode`, `ollama`, `bedrock`, `vertex` from the TUI display
+    /// for months).
+    ///
+    /// Tuple shape: `(session_id, display_name, requires_api_key, &Option<ProviderConfig>)`.
+    /// `requires_api_key=false` for CLI providers where `enabled=true`
+    /// alone activates them (claude-cli, opencode-cli, codex-cli, codex
+    /// OAuth — the latter stores tokens in `~/.opencrabs/auth/`).
+    ///
+    /// Priority order matches what `factory::create_provider` would pick:
+    /// CLI providers first (free, no key), then API providers, with custom
+    /// providers handled separately by the caller via `active_custom()`.
+    fn provider_registry(
+        &self,
+    ) -> [(&'static str, &'static str, bool, Option<&ProviderConfig>); 16] {
+        [
+            // CLI providers — enabled flag alone is enough
+            ("claude-cli", "Claude CLI", false, self.claude_cli.as_ref()),
+            (
+                "opencode-cli",
+                "OpenCode CLI",
+                false,
+                self.opencode_cli.as_ref(),
+            ),
+            ("codex-cli", "Codex CLI", false, self.codex_cli.as_ref()),
+            ("codex", "Codex OAuth", false, self.codex.as_ref()),
+            // OpenCode API — OAuth-backed but registered as a regular provider
+            ("opencode", "OpenCode", false, self.opencode.as_ref()),
+            // API providers — require api_key in addition to enabled
+            ("qwen", "Qwen", true, self.qwen.as_ref()),
+            ("minimax", "Minimax", true, self.minimax.as_ref()),
+            ("zhipu", "z.ai GLM", true, self.zhipu.as_ref()),
+            ("openrouter", "OpenRouter", true, self.openrouter.as_ref()),
+            ("anthropic", "Anthropic", true, self.anthropic.as_ref()),
+            ("openai", "OpenAI", true, self.openai.as_ref()),
+            ("github", "GitHub Copilot", true, self.github.as_ref()),
+            ("gemini", "Google Gemini", true, self.gemini.as_ref()),
+            ("ollama", "Ollama", false, self.ollama.as_ref()),
+            ("bedrock", "AWS Bedrock", true, self.bedrock.as_ref()),
+            ("vertex", "Google Vertex", true, self.vertex.as_ref()),
+        ]
+    }
+
     /// Return `(provider_name, default_model)` for the currently active provider,
     /// using the same priority order as `factory::create_provider`.
+    ///
+    /// Walks `provider_registry()` in priority order and returns the first
+    /// entry that is enabled and (if `requires_api_key`) has an API key.
+    /// Falls through to the first active custom provider, otherwise
+    /// `("none", "none")`.
     pub fn active_provider_and_model(&self) -> (String, String) {
-        // CLI providers first — no API key needed, just enabled check
-        if let Some(c) = self.claude_cli.as_ref()
-            && c.enabled
-        {
-            let model = c
-                .default_model
-                .clone()
-                .unwrap_or_else(|| "sonnet".to_string());
-            return ("claude-cli".to_string(), model);
-        }
-        if let Some(c) = self.opencode_cli.as_ref()
-            && c.enabled
-        {
-            let model = c
-                .default_model
-                .clone()
-                .unwrap_or_else(|| "opencode/gpt-5-nano".to_string());
-            return ("opencode".to_string(), model);
-        }
-        if let Some(c) = self.codex_cli.as_ref()
-            && c.enabled
-        {
-            let model = c
-                .default_model
-                .clone()
-                .unwrap_or_else(|| "gpt-5.5".to_string());
-            return ("codex-cli".to_string(), model);
-        }
-        if let Some(c) = self.codex.as_ref()
-            && c.enabled
-        {
-            let model = c
-                .default_model
-                .clone()
-                .unwrap_or_else(|| "gpt-5.5".to_string());
-            return ("codex".to_string(), model);
-        }
-        let candidates: &[(&str, Option<&ProviderConfig>)] = &[
-            ("qwen", self.qwen.as_ref()),
-            ("minimax", self.minimax.as_ref()),
-            ("zhipu", self.zhipu.as_ref()),
-            ("openrouter", self.openrouter.as_ref()),
-            ("anthropic", self.anthropic.as_ref()),
-            ("openai", self.openai.as_ref()),
-            ("github", self.github.as_ref()),
-            ("gemini", self.gemini.as_ref()),
-        ];
-        for &(name, cfg) in candidates {
+        for (id, _display, requires_api_key, cfg) in self.provider_registry() {
             if let Some(c) = cfg
                 && c.enabled
-                && c.api_key.is_some()
+                && (!requires_api_key || c.api_key.is_some())
             {
                 let model = c
                     .default_model
                     .clone()
                     .unwrap_or_else(|| "(default)".to_string());
-                return (name.to_string(), model);
+                return (id.to_string(), model);
             }
         }
-        // Check custom providers
         if let Some((name, cfg)) = self.active_custom() {
             let model = cfg
                 .default_model
@@ -3419,138 +3423,31 @@ level = "info"
     }
 }
 
-/// Resolve provider name and model from config (for display purposes)
+/// Resolve provider display name and model from config.
+///
+/// Walks `ProviderConfigs::provider_registry()` (the single source of
+/// truth) in priority order and returns the display name + active model
+/// for the first matching provider. Falls through to the first active
+/// custom provider, otherwise `("Not configured", "N/A")`.
+///
+/// Replaces the prior 130-line if-else ladder that hardcoded a subset of
+/// providers and silently omitted `opencode`, `ollama`, `bedrock`, and
+/// `vertex` from the TUI display for months (#141). Adding a new
+/// provider now only requires one new line in `provider_registry()`.
 #[allow(clippy::items_after_test_module)]
 pub fn resolve_provider_from_config(config: &Config) -> (&str, &str) {
-    // Check providers in priority order: Anthropic > OpenAI > GitHub > Gemini > OpenRouter > Minimax
-    if config
-        .providers
-        .anthropic
-        .as_ref()
-        .is_some_and(|p| p.enabled)
-    {
-        let model = config
-            .providers
-            .anthropic
-            .as_ref()
-            .and_then(|p| p.default_model.as_deref())
-            .unwrap_or("default");
-        return ("Anthropic", model);
-    }
-    if config.providers.openai.as_ref().is_some_and(|p| p.enabled) {
-        let model = config
-            .providers
-            .openai
-            .as_ref()
-            .and_then(|p| p.default_model.as_deref())
-            .unwrap_or("default");
-        return ("OpenAI", model);
-    }
-    if config.providers.github.as_ref().is_some_and(|p| p.enabled) {
-        let model = config
-            .providers
-            .github
-            .as_ref()
-            .and_then(|p| p.default_model.as_deref())
-            .unwrap_or("gpt-5-mini");
-        return ("GitHub Copilot", model);
-    }
-    if config.providers.gemini.as_ref().is_some_and(|p| p.enabled) {
-        let model = config
-            .providers
-            .gemini
-            .as_ref()
-            .and_then(|p| p.default_model.as_deref())
-            .unwrap_or("default");
-        return ("Google Gemini", model);
-    }
-    if config
-        .providers
-        .openrouter
-        .as_ref()
-        .is_some_and(|p| p.enabled)
-    {
-        let model = config
-            .providers
-            .openrouter
-            .as_ref()
-            .and_then(|p| p.default_model.as_deref())
-            .unwrap_or("default");
-        return ("OpenRouter", model);
-    }
-    if config.providers.minimax.as_ref().is_some_and(|p| p.enabled) {
-        let model = config
-            .providers
-            .minimax
-            .as_ref()
-            .and_then(|p| p.default_model.as_deref())
-            .unwrap_or("default");
-        return ("Minimax", model);
-    }
-    if config.providers.zhipu.as_ref().is_some_and(|p| p.enabled) {
-        let model = config
-            .providers
-            .zhipu
-            .as_ref()
-            .and_then(|p| p.default_model.as_deref())
-            .unwrap_or("default");
-        return ("z.ai GLM", model);
-    }
-    if config
-        .providers
-        .claude_cli
-        .as_ref()
-        .is_some_and(|p| p.enabled)
-    {
-        let model = config
-            .providers
-            .claude_cli
-            .as_ref()
-            .and_then(|p| p.default_model.as_deref())
-            .unwrap_or("sonnet");
-        return ("Claude CLI", model);
-    }
-    if config
-        .providers
-        .opencode_cli
-        .as_ref()
-        .is_some_and(|p| p.enabled)
-    {
-        let model = config
-            .providers
-            .opencode_cli
-            .as_ref()
-            .and_then(|p| p.default_model.as_deref())
-            .unwrap_or("opencode/gpt-5-nano");
-        return ("OpenCode CLI", model);
-    }
-    if config
-        .providers
-        .codex_cli
-        .as_ref()
-        .is_some_and(|p| p.enabled)
-    {
-        let model = config
-            .providers
-            .codex_cli
-            .as_ref()
-            .and_then(|p| p.default_model.as_deref())
-            .unwrap_or("gpt-5.5");
-        return ("Codex CLI", model);
-    }
-    if config.providers.qwen.as_ref().is_some_and(|p| p.enabled) {
-        let model = config
-            .providers
-            .qwen
-            .as_ref()
-            .and_then(|p| p.default_model.as_deref())
-            .unwrap_or("qwen3.6-plus");
-        return ("Qwen", model);
+    for (_id, display, requires_api_key, cfg) in config.providers.provider_registry() {
+        if let Some(c) = cfg
+            && c.enabled
+            && (!requires_api_key || c.api_key.is_some())
+        {
+            let model = c.default_model.as_deref().unwrap_or("(default)");
+            return (display, model);
+        }
     }
     if let Some((name, cfg)) = config.providers.active_custom() {
         let model = cfg.default_model.as_deref().unwrap_or("default");
         return (name, model);
     }
-    // Default - nothing configured
     ("Not configured", "N/A")
 }

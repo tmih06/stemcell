@@ -310,6 +310,33 @@ model = "gemini-3.1-flash-image-preview"   # Gemini image-gen model ("Nano Banan
 # backend automatically: Gemini host → Gemini API, anything else →
 # `/v1/images/generations` with Bearer auth.
 
+# ========================================
+# Vision setup — two paths, pick one
+# ========================================
+#
+# Path A (preferred, simpler): set `vision_model = "<model>"` on your
+# active [providers.<name>] block above. Works for every built-in and
+# custom provider. The agent calls the vision model on the SAME
+# provider endpoint via the `analyze_image` tool, so no second API key
+# is needed. Pick a vision-capable model on that provider — DeepSeek
+# chat models like `deepseek-v4-flash` reject image_url content, so
+# point `vision_model` at a vision-capable variant of the same family
+# (every provider has at least one).
+#
+# Path B (fallback): enable Gemini globally below. Use this only when
+# your active provider has no vision-capable model.
+#
+# IMPORTANT: the api_key for vision must be set in `keys.toml`
+# `[image]` section, NOT here. The api_key field on `[image.vision]`
+# carries `#[serde(skip)]` and is silently dropped on load — put it in
+# keys.toml or it will look enabled but produce zero vision calls.
+#
+# When vision is unavailable for any reason, `is_vision_available`
+# now logs the exact reason at INFO level in
+# `~/.opencrabs/logs/opencrabs.YYYY-MM-DD` — search for `target=vision`.
+#
+# Easiest setup: run `/onboard:image` and it walks you through Gemini.
+
 [image.vision]
 enabled = false
 model = "gemini-3.1-flash-image-preview"   # Gemini vision model

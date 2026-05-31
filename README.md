@@ -137,6 +137,35 @@ https://github.com/user-attachments/assets/7f45c5f8-acdf-48d5-b6a4-0e4811a9ee23
 | **Attachment Indicator** | Attached images show as `[IMG1:filename.png]` in the input title bar |
 | **Image Generation** | Agent generates images via Google Gemini (`gemini-3.1-flash-image-preview` "Nano Banana") using the `generate_image` tool — enabled via `/onboard:image`. Returned as native images/attachments in all channels |
 
+#### Vision setup — two paths, pick one
+
+**Path A (preferred, simpler).** Set `vision_model = "<model>"` on your active `[providers.<name>]` block in `config.toml`. Works for every built-in and custom provider — the agent calls the vision model on the **same provider endpoint** via the `analyze_image` tool, so no second API key is needed. Pick a vision-capable model on that provider (DeepSeek chat models like `deepseek-v4-flash` reject `image_url` content, so point `vision_model` at a vision-capable variant of the same family — every provider has at least one).
+
+```toml
+[providers.opencode]
+enabled = true
+vision_model = "mimo-v2-omni"  # any vision-capable model on this provider
+```
+
+**Path B (fallback).** Enable Gemini globally. Use this only when your active provider has no vision-capable model. Easiest way: run `/onboard:image` and the wizard walks you through. Manual setup:
+
+```toml
+# config.toml
+[image.vision]
+enabled = true
+model = "gemini-3.1-flash-image-preview"
+```
+
+```toml
+# keys.toml  ← the Gemini key MUST live here, NOT in config.toml
+[image]
+api_key = "YOUR_GEMINI_KEY"
+```
+
+> **Gotcha:** `[image.vision] api_key = "..."` in `config.toml` is silently ignored — the field carries `#[serde(skip)]` for security. Use `keys.toml` `[image]` section, or `[providers.image.gemini]` in config.toml + the key in keys.toml.
+
+**Diagnostic:** when vision is unavailable for any reason, `is_vision_available` logs the exact cause at INFO level in `~/.opencrabs/logs/opencrabs.YYYY-MM-DD` — search for `target=vision`.
+
 ### Messaging Integrations
 | Feature | Description |
 |---------|-------------|
