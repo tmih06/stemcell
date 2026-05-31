@@ -71,6 +71,58 @@ pub(crate) fn diagnose_releases_latest_status(
     }
 }
 
+/// Service-unit glob used by the systemd restart path. Matches every
+/// profile (default, ops, staging, ...) sharing the same binary.
+pub(crate) const SYSTEMD_UNIT_PATTERN: &str = "opencrabs*.service";
+
+/// Build the `systemd-run` command that schedules a delayed restart
+/// of every service unit matching `SYSTEMD_UNIT_PATTERN`. Extracted
+/// so the arg list can be pinned by tests — silent drift in any of
+/// these flags would re-introduce the "Evolved! but daemon didn't
+/// restart" symptom that issue #136 reported.
+///
+/// The `pid` argument is used to derive a unique transient unit
+/// name (`opencrabs-evolve-<pid>`) so concurrent evolve calls don't
+/// collide on the transient unit registry.
+pub(crate) fn build_systemd_restart_command(pid: u32) -> std::process::Command {
+    let unit_name = format!("opencrabs-evolve-{pid}");
+    let mut cmd = std::process::Command::new("systemd-run");
+    cmd.args([
+        "--on-active=3",
+        &format!("--unit={unit_name}"),
+        "systemctl",
+        "restart",
+        SYSTEMD_UNIT_PATTERN,
+    ])
+    .stdout(std::process::Stdio::null())
+    .stderr(std::process::Stdio::null());
+    cmd
+}
+
+/// Count systemd service units matching the given glob pattern.
+///
+/// Returns `Some(n)` on a successful query (n may be zero), or
+/// `None` if `systemctl` failed to spawn / returned a non-zero exit
+/// status (a permissions issue or non-systemd host). `None` is a
+/// "don't know" signal: the caller should fall through and schedule
+/// the restart anyway rather than blocking on a diagnostic failure.
+///
+/// Uses `--no-legend --no-pager` to keep stdout machine-parseable.
+/// Counts non-empty lines — `systemctl` prints one line per matched
+/// unit when `--no-legend` is set.
+pub(crate) fn count_matching_systemd_units(pattern: &str) -> Option<usize> {
+    let output = std::process::Command::new("systemctl")
+        .args(["list-units", "--no-legend", "--no-pager", pattern])
+        .stderr(std::process::Stdio::null())
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    Some(stdout.lines().filter(|l| !l.trim().is_empty()).count())
+}
+
 /// Check GitHub for a newer release. Returns `Some(latest_version)` if an
 /// update is available **and** a binary asset exists for this platform,
 /// `None` if already on latest, no asset ready, or on error.
@@ -937,53 +989,82 @@ impl EvolveTool {
         // Only units matching the glob pattern are restarted, so adding a
         // new profile (e.g. opencrabs-staging.service) picks it up
         // automatically with no code change.
+        //
+        // Pre-flight: count units that match the glob. If zero match,
+        // the scheduled `systemctl restart` would be a no-op — same
+        // user-visible symptom as #136 (agent says "Evolved!", daemon
+        // never restarts) but for a different reason (unit name
+        // mismatch instead of missing restart). Skip the spawn and
+        // tell the user honestly.
+        let mut restart_status = RestartStatus::NotSystemd;
         if std::path::Path::new("/run/systemd/system").exists() {
-            let unit_name = format!("opencrabs-evolve-{}", std::process::id());
-            tracing::info!(
-                target: "evolve",
-                unit = %unit_name,
-                pattern = "opencrabs*.service",
-                session_id = %sid,
-                "evolve: scheduling delayed systemd restart (+3s)"
-            );
-            // Failure to spawn systemd-run is the most user-visible
-            // regression mode: the binary on disk is updated, the agent
-            // says "Evolved!", but the daemon keeps running the old
-            // inode forever because no restart was ever scheduled. Log
-            // at warn so the user has actionable forensic evidence
-            // when "evolve said success but didn't restart" happens —
-            // exactly the symptom this whole code path was added to
-            // prevent (#136).
-            match std::process::Command::new("systemd-run")
-                .args([
-                    "--on-active=3",
-                    &format!("--unit={}", unit_name),
-                    "systemctl",
-                    "restart",
-                    "opencrabs*.service",
-                ])
-                .stdout(std::process::Stdio::null())
-                .stderr(std::process::Stdio::null())
-                .spawn()
-            {
-                Ok(child) => {
-                    tracing::info!(
-                        target: "evolve",
-                        unit = %unit_name,
-                        systemd_run_pid = child.id(),
-                        session_id = %sid,
-                        "evolve: systemd-run spawned; daemon will restart in 3s"
-                    );
-                }
-                Err(e) => {
+            let unit_count = count_matching_systemd_units(SYSTEMD_UNIT_PATTERN);
+            match unit_count {
+                Some(0) => {
                     tracing::warn!(
                         target: "evolve",
-                        unit = %unit_name,
-                        error = %e,
+                        pattern = SYSTEMD_UNIT_PATTERN,
                         session_id = %sid,
-                        "evolve: failed to spawn systemd-run — daemon will NOT auto-restart, \
-                         manual `systemctl restart opencrabs*.service` is required to load the new binary"
+                        "evolve: no systemd units matched the pattern — skipping scheduled restart"
                     );
+                    restart_status = RestartStatus::NoUnitsMatched;
+                }
+                _ => {
+                    // Either Some(n>=1) or None ("don't know" — systemctl
+                    // failed to spawn / returned non-zero). In the None
+                    // case, fall through and schedule the restart anyway:
+                    // a diagnostic failure shouldn't penalize the user
+                    // whose daemon DOES exist and DOES match the glob.
+                    if let Some(n) = unit_count {
+                        tracing::info!(
+                            target: "evolve",
+                            pattern = SYSTEMD_UNIT_PATTERN,
+                            matched_units = n,
+                            session_id = %sid,
+                            "evolve: pre-flight found matching systemd units, scheduling restart (+3s)"
+                        );
+                    } else {
+                        tracing::warn!(
+                            target: "evolve",
+                            pattern = SYSTEMD_UNIT_PATTERN,
+                            session_id = %sid,
+                            "evolve: could not determine matching unit count (systemctl spawn failed), \
+                             scheduling restart anyway"
+                        );
+                    }
+                    let pid = std::process::id();
+                    let unit_name = format!("opencrabs-evolve-{pid}");
+                    // Failure to spawn systemd-run is the most user-visible
+                    // regression mode: the binary on disk is updated, the
+                    // agent says "Evolved!", but the daemon keeps running
+                    // the old inode forever because no restart was ever
+                    // scheduled. Log at warn so the user has actionable
+                    // forensic evidence when "evolve said success but
+                    // didn't restart" happens — exactly the symptom this
+                    // whole code path was added to prevent (#136).
+                    match build_systemd_restart_command(pid).spawn() {
+                        Ok(child) => {
+                            tracing::info!(
+                                target: "evolve",
+                                unit = %unit_name,
+                                systemd_run_pid = child.id(),
+                                session_id = %sid,
+                                "evolve: systemd-run spawned; daemon will restart in 3s"
+                            );
+                            restart_status = RestartStatus::Scheduled;
+                        }
+                        Err(e) => {
+                            tracing::warn!(
+                                target: "evolve",
+                                unit = %unit_name,
+                                error = %e,
+                                session_id = %sid,
+                                "evolve: failed to spawn systemd-run — daemon will NOT auto-restart, \
+                                 manual `systemctl restart opencrabs*.service` is required to load the new binary"
+                            );
+                            restart_status = RestartStatus::SpawnFailed(e.to_string());
+                        }
+                    }
                 }
             }
         }
@@ -1001,10 +1082,56 @@ impl EvolveTool {
             );
         }
 
-        Ok(ToolResult::success(format!(
-            "Evolved from v{} to v{}. Restarting into the new version.",
-            current_version, latest_version
-        )))
+        Ok(ToolResult::success(
+            restart_status.user_message(current_version, latest_version),
+        ))
+    }
+}
+
+/// Outcome of the post-swap restart-scheduling step. Used to tailor
+/// the user-facing success string so we never say "Restarting…" when
+/// no restart was actually scheduled (the original #136 symptom — we
+/// must not reintroduce it for a new reason).
+#[derive(Debug)]
+enum RestartStatus {
+    /// Not running on a systemd host (no `/run/systemd/system`). The
+    /// caller's `RestartReady` progress event is the only restart
+    /// signal — e.g. cargo-install / TUI launch paths handle that.
+    NotSystemd,
+    /// `systemctl list-units` matched zero units. systemd is present
+    /// but nothing in the unit registry corresponds to opencrabs;
+    /// scheduling a restart would be a no-op so we don't.
+    NoUnitsMatched,
+    /// systemd-run was spawned successfully — restart fires in 3s.
+    Scheduled,
+    /// systemd-run failed to spawn (binary missing on this host,
+    /// permission denied, etc.). Carries the error string so the
+    /// user-visible message can quote it for forensics.
+    SpawnFailed(String),
+}
+
+impl RestartStatus {
+    fn user_message(&self, current: &str, latest: &str) -> String {
+        match self {
+            RestartStatus::Scheduled => {
+                format!("Evolved from v{current} to v{latest}. Restarting into the new version.")
+            }
+            RestartStatus::NotSystemd => format!(
+                "Evolved from v{current} to v{latest}. Binary updated on disk; restart \
+                 the process / relaunch to load the new version."
+            ),
+            RestartStatus::NoUnitsMatched => format!(
+                "Evolved from v{current} to v{latest}. Binary updated on disk, but no \
+                 systemd units matched `{SYSTEMD_UNIT_PATTERN}` — your daemon (if any) was \
+                 not restarted. Restart it manually with `systemctl restart <your-unit>`, \
+                 or relaunch if running standalone."
+            ),
+            RestartStatus::SpawnFailed(err) => format!(
+                "Evolved from v{current} to v{latest}. Binary updated on disk, but \
+                 scheduling the systemd restart failed ({err}). Restart your daemon \
+                 manually with `systemctl restart {SYSTEMD_UNIT_PATTERN}`."
+            ),
+        }
     }
 }
 

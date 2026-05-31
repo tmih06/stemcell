@@ -60,6 +60,7 @@ pub mod daemon_health_test;
 pub mod doc_parser_page_range_test;
 pub mod dynamic_tool_coerce_test;
 pub mod evolve_diagnose_test;
+pub mod evolve_systemd_restart_test;
 pub mod evolve_test;
 pub mod exa_search_test;
 pub mod follow_up_question_test;
