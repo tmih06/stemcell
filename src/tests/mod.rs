@@ -63,6 +63,7 @@ pub mod evolve_diagnose_test;
 pub mod evolve_systemd_restart_test;
 pub mod evolve_test;
 pub mod exa_search_test;
+pub mod follow_up_intermediate_flush_test;
 pub mod follow_up_question_test;
 pub mod gemini_fetch_test;
 pub mod gemini_schema_sanitize_test;
