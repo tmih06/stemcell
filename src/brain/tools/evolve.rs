@@ -848,7 +848,21 @@ impl EvolveTool {
         // memory).  We still do remove_file first as a belt-and-suspenders
         // guard against NFS / FUSE mounts where rename(2) may behave
         // differently when the target is a running executable.
-        let _ = std::fs::remove_file(&exe_path);
+        //
+        // Failure here is non-fatal: if exe_path is already gone or we lack
+        // permission, the rename below will surface the real error. Logged
+        // at debug so a future incident can still see whether the unlink
+        // succeeded (helps distinguish "rename failed because exe was
+        // busy" from "rename failed because directory is read-only" etc.).
+        if let Err(e) = std::fs::remove_file(&exe_path) {
+            tracing::debug!(
+                target: "evolve",
+                exe_path = %exe_path.display(),
+                error = %e,
+                session_id = %sid,
+                "evolve: pre-rename unlink failed (non-fatal; rename will report the real error if any)"
+            );
+        }
         if let Err(e) = std::fs::rename(&tmp_path, &exe_path) {
             tracing::warn!(
                 target: "evolve",
@@ -925,7 +939,22 @@ impl EvolveTool {
         // automatically with no code change.
         if std::path::Path::new("/run/systemd/system").exists() {
             let unit_name = format!("opencrabs-evolve-{}", std::process::id());
-            let _ = std::process::Command::new("systemd-run")
+            tracing::info!(
+                target: "evolve",
+                unit = %unit_name,
+                pattern = "opencrabs*.service",
+                session_id = %sid,
+                "evolve: scheduling delayed systemd restart (+3s)"
+            );
+            // Failure to spawn systemd-run is the most user-visible
+            // regression mode: the binary on disk is updated, the agent
+            // says "Evolved!", but the daemon keeps running the old
+            // inode forever because no restart was ever scheduled. Log
+            // at warn so the user has actionable forensic evidence
+            // when "evolve said success but didn't restart" happens —
+            // exactly the symptom this whole code path was added to
+            // prevent (#136).
+            match std::process::Command::new("systemd-run")
                 .args([
                     "--on-active=3",
                     &format!("--unit={}", unit_name),
@@ -935,7 +964,28 @@ impl EvolveTool {
                 ])
                 .stdout(std::process::Stdio::null())
                 .stderr(std::process::Stdio::null())
-                .spawn();
+                .spawn()
+            {
+                Ok(child) => {
+                    tracing::info!(
+                        target: "evolve",
+                        unit = %unit_name,
+                        systemd_run_pid = child.id(),
+                        session_id = %sid,
+                        "evolve: systemd-run spawned; daemon will restart in 3s"
+                    );
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        target: "evolve",
+                        unit = %unit_name,
+                        error = %e,
+                        session_id = %sid,
+                        "evolve: failed to spawn systemd-run — daemon will NOT auto-restart, \
+                         manual `systemctl restart opencrabs*.service` is required to load the new binary"
+                    );
+                }
+            }
         }
 
         // Signal restart
