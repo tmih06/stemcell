@@ -12,9 +12,18 @@ use tokio::sync::oneshot;
 use crate::brain::agent::{AgentError, FollowUpQuestionInfo, QuestionCallback};
 
 /// Build the Slack `QuestionCallback`.
-pub(crate) fn make_question_callback(state: Arc<super::SlackState>) -> QuestionCallback {
+///
+/// `intermediate_handles` tracks in-flight intermediate text spawns.
+/// Before posting the question, the callback drains and awaits all
+/// pending handles so the user sees context above the buttons
+/// (issue #142).
+pub(crate) fn make_question_callback(
+    state: Arc<super::SlackState>,
+    intermediate_handles: Arc<std::sync::Mutex<Vec<tokio::task::JoinHandle<()>>>>,
+) -> QuestionCallback {
     Arc::new(move |info: FollowUpQuestionInfo| {
         let state = state.clone();
+        let intermediate_handles = intermediate_handles.clone();
         Box::pin(async move {
             let client = match state.client().await {
                 Some(c) => c,
@@ -79,6 +88,17 @@ pub(crate) fn make_question_callback(state: Arc<super::SlackState>) -> QuestionC
                 question_id,
                 info.options.len()
             );
+
+            // Flush in-flight intermediate text spawns before posting
+            // the question, so the user sees context above the buttons
+            // instead of below (issue #142).
+            let pending = {
+                let mut g = intermediate_handles.lock().expect("poisoned");
+                std::mem::take(&mut *g)
+            };
+            for h in pending {
+                let _ = h.await;
+            }
 
             if let Err(e) = session.chat_post_message(&request).await {
                 return Err(AgentError::Internal(format!("Slack send failed: {}", e)));

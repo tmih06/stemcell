@@ -1505,7 +1505,10 @@ async fn handle_message(
         })
     };
 
-    let question_cb = super::follow_up_question::make_question_callback(state.slack_state.clone());
+    let question_cb = super::follow_up_question::make_question_callback(
+        state.slack_state.clone(),
+        intermediate_handles.clone(),
+    );
     let result = state
         .agent
         .send_message_with_tools_and_display(
