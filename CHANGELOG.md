@@ -8,53 +8,95 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.3.31] - 2026-05-30
 
-48 commits since v0.3.30. Minor release closing issues #130 (Telegram
-forum topic routing was broken: proactive sends and startup resumes
-landed in general chat instead of the originating topic, and replies
-to messages within a topic also routed to general chat; both reactive
-and proactive paths now carry `thread_id` through the full send
-pipeline, and a new `list_topics` action surfaces the (thread_id,
-topic_name) pairs so the agent can translate `#announcements` into
-the numeric ID), #131 (Telegram reply context did not surface the
-exact quote the user highlighted, so the agent had no visibility into
-which specific paragraph was being discussed; reply context now
-extracts the quoted span from `reply_to_message` entities), and #132
-(RSI feedback ledger had no visibility into which bash commands the
-agent actually ran; command text is now appended to event metadata
-with a subsystem classifier tagging each command by category, and
-successful patterns surface as tool / command / skill proposals in
-Mission Control). PDF handling got a full overhaul: new `page_range`
-parameter accepts `"1-30"`, `"5,7,10-15"` spans, text-first routing
+48 commits since v0.3.30. Minor release closing issues #130, #131, #132.
+
+**Telegram routing (closes #130, #131):** forum topic routing was broken —
+proactive sends and startup resumes landed in general chat instead of the
+originating topic, and replies to messages within a topic also routed to
+general chat. Both reactive and proactive paths now carry `thread_id`
+through the full send pipeline, and a new `list_topics` action surfaces
+the (thread_id, topic_name) pairs so the agent can translate
+`#announcements` into the numeric ID. Reply context now extracts the
+quoted span from `reply_to_message` entities so the agent sees which
+specific paragraph the user highlighted.
+
+**RSI feedback ledger (closes #132):** had no visibility into which bash
+commands the agent actually ran. Command text is now appended to event
+metadata with a subsystem classifier tagging each command by category,
+and successful patterns surface as tool / command / skill proposals in
+Mission Control.
+
+**PDF / document parsing:** full overhaul. New `page_range` parameter
+accepts `"1-30"`, `"5,7,10-15"` spans so the agent can target specific
+pages without burning tokens on the whole document. Text-first routing
 skips Gemini vision entirely for text-native PDFs (fixes the 10 MB /
-HTTP 413 incident), inline cap raised from ~20 to ~60 pages with the
-PDF saved to disk for remainder fetching, partial vision renders are
+HTTP 413 incident). Inline cap raised from ~20 to ~60 pages with the PDF
+saved to disk for remainder fetching. Partial vision renders are
 preserved when `pdftoppm` fails mid-loop, and the `pdftoppm` loop is
-bounded to the actual page count. Agent self-awareness leveled up:
-compiled features surfaced in the system prompt with a check-first
-directive, and a `Known paths` section ensures "check the logs"
-always lands at `~/.opencrabs/logs/opencrabs.YYYY-MM-DD`. Telegram
-UX polish: pre-tool status line is fully context-aware (tool name +
-elapsed, live reasoning excerpt, or rolling phrase anchored on user
-input with escalating verbs). Plan-tool summaries render as monospace
-`<pre>` panels. Prompt safety hardened: hallucinated `CODE_EDIT_BLOCK`
-fences stripped before channel delivery, IDE-style inline edit
-formats explicitly forbidden in `BRAIN_PREAMBLE`, Qwen `<|tool|>`
-marker family stripped from streams. Usage dashboard consolidated all
-Qwen 3.7 Max variants (including `qwen-latest-series` family) into a
-single parent row with indented breakdown, all model names normalized
-to kebab-case lowercase. TUI/onboarding: provider list stopped
-re-indenting on Up/Down, `/onboard:provider` and `/models` stopped
-truncating on small terminals, plan checklist grew to ~10 visible
-tasks with scrolling, tok/s footer counts reasoning chunks. RSI
-gained skill proposals as a third proposal kind with an apply path
-writing `SKILL.md`. Provider stability: fallback only sticks after 4
-consecutive rescues, missing-[DONE] accepted when text-only response
-looks complete. CI/build: `[profile.ci]` for wall-clock, `Cargo.lock`
-committed, stage-gated workflow with Linux-only tests. Compaction
-defaults to silent continuation with fun POST-COMPACTION PROTOCOL
-fallback only when ambiguous, new `[agent] silent_compaction = true`
-opt-out. Tool routing tightened with explicit pick-me-when guidance
-and a WEB / GITHUB / BROWSER ROUTING block in `BRAIN_PREAMBLE`.
+bounded to the actual page count.
+
+**Agent self-awareness:** compiled features surface in the system prompt
+with a check-first directive so the agent stops reimplementing built-ins.
+A `Known paths` section ensures "check the logs" always lands at
+`~/.opencrabs/logs/opencrabs.YYYY-MM-DD`.
+
+**Telegram UX:** pre-tool status line is fully context-aware — names the
+running tool with elapsed time, surfaces a live reasoning excerpt while
+the model is thinking, or rolls a phrase anchored on the user's own
+message with a leading verb that escalates across elapsed buckets when
+no other signal is available yet. Plan-tool summaries render as
+monospace `<pre>` panels.
+
+**Prompt safety:** hallucinated `CODE_EDIT_BLOCK` fences are stripped
+before channel delivery. IDE-style inline edit formats (Cursor
+`search_and_replace`, Aider conflict markers, unified-diff dumps) are
+explicitly forbidden in `BRAIN_PREAMBLE`. The Qwen 3 / DeepSeek
+SentencePiece-style `<|tool▁...|>` marker family is captured by the
+streaming filter and post-stream sanitizer, fixing a leak that could
+send hundreds of `<|tool▁calls_section_end|>` tokens to channels when
+the model degraded into a repeat loop.
+
+**Usage dashboard:** consolidated all Qwen 3.7 Max variants (including
+`qwen-latest-series` family) into a single parent row with indented
+breakdown showing genuinely distinct variants. All model names
+normalized to kebab-case lowercase.
+
+**TUI / onboarding:** provider list no longer re-indents on Up/Down.
+`/onboard:provider` and `/models` stopped truncating on small terminals.
+Plan checklist grew to ~10 visible tasks with scrolling. The tok/s
+footer now counts reasoning chunks toward the live rate.
+
+**RSI:** gained `skill` as a third proposal kind (alongside tool and
+command) with an apply path that writes a `SKILL.md` brain file.
+
+**Provider stability:** fallback only sticks after 4 consecutive rescues
+(not on first incident). Missing-[DONE] markers are accepted when the
+text-only response looks complete.
+
+**CI / build:** `[profile.ci]` tuned for wall-clock instead of runtime
+perf. `Cargo.lock` committed for reproducible builds. Stage-gated
+workflow with Linux-only tests and main-only coverage. Release workflow
+`wait-for-ci` gates on the stable `CI Required Gate` check (was
+`Test (ubuntu-latest)`, which broke silently after the test job was
+renamed to `Test (Linux)`).
+
+**Compaction:** defaults to the fun POST-COMPACTION PROTOCOL prompts
+(users have called out the in-character one-liners after recovery as a
+delight feature) with a new `[agent] silent_compaction = true` opt-out
+in `config.toml` for formal / customer-facing deployments where
+mid-session profanity would be inappropriate. All four compaction sites
+(regular async, mid-loop, emergency, post-tool) route through a single
+`compaction_prompts` module so the fun and silent variants stay
+byte-for-byte aligned.
+
+**Tool routing:** explicit pick-me-when guidance added across the search
+and browser tool descriptions — `web_search` announces itself as the
+DEFAULT research tool, `exa_search` / `brave_search` announce
+"PREFERRED over web_search" with their respective strengths,
+`browser_navigate` is framed as last-resort and forbidden for research
+or GitHub, and `bash` calls out the `gh` CLI as the GitHub surface with
+`--json` / `--jq` examples. A new WEB / GITHUB / BROWSER ROUTING block
+in `BRAIN_PREAMBLE` puts the rule in the system prompt every turn.
 
 Closes #130, #131, #132.
 
@@ -219,81 +261,107 @@ DOCS (1 commit)
 
 ## [0.3.30] - 2026-05-29
 
-36 commits since v0.3.29. Minor release closing issues #125 (RTK
-daemon hang from sync `Command::new` blocking the tokio runtime on
-single-worker profiles), #126 (/models picker hid unconfigured
-providers entirely and showed Claude model names for OpenCode CLI),
-#127 (channel_search had no way to target a specific Telegram forum
-topic, so searches across topic-enabled supergroups returned a flat
-undifferentiated list), #128 (rename_session silently accepted empty
-titles and wiped the session label so it showed as "Untitled" in
-/sessions), and #129 (Telegram /sessions response printed every
-session in the message body AND as inline-keyboard buttons,
-pure duplication). The RTK binary detection swapped `std::sync::OnceLock`
-plus `std::process::Command` for `tokio::sync::OnceCell` plus
-`tokio::process::Command` across `find_rtk_binary`, `is_rtk_available`,
-`rewrite_command`, and `rewrite_command_string`, with the tracker mutex
-lifted to `tokio::sync::Mutex` and a dedicated no-block regression
-suite proving single-worker runtimes stay responsive. Qwen custom
-providers get zero-config cost savings: a `looks_like_qwen_target`
-detector scans base_url and model name for Alibaba-shaped endpoints
-(dashscope, aliyun, aliyuncs, dialagram) or `qwen-*` model prefixes
-and auto-enables ephemeral `cache_control` markers on the system
-prompt, last streaming message, and last tool, logged once per
-(base_url, model) pair so mixed-model providers only mark Qwen
-requests. Tool-call extraction for qwen-3.7-max-thinking now handles
-bare-args bash calls AND Anthropic-shaped `<invoke name="X">` XML
-nested inside `<qwen:tool_call>` wrappers (verbatim user-screenshot
-malformations preserved as regression tests), and orphan close tags
-like `</tool_result>` are stripped from streamed output before
-reaching the TUI. The /models picker now surfaces every known
-provider including unconfigured ones with a 🔒 lock + setup help
-text (never asks users to paste API keys inline, Telegram bots can't
-delete DM history), the displayed CLI model list comes from a single
-`cli_supported_models` source of truth pinned per provider so
-channel footers match what the TUI actually offers, custom providers
-with no configured models show a helpful empty-state instead of a
-single inert button, and the Telegram /sessions body was trimmed to
-header + current-session indicator so it no longer duplicates the
-inline keyboard. Telegram onboarding got a full pass: auto-detect
-the user's numeric ID from getUpdates when the chat ID field is
-empty, persist partial config on Cancel so users don't lose typed
-tokens when they back out, and the quick-jump wizard no longer
-commits on intermediate Enter presses (Tab on Model/CustomContextWindow
-used to silently rewrite ~30 config keys; now only explicit Enter on
-the last step commits, and rebuild swaps the per-session provider so
-the footer reflects the new selection immediately). All four channel
-handlers (Telegram, Discord, Slack, WhatsApp) now treat a follow-up
-message during an active agent run as ESC x2 (cancel and start fresh),
-Telegram status messages are dynamic and context-aware (actual tool
-being called, tokens streamed, elapsed time) instead of hardcoded
-quips, ZIP attachments from users are extracted and processed inline
-(text files inlined, images get vision markers, PDFs get text
-extraction, capped at 50 files / 10 MB per entry), and
-channel_search gained a `topic_id` filter for Telegram forum
-supergroups. Custom provider base URLs are normalized on Enter/Tab/
-paste (strips trailing `/v1/chat/completions`, `/chat/completions`,
-`/v1`, `/`). `generate_image` gained an optional `image` parameter
-(local path or HTTPS URL) that feeds Gemini `inlineData` parts for
-img2img editing while OpenAI-shaped backends reject it with a clear
-error pointing users at Gemini. The self-heal detector now catches
-"I need to X" / "I have to X" / "I must X" / "I should X" deferment
-stalls in all five supported languages (en/es/pt/fr/ru); the RSI
-self_improve tool rejects trivial test content before it can pollute
-brain files; `rename_session` rejects empty / whitespace-only titles
-so sessions can't become unidentifiable. TUI gets a real-time tok/s
-throughput meter in the footer (between model info and approval
-policy pill) that counts ONLY active streaming time, tool execution,
-approval waits, between-stream network round-trips, and compaction
-delays are excluded, and persists the last finalized rate so the
-footer keeps showing the previous turn's tok/s during idle until
-the next turn produces its first token. The plan widget dynamically
-hides tasks that don't fit the terminal height instead of overflowing.
-Help screen: Esc x2 reads "Cancel / abort immediately" instead of
-the vague "Clear input", /onboard:channels lists every channel by
-name, and the footer carries a `docs.opencrabs.com` link. Style:
-`assert_eq!(x, false)` collapsed to `assert!(!x)` across the suite.
-CI/test infra: in-memory test pool fix + Unix-gated tests that
+36 commits since v0.3.29. Minor release closing issues #125, #126, #127,
+#128, #129.
+
+**Issues closed:** #125 (RTK daemon hang from sync `Command::new`
+blocking the tokio runtime on single-worker profiles), #126 (/models
+picker hid unconfigured providers entirely and showed Claude model
+names for OpenCode CLI), #127 (channel_search had no way to target a
+specific Telegram forum topic, so searches across topic-enabled
+supergroups returned a flat undifferentiated list), #128
+(rename_session silently accepted empty titles and wiped the session
+label so it showed as "Untitled" in /sessions), and #129 (Telegram
+/sessions response printed every session in the message body AND as
+inline-keyboard buttons, pure duplication).
+
+**RTK async refactor (closes #125):** RTK binary detection swapped
+`std::sync::OnceLock` plus `std::process::Command` for
+`tokio::sync::OnceCell` plus `tokio::process::Command` across
+`find_rtk_binary`, `is_rtk_available`, `rewrite_command`, and
+`rewrite_command_string`. The tracker mutex was lifted to
+`tokio::sync::Mutex`, with a dedicated no-block regression suite
+proving single-worker runtimes stay responsive.
+
+**Qwen cache auto-enable:** Qwen custom providers get zero-config cost
+savings. A `looks_like_qwen_target` detector scans base_url and model
+name for Alibaba-shaped endpoints (dashscope, aliyun, aliyuncs,
+dialagram) or `qwen-*` model prefixes and auto-enables ephemeral
+`cache_control` markers on the system prompt, last streaming message,
+and last tool. Logged once per (base_url, model) pair so mixed-model
+providers only mark Qwen requests.
+
+**Qwen tool-call extraction:** now handles bare-args bash calls AND
+Anthropic-shaped `<invoke name="X">` XML nested inside
+`<qwen:tool_call>` wrappers (verbatim user-screenshot malformations
+preserved as regression tests). Orphan close tags like
+`</tool_result>` are stripped from streamed output before reaching the
+TUI.
+
+**/models picker (closes #126):** surfaces every known provider
+including unconfigured ones with a 🔒 lock + setup help text (never
+asks users to paste API keys inline, Telegram bots can't delete DM
+history). The displayed CLI model list comes from a single
+`cli_supported_models` source of truth pinned per provider so channel
+footers match what the TUI actually offers. Custom providers with no
+configured models show a helpful empty-state instead of a single inert
+button. The Telegram /sessions body was trimmed to header +
+current-session indicator so it no longer duplicates the inline
+keyboard (closes #129).
+
+**Telegram onboarding:** full pass. Auto-detect the user's numeric ID
+from getUpdates when the chat ID field is empty. Persist partial
+config on Cancel so users don't lose typed tokens when they back out.
+The quick-jump wizard no longer commits on intermediate Enter presses
+(Tab on Model/CustomContextWindow used to silently rewrite ~30 config
+keys; now only explicit Enter on the last step commits, and rebuild
+swaps the per-session provider so the footer reflects the new
+selection immediately).
+
+**Channel handlers (Telegram, Discord, Slack, WhatsApp):** a follow-up
+message during an active agent run is now treated as ESC x2 (cancel
+and start fresh). Telegram status messages are dynamic and
+context-aware (actual tool being called, tokens streamed, elapsed
+time) instead of hardcoded quips. ZIP attachments from users are
+extracted and processed inline (text files inlined, images get vision
+markers, PDFs get text extraction, capped at 50 files / 10 MB per
+entry). channel_search gained a `topic_id` filter for Telegram forum
+supergroups (closes #127).
+
+**Custom providers:** base URLs are normalized on Enter / Tab / paste
+(strips trailing `/v1/chat/completions`, `/chat/completions`, `/v1`,
+`/`).
+
+**Image generation:** `generate_image` gained an optional `image`
+parameter (local path or HTTPS URL) that feeds Gemini `inlineData`
+parts for img2img editing. OpenAI-shaped backends reject it with a
+clear error pointing users at Gemini.
+
+**Self-heal + RSI:** the self-heal detector now catches "I need to X" /
+"I have to X" / "I must X" / "I should X" deferment stalls in all five
+supported languages (en/es/pt/fr/ru). The RSI `self_improve` tool
+rejects trivial test content before it can pollute brain files.
+`rename_session` rejects empty / whitespace-only titles so sessions
+can't become unidentifiable (closes #128).
+
+**TUI tok/s meter:** real-time throughput meter in the footer (between
+model info and approval policy pill). Counts ONLY active streaming
+time; tool execution, approval waits, between-stream network
+round-trips, and compaction delays are excluded. Persists the last
+finalized rate so the footer keeps showing the previous turn's tok/s
+during idle until the next turn produces its first token.
+
+**Plan widget:** dynamically hides tasks that don't fit the terminal
+height instead of overflowing.
+
+**Help screen:** Esc x2 reads "Cancel / abort immediately" instead of
+the vague "Clear input". /onboard:channels lists every channel by
+name. The footer carries a `docs.opencrabs.com` link.
+
+**Style:** `assert_eq!(x, false)` collapsed to `assert!(!x)` across the
+suite.
+
+**CI / test infra:** in-memory test pool fix plus Unix-gated tests that
 depended on a temp `$HOME` (Windows uses `SHGetKnownFolderPath`
 instead of env vars).
 
