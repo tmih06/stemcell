@@ -583,6 +583,16 @@ pub(crate) async fn handle_message(
         .store_cancel_token(session_id, cancel_token.clone())
         .await;
 
+    // Track spawned intermediate sends so the follow-up-question
+    // callback can await them before posting the question (issue
+    // #142). Sync Mutex because the progress callback closure is
+    // synchronous. Declared here so `intermediate_handles` is visible
+    // at the `make_question_callback` call site below.
+    let intermediate_handles: Arc<std::sync::Mutex<Vec<tokio::task::JoinHandle<()>>>> =
+        Arc::new(std::sync::Mutex::new(Vec::new()));
+    let intermediate_handles_cb = intermediate_handles.clone();
+    let sent_intermediates: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+
     // Build progress callback — sends tool call status as Discord messages
     let progress_cb: crate::brain::agent::ProgressCallback = {
         use crate::brain::agent::ProgressEvent;
@@ -664,13 +674,50 @@ pub(crate) async fn handle_message(
                         let _ = channel.say(&http, &text).await;
                     });
                 }
+                ProgressEvent::IntermediateText { text, .. } => {
+                    // Strip LLM artifacts, secrets, and media markers
+                    // the same way the final-response path does.
+                    let clean = crate::utils::sanitize::strip_llm_artifacts(&text);
+                    let clean = redact_secrets(&clean);
+                    let (clean, _) = crate::utils::extract_img_markers(&clean);
+                    let (clean, _) = crate::utils::extract_vid_markers(&clean);
+                    if clean.trim().is_empty() {
+                        return;
+                    }
+                    let sent = sent_intermediates.clone();
+                    let http = http.clone();
+                    let channel = channel;
+                    let handle = tokio::spawn(async move {
+                        // Pre-send dedup: Discord doesn't support edit-
+                        // in-place dedup across messages, so skip if
+                        // this exact body was already posted.
+                        {
+                            let mut prev = sent.lock().await;
+                            if prev.iter().any(|s| s == &clean) {
+                                return;
+                            }
+                            prev.push(clean.clone());
+                        }
+                        for chunk in split_message(&clean, 2000) {
+                            if let Err(e) = channel.say(&http, chunk).await {
+                                tracing::debug!("Discord: intermediate text send failed: {}", e);
+                            }
+                        }
+                    });
+                    if let Ok(mut g) = intermediate_handles_cb.lock() {
+                        g.push(handle);
+                    }
+                }
                 _ => {}
             }
         })
     };
 
     let discord_chat_id = msg.channel_id.get().to_string();
-    let question_cb = super::follow_up_question::make_question_callback(discord_state.clone());
+    let question_cb = super::follow_up_question::make_question_callback(
+        discord_state.clone(),
+        intermediate_handles.clone(),
+    );
     let result = agent
         .send_message_with_tools_and_display(
             session_id,

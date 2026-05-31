@@ -18,9 +18,18 @@ use crate::brain::agent::{AgentError, FollowUpQuestionInfo, QuestionCallback};
 use crate::utils::truncate_str;
 
 /// Build the Discord `QuestionCallback`.
-pub(crate) fn make_question_callback(state: Arc<super::DiscordState>) -> QuestionCallback {
+///
+/// `intermediate_handles` tracks in-flight intermediate text spawns.
+/// Before posting the question, the callback drains and awaits all
+/// pending handles so the user sees context above the buttons
+/// (issue #142).
+pub(crate) fn make_question_callback(
+    state: Arc<super::DiscordState>,
+    intermediate_handles: Arc<std::sync::Mutex<Vec<tokio::task::JoinHandle<()>>>>,
+) -> QuestionCallback {
     Arc::new(move |info: FollowUpQuestionInfo| {
         let state = state.clone();
+        let intermediate_handles = intermediate_handles.clone();
         Box::pin(async move {
             let http = match state.http().await {
                 Some(h) => h,
@@ -77,6 +86,17 @@ pub(crate) fn make_question_callback(state: Arc<super::DiscordState>) -> Questio
                 question_id,
                 info.options.len()
             );
+
+            // Flush in-flight intermediate text spawns before posting
+            // the question, so the user sees context above the buttons
+            // instead of below (issue #142).
+            let pending = {
+                let mut g = intermediate_handles.lock().expect("poisoned");
+                std::mem::take(&mut *g)
+            };
+            for h in pending {
+                let _ = h.await;
+            }
 
             if let Err(e) = ChannelId::new(channel_id)
                 .send_message(&http, CreateMessage::new().content(&text).components(rows))
