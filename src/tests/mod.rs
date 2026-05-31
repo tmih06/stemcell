@@ -115,6 +115,7 @@ pub mod qr_render_test;
 pub mod queued_message_test;
 pub mod qwen_detect_test;
 pub mod qwen_tool_extractor_test;
+pub mod qwen_tool_marker_strip_test;
 pub mod reasoning_lines_test;
 pub mod rename_session_test;
 #[cfg(feature = "rtk")]

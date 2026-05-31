@@ -423,6 +423,24 @@ static PIPED_SECRET_RE: Lazy<Regex> =
 static IPV4_RE: Lazy<Regex> =
     Lazy::new(|| Regex::new(r"\b(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})\b").unwrap());
 
+/// Regex for Qwen 3 / DeepSeek SentencePiece-style tool-call markers.
+/// Matches the full token family: `<|tool<sep>calls_section_begin|>`,
+/// `<|tool<sep>call_begin|>`, `<|tool<sep>call_end|>`,
+/// `<|tool<sep>calls_section_end|>`, `<|tool<sep>call_argument_begin|>`,
+/// where `<sep>` is either U+2581 (`▁`, the real SentencePiece word-
+/// boundary char emitted by Qwen 3 vLLM endpoints) or an ASCII `_`
+/// (emitted by some quantizations / forks).
+///
+/// Why a catch-all rather than enumerating each marker: when Qwen 3
+/// degrades into repetition mode it can emit unknown variants like
+/// `<|tool▁call_metadata|>` or future tokens we haven't seen yet. The
+/// `[^|]*` middle drops anything that fits the bracket shape, so the
+/// regex stays correct as the format grows. The leading `<|tool` plus
+/// the U+2581-or-underscore separator is specific enough that prose
+/// like `<|tool of choice|>` will not match (no separator follows).
+static QWEN_TOOL_MARKER_RE: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"<\|tool[\u{2581}_][^|]*\|>").unwrap());
+
 /// Redact API keys and tokens from free-form text (thinking, responses, etc.).
 ///
 /// Catches:
@@ -589,6 +607,19 @@ pub fn strip_llm_artifacts(text: &str) -> String {
     use crate::brain::agent::service::AgentService;
 
     let mut result = text.to_string();
+    // Qwen 3 / DeepSeek SentencePiece-style tool-call tokens.
+    // The streaming filter in custom_openai_compatible.rs catches
+    // these in real time, but a chunk-boundary near a marker can
+    // briefly leak one through, and the format may grow new
+    // variants the streaming filter doesn't know yet. This regex
+    // sweeps anything matching `<|tool<sep>...|>` where <sep> is
+    // either U+2581 (the real SP word-boundary char Qwen emits) or
+    // an ASCII underscore (emitted by some quantizations). Matches
+    // the open/close tag family in one pass: section_begin,
+    // section_end, call_begin, call_end, call_argument_begin, etc.
+    if result.contains("<|tool") {
+        result = QWEN_TOOL_MARKER_RE.replace_all(&result, "").into_owned();
+    }
     if result.contains("<!--") {
         result = AgentService::strip_html_comments(&result);
     }

@@ -3952,9 +3952,29 @@ impl Provider for OpenAIProvider {
                                                 // JSON field names like "tool_calls" are NOT markers
                                                 // — they appear in source code and cause false positives
                                                 // that bleed raw content into the TUI.
+                                                // Qwen 3 / DeepSeek emit a SentencePiece-style token
+                                                // family `<|tool▁calls_section_begin|>` /
+                                                // `<|tool▁call_begin|>` ... `<|tool▁call_end|>` /
+                                                // `<|tool▁calls_section_end|>` (the U+2581 "Lower
+                                                // One Eighth Block" between "tool" and the rest is
+                                                // the SP word-boundary char — visually it looks
+                                                // like an underscore in most fonts, which is how
+                                                // it leaked into Telegram/TUI as plausible-looking
+                                                // text and stayed unnoticed). Qwen 3 also degrades
+                                                // into emitting hundreds of `<|tool▁calls_section_end|>`
+                                                // tokens when looping; without these markers the
+                                                // stream filter passed them through as content
+                                                // until the repetition guard killed the stream
+                                                // (after ~7 KB had already shipped). Capture both
+                                                // the U+2581 form (real model output) and the ASCII
+                                                // `_` variant emitted by some quantizations.
                                                 const TOOL_MARKERS: &[&str] = &[
                                                     "<tool_call>",
                                                     "<function=",
+                                                    "<|tool\u{2581}calls_section_begin|>",
+                                                    "<|tool\u{2581}call_begin|>",
+                                                    "<|tool_calls_section_begin|>",
+                                                    "<|tool_call_begin|>",
                                                 ];
                                                 let mut display_text: String = String::new();
                                                 if st.tool_block_active {
