@@ -16,17 +16,24 @@ use crate::brain::agent::{AgentError, FollowUpQuestionInfo, QuestionCallback};
 /// Build the WhatsApp `QuestionCallback`. The pending question is
 /// keyed by the recipient phone; the message router in `handler.rs`
 /// parses the next numeric reply from that phone and resolves it.
+///
+/// `intermediate_handles` tracks in-flight intermediate text spawns.
+/// Before posting the question, the callback drains and awaits all
+/// pending handles so the user sees context above the numbered list
+/// (issue #142).
 pub(crate) fn make_question_callback(
     client: Arc<Client>,
     chat_jid: Jid,
     phone: String,
     state: Arc<super::WhatsAppState>,
+    intermediate_handles: Arc<std::sync::Mutex<Vec<tokio::task::JoinHandle<()>>>>,
 ) -> QuestionCallback {
     Arc::new(move |info: FollowUpQuestionInfo| {
         let client = client.clone();
         let chat_jid = chat_jid.clone();
         let phone = phone.clone();
         let state = state.clone();
+        let intermediate_handles = intermediate_handles.clone();
         Box::pin(async move {
             let numbered: String = info
                 .options
@@ -54,6 +61,17 @@ pub(crate) fn make_question_callback(
                 phone,
                 info.options.len()
             );
+
+            // Flush in-flight intermediate text spawns before posting
+            // the question, so the user sees context above the numbered
+            // list instead of below (issue #142).
+            let pending = {
+                let mut g = intermediate_handles.lock().expect("poisoned");
+                std::mem::take(&mut *g)
+            };
+            for h in pending {
+                let _ = h.await;
+            }
 
             if let Err(e) = client.send_message(chat_jid, text_msg).await {
                 return Err(AgentError::Internal(format!("WhatsApp send failed: {}", e)));

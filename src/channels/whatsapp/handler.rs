@@ -799,6 +799,12 @@ pub(crate) async fn handle_message(
     // the main handler delivers them as actual WhatsApp image messages.
     let was_streamed = Arc::new(std::sync::atomic::AtomicBool::new(false));
     let sent_intermediates: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+    // Track spawned intermediate sends so the follow-up-question callback
+    // can await them before posting the question (issue #142). Sync Mutex
+    // because the progress callback closure is synchronous.
+    let intermediate_handles: Arc<std::sync::Mutex<Vec<tokio::task::JoinHandle<()>>>> =
+        Arc::new(std::sync::Mutex::new(Vec::new()));
+    let intermediate_handles_cb = intermediate_handles.clone();
     let progress_cb: ProgressCallback = {
         let client_cb = client.clone();
         let jid_cb = info.source.chat.clone();
@@ -822,7 +828,7 @@ pub(crate) async fn handle_message(
                     let client = client_cb.clone();
                     let jid = jid_cb.clone();
                     let tagged = format!("{}\n\n{}", MSG_HEADER, clean.trim());
-                    tokio::spawn(async move {
+                    let handle = tokio::spawn(async move {
                         for chunk in split_message(&tagged, 4000) {
                             let msg = waproto::whatsapp::Message {
                                 conversation: Some(chunk.to_string()),
@@ -833,6 +839,9 @@ pub(crate) async fn handle_message(
                             }
                         }
                     });
+                    if let Ok(mut g) = intermediate_handles_cb.lock() {
+                        g.push(handle);
+                    }
                 }
             }
             ProgressEvent::SelfHealingAlert { message } => {
@@ -966,6 +975,7 @@ pub(crate) async fn handle_message(
         info.source.chat.clone(),
         phone.clone(),
         wa_state.clone(),
+        intermediate_handles.clone(),
     );
     let result = agent
         .send_message_with_tools_and_display(
@@ -981,6 +991,19 @@ pub(crate) async fn handle_message(
             Some(&wa_chat_id),
         )
         .await;
+
+    // Await any in-flight intermediate spawns before cleanup so dedup
+    // can compare against what was actually delivered (mirrors Slack's
+    // intermediate_handles_final pattern).
+    {
+        let pending = {
+            let mut g = intermediate_handles.lock().expect("poisoned");
+            std::mem::take(&mut *g)
+        };
+        for h in pending {
+            let _ = h.await;
+        }
+    }
 
     wa_state.remove_cancel_token(session_id).await;
     typing_cancel.cancel();
