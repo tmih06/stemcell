@@ -8,42 +8,64 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.3.32] - 2026-05-31
 
-8 commits since v0.3.31. Hardening release closing #135, #136. Heavily
-contributor-driven: Alexey Leshchenko (`leshchenko1979`) authored 7 of 8
-commits via PRs #135, #137.
+10 commits since v0.3.31. Hardening release closing #135, #136, #138.
+Alexey Leshchenko (`leshchenko1979`) contributed the foundation via
+3 PRs (#135, #137, #140); the other 7 commits layered observability,
+pre-flight safety checks, sentinel tests, and changelog work on top
+of those PRs.
 
-**Evolve / self-update (closes #136):** hit a silent no-op restart on
-systemd when the running binary was busy. `std::fs::rename` was replaced
-with a remove-then-rename pair so Linux no longer blocks the swap, and a
-delayed `systemd-run` restart is now scheduled after the swap so the
-running daemon picks up the new inode. A pre-flight
-`count_matching_systemd_units` check skips the spawn entirely when zero
-units match the glob and tells the user to restart manually, instead of
-lying "Restarting..." when nothing was actually scheduled. Every failure
-branch (GitHub API, download, filesystem, rollback) now emits structured
-tracing with status codes, rate-limit headers, target paths, and body
-excerpts, replacing the generic "rate limited or unavailable" suffix
-that masked 404s, 5xxs, and genuine rate limits alike.
+**Evolve / self-update (closes #136):** PR #137 (leshchenko1979)
+replaced `std::fs::rename` with a remove-then-rename pair so Linux
+no longer blocks the swap on busy binaries, and scheduled a delayed
+`systemd-run` restart after the swap so the running daemon picks up
+the new inode. Follow-up commits added: structured tracing on every
+failure branch (GitHub API, download, filesystem, rollback) with
+status codes, rate-limit headers, target paths, and body excerpts,
+replacing the generic "rate limited or unavailable" suffix that
+masked 404s, 5xxs, and genuine rate limits alike; logged outcomes
+on the two `let _` discard sites (`remove_file` + `systemd-run`
+spawn) so the most user-visible regression mode — agent says
+"Evolved!" while the daemon never restarts — leaves a forensic
+trail; a pre-flight `count_matching_systemd_units` check that
+skips the spawn entirely when zero units match the glob and tells
+the user to restart manually instead of lying "Restarting..." when
+nothing was actually scheduled; and 5 sentinel tests pinning the
+systemd-run arg list (flag drift would silently break the restart;
+`--collect` / `--quiet` must stay out for RHEL 7 compat).
 
-**Stream / sanitize:** caught a Qwen 3 regression where the model echoed
-its own SentencePiece `<|tool▁...|>` markers (using U+2581 word-boundary
-chars that render as `_` in most fonts) into `content` alongside the
-proper `tool_calls` field. Four new opener patterns plus a regex safety
-net in `strip_llm_artifacts` catch the whole marker family and any
-future variants.
+**User-correction feedback (closes #138):** PR #140 (leshchenko1979)
+fixed the user_correction feedback-ledger metadata path: it was
+capturing the first 200 chars of the channel-prefixed agent input
+(Telegram alone has a 236-char `[Channel: Telegram — ...]\n`
+prefix), so 26+ ledger entries stored pure channel boilerplate and
+RSI analysis could not see what users were actually correcting.
+The fix prefers `display_text_override` (the clean message channels
+already pass for DB persistence) and falls back to `user_message`
+for TUI / CLI sessions. Follow-up sentinel tests pin the chain
+shape (whitespace-normalised so rustfmt drift doesn't false-fail),
+include a scoped negative assertion against the regression pattern,
+and a documentation anchor on the Telegram prefix size.
 
-**CI / release workflow (closes #135):** CI now skips on docs-only
-changes (`.md`, `LICENSE`, `CHANGELOG`) and the release workflow walks
+**Stream / sanitize:** caught a Qwen 3 regression where the model
+echoed its own SentencePiece `<|tool▁...|>` markers (U+2581
+word-boundary chars that render as `_` in most fonts) into
+`content` alongside the proper `tool_calls` field. Four new opener
+patterns plus a regex safety net in `strip_llm_artifacts` catch
+the whole marker family and any future variants.
+
+**CI / release workflow (closes #135):** PR #135 (leshchenko1979)
+made CI skip on docs-only changes and the release workflow walk
 ancestors to find the last green `CI Required Gate` check, so a
 docs-only commit no longer blocks a release.
 
-**Docs / changelog:** restructured v0.3.31 with categorized sections,
-fixed em-dashes in v0.3.30 prose, normalized URL refs, and broke both
-wall-of-text entries into themed paragraphs for readability.
+**Docs / changelog:** restructured v0.3.31 with categorized
+sections, fixed em-dashes in v0.3.30 prose, normalized URL refs,
+and broke both wall-of-text entries into themed paragraphs for
+readability.
 
-Closes #135, #136.
+Closes #135, #136, #138.
 
-10 files changed, +1,477/-266.
+14 files changed, +1,711/-269.
 
 EVOLVE / SELF-UPDATE (4 commits, closes #136)
 
@@ -57,6 +79,18 @@ match the glob. Every failure branch emits structured tracing.
 - 824d454b fix(evolve): honest error branching + structured tracing on every failure path
 - 923bf51c fix(evolve): log failures of remove_file + systemd-run instead of swallowing them
 - 732c97c6 fix(evolve): pre-flight unit-count check + honest message + restart-arg tests
+
+USER-CORRECTION FEEDBACK (2 commits, closes #138)
+
+PR #140 (leshchenko1979) fixed the user_correction metadata path to
+prefer `display_text_override` over the channel-prefixed
+`user_message`, so RSI analysis sees the actual user correction text
+instead of pure channel boilerplate. Follow-up sentinel tests pin
+the chain shape, guard against the regression pattern, and document
+the prefix-size assumption.
+
+- a3c3e663 fix(user-correction): capture actual user message in metadata, not channel prefix
+- 8b0835b4 test(user-correction): sentinel for PR #140 fix + rustfmt normalisation
 
 STREAM / SANITIZE (1 commit)
 
