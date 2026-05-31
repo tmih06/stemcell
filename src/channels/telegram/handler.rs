@@ -47,14 +47,14 @@ struct ToolMsg {
 /// Each tool call gets its own message above; response streams in a separate message below.
 /// Ordered display event — preserves chronological ordering of tools and intermediate texts.
 #[derive(Clone)]
-enum DisplayItem {
+pub(crate) enum DisplayItem {
     /// New tool at this index in tool_msgs (needs send_message)
     NewTool(usize),
     /// Intermediate text between tool rounds
     Intermediate(String),
 }
 
-struct StreamingState {
+pub(crate) struct StreamingState {
     /// Response/thinking message (always at bottom)
     msg_id: Option<MessageId>,
     /// Reasoning/thinking text — streamed live, cleared before tool calls or response
@@ -1995,7 +1995,10 @@ pub(crate) async fn handle_message(
     // Build Telegram-native approval + follow-up-question callbacks
     // for this session
     let approval_cb = make_approval_callback(telegram_state.clone());
-    let question_cb = super::follow_up_question::make_question_callback(telegram_state.clone());
+    let question_cb = super::follow_up_question::make_question_callback(
+        telegram_state.clone(),
+        streaming.clone(),
+    );
 
     // ── Agent call ────────────────────────────────────────────────────────────
     let cancel_token = tokio_util::sync::CancellationToken::new();
@@ -2043,8 +2046,10 @@ pub(crate) async fn handle_message(
                         .register_session_chat(new_id, msg.chat.id.0)
                         .await;
                     let approval_cb2 = make_approval_callback(telegram_state.clone());
-                    let question_cb2 =
-                        super::follow_up_question::make_question_callback(telegram_state.clone());
+                    let question_cb2 = super::follow_up_question::make_question_callback(
+                        telegram_state.clone(),
+                        streaming.clone(),
+                    );
                     let cancel_token2 = tokio_util::sync::CancellationToken::new();
                     telegram_state
                         .store_cancel_token(new_id, cancel_token2.clone())
@@ -2794,7 +2799,10 @@ pub(crate) async fn resume_session(
         .await;
 
     let chat_id_str = chat_id.0.to_string();
-    let question_cb = super::follow_up_question::make_question_callback(telegram_state.clone());
+    let question_cb = super::follow_up_question::make_question_callback(
+        telegram_state.clone(),
+        streaming.clone(),
+    );
     let result = agent
         .send_message_with_tools_and_callback(
             session_id,
@@ -3303,10 +3311,71 @@ async fn fetch_file_or_notify(
     }
 }
 
+/// Drain all pending intermediate texts from the streaming state's display
+/// queue and send them immediately. Called by the follow-up-question callback
+/// BEFORE posting the question message, so the user sees contextual text
+/// above the buttons instead of below (race reported in issue #142).
+///
+/// Applies the same sanitize/redact/dedup/split/send chain as the edit loop.
+pub(crate) async fn flush_intermediates(
+    bot: &Bot,
+    chat: ChatId,
+    thread_id: Option<teloxide::types::ThreadId>,
+    streaming: &Arc<std::sync::Mutex<StreamingState>>,
+) {
+    let pending: Vec<DisplayItem> = {
+        let mut s = streaming.lock().unwrap_or_else(|e| e.into_inner());
+        s.display_queue
+            .drain(..)
+            .filter(|item| matches!(item, DisplayItem::Intermediate(_)))
+            .collect()
+    };
+    for item in pending {
+        if let DisplayItem::Intermediate(text) = item {
+            let text = crate::utils::sanitize::strip_llm_artifacts(&text);
+            let text = redact_secrets(&text);
+            let (text, _img_paths) = crate::utils::extract_img_markers(&text);
+            {
+                let s = streaming.lock().unwrap_or_else(|e| e.into_inner());
+                if s.sent_intermediates.iter().any(|prev| prev == &text) {
+                    continue;
+                }
+            }
+            let html = markdown_to_telegram_html(&text);
+            if html.is_empty() {
+                continue;
+            }
+            let chunks: Vec<String> = split_message(&html, 4096)
+                .into_iter()
+                .map(|s| s.to_string())
+                .collect();
+            let mut sent_ids: Vec<MessageId> = Vec::new();
+            let mut all_ok = true;
+            for chunk in &chunks {
+                match send_html_or_plain(bot, chat, thread_id, chunk).await {
+                    Ok(id) => sent_ids.push(id),
+                    Err(e) => {
+                        tracing::warn!(
+                            "Telegram: flush intermediate send failed ({e}), leaving for edit loop"
+                        );
+                        all_ok = false;
+                        break;
+                    }
+                }
+            }
+            if all_ok {
+                let mut s = streaming.lock().unwrap_or_else(|e| e.into_inner());
+                s.sent_intermediates.push(text.clone());
+                s.intermediate_msg_ids.extend(sent_ids);
+            }
+        }
+    }
+}
+
 /// Send an HTML message, falling back to plain text if Telegram rejects the HTML.
 /// Returns the resulting `MessageId` so callers that need to track or later delete
 /// the message (e.g. intermediate cleanup on cancellation) can do so.
-async fn send_html_or_plain(
+pub(crate) async fn send_html_or_plain(
     bot: &Bot,
     chat_id: ChatId,
     thread_id: Option<teloxide::types::ThreadId>,

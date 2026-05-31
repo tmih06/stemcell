@@ -14,6 +14,7 @@ use teloxide::prelude::Requester;
 use teloxide::types::{ChatId, InlineKeyboardButton, InlineKeyboardMarkup, ParseMode};
 use tokio::sync::oneshot;
 
+use super::handler::{StreamingState, flush_intermediates};
 use crate::brain::agent::{AgentError, FollowUpQuestionInfo, QuestionCallback};
 
 /// Escape the four HTML-special characters teloxide's `ParseMode::Html`
@@ -29,9 +30,18 @@ fn escape_html(text: &str) -> String {
 /// Build the Telegram `QuestionCallback`. Each invocation renders the
 /// question + buttons, registers a pending entry on the state, and
 /// blocks on the matching oneshot.
-pub(crate) fn make_question_callback(state: Arc<super::TelegramState>) -> QuestionCallback {
+///
+/// `streaming` is shared with the per-turn edit loop. Before posting
+/// the question, the callback drains any pending intermediate texts
+/// from the display queue and sends them synchronously so the user
+/// sees context above the buttons (issue #142).
+pub(crate) fn make_question_callback(
+    state: Arc<super::TelegramState>,
+    streaming: Arc<std::sync::Mutex<StreamingState>>,
+) -> QuestionCallback {
     Arc::new(move |info: FollowUpQuestionInfo| {
         let state = state.clone();
+        let streaming = streaming.clone();
         Box::pin(async move {
             let chat_id = match state.session_chat(info.session_id).await {
                 Some(id) => id,
@@ -91,6 +101,14 @@ pub(crate) fn make_question_callback(state: Arc<super::TelegramState>) -> Questi
                 question_id,
                 info.options.len()
             );
+
+            // Resolve thread_id for this chat (forum topic routing)
+            let thread_id = super::send::latest_thread_id_for_chat(chat_id).await;
+
+            // Flush any pending intermediate texts BEFORE the question
+            // lands. Without this, the 1500ms edit loop sends them
+            // after the buttons, confusing the user (issue #142).
+            flush_intermediates(&bot, ChatId(chat_id), thread_id, &streaming).await;
 
             if let Err(e) = bot
                 .send_message(ChatId(chat_id), &text)
