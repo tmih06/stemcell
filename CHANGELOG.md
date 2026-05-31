@@ -6,13 +6,42 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
+## [0.3.33] - 2026-05-31
+
+2 commits since v0.3.32. Patch release closing #138. The v0.3.32 tag
+was published to crates.io before PR #140 and its sentinel test could
+land, so this version bumps to ship them properly. crates.io 0.3.32
+remains as-is (immutable, not yanked) — anyone on it gets the older
+user_correction metadata; upgrade to 0.3.33 to pick up the fix.
+
+**User-correction feedback (closes #138):** PR #140 (leshchenko1979)
+fixed the user_correction feedback-ledger metadata path. The previous
+code captured the first 200 chars of the channel-prefixed agent input.
+On Telegram the wrapper prefix alone is 236 chars (`[Channel: Telegram
+— ...]\n`), so 26+ ledger entries stored pure channel boilerplate and
+RSI analysis could not see what users were actually correcting. The
+fix prefers `display_text_override` (the clean message channels
+already pass for DB persistence) and falls back to `user_message` for
+TUI / CLI sessions. Follow-up sentinel tests pin the chain shape
+(whitespace-normalised so rustfmt drift doesn't false-fail), include
+a scoped negative assertion against the regression pattern, and a
+documentation anchor on the Telegram prefix size.
+
+Closes #138.
+
+4 files changed, +185/-32.
+
+USER-CORRECTION FEEDBACK (2 commits, closes #138)
+
+- a3c3e663 fix(user-correction): capture actual user message in metadata, not channel prefix
+- 8b0835b4 test(user-correction): sentinel for PR #140 fix + rustfmt normalisation
+
 ## [0.3.32] - 2026-05-31
 
-10 commits since v0.3.31. Hardening release closing #135, #136, #138.
-Alexey Leshchenko (`leshchenko1979`) contributed the foundation via
-3 PRs (#135, #137, #140); the other 7 commits layered observability,
-pre-flight safety checks, sentinel tests, and changelog work on top
-of those PRs.
+8 commits since v0.3.31. Hardening release closing #135, #136. Alexey
+Leshchenko (`leshchenko1979`) contributed the foundation via 2 PRs
+(#135, #137); the other 6 commits layered observability, pre-flight
+safety checks, sentinel tests, and changelog work on top.
 
 **Evolve / self-update (closes #136):** PR #137 (leshchenko1979)
 replaced `std::fs::rename` with a remove-then-rename pair so Linux
@@ -33,19 +62,6 @@ nothing was actually scheduled; and 5 sentinel tests pinning the
 systemd-run arg list (flag drift would silently break the restart;
 `--collect` / `--quiet` must stay out for RHEL 7 compat).
 
-**User-correction feedback (closes #138):** PR #140 (leshchenko1979)
-fixed the user_correction feedback-ledger metadata path: it was
-capturing the first 200 chars of the channel-prefixed agent input
-(Telegram alone has a 236-char `[Channel: Telegram — ...]\n`
-prefix), so 26+ ledger entries stored pure channel boilerplate and
-RSI analysis could not see what users were actually correcting.
-The fix prefers `display_text_override` (the clean message channels
-already pass for DB persistence) and falls back to `user_message`
-for TUI / CLI sessions. Follow-up sentinel tests pin the chain
-shape (whitespace-normalised so rustfmt drift doesn't false-fail),
-include a scoped negative assertion against the regression pattern,
-and a documentation anchor on the Telegram prefix size.
-
 **Stream / sanitize:** caught a Qwen 3 regression where the model
 echoed its own SentencePiece `<|tool▁...|>` markers (U+2581
 word-boundary chars that render as `_` in most fonts) into
@@ -63,9 +79,9 @@ sections, fixed em-dashes in v0.3.30 prose, normalized URL refs,
 and broke both wall-of-text entries into themed paragraphs for
 readability.
 
-Closes #135, #136, #138.
+Closes #135, #136.
 
-14 files changed, +1,711/-269.
+12 files changed, +1,557/-268.
 
 EVOLVE / SELF-UPDATE (4 commits, closes #136)
 
@@ -79,18 +95,6 @@ match the glob. Every failure branch emits structured tracing.
 - 824d454b fix(evolve): honest error branching + structured tracing on every failure path
 - 923bf51c fix(evolve): log failures of remove_file + systemd-run instead of swallowing them
 - 732c97c6 fix(evolve): pre-flight unit-count check + honest message + restart-arg tests
-
-USER-CORRECTION FEEDBACK (2 commits, closes #138)
-
-PR #140 (leshchenko1979) fixed the user_correction metadata path to
-prefer `display_text_override` over the channel-prefixed
-`user_message`, so RSI analysis sees the actual user correction text
-instead of pure channel boilerplate. Follow-up sentinel tests pin
-the chain shape, guard against the regression pattern, and document
-the prefix-size assumption.
-
-- a3c3e663 fix(user-correction): capture actual user message in metadata, not channel prefix
-- 8b0835b4 test(user-correction): sentinel for PR #140 fix + rustfmt normalisation
 
 STREAM / SANITIZE (1 commit)
 
