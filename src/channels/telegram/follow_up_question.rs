@@ -67,27 +67,22 @@ pub(crate) fn make_question_callback(
 
             let question_id = uuid::Uuid::new_v4().to_string();
 
-            // Two-column layout. The absolute option index is encoded
-            // in the callback data so the click handler can map back
-            // to the chosen option string via the stored options list.
+            // Single-column layout. Each option gets its own row so
+            // labels stay readable on narrow screens. The absolute
+            // option index is encoded in the callback data so the
+            // click handler can map back to the chosen option string
+            // via the stored options list.
             let keyboard_rows: Vec<Vec<InlineKeyboardButton>> = info
                 .options
                 .iter()
                 .enumerate()
-                .fold(Vec::new(), |mut acc, (i, opt)| {
-                    let btn = InlineKeyboardButton::callback(
+                .map(|(i, opt)| {
+                    vec![InlineKeyboardButton::callback(
                         opt.clone(),
                         format!("q:{}:{}", question_id, i),
-                    );
-                    if i % 2 == 0 {
-                        acc.push(vec![btn]);
-                    } else if let Some(last) = acc.last_mut() {
-                        last.push(btn);
-                    } else {
-                        acc.push(vec![btn]);
-                    }
-                    acc
-                });
+                    )]
+                })
+                .collect();
             let keyboard = InlineKeyboardMarkup::new(keyboard_rows);
 
             let text = format!("❓ <b>{}</b>", escape_html(&info.question));
