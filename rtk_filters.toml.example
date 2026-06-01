@@ -1,0 +1,147 @@
+# OpenCrabs default RTK filters — copy to ~/.rtk/filters.toml (or your
+# project's `.rtk/filters.toml`) and run `rtk trust` to activate.
+#
+# Each filter matches a command-shape via `match_command` (regex) and
+# applies the listed compaction rules to its output BEFORE the agent
+# sees it. Custom filters override RTK's built-in handlers for the
+# matching commands.
+#
+# Why ship these defaults — our RTK-savings audit (2026-06-01) showed
+# our integration only hits 35.8% reduction vs fast-rlm's 69.9% on a
+# similar workload size. The gap is mostly explained by workload mix
+# (their session is sysadmin-heavy, ours is build-heavy), BUT a chunk
+# of it is also explained by missing TOML rules for the verbose
+# commands the agent reaches for during exploration (`ps`, `lsof`,
+# `journalctl`, `git log --oneline` walks, etc.). fast-rlm's top 4
+# commands all use TOML rules that hit 97-100% reduction; we shipped
+# none. This file closes that gap with safe starter rules.
+#
+# Conservative bias: each rule strips obvious noise (ANSI escapes,
+# empty lines, deduplicated headers) but doesn't reorder or drop
+# content the agent might actually need. Sharpen as needed for your
+# workflow; remove any rule that swallows information you care about.
+#
+# Docs: https://github.com/rtk-ai/rtk#custom-filters
+
+schema_version = 1
+
+# ── Process inspection ────────────────────────────────────────────
+# `ps auxww` / `ps aux` / `ps -ef` produce 100-500 lines on a busy
+# machine. The agent usually wants "what's running and consuming
+# resources" — not the system daemons. Cap at 80 lines and drop
+# the noisiest system-daemon owners.
+[filters.ps-aux-compact]
+description = "Compact ps output — drop system daemons, cap at 80 lines"
+match_command = "^ps\\s+(aux|auxww|-aux|-ef|-axww)"
+strip_ansi = true
+strip_lines_matching = [
+  "^_uucp\\s",
+  "^_appstore\\s",
+  "^_assetcache\\s",
+  "^_atsserver\\s",
+  "^_cmiodalassistants\\s",
+  "^_coreaudiod\\s",
+  "^_displaypolicyd\\s",
+  "^_distnote\\s",
+  "^_driverkit\\s",
+  "^_fpsd\\s",
+  "^_locationd\\s",
+  "^_mdnsresponder\\s",
+  "^_networkd\\s",
+  "^_softwareupdate\\s",
+  "^_spotlight\\s",
+  "^_timed\\s",
+  "^_usbmuxd\\s",
+  "^_windowserver\\s",
+]
+max_lines = 80
+on_empty = "ps: no matching processes after filter"
+
+# ── Open file / network sockets ───────────────────────────────────
+# `lsof -i` lists every open socket on the machine — usually
+# hundreds. Cap at 60 lines (enough to find the port the user asked
+# about) and drop the chatty established-by-loopback rows.
+[filters.lsof-i-compact]
+description = "Compact lsof -i output — cap at 60 lines"
+match_command = "^lsof\\s+(-i|-iTCP|-iUDP|-Pn|-nP)"
+strip_ansi = true
+strip_lines_matching = [
+  "^\\s*$",
+  "^COMMAND\\s+PID",  # the column header — agent doesn't need it after first occurrence
+]
+max_lines = 60
+on_empty = "lsof: no matching connections after filter"
+
+# ── netstat / ss ──────────────────────────────────────────────────
+# Similar shape to lsof — many sockets, agent wants a few.
+[filters.netstat-compact]
+description = "Compact netstat / ss — drop established loopback noise, cap at 60 lines"
+match_command = "^(netstat|ss)\\s"
+strip_ansi = true
+strip_lines_matching = [
+  "^\\s*$",
+  "tcp6?\\s+0\\s+0\\s+127\\.0\\.0\\.1",  # loopback established sockets
+]
+max_lines = 60
+
+# ── journalctl / dmesg ────────────────────────────────────────────
+# Log streams are typically thousands of lines. Cap at the most
+# recent 200 lines; the agent can request more via `--lines=N` if
+# it needs older history.
+[filters.journalctl-recent]
+description = "Cap journalctl output at most recent 200 lines"
+match_command = "^journalctl(\\s|$)"
+strip_ansi = true
+max_lines = 200
+
+[filters.dmesg-recent]
+description = "Cap dmesg output at most recent 200 lines"
+match_command = "^dmesg(\\s|$)"
+strip_ansi = true
+max_lines = 200
+
+# ── git log / git diff ────────────────────────────────────────────
+# `git log --oneline` without a limit can produce thousands of lines
+# on long-lived repos. Most agent queries care about the last 30
+# commits. Sharpen if you frequently need deeper history.
+[filters.git-log-oneline-cap]
+description = "Cap git log --oneline at 30 commits unless the call already limits"
+match_command = "^git\\s+log\\s+.*--oneline(?!.*-n\\s)(?!.*--max-count)"
+strip_ansi = true
+max_lines = 30
+
+# `git diff` without a path can be massive on big changesets. The
+# agent typically wants summary (file list + line counts), not the
+# full hunks. Cap at 500 lines — enough for a 5-file refactor.
+[filters.git-diff-cap]
+description = "Cap git diff at 500 lines"
+match_command = "^git\\s+diff(?!.*--stat)(?!.*--name-only)(?!.*--name-status)"
+strip_ansi = true
+max_lines = 500
+
+# ── gh CLI ────────────────────────────────────────────────────────
+# `gh pr list` without --limit returns 30 PRs by default but the
+# JSON variant (`--json ...`) can be huge per row. Cap by lines.
+[filters.gh-pr-list-cap]
+description = "Cap gh pr list output at 200 lines (covers ~20 PRs in JSON form)"
+match_command = "^gh\\s+pr\\s+list"
+strip_ansi = true
+max_lines = 200
+
+# ── DNS tools ─────────────────────────────────────────────────────
+# `dig` produces a verbose answer + authority + additional section.
+# The agent almost always wants just the answer section.
+[filters.dig-answer-only]
+description = "Drop dig authority + additional sections, keep answer"
+match_command = "^dig\\s"
+strip_ansi = true
+strip_lines_matching = [
+  "^;; AUTHORITY SECTION:",
+  "^;; ADDITIONAL SECTION:",
+  "^;; Query time:",
+  "^;; SERVER:",
+  "^;; WHEN:",
+  "^;; MSG SIZE",
+  "^;\\s*<<>>",
+]
+max_lines = 40

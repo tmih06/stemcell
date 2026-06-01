@@ -157,6 +157,8 @@ pub mod rsi_skill_proposals_test;
 pub mod rsi_subsystem_test;
 pub mod rsi_sync_test;
 pub mod rsi_test;
+#[cfg(feature = "rtk")]
+pub mod rtk_sysadmin_supported_test;
 pub mod runtime_info_home_anchor_test;
 pub mod self_healing_test;
 pub mod self_improve_failure_log_guard_test;

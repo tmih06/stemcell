@@ -41,6 +41,28 @@ const RTK_SUPPORTED_COMMANDS: &[&str] = &[
     "playwright",
     "prettier",
     "eslint",
+    // Sysadmin / system-inspection family — added 2026-06-01 after
+    // an RTK-savings audit showed 0% compression on these because
+    // they were bypassing RTK entirely. fast-rlm's stats show
+    // `ps auxww` compressing to 97.9% via RTK's TOML filter, so the
+    // agent's process / network / log inspections were leaking
+    // verbose output to the model at full size. Each entry below is
+    // a command whose default output is verbose (full process table,
+    // socket list, log lines, DNS resolution chain) and that RTK
+    // can either filter natively or via a TOML rule. RTK's
+    // `is_rtk_supported` upstream gate ensures we only forward if
+    // RTK actually knows how to handle the subcommand.
+    "ps",
+    "top",
+    "lsof",
+    "netstat",
+    "ss",
+    "journalctl",
+    "dmesg",
+    "dig",
+    "nslookup",
+    "host",
+    "traceroute",
 ];
 
 /// Commands that should NEVER be rewritten even if they match the list above.
