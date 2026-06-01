@@ -483,7 +483,25 @@ pub fn redact_secrets(text: &str) -> String {
                 // Keep prefix visible, redact the rest
                 result.replace_range(after..end, "[REDACTED]");
             }
-            search_from = after.saturating_add("[REDACTED]".len());
+            // Advance past the replacement (or, when we didn't replace,
+            // past `prefix.len()` worth of bytes so we don't re-scan
+            // the same prefix forever). MUST snap to a UTF-8 char
+            // boundary — `after + "[REDACTED]".len()` is a byte
+            // arithmetic operation and can land inside a multi-byte
+            // character (e.g. `→` U+2192 is 3 bytes, so `after + 10`
+            // can stop at byte 2 of 3 inside it). The next iteration
+            // would then panic at the slice on line 461 with
+            // `start byte index N is not a char boundary; it is inside
+            // '→' (bytes M..M+3)`. Repro: Ctrl+O expand a thinking
+            // block that contains `→` after a prefix-shaped string.
+            let raw_next = after.saturating_add("[REDACTED]".len());
+            search_from = if raw_next >= result.len() {
+                result.len()
+            } else {
+                // Snap forward to a valid char boundary. `ceil_char_boundary`
+                // is stable since Rust 1.79.
+                result.ceil_char_boundary(raw_next)
+            };
             if search_from >= result.len() {
                 break;
             }

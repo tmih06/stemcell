@@ -11,9 +11,7 @@ use tokio::sync::Mutex;
 
 /// Simulate the intermediate_handles drain+await pattern used in all
 /// four channel follow_up_question callbacks.
-async fn drain_intermediates(
-    handles: Arc<Mutex<Vec<tokio::task::JoinHandle<()>>>>,
-) {
+async fn drain_intermediates(handles: Arc<Mutex<Vec<tokio::task::JoinHandle<()>>>>) {
     let drained: Vec<tokio::task::JoinHandle<()>> = {
         let mut guard = handles.lock().await;
         guard.drain(..).collect()
@@ -28,8 +26,7 @@ async fn intermediates_complete_before_question_posts() {
     let order: Arc<Mutex<Vec<&'static str>>> = Arc::new(Mutex::new(Vec::new()));
     let intermediate_done = Arc::new(AtomicBool::new(false));
 
-    let handles: Arc<Mutex<Vec<tokio::task::JoinHandle<()>>>> =
-        Arc::new(Mutex::new(Vec::new()));
+    let handles: Arc<Mutex<Vec<tokio::task::JoinHandle<()>>>> = Arc::new(Mutex::new(Vec::new()));
 
     let order_clone = order.clone();
     let done_clone = intermediate_done.clone();
@@ -55,8 +52,7 @@ async fn intermediates_complete_before_question_posts() {
 #[tokio::test]
 async fn multiple_intermediates_all_complete_before_question() {
     let completed = Arc::new(AtomicUsize::new(0));
-    let handles: Arc<Mutex<Vec<tokio::task::JoinHandle<()>>>> =
-        Arc::new(Mutex::new(Vec::new()));
+    let handles: Arc<Mutex<Vec<tokio::task::JoinHandle<()>>>> = Arc::new(Mutex::new(Vec::new()));
 
     for i in 0..5 {
         let done = completed.clone();
@@ -76,8 +72,7 @@ async fn multiple_intermediates_all_complete_before_question() {
 
 #[tokio::test]
 async fn empty_handles_vec_does_not_block_question() {
-    let handles: Arc<Mutex<Vec<tokio::task::JoinHandle<()>>>> =
-        Arc::new(Mutex::new(Vec::new()));
+    let handles: Arc<Mutex<Vec<tokio::task::JoinHandle<()>>>> = Arc::new(Mutex::new(Vec::new()));
 
     // Should return immediately with no handles
     drain_intermediates(handles.clone()).await;
@@ -87,8 +82,7 @@ async fn empty_handles_vec_does_not_block_question() {
 
 #[tokio::test]
 async fn drain_is_idempotent() {
-    let handles: Arc<Mutex<Vec<tokio::task::JoinHandle<()>>>> =
-        Arc::new(Mutex::new(Vec::new()));
+    let handles: Arc<Mutex<Vec<tokio::task::JoinHandle<()>>>> = Arc::new(Mutex::new(Vec::new()));
 
     let handle = tokio::spawn(async {});
     handles.lock().await.push(handle);

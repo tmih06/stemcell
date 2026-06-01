@@ -216,3 +216,53 @@ fn preserves_non_sensitive_output() {
     let out = redact_secrets(input);
     assert_eq!(out, input, "non-sensitive output should be unchanged");
 }
+
+#[test]
+fn does_not_panic_on_multibyte_char_after_prefix_match() {
+    // Repro of the Ctrl+O TUI render panic from 2026-06-01 03:22:
+    //   `start byte index 1868 is not a char boundary; it is inside
+    //   '→' (bytes 1866..1869) of ...`
+    // Cause: when redact_secrets matched a KEY_PREFIX but the suffix
+    // was too short to redact, `search_from` advanced by
+    // `"[REDACTED]".len()` (10 ASCII bytes) without snapping to a
+    // UTF-8 char boundary. The next iteration's slice
+    // `&result[search_from..]` panicked when those 10 bytes landed
+    // inside a multi-byte character like `→` (3 bytes).
+    //
+    // Construct an input that:
+    //   1. Contains a key prefix (`sk-`) followed by a SHORT suffix
+    //      that won't be redacted (forcing the bug path, not the
+    //      replace path that always produces an ASCII-only "[REDACTED]"
+    //      output).
+    //   2. Places a multi-byte char near `after + "[REDACTED]".len()`
+    //      from the prefix match position.
+    //
+    // Before the fix this would panic the redact_secrets call —
+    // and via the channel/TUI sanitiser pipeline, panic the render
+    // thread when the user expanded a thinking block (Ctrl+O).
+    let input = "sk-x → next text here that follows the arrow → and more arrows →→→";
+    let _out = redact_secrets(input); // must not panic
+}
+
+#[test]
+fn handles_multibyte_chars_at_various_offsets_after_prefix() {
+    // Property-style coverage: shift the multi-byte char to several
+    // offsets past a short-suffix prefix match. Any one of these
+    // could pre-fix land inside a char and panic.
+    for pad_bytes in 0..=15 {
+        let padding: String = "x".repeat(pad_bytes);
+        let input = format!("sk-{padding}→ rest of text continues");
+        let _out = redact_secrets(&input); // must not panic at any offset
+    }
+}
+
+#[test]
+fn cyrillic_emoji_cjk_in_post_prefix_window_do_not_panic() {
+    // Three different multi-byte character widths past a short
+    // suffix that didn't trigger replacement:
+    //   2-byte (Cyrillic 'я'), 3-byte (CJK '中'), 4-byte (emoji 🦀)
+    let inputs = ["sk-z я тест", "sk-z 中文测试", "sk-z 🦀🦀🦀 опенкрабс"];
+    for input in inputs {
+        let _out = redact_secrets(input); // must not panic
+    }
+}
