@@ -4,11 +4,11 @@
 //! periodicity gating, proposal format correctness, empty brain files
 //! handled, files under min size skipped.
 
-use opencrabs::brain::dedup_scan::{
-    cluster_to_proposal, file_dedup_proposals, generate_dedup_proposals, scan_brain_files,
-    DuplicateCluster,
+use crate::brain::dedup_scan::{
+    DuplicateCluster, cluster_to_proposal, file_dedup_proposals, generate_dedup_proposals,
+    scan_brain_files,
 };
-use opencrabs::brain::rsi_proposals::ProposalsStore;
+use crate::brain::rsi_proposals::ProposalsStore;
 use std::fs;
 use tempfile::TempDir;
 
@@ -145,7 +145,10 @@ fn test_proposal_count_reflects_removable_duplicates() {
     let proposals = generate_dedup_proposals(dir.path());
     assert_eq!(proposals.len(), 1);
     let (proposal, _) = &proposals[0];
-    assert_eq!(proposal.count, 3, "Should count 3 removable duplicates (4 total - 1 canonical)");
+    assert_eq!(
+        proposal.count, 3,
+        "Should count 3 removable duplicates (4 total - 1 canonical)"
+    );
 }
 
 // --- ProposalsStore integration ---
@@ -197,10 +200,17 @@ fn test_repeated_scan_dedups_proposals_in_store() {
 
     // Second scan — should NOT create duplicate proposals (dedup by target_file + duplicate_text)
     let count2 = file_dedup_proposals(brain_dir.path(), &store);
-    assert_eq!(count2, count1, "Second scan should supersede, not duplicate");
+    assert_eq!(
+        count2, count1,
+        "Second scan should supersede, not duplicate"
+    );
 
     let pending = store.list_brain_dedup_proposals();
-    assert_eq!(pending.len(), count1, "Store should have exactly count1 proposals");
+    assert_eq!(
+        pending.len(),
+        count1,
+        "Store should have exactly count1 proposals"
+    );
 }
 
 // --- cluster_to_proposal edge cases ---
@@ -213,7 +223,10 @@ fn test_cluster_with_single_occurrence_returns_none() {
         total_count: 1,
     };
     let proposal = cluster_to_proposal(&cluster);
-    assert!(proposal.is_none(), "Single occurrence should not generate a proposal");
+    assert!(
+        proposal.is_none(),
+        "Single occurrence should not generate a proposal"
+    );
 }
 
 #[test]

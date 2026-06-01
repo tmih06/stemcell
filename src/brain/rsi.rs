@@ -837,7 +837,7 @@ pub fn spawn_rsi_engine(
             // (default: once per day at 24 x 1h cycles). Files proposals
             // into Mission Control for user review. Does NOT auto-apply.
             cycle_number += 1;
-            if cycle_number % DEDUP_SCAN_EVERY_N_CYCLES == 0 {
+            if cycle_number.is_multiple_of(DEDUP_SCAN_EVERY_N_CYCLES) {
                 let brain_path = crate::config::opencrabs_home();
                 let store = crate::brain::rsi_proposals::ProposalsStore::new();
                 let filed = crate::brain::dedup_scan::file_dedup_proposals(&brain_path, &store);

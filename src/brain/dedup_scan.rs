@@ -14,7 +14,6 @@
 use std::collections::HashMap;
 use std::path::Path;
 
-use crate::brain::prompt_builder::CONTEXTUAL_BRAIN_FILES;
 use crate::brain::rsi_proposals::ProposedBrainDedup;
 
 /// Core brain files to scan (both CORE and CONTEXTUAL).
@@ -52,7 +51,10 @@ fn is_structural_line(line: &str) -> bool {
         return true;
     }
     // Horizontal rules
-    if trimmed.chars().all(|c| c == '-' || c == '=' || c == '*' || c == '_') {
+    if trimmed
+        .chars()
+        .all(|c| c == '-' || c == '=' || c == '*' || c == '_')
+    {
         return true;
     }
     // Table separators
@@ -111,7 +113,7 @@ pub fn scan_brain_files(brain_path: &Path) -> Vec<DuplicateCluster> {
     // Group into clusters: only keep entries with >= MIN_DUPLICATE_COUNT
     let mut clusters: Vec<DuplicateCluster> = Vec::new();
     for (text, locations) in line_occurrences {
-        let total_count: usize = locations.iter().map(|(_, lines)| lines.len()).sum();
+        let total_count: usize = locations.len();
         if total_count < MIN_DUPLICATE_COUNT {
             continue;
         }
@@ -353,7 +355,10 @@ mod tests {
         write_brain_file(dir.path(), "SOUL.md", &content);
 
         let proposals = generate_dedup_proposals(dir.path());
-        assert!(!proposals.is_empty(), "Should generate at least one proposal");
+        assert!(
+            !proposals.is_empty(),
+            "Should generate at least one proposal"
+        );
 
         let (proposal, rationale) = &proposals[0];
         assert_eq!(proposal.target_file, "SOUL.md");
@@ -367,7 +372,10 @@ mod tests {
         write_brain_file(dir.path(), "SOUL.md", content);
 
         let proposals = generate_dedup_proposals(dir.path());
-        assert!(proposals.is_empty(), "Should not generate proposals when no duplicates exist");
+        assert!(
+            proposals.is_empty(),
+            "Should not generate proposals when no duplicates exist"
+        );
     }
 
     #[test]
@@ -381,7 +389,8 @@ mod tests {
         );
         write_brain_file(brain_dir.path(), "SOUL.md", &content);
 
-        let store = crate::brain::rsi_proposals::ProposalsStore::with_dir(rsi_dir.path().to_path_buf());
+        let store =
+            crate::brain::rsi_proposals::ProposalsStore::with_dir(rsi_dir.path().to_path_buf());
         let count = file_dedup_proposals(brain_dir.path(), &store);
 
         assert!(count > 0, "Should file at least one proposal");
