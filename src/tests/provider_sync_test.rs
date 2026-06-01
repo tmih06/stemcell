@@ -12,6 +12,7 @@ fn config_with_only(provider: &str) -> Config {
     let mut config = Config::default();
     let pc = Some(ProviderConfig {
         enabled: true,
+        api_key: Some("test-key".to_string()),
         default_model: Some("test-model".to_string()),
         ..Default::default()
     });

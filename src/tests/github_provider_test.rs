@@ -83,6 +83,7 @@ fn resolve_github_when_enabled() {
     let mut config = Config::default();
     config.providers.github = Some(ProviderConfig {
         enabled: true,
+        api_key: Some("test-key".to_string()),
         default_model: Some("gpt-4o".to_string()),
         ..Default::default()
     });
@@ -96,12 +97,13 @@ fn resolve_github_default_model_when_none() {
     let mut config = Config::default();
     config.providers.github = Some(ProviderConfig {
         enabled: true,
+        api_key: Some("test-key".to_string()),
         default_model: None,
         ..Default::default()
     });
     let (name, model) = resolve_provider_from_config(&config);
     assert_eq!(name, "GitHub Copilot");
-    assert_eq!(model, "gpt-5-mini");
+    assert_eq!(model, "(default)");
 }
 
 #[test]
@@ -304,11 +306,13 @@ fn resolve_anthropic_takes_priority_over_github() {
     let mut config = Config::default();
     config.providers.anthropic = Some(ProviderConfig {
         enabled: true,
+        api_key: Some("test-key".to_string()),
         default_model: Some("claude-sonnet-4-20250514".to_string()),
         ..Default::default()
     });
     config.providers.github = Some(ProviderConfig {
         enabled: true,
+        api_key: Some("test-key".to_string()),
         default_model: Some("gpt-4o".to_string()),
         ..Default::default()
     });
@@ -329,6 +333,7 @@ fn resolve_github_chosen_when_only_github_enabled() {
     });
     config.providers.github = Some(ProviderConfig {
         enabled: true,
+        api_key: Some("test-key".to_string()),
         default_model: Some("Llama-3.3-70B-Instruct".to_string()),
         ..Default::default()
     });
