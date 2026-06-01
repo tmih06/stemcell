@@ -45,7 +45,8 @@ impl Tool for FollowUpQuestionTool {
          list of specific values (e.g. \"which file did you mean?\", \"target environment?\"). \
          Do not use it for general questions, confirmations (use the normal approval flow), \
          or anything you could resolve yourself by reading code or running a tool. Returns \
-         the chosen option string."
+         the chosen option string. Call this tool silently. Do not repeat the question or \
+         options in surrounding prose."
     }
 
     fn input_schema(&self) -> Value {
