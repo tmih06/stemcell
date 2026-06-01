@@ -1513,3 +1513,92 @@ mod hash_opportunities {
         assert_ne!(hash_opportunities(&a), hash_opportunities(&b));
     }
 }
+
+// --- RSI Prompt Text Tests (PR #150: stop bumping decorative SOUL.md counters) ---
+// 2026-06-01: Alexey Leshchenko's PR removed the 'Repeat-Violation Escalation
+// Pattern' section from the RSI system prompt and replaced it with
+// 'Reinforcing Repeat Violations'. The prompt must instruct the RSI agent to
+// document repeat violations via evidence appends (date/session) and explicitly
+// forbid bumping inline counters in SOUL.md. The SQLite feedback ledger
+// (~/.opencrabs/feedback.db) is the canonical source of truth, not decorative
+// counters in brain files.
+#[cfg(test)]
+mod rsi_prompt_text {
+    use crate::brain::rsi::RSI_AGENT_PROMPT;
+
+    #[test]
+    fn prompt_contains_reinforcing_repeat_violations_section() {
+        assert!(
+            RSI_AGENT_PROMPT.contains("## Reinforcing Repeat Violations"),
+            "RSI prompt must contain the 'Reinforcing Repeat Violations' section header"
+        );
+    }
+
+    #[test]
+    fn prompt_does_not_contain_old_escalation_pattern() {
+        assert!(
+            !RSI_AGENT_PROMPT.contains("## Repeat-Violation Escalation Pattern"),
+            "RSI prompt must NOT contain the old 'Repeat-Violation Escalation Pattern' section"
+        );
+    }
+
+    #[test]
+    fn prompt_forbids_bumping_inline_counters() {
+        assert!(
+            RSI_AGENT_PROMPT.contains("Do NOT bump inline counters"),
+            "RSI prompt must explicitly forbid bumping inline counters in brain files"
+        );
+    }
+
+    #[test]
+    fn prompt_mentions_feedback_ledger_db_as_canonical_source() {
+        assert!(
+            RSI_AGENT_PROMPT.contains("feedback ledger SQLite"),
+            "RSI prompt must mention the feedback ledger SQLite database"
+        );
+        assert!(
+            RSI_AGENT_PROMPT.contains("feedback.db"),
+            "RSI prompt must reference the feedback.db file"
+        );
+        assert!(
+            RSI_AGENT_PROMPT.contains("canonical source of truth"),
+            "RSI prompt must describe the DB as the canonical source of truth"
+        );
+    }
+
+    #[test]
+    fn prompt_instructs_evidence_appends_not_counter_bumps() {
+        assert!(
+            RSI_AGENT_PROMPT.contains("evidence appends, not counter bumps"),
+            "RSI prompt must instruct documenting via evidence appends rather than counter bumps"
+        );
+    }
+
+    #[test]
+    fn prompt_mentions_decorative_counters_go_stale() {
+        assert!(
+            RSI_AGENT_PROMPT.contains("decorative") || RSI_AGENT_PROMPT.contains("go stale"),
+            "RSI prompt must explain that SOUL.md counters are decorative or go stale"
+        );
+    }
+
+    #[test]
+    fn prompt_mentions_append_date_session_as_evidence() {
+        assert!(
+            RSI_AGENT_PROMPT.contains("Append the new date/session as evidence"),
+            "RSI prompt must instruct appending date/session as evidence for repeat violations"
+        );
+    }
+
+    #[test]
+    fn prompt_warns_against_skip_repeat_violation_case() {
+        assert!(
+            RSI_AGENT_PROMPT.contains("Skipping a repeat-violation case"),
+            "RSI prompt must warn that skipping repeat violations is the most common failure mode"
+        );
+        assert!(
+            RSI_AGENT_PROMPT.contains("most common RSI"),
+            "RSI prompt must identify this as the most common RSI failure mode"
+        );
+    }
+}
