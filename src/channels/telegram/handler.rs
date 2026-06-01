@@ -3155,6 +3155,15 @@ fn build_status_message(
         format!("{}s", elapsed_secs)
     };
 
+    // When the only active tool is follow_up_question, the user is
+    // looking at a keyboard / numbered list and picking an option.
+    // Rolling status messages ("Running follow_up_question (16s)")
+    // just clutter the thread while they decide. Stay silent until
+    // they tap or the tool times out (issue #148).
+    if active_tools.len() == 1 && active_tools[0].0 == "follow_up_question" {
+        return None;
+    }
+
     let action = if !active_tools.is_empty() {
         if active_tools.len() == 1 {
             let (name, ctx) = active_tools[0];
