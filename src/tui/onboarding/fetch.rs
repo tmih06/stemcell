@@ -289,8 +289,13 @@ pub async fn fetch_provider_models(
                 return vec![model.clone()];
             }
         }
-        // Return hardcoded defaults if no config
+        // Return hardcoded defaults if no config. Newest first so the
+        // wizard's first highlight is the current model. MiniMax does
+        // not expose `/v1/models`, so this list is the only source of
+        // suggestions absent a user-supplied `[providers.minimax].models`
+        // override — keep it current as new releases land.
         return vec![
+            "MiniMax-M3".to_string(),
             "MiniMax-M2.7".to_string(),
             "MiniMax-M2.5".to_string(),
             "MiniMax-M2.1".to_string(),

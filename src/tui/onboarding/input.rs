@@ -606,6 +606,31 @@ impl OnboardingWizard {
                     }
                 }
                 KeyCode::Enter => {
+                    // Commit the user's pick before advancing. If the
+                    // filter matches at least one entry, the existing
+                    // `selected_model_name()` resolution picks
+                    // `filtered[selected_model]` — same behaviour as
+                    // before. If the filter matched NOTHING but is
+                    // non-empty, treat the typed text as a manual model
+                    // name (the user typed `MiniMax-M3` on a build that
+                    // still ships M2.7 / M2.5 / M2.1 as suggestions) and
+                    // push it into `models` so future renders / the
+                    // config write resolve to it. Mirrors the custom-
+                    // provider populated-model branch at input.rs:818-823.
+                    let filter = self.ps.model_filter.trim().to_string();
+                    let filtered_count = self.ps.filtered_model_names().len();
+                    if filtered_count == 0 && !filter.is_empty() {
+                        if !self.ps.models.iter().any(|m| m == &filter) {
+                            self.ps.models.push(filter.clone());
+                        }
+                        // Point selected_model at the just-pushed entry
+                        // so `selected_model_name()` resolves to it once
+                        // we clear the filter on the next step.
+                        if let Some(idx) = self.ps.models.iter().position(|m| m == &filter) {
+                            self.ps.selected_model = idx;
+                        }
+                        self.ps.model_filter.clear();
+                    }
                     self.next_step();
                 }
                 KeyCode::BackTab => {

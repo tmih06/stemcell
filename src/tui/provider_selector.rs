@@ -478,10 +478,29 @@ impl ProviderSelectorState {
     }
 
     /// Get the selected model name (resolves through filter).
+    ///
+    /// Three branches, in order:
+    ///   1. Filter matches something → pick `filtered[selected_model]`.
+    ///   2. Filter matches nothing AND filter is non-empty → use the
+    ///      typed text itself as the model name. This is the escape
+    ///      hatch for new models that aren't in the hardcoded list yet
+    ///      (e.g. user types `MiniMax-M3` on a build where the suggestion
+    ///      list still only shows M2.7 / M2.5 / M2.1). The wizard render
+    ///      should surface this so the user can see what will commit.
+    ///   3. Filter is empty AND nothing matches → fall back to the first
+    ///      entry in the full list (default behaviour for a fresh
+    ///      provider with no typed input).
     pub fn selected_model_name(&self) -> &str {
         let filtered = self.filtered_model_names();
         if let Some(name) = filtered.get(self.selected_model) {
             name
+        } else if !self.model_filter.trim().is_empty() {
+            // Typed text becomes the model name when there's no list
+            // match. Without this branch the wizard silently fell back
+            // to "first item in the list", losing the user's input —
+            // a user typing `MiniMax-M3` on a build before this fix
+            // would end up configured for `MiniMax-M2.7`.
+            self.model_filter.trim()
         } else {
             self.all_model_names().first().copied().unwrap_or("")
         }
@@ -522,6 +541,7 @@ pub fn model_display_label(model_id: &str) -> &str {
         "qwen-3.5-plus" | "qwen3.5-plus" => "Qwen 3.5 Plus",
         "minimax-m2.5" => "Minimax M2.5",
         "minimax-m2.7" => "Minimax M2.7",
+        "minimax-m3" => "Minimax M3",
         "mimo-v2-omni" | "mimo-v2-omni-free" => "Mimo V2 Omni",
         "mimo-v2-pro" | "mimo-v2-pro-free" => "Mimo V2 Pro",
         "kimi-k2.6" => "Kimi K2.6",

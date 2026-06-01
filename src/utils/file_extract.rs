@@ -128,11 +128,7 @@ fn collapse_double_extension(name: &str) -> String {
     let outer = parts_rev[2].to_lowercase();
     if inner == outer && !inner.is_empty() {
         // Rebuild: base + "." + inner (drop the duplicate outer)
-        format!(
-            "{}.{}",
-            &name[..name.len() - parts_rev[2].len() - 1],
-            inner
-        )
+        format!("{}.{}", &name[..name.len() - parts_rev[2].len() - 1], inner)
     } else {
         name.to_string()
     }

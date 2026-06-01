@@ -1127,12 +1127,28 @@ fn render_provider_auth(lines: &mut Vec<Line<'static>>, wizard: &OnboardingWizar
 
                 let filtered = wizard.ps.filtered_model_names();
                 if filtered.is_empty() {
-                    lines.push(Line::from(Span::styled(
-                        "  no models match".to_string(),
-                        Style::default()
-                            .fg(Color::DarkGray)
-                            .add_modifier(Modifier::ITALIC),
-                    )));
+                    // No suggestion match for the typed filter. Tell the
+                    // user the typed text will become the model name on
+                    // Enter — the "type a custom model" escape hatch for
+                    // new releases not yet in the suggestion list (e.g.
+                    // `MiniMax-M3` typed on a build that ships M2.7/M2.5/
+                    // M2.1 as suggestions). Without this hint the user
+                    // sees "no models match" and assumes they need to
+                    // wait for a binary update.
+                    let typed = wizard.ps.model_filter.trim();
+                    if !typed.is_empty() {
+                        lines.push(Line::from(Span::styled(
+                            format!("  > {} (custom — press Enter to use)", typed),
+                            Style::default().fg(BRAND_GOLD),
+                        )));
+                    } else {
+                        lines.push(Line::from(Span::styled(
+                            "  no models match".to_string(),
+                            Style::default()
+                                .fg(Color::DarkGray)
+                                .add_modifier(Modifier::ITALIC),
+                        )));
+                    }
                 } else {
                     render_model_window(lines, &filtered, wizard.ps.selected_model, model_focused);
                 }

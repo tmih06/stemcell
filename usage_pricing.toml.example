@@ -37,7 +37,14 @@ entries = [
 ]
 
 [providers.minimax]
+# MiniMax-M3 Standard tier, Context ≤ 512K — public list price.
+# Input $0.6/M, Output $2.4/M, Cache read $0.12/M. The launch 7-day
+# 50% off discount is NOT applied here (the provider charges the
+# discount automatically during the window; this table tracks list
+# price). The 512K–1M context band is "contact sales" (limited
+# availability), not wired until it goes public.
 entries = [
+  { prefix = "minimax-m3",         input_per_m = 0.60,  output_per_m = 2.40, cache_read_per_m = 0.12 },
   { prefix = "minimax-m2.7-high",  input_per_m = 0.60,  output_per_m = 2.40  },
   { prefix = "minimax-m2.7",       input_per_m = 0.30,  output_per_m = 1.20  },
   { prefix = "minimax-m2.5-high",  input_per_m = 0.60,  output_per_m = 2.40  },
