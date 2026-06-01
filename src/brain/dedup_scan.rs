@@ -209,6 +209,29 @@ pub fn generate_dedup_proposals(brain_path: &Path) -> Vec<(ProposedBrainDedup, S
     results
 }
 
+/// Run the scan and file proposals into the ProposalsStore.
+///
+/// Each duplicate cluster becomes one `BrainDedupProposal` in the
+/// inbox. The proposer is set to "rsi-dedup-scan" so the user can
+/// distinguish these from other RSI proposals. Returns the number
+/// of proposals filed.
+pub fn file_dedup_proposals(
+    brain_path: &Path,
+    store: &crate::brain::rsi_proposals::ProposalsStore,
+) -> usize {
+    let proposals = generate_dedup_proposals(brain_path);
+    let mut count = 0;
+    for (dedup, rationale) in proposals {
+        match store.add_brain_dedup_proposal("rsi-dedup-scan", rationale, dedup) {
+            Ok(_id) => count += 1,
+            Err(e) => {
+                tracing::warn!("Failed to file brain dedup proposal: {e}");
+            }
+        }
+    }
+    count
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -345,5 +368,26 @@ mod tests {
 
         let proposals = generate_dedup_proposals(dir.path());
         assert!(proposals.is_empty(), "Should not generate proposals when no duplicates exist");
+    }
+
+    #[test]
+    fn test_file_dedup_proposals_into_store() {
+        let brain_dir = TempDir::new().unwrap();
+        let rsi_dir = TempDir::new().unwrap();
+        let repeated = "Keep responses under 3 sentences when possible.";
+        let content = format!(
+            "# SOUL.md\n\n{}\n\nUnique content.\n\n{}\n\nMore unique.\n\n{}\n",
+            repeated, repeated, repeated
+        );
+        write_brain_file(brain_dir.path(), "SOUL.md", &content);
+
+        let store = crate::brain::rsi_proposals::ProposalsStore::with_dir(rsi_dir.path().to_path_buf());
+        let count = file_dedup_proposals(brain_dir.path(), &store);
+
+        assert!(count > 0, "Should file at least one proposal");
+        let pending = store.list_brain_dedup_proposals();
+        assert_eq!(pending.len(), count);
+        assert_eq!(pending[0].proposer, "rsi-dedup-scan");
+        assert_eq!(pending[0].dedup.target_file, "SOUL.md");
     }
 }
