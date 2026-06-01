@@ -277,29 +277,23 @@ pub async fn fetch_provider_models(
 
     // Handle Minimax specially - no /models API, must use config
     if provider_id == "minimax" {
-        // Minimax — NO /models API endpoint, must use config.models
-        if let Ok(config) = crate::config::Config::load()
-            && let Some(p) = &config.providers.minimax
-        {
-            if !p.models.is_empty() {
-                return p.models.clone();
-            }
-            // Fall back to default_model if no models list
-            if let Some(model) = &p.default_model {
-                return vec![model.clone()];
-            }
-        }
-        // Return hardcoded defaults if no config. Newest first so the
-        // wizard's first highlight is the current model. MiniMax does
-        // not expose `/v1/models`, so this list is the only source of
-        // suggestions absent a user-supplied `[providers.minimax].models`
-        // override — keep it current as new releases land.
-        return vec![
-            "MiniMax-M3".to_string(),
-            "MiniMax-M2.7".to_string(),
-            "MiniMax-M2.5".to_string(),
-            "MiniMax-M2.1".to_string(),
-        ];
+        // MiniMax has no `/v1/models` endpoint — the binary's baseline
+        // list is the source of truth for "models we know exist", and
+        // the user's `config.toml` `[providers.minimax].models` is a
+        // CACHED snapshot (possibly stale from an earlier install,
+        // missing newer releases like MiniMax-M3).
+        //
+        // Additive merge: start from the baseline, append any custom
+        // entries the user added that aren't in baseline. This means:
+        //   - users on an old `models = [...]` line still see M3 the
+        //     moment they upgrade (no manual edit needed)
+        //   - users who manually added `MiniMax-Text-01` or a private
+        //     variant keep that entry too — never overwrite their
+        //     additions
+        //   - new releases the binary ships always land at the top of
+        //     the picker so first-highlight points at the current
+        //     model
+        return merge_minimax_baseline(minimax_baseline_models(), user_minimax_models());
     }
 
     let client = reqwest::Client::new();
@@ -552,6 +546,62 @@ pub async fn fetch_provider_models(
         },
         _ => Vec::new(),
     }
+}
+
+/// Binary's known MiniMax models. Newest first so the picker
+/// highlights the current model. Update this when MiniMax ships new
+/// releases — the additive merge will reach users on older configs
+/// without them needing to touch `models = [...]` in config.toml.
+fn minimax_baseline_models() -> Vec<String> {
+    vec![
+        "MiniMax-M3".to_string(),
+        "MiniMax-M2.7".to_string(),
+        "MiniMax-M2.5".to_string(),
+        "MiniMax-M2.1".to_string(),
+    ]
+}
+
+/// User's saved MiniMax models from config.toml, plus the
+/// default_model fallback when no list was saved. Empty when no
+/// MiniMax provider is configured.
+fn user_minimax_models() -> Vec<String> {
+    let Ok(config) = crate::config::Config::load() else {
+        return Vec::new();
+    };
+    let Some(p) = &config.providers.minimax else {
+        return Vec::new();
+    };
+    if !p.models.is_empty() {
+        return p.models.clone();
+    }
+    if let Some(model) = &p.default_model {
+        return vec![model.clone()];
+    }
+    Vec::new()
+}
+
+/// Merge MiniMax baseline + user models. Baseline order preserved
+/// at the front (so a fresh release like MiniMax-M3 lands at the
+/// top of the picker on every binary upgrade); user-only entries
+/// appended at the end (so private variants / Text-01 / etc. stay
+/// available). Case-insensitive dedup so `MiniMax-M3` and
+/// `minimax-m3` don't both appear.
+pub(crate) fn merge_minimax_baseline(baseline: Vec<String>, user: Vec<String>) -> Vec<String> {
+    let mut out: Vec<String> = Vec::with_capacity(baseline.len() + user.len());
+    let mut seen = std::collections::HashSet::<String>::new();
+    for m in baseline {
+        let key = m.to_lowercase();
+        if seen.insert(key) {
+            out.push(m);
+        }
+    }
+    for m in user {
+        let key = m.to_lowercase();
+        if seen.insert(key) {
+            out.push(m);
+        }
+    }
+    out
 }
 
 /// Fetch available models from the opencode CLI binary.

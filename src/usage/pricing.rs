@@ -128,6 +128,20 @@ impl PricingConfig {
     /// Falls back to the embedded example file if the user file doesn't exist
     /// (useful for tests and CI environments).
     /// Returns an error only if both the user file and embedded example fail to parse.
+    ///
+    /// **Additive baseline merge:** after parsing the user file, the
+    /// embedded example is parsed too and any `(provider, prefix)` pair
+    /// present in the baseline but missing from the user file is
+    /// appended. The merged file is written back to disk so subsequent
+    /// loads see the new entries without re-running the merge. This is
+    /// how MiniMax-M3 / future model releases reach users who already
+    /// have a `usage_pricing.toml` from an earlier install — without
+    /// this, the seed-on-missing pattern leaves their pricing table
+    /// frozen at whatever shipped on their first install.
+    ///
+    /// The merge is strictly additive: user customisations (renamed
+    /// prefixes, hand-tweaked rates) are NEVER overwritten. Only
+    /// prefixes the user doesn't have at all get appended.
     pub fn load() -> Result<Self, String> {
         let path = crate::config::opencrabs_home().join("usage_pricing.toml");
         let content = match std::fs::read_to_string(&path) {
@@ -138,7 +152,58 @@ impl PricingConfig {
                 return Self::parse_content(example, "embedded example");
             }
         };
-        Self::parse_content(&content, &format!("{:?}", path))
+        let mut user_cfg = Self::parse_content(&content, &format!("{:?}", path))?;
+        // Additive merge with embedded baseline. Skip on parse failure
+        // of the baseline — we never want a bad bundled example to
+        // mask a working user file.
+        let baseline_example = include_str!("../../usage_pricing.toml.example");
+        if let Ok(baseline_cfg) = Self::parse_content(baseline_example, "embedded example baseline")
+        {
+            let added = user_cfg.merge_missing_from(&baseline_cfg);
+            if added > 0 {
+                tracing::info!(
+                    target: "pricing",
+                    added,
+                    path = ?path,
+                    "merged new baseline pricing entries into user pricing file (additive only)"
+                );
+                let new_content = Self::serialize_to_toml(&user_cfg);
+                if let Err(e) = std::fs::write(&path, &new_content) {
+                    tracing::warn!(
+                        target: "pricing",
+                        error = %e,
+                        path = ?path,
+                        "failed to persist merged pricing back to disk — entries are in-memory only \
+                         this session, will re-merge on next load"
+                    );
+                }
+            }
+        }
+        Ok(user_cfg)
+    }
+
+    /// Append any `(provider, prefix)` from `other` that does not exist
+    /// in `self`. Returns the number of entries appended. Idempotent:
+    /// running twice with the same baseline adds zero on the second
+    /// call. Matching is case-insensitive on the `prefix` field —
+    /// `minimax-m3` and `MiniMax-M3` count as the same entry.
+    pub fn merge_missing_from(&mut self, other: &PricingConfig) -> usize {
+        let mut added = 0;
+        for (prov_name, baseline_block) in &other.providers {
+            let user_block = self.providers.entry(prov_name.clone()).or_default();
+            for baseline_entry in &baseline_block.entries {
+                let needle = baseline_entry.prefix.to_lowercase();
+                if !user_block
+                    .entries
+                    .iter()
+                    .any(|e| e.prefix.to_lowercase() == needle)
+                {
+                    user_block.entries.push(baseline_entry.clone());
+                    added += 1;
+                }
+            }
+        }
+        added
     }
 
     /// Parse TOML content with both schema variants.
@@ -220,10 +285,23 @@ impl PricingConfig {
         for (name, block) in providers {
             out.push_str(&format!("[providers.{}]\nentries = [\n", name));
             for e in &block.entries {
-                out.push_str(&format!(
-                    "  {{ prefix = {:?}, input_per_m = {}, output_per_m = {} }},\n",
+                let mut row = format!(
+                    "  {{ prefix = {:?}, input_per_m = {}, output_per_m = {}",
                     e.prefix, e.input_per_m, e.output_per_m
-                ));
+                );
+                // Preserve optional cache rates — without this the
+                // additive merge would silently drop MiniMax-M3's
+                // cache_read_per_m on the first write-back, leaving
+                // the user paying the default 0.1x input fallback
+                // instead of the real $0.12/M list rate.
+                if let Some(cw) = e.cache_write_per_m {
+                    row.push_str(&format!(", cache_write_per_m = {cw}"));
+                }
+                if let Some(cr) = e.cache_read_per_m {
+                    row.push_str(&format!(", cache_read_per_m = {cr}"));
+                }
+                row.push_str(" },\n");
+                out.push_str(&row);
             }
             out.push_str("]\n\n");
         }
