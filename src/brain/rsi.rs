@@ -24,6 +24,10 @@ const RSI_MIN_ENTRIES: i64 = 50;
 /// Max tool iterations for the RSI agent (keep it focused).
 const RSI_MAX_TOOL_ITERATIONS: usize = 10;
 
+/// How often to run the brain-file dedup scan (in RSI cycles).
+/// At 1 hour per cycle, 24 cycles = once per day.
+const DEDUP_SCAN_EVERY_N_CYCLES: u64 = 24;
+
 /// Ensure `~/.opencrabs/rsi/` and `~/.opencrabs/rsi/history/` exist.
 fn ensure_rsi_dirs() -> std::io::Result<PathBuf> {
     let home = crate::config::opencrabs_home();
@@ -526,6 +530,7 @@ pub fn spawn_rsi_engine(
 
         let mut first_iteration = true;
         let mut last_seen_count: i64 = 0;
+        let mut cycle_number: u64 = 0;
         loop {
             let delay = if first_iteration {
                 first_iteration = false;
@@ -825,6 +830,24 @@ pub fn spawn_rsi_engine(
                             });
                         }
                     }
+                }
+            }
+
+            // Periodic brain-file dedup scan — runs every N cycles
+            // (default: once per day at 24 x 1h cycles). Files proposals
+            // into Mission Control for user review. Does NOT auto-apply.
+            cycle_number += 1;
+            if cycle_number % DEDUP_SCAN_EVERY_N_CYCLES == 0 {
+                let brain_path = crate::config::opencrabs_home();
+                let store = crate::brain::rsi_proposals::ProposalsStore::new();
+                let filed = crate::brain::dedup_scan::file_dedup_proposals(&brain_path, &store);
+                if filed > 0 {
+                    tracing::info!("RSI dedup scan: filed {filed} brain-file dedup proposal(s)");
+                    let _ = notification_tx.send(RsiNotification::AgentCycleComplete {
+                        summary: format!("Brain dedup scan: {filed} duplicate(s) found, filed for review in Mission Control."),
+                    });
+                } else {
+                    tracing::debug!("RSI dedup scan: no duplicates found");
                 }
             }
 
