@@ -108,12 +108,16 @@ pub fn detect_language(text: &str) -> &'static LangConfig {
         // common accented-Latin language after Spanish/Portuguese
         if text.contains('à')
             || text.contains('â')
+            || text.contains('é')
+            || text.contains('è')
             || text.contains('ê')
+            || text.contains('ë')
             || text.contains('î')
             || text.contains('ï')
             || text.contains('ô')
             || text.contains('û')
             || text.contains('ù')
+            || text.contains('ü')
             || text.contains('ÿ')
         {
             return &LANG_FR;
