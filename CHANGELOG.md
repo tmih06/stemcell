@@ -6,6 +6,118 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
+## [0.3.34] - 2026-06-02
+
+30 commits since v0.3.33. Stability and UX release closing #141, #142, #147, #148, #149. Alexey Leshchenko (`leshchenko1979`) contributed the file_extract double-extension fix (#146) and RSI counter cleanup (#150); the remaining 28 commits layered brain dedup automation, follow-up question polish across all channels, provider registry hardening, and error-handling improvements on top.
+
+**Brain file dedup scan (closes #147, 6 commits):** New RSI proposal kind that scans all 11 brain files daily, clusters duplicate lines (minimum 10 chars, skips structural markdown like headings and separators), and files dedup proposals into Mission Control. Soft purple badge in the inbox, runs every 24 RSI cycles (about once per day at 1-hour intervals), never auto-applies. Human approval required through the existing `rsi_proposals` apply/reject flow. Core scan logic in `dedup_scan.rs` (393 lines), hooked into the RSI cycle with periodicity gating, 14 regression tests covering empty files, short-line filtering, cross-file detection, proposal format, and canonical selection.
+
+**follow_up_question race fix (closes #142, 5 commits):** All four channels (Telegram, Discord, Slack, WhatsApp) now flush intermediate text handles before presenting the follow-up keyboard. Prevents the race where the bot's in-progress message gets orphaned or duplicated when the user taps a button mid-stream. Each channel got its own atomic commit with per-channel regression tests pinning the flush-before-keyboard sequence.
+
+**follow_up_question display polish (closes #148, 3 commits):** Telegram keyboard is now single-column with a 40-character label cap (rejects options longer than 40 chars in the tool validator with a clear error). Rolling "Running follow_up_question (16s)" status is suppressed while the keyboard is pending, and the LLM is now instructed to call the tool silently without echoing the question text in surrounding prose. Discord left alone due to its 5-ActionRow-per-message hard limit.
+
+**Provider registry cleanup (closes #141, 1 commit):** Dropped hardcoded if-else provider ladders in favor of a single registry source of truth. The registry correctly requires `api_key` for API providers (anthropic, openai, github, gemini, openrouter, minimax), so resolution skips them when keys are missing instead of silently falling back. Follow-up test fix added dummy API keys to 6 test helpers across `provider_sync_test.rs` and `github_provider_test.rs` that were creating `ProviderConfig` without keys.
+
+**RSI decorative counters (closes #149, 2 commits):** PR #150 (leshchenko1979) removed the counter-bumping logic that incremented inline counters in SOUL.md like `phantom_tool_call: 219`. These counters were decorative only, nothing read them, and the real canonical source is the SQLite feedback ledger at `~/.opencrabs/feedback.db`. Counters went stale (ledger showed 302, SOUL.md showed 219) and got wiped by upstream template sync. Replaced with evidence appends (date/session). DB stays the single source of truth. Follow-up commit escaped unescaped double quotes the PR introduced in the prompt string literal and added text regression tests verifying the prompt no longer contains counter-bumping instructions.
+
+**File extract fix (closes #146, 2 commits):** PR #146 (leshchenko1979) collapsed double extensions from forwarded messages (e.g., `document.pdf.pdf` → `document.pdf`). Follow-up commit corrected the `collapse_double_extension` logic to properly rebuild the filename by checking the stem, not just the extension.
+
+**Error handling and persistence (2 commits):** Agent failures now persist as permanent chat bubbles with actionable wording on TUI and channels instead of vanishing. UTF-8 panic after redact-prefix scan fixed by snapping to char boundary.
+
+**TUI and prompt fixes (4 commits):** Unescape literal `\n` sequences in tool-arg display so newlines render correctly. Gated `unescape_display_string` re-export with `#[cfg(test)]` to stop clippy unused-import warnings in non-test builds. Rewrote FINISHING A TURN prompt to split side-effect vs analysis responses and nudge on empty data-fetch closes. Typed model name overrides in onboard flow plus added MiniMax-M3 to the suggestion list.
+
+**Phantom tool call fix (1 commit):** Stopped `phantom_tool_call` from firing on completion acks after successful tool runs.
+
+**Baseline additive merge (1 commit):** Additive merge so new models reach users without manual config edits.
+
+Closes #141, #142, #146, #147, #148, #149.
+
+38 files changed, +1,847/-312.
+
+BRAIN FILE DEDUP SCAN (6 commits, closes #147)
+
+New RSI proposal kind that scans all 11 brain files daily, clusters duplicate lines, and files dedup proposals into Mission Control. Soft purple badge, runs every 24 RSI cycles, never auto-applies. Human approval required. 14 regression tests.
+
+- 49a25af5 feat(rsi): add BrainDedup proposal kind for mission control inbox
+- 0555a514 feat(rsi): add brain file dedup scan core logic
+- 09a848f9 feat(rsi): add file_dedup_proposals to write scan results into ProposalsStore
+- 404246b4 feat(rsi): hook brain dedup scan into RSI cycle with daily periodicity
+- 6a916428 test(rsi): add regression tests for brain dedup scan and proposal generation
+- 3af08075 fix(rsi): register dedup_scan module, fix compilation and test imports
+
+FOLLOW_UP_QUESTION RACE FIX (5 commits, closes #142)
+
+All four channels flush intermediate text handles before presenting the follow-up keyboard. Prevents orphaned or duplicated messages when the user taps a button mid-stream. Per-channel regression tests.
+
+- 52c3702a fix(channels/telegram): flush intermediate text before follow_up_question to prevent race
+- 6c7221be fix(channels/discord): add intermediate text handling and flush before follow_up_question
+- 59e55ce1 fix(channels/slack): flush intermediate handles before follow_up_question to prevent race
+- 281505d2 fix(channels/whatsapp): add intermediate handle tracking and flush before follow_up_question
+- 3dfc5dc3 test(channels): add regression tests for follow_up_question intermediate flush
+
+FOLLOW_UP_QUESTION DISPLAY POLISH (3 commits, closes #148)
+
+Telegram keyboard is now single-column with a 40-char label cap. Rolling status suppressed while keyboard pending. LLM instructed to call tool silently without echoing question text.
+
+- dc050ad7 fix(follow_up_question): single-column Telegram layout, 40-char label cap
+- 05580314 fix(telegram): suppress status messages while follow_up_question is pending
+- a08bd7ef docs(follow_up_question): instruct LLM to call tool silently
+
+PROVIDER REGISTRY CLEANUP (1 commit, closes #141)
+
+Dropped hardcoded if-else provider ladders in favor of a single registry source of truth. Registry correctly requires api_key for API providers.
+
+- d5e96c35 fix(config): drop hardcoded provider ladders, single registry source of truth
+
+RSI DECORATIVE COUNTERS (2 commits, closes #149)
+
+PR #150 (leshchenko1979) removed counter-bumping logic. SQLite feedback ledger is the canonical source. Follow-up escaped unescaped quotes and added text regression tests.
+
+- 4d34e60c fix(brain): stop RSI agent from bumping decorative SOUL.md counters
+- 77a4d57d fix(rsi): escape prompt quotes and add text regression tests
+
+FILE EXTRACT FIX (2 commits, closes #146)
+
+PR #146 (leshchenko1979) collapsed double extensions from forwarded messages. Follow-up corrected filename rebuild logic.
+
+- 2ecf7385 fix(file_extract): collapse double extension from forwarded messages
+- fb5ad506 fix(file_extract): correct collapse_double_extension logic to properly rebuild filename
+
+ERROR HANDLING AND PERSISTENCE (2 commits)
+
+Agent failures now persist as permanent chat bubbles with actionable wording. UTF-8 panic after redact-prefix scan fixed.
+
+- 7256f666 fix(errors): persist agent failures as permanent chat bubbles + actionable wording on TUI and channels
+- 1341212e fix(sanitize): snap to char boundary after redact-prefix scan to stop UTF-8 panic
+
+TUI AND PROMPT FIXES (4 commits)
+
+Unescape literal \n in tool-arg display. Gated unescape_display_string re-export. Rewrote FINISHING A TURN prompt. Typed model name overrides plus MiniMax-M3.
+
+- bc99cb82 fix(tui): unescape literal \n sequences in tool-arg display
+- 1008a06e fix(tui): gate unescape_display_string re-export with cfg(test)
+- 1a2b9c90 fix(agent): split FINISHING A TURN into side-effect + analysis, nudge on empty data-fetch close
+- 54d4d44c fix(prompt): rewrite FINISHING A TURN to require acknowledgement, never silent close
+- 8912500c fix(onboard): typed model name overrides suggestion list + add MiniMax-M3
+
+PHANTOM TOOL CALL FIX (1 commit)
+
+Stopped phantom_tool_call from firing on completion acks.
+
+- e843f405 fix(phantom): stop firing on completion acks after successful tool runs
+
+BASELINE ADDITIVE MERGE (1 commit)
+
+Additive merge so new models reach users without manual config edits.
+
+- addd1956 fix(baseline): additive merge so new models reach users without manual config edits
+
+TEST INFRASTRUCTURE (1 commit)
+
+Added dummy API keys to ProviderConfig test helpers after registry cleanup.
+
+- ce963cac fix(tests): add dummy api_key to ProviderConfig helpers after registry cleanup
+
 ## [0.3.33] - 2026-05-31
 
 2 commits since v0.3.32. Patch release closing #138. The v0.3.32 tag
@@ -5138,3 +5250,4 @@ fixes.
 [0.1.2]: https://github.com/adolfousier/opencrabs/releases/tag/v0.1.2
 [0.1.1]: https://github.com/adolfousier/opencrabs/releases/tag/v0.1.1
 [0.1.0]: https://github.com/adolfousier/opencrabs/releases/tag/v0.1.0
+[0.3.34]: https://github.com/adolfousier/opencrabs/compare/v0.3.33...v0.3.34
