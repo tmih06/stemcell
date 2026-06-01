@@ -7,7 +7,9 @@
 //! see `rsi_proposals` module docs).
 
 use super::types::{McInboxItem, McInboxKind};
-use crate::brain::rsi_proposals::{CommandProposal, ProposalsStore, SkillProposal, ToolProposal};
+use crate::brain::rsi_proposals::{
+    BrainDedupProposal, CommandProposal, ProposalsStore, SkillProposal, ToolProposal,
+};
 
 /// Read every pending tool + command + skill proposal, sorted newest-first.
 pub fn list() -> Vec<McInboxItem> {
@@ -32,6 +34,12 @@ pub fn list_with_store(store: &ProposalsStore) -> Vec<McInboxItem> {
                 .list_skill_proposals()
                 .into_iter()
                 .map(item_from_skill),
+        )
+        .chain(
+            store
+                .list_brain_dedup_proposals()
+                .into_iter()
+                .map(item_from_brain_dedup),
         )
         .collect();
     items.sort_by_key(|i| std::cmp::Reverse(i.created_at));
@@ -74,7 +82,7 @@ fn item_from_command(p: CommandProposal) -> McInboxItem {
 }
 
 fn item_from_skill(p: SkillProposal) -> McInboxItem {
-    // For the inbox card the description is the most useful peek —
+    // For the inbox card the description is the most useful peek ���
     // it's the one-line summary the LLM dispatcher would see anyway,
     // and the multi-line body is too long to fit a card. The kind
     // badge already says "skill" so we don't repeat that here.
@@ -83,6 +91,22 @@ fn item_from_skill(p: SkillProposal) -> McInboxItem {
         label: p.skill.name,
         summary: p.skill.description,
         kind: McInboxKind::ProposedSkill,
+        source: p.proposer,
+        created_at: p.created_at,
+    }
+}
+
+fn item_from_brain_dedup(p: BrainDedupProposal) -> McInboxItem {
+    // Show the target file + duplicate count as the summary so the
+    // user can quickly judge whether the cleanup is worth applying.
+    McInboxItem {
+        id: p.id,
+        label: p.dedup.target_file.clone(),
+        summary: format!(
+            "remove {} duplicate(s) at {} (dup of {})",
+            p.dedup.count, p.dedup.line_range, p.dedup.duplicate_of
+        ),
+        kind: McInboxKind::ProposedBrainDedup,
         source: p.proposer,
         created_at: p.created_at,
     }

@@ -108,6 +108,7 @@ fn card_lines(item: &McInboxItem, card_w: usize, selected: bool) -> Vec<Line<'st
         McInboxKind::ProposedTool => theme::ORANGE,
         McInboxKind::ProposedCommand => theme::TEAL,
         McInboxKind::ProposedSkill => ratatui::style::Color::Rgb(190, 160, 70),
+        McInboxKind::ProposedBrainDedup => ratatui::style::Color::Rgb(160, 120, 200),
     };
 
     // Header: label (bold) + kind badge

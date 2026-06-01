@@ -39,6 +39,7 @@ use crate::brain::tools::dynamic::tool::DynamicToolDef;
 const PROPOSED_TOOLS_FILE: &str = "proposed_tools.toml";
 const PROPOSED_COMMANDS_FILE: &str = "proposed_commands.toml";
 const PROPOSED_SKILLS_FILE: &str = "proposed_skills.toml";
+const PROPOSED_BRAIN_DEDUP_FILE: &str = "proposed_brain_dedup.toml";
 const APPLIED_DIR: &str = "applied";
 const REJECTED_DIR: &str = "rejected";
 
@@ -124,6 +125,43 @@ struct SkillProposalsFile {
     proposals: Vec<SkillProposal>,
 }
 
+/// A pending brain-file dedup proposal authored by the autonomous RSI loop.
+///
+/// When the periodic dedup scan finds duplicate lines or near-duplicate
+/// blocks across brain files (SOUL.md, AGENTS.md, MEMORY.md, etc.), it
+/// files one of these proposals per duplicate cluster. The user reviews
+/// in Mission Control and applies to shrink the file via
+/// `write_opencrabs_file` with `dedup_intent=true`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BrainDedupProposal {
+    pub id: String,
+    pub created_at: DateTime<Utc>,
+    pub proposer: String,
+    pub rationale: String,
+    pub dedup: ProposedBrainDedup,
+}
+
+/// Payload for a brain-file dedup proposal.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProposedBrainDedup {
+    /// Target brain file (e.g. "SOUL.md", "AGENTS.md").
+    pub target_file: String,
+    /// The exact text block to remove (must appear verbatim in the file).
+    pub duplicate_text: String,
+    /// Line range in the file where the duplicate appears (1-indexed, for display).
+    pub line_range: String,
+    /// What this duplicates — e.g. "line 42 of SOUL.md" or "AGENTS.md § Git Rules".
+    pub duplicate_of: String,
+    /// How many duplicate instances were found in this cluster.
+    pub count: usize,
+}
+
+#[derive(Debug, Default, Serialize, Deserialize)]
+struct BrainDedupProposalsFile {
+    #[serde(default)]
+    proposals: Vec<BrainDedupProposal>,
+}
+
 /// On-disk store for proposals. Stateless — every method re-reads the
 /// inbox file before mutating, so it's safe to call from concurrent
 /// task contexts (the RSI background loop and the user-facing agent
@@ -167,6 +205,10 @@ impl ProposalsStore {
         self.rsi_dir.join(PROPOSED_SKILLS_FILE)
     }
 
+    fn brain_dedup_path(&self) -> PathBuf {
+        self.rsi_dir.join(PROPOSED_BRAIN_DEDUP_FILE)
+    }
+
     fn read_tools(&self) -> ToolProposalsFile {
         Self::read_file(&self.tools_path()).unwrap_or_default()
     }
@@ -177,6 +219,10 @@ impl ProposalsStore {
 
     fn read_skills(&self) -> SkillProposalsFile {
         Self::read_file(&self.skills_path()).unwrap_or_default()
+    }
+
+    fn read_brain_dedup(&self) -> BrainDedupProposalsFile {
+        Self::read_file(&self.brain_dedup_path()).unwrap_or_default()
     }
 
     fn read_file<T: serde::de::DeserializeOwned>(path: &Path) -> Option<T> {
@@ -208,6 +254,13 @@ impl ProposalsStore {
         self.ensure_dirs()?;
         let toml_str = toml::to_string_pretty(file)?;
         fs::write(self.skills_path(), toml_str)?;
+        Ok(())
+    }
+
+    fn write_brain_dedup(&self, file: &BrainDedupProposalsFile) -> Result<()> {
+        self.ensure_dirs()?;
+        let toml_str = toml::to_string_pretty(file)?;
+        fs::write(self.brain_dedup_path(), toml_str)?;
         Ok(())
     }
 
@@ -281,6 +334,31 @@ impl ProposalsStore {
         Ok(id)
     }
 
+    /// Append a brain dedup proposal. Dedups by (target_file, duplicate_text)
+    /// so the inbox doesn't fill with retries for the same duplicate cluster.
+    pub fn add_brain_dedup_proposal(
+        &self,
+        proposer: impl Into<String>,
+        rationale: impl Into<String>,
+        dedup: ProposedBrainDedup,
+    ) -> Result<String> {
+        let mut file = self.read_brain_dedup();
+        let id = generate_id("dedup", &dedup.target_file);
+        file.proposals.retain(|p| {
+            !(p.dedup.target_file == dedup.target_file
+                && p.dedup.duplicate_text == dedup.duplicate_text)
+        });
+        file.proposals.push(BrainDedupProposal {
+            id: id.clone(),
+            created_at: Utc::now(),
+            proposer: proposer.into(),
+            rationale: rationale.into(),
+            dedup,
+        });
+        self.write_brain_dedup(&file)?;
+        Ok(id)
+    }
+
     pub fn list_tool_proposals(&self) -> Vec<ToolProposal> {
         self.read_tools().proposals
     }
@@ -293,12 +371,17 @@ impl ProposalsStore {
         self.read_skills().proposals
     }
 
-    /// Total number of pending entries across all three inboxes —
+    pub fn list_brain_dedup_proposals(&self) -> Vec<BrainDedupProposal> {
+        self.read_brain_dedup().proposals
+    }
+
+    /// Total number of pending entries across all four inboxes —
     /// used by the TUI session-start banner.
     pub fn pending_count(&self) -> usize {
         self.read_tools().proposals.len()
             + self.read_commands().proposals.len()
             + self.read_skills().proposals.len()
+            + self.read_brain_dedup().proposals.len()
     }
 
     /// Remove a tool proposal by id and return it (so the caller can
@@ -336,6 +419,17 @@ impl ProposalsStore {
         Ok(Some(taken))
     }
 
+    pub fn take_brain_dedup_proposal(&self, id: &str) -> Result<Option<BrainDedupProposal>> {
+        let mut file = self.read_brain_dedup();
+        let pos = file.proposals.iter().position(|p| p.id == id);
+        let Some(idx) = pos else {
+            return Ok(None);
+        };
+        let taken = file.proposals.remove(idx);
+        self.write_brain_dedup(&file)?;
+        Ok(Some(taken))
+    }
+
     /// Append an applied tool proposal to the daily archive
     /// (`applied/YYYY-MM-DD-tools.toml`).
     pub fn archive_applied_tool(&self, proposal: &ToolProposal) -> Result<()> {
@@ -348,6 +442,23 @@ impl ProposalsStore {
 
     pub fn archive_applied_skill(&self, proposal: &SkillProposal) -> Result<()> {
         self.archive(APPLIED_DIR, "skills", proposal)
+    }
+
+    pub fn archive_applied_brain_dedup(&self, proposal: &BrainDedupProposal) -> Result<()> {
+        self.archive(APPLIED_DIR, "brain_dedup", proposal)
+    }
+
+    pub fn archive_rejected_brain_dedup(
+        &self,
+        proposal: &BrainDedupProposal,
+        reason: Option<&str>,
+    ) -> Result<()> {
+        let mut wrapped = ArchivedProposal {
+            inner: proposal.clone(),
+            reason: reason.map(str::to_string),
+        };
+        wrapped.reason = reason.map(str::to_string);
+        self.archive(REJECTED_DIR, "brain_dedup", &wrapped)
     }
 
     pub fn archive_rejected_skill(

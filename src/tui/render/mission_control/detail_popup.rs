@@ -67,6 +67,7 @@ fn render_inbox_item(item: &McInboxItem) -> Vec<Line<'static>> {
         McInboxKind::ProposedTool => "tool",
         McInboxKind::ProposedCommand => "command",
         McInboxKind::ProposedSkill => "skill",
+        McInboxKind::ProposedBrainDedup => "dedup",
     };
     let filed = item.created_at.format("%Y-%m-%d %H:%M UTC").to_string();
     let mut lines: Vec<Line<'static>> = vec![

@@ -36,6 +36,9 @@ pub enum McInboxKind {
     /// RSI-proposed skill (lands at `~/.opencrabs/skills/<name>/SKILL.md`
     /// on apply, with YAML frontmatter wrapping the proposed body).
     ProposedSkill,
+    /// RSI-proposed brain file dedup (applied via `write_opencrabs_file`
+    /// with `dedup_intent=true` to shrink a brain file).
+    ProposedBrainDedup,
 }
 
 impl McInboxKind {
@@ -44,6 +47,7 @@ impl McInboxKind {
             Self::ProposedTool => "tool",
             Self::ProposedCommand => "command",
             Self::ProposedSkill => "skill",
+            Self::ProposedBrainDedup => "dedup",
         }
     }
 }
