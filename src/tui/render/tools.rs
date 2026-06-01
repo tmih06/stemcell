@@ -101,9 +101,29 @@ pub(super) fn render_tool_group<'a>(
                                 .add_modifier(Modifier::BOLD),
                         ),
                     ]));
-                    // Value — expand strings line by line, cap at 200 lines
+                    // Value — expand strings line by line, cap at 200 lines.
+                    //
+                    // Models periodically emit tool args where multi-line
+                    // payloads use the literal escape sequence `\n`
+                    // (backslash + n) instead of actual newline bytes —
+                    // either because the args body got JSON-stringified
+                    // once too many times, or because the model copied
+                    // a Rust string literal verbatim into the arg slot.
+                    // When that happens, `s.lines()` doesn't split (it
+                    // only sees actual `\n`/`\r\n` chars), so the entire
+                    // multi-line payload becomes one logical line that
+                    // ratatui then wraps at the content width — visible
+                    // as `chars. Cap is 40. Shorten it.",\n  opt,\n  ...`
+                    // all run together with literal `\n` separators.
+                    // Reported 2026-06-01 on a qwen Edit tool call where
+                    // a 7-line `old_string` rendered as one wrapped
+                    // soup. Unescape the common JSON-shape sequences
+                    // before splitting.
                     let value_lines: Vec<String> = match value {
-                        serde_json::Value::String(s) => s.lines().map(|l| l.to_string()).collect(),
+                        serde_json::Value::String(s) => unescape_display_string(s)
+                            .lines()
+                            .map(|l| l.to_string())
+                            .collect(),
                         _ => vec![value.to_string()],
                     };
                     let total = value_lines.len();
@@ -530,4 +550,58 @@ pub(super) fn render_approve_menu<'a>(
             )]));
         }
     }
+}
+
+/// Unescape common JSON-shape escape sequences in a tool-arg string
+/// so the renderer can split on real newlines. Used when the model
+/// emitted `"old_string": "fn foo()\\n{\\n}"` (literal backslash-n)
+/// instead of `"old_string": "fn foo()\n{\n}"` (actual newline bytes).
+///
+/// Conservative replacement: only the sequences we KNOW would break
+/// the line-by-line display when present as literal escapes. Doesn't
+/// touch JSON-only escapes (`\u00XX`, `\/`) or anything that could
+/// silently distort the meaning of code being edited. If the source
+/// genuinely contains the two-char sequence `\n` (e.g. a Rust string
+/// literal showing escape syntax in documentation), the resulting
+/// false-positive is an actual newline in the preview — acceptable
+/// trade-off since the preview is for human display, not editing.
+pub(crate) fn unescape_display_string(s: &str) -> String {
+    // Skip the work for the common case where no escapes are present.
+    if !s.contains('\\') {
+        return s.to_string();
+    }
+    let mut out = String::with_capacity(s.len());
+    let mut chars = s.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '\\' {
+            match chars.peek() {
+                Some('n') => {
+                    chars.next();
+                    out.push('\n');
+                }
+                Some('t') => {
+                    chars.next();
+                    out.push_str("    ");
+                }
+                Some('r') => {
+                    chars.next();
+                    // Drop literal \r — multiline renderer treats \n as
+                    // the only line separator, and a trailing \r would
+                    // show as a control character on Linux/macOS.
+                }
+                Some('"') => {
+                    chars.next();
+                    out.push('"');
+                }
+                Some('\\') => {
+                    chars.next();
+                    out.push('\\');
+                }
+                _ => out.push(c),
+            }
+        } else {
+            out.push(c);
+        }
+    }
+    out
 }

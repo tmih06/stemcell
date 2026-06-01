@@ -27,6 +27,7 @@ pub(crate) use chat::reasoning_to_lines;
 pub(crate) use input::{DropdownFit, dropdown_dimensions, fit_dropdown, truncate_to_chars};
 #[cfg(test)]
 pub(crate) use tools::collapse_build_output;
+pub(crate) use tools::unescape_display_string;
 
 use super::app::App;
 use super::events::AppMode;
