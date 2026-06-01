@@ -92,6 +92,24 @@ intent_phrases = [
     "je devrais vérifier",
     "je devrais regarder",
     "je devrais examiner",
+    # Telegraphic / pronoun-dropped variants — 2026-06-01: models
+    # sometimes drop the leading "j'ai" in informal French narration
+    # the same way English models drop "I" in "Need to read…".
+    "besoin de lire",
+    "besoin de vérifier",
+    "besoin de regarder",
+    "besoin d'examiner",
+    "besoin de comprendre",
+    "besoin de voir",
+    "besoin de trouver",
+    "besoin d'enquêter",
+    "besoin de chercher",
+    "besoin de mettre à jour",
+    "besoin de corriger",
+    "besoin de modifier",
+    "besoin de créer",
+    "besoin d'écrire",
+    "besoin d'ajouter",
 ]
 
 action_verbs = [

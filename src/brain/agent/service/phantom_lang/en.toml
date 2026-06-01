@@ -265,6 +265,87 @@ intent_phrases = [
     "i should investigate",
     "i should examine",
     "i should review",
+    # Pronounless "Need to X" variants — 2026-06-01: model emitted
+    # "Need to read the tool_loop_inner function entry to add turn
+    # timing. Let me check that first." The existing list only covered
+    # "i need to X" with the explicit pronoun. Some models (terser
+    # outputs, telegraphic narration style) drop the leading "I". These
+    # patterns are sentence-leading variants — they catch the start of
+    # a phantom-narration line whether the pronoun is present or not.
+    "need to read",
+    "need to check",
+    "need to look",
+    "need to examine",
+    "need to inspect",
+    "need to verify",
+    "need to review",
+    "need to understand",
+    "need to see",
+    "need to find",
+    "need to investigate",
+    "need to explore",
+    "need to search",
+    "need to gather",
+    "need to fetch",
+    "need to update",
+    "need to fix",
+    "need to modify",
+    "need to create",
+    "need to write",
+    "need to edit",
+    "need to add",
+    "need to remove",
+    "need to delete",
+    "need to run",
+    "need to install",
+    "need to configure",
+    "need to dig",
+    # `have to X` / `must X` / `should X` deliberately NOT added without
+    # the pronoun — they collide too easily with unrelated prose like
+    # "you should check the docs" or "the file must read like a manual"
+    # and would false-positive the phantom detector on legit text. The
+    # `i have to X` / `i must X` / `i should X` forms above stay
+    # because the explicit pronoun anchors the phrase to first-person
+    # narration.
+    # Bare-gerund sentence openers — 2026-06-01: model emitted
+    # "Reading the current state of the affected files to make precise
+    # edits." with no leading "I'm" / "let me" / "now". The
+    # "<gerund> + <determiner>" bigram is rare enough in normal Q&A
+    # prose (the model typically reports findings rather than narrating
+    # the act of reading) that substring matches inside the prose lead-
+    # in are safely treated as phantom narration when no tool was
+    # called in the same turn.
+    "reading the ",
+    "reading current",
+    "reading affected",
+    "reading existing",
+    "checking the ",
+    "checking current",
+    "checking existing",
+    "examining the ",
+    "examining current",
+    "examining existing",
+    "inspecting the ",
+    "inspecting current",
+    "verifying the ",
+    "verifying current",
+    "reviewing the ",
+    "reviewing current",
+    "investigating the ",
+    "investigating current",
+    "exploring the ",
+    "exploring current",
+    "searching the ",
+    "searching for the ",
+    "scanning the ",
+    "tracing the ",
+    "tracking the ",
+    "gathering the ",
+    "fetching the ",
+    "looking at the ",
+    "looking at current",
+    "looking at existing",
+    "looking into the ",
 ]
 
 action_verbs = [
