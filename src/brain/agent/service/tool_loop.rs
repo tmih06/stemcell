@@ -690,6 +690,17 @@ impl AgentService {
         // completed work (logged in user reports as "phantom detected"
         // x8+ after a clean commit+push).
         let mut tool_calls_completed_this_turn: usize = 0;
+        // One-shot nudge budget for the empty-analysis case: model ran
+        // tool calls (e.g. `gh pr view`) on a user request whose verb
+        // signals analysis ("audit the PR") but ended with
+        // `finish_reason: stop` and zero text. The user expected an
+        // analytical answer that uses the fetched data; the FINISHING
+        // A TURN directive earlier in the brain prompt explains both
+        // task shapes (side-effect vs. analysis). Once is enough — if
+        // the model still won't write analysis after the nudge, the
+        // text-completion path takes over and a one-line "Done." is
+        // the user-visible behaviour.
+        let mut analysis_nudge_used: bool = false;
         let mut total_input_tokens = 0u32;
         let mut total_output_tokens = 0u32;
         let mut total_cache_creation = 0u32;
@@ -3522,6 +3533,69 @@ impl AgentService {
                 }
 
                 if iteration > 0 {
+                    // Empty-analysis nudge: the model ran successful
+                    // tool calls but produced ZERO text on the final
+                    // iteration. For side-effect tasks (commit / push /
+                    // edit) this is the intended outcome of the
+                    // FINISHING A TURN directive — the tool result IS
+                    // the deliverable. For analysis tasks ("audit X",
+                    // "compare A and B", "what does Y do") the fetched
+                    // data was meant to be INPUT to a text answer, and
+                    // empty text means the user got nothing. One-shot
+                    // nudge wakes the model up. If even after the
+                    // nudge it still emits nothing, fall through and
+                    // let the empty-text close stand — better than
+                    // looping. Detection uses the clean user message
+                    // when a channel handler supplied one (the
+                    // `[Channel: ...]` prefix would otherwise pin
+                    // every match to the wrapper, not the body).
+                    let user_text_for_intent =
+                        display_text_override.as_deref().unwrap_or(&user_message);
+                    if !analysis_nudge_used
+                        && iteration_text.trim().is_empty()
+                        && tool_calls_completed_this_turn > 0
+                        && super::phantom::is_analysis_intent(user_text_for_intent)
+                    {
+                        analysis_nudge_used = true;
+                        tracing::warn!(
+                            target: "analysis_empty_close",
+                            tools_completed = tool_calls_completed_this_turn,
+                            iteration,
+                            "model ended turn with zero text after analysis-intent request — \
+                             nudging once to produce the answer the user asked for"
+                        );
+                        self.record_provider_feedback(
+                            session_id,
+                            "analysis_empty_close",
+                            "self_heal",
+                            Some(&format!(
+                                "iteration={iteration}, tools_completed={tool_calls_completed_this_turn}"
+                            )),
+                        );
+                        if let Some(ref cb) = progress_callback {
+                            cb(
+                                session_id,
+                                ProgressEvent::SelfHealingAlert {
+                                    message: "Empty answer after data fetch — nudging the model to write the analysis"
+                                        .to_string(),
+                                },
+                            );
+                        }
+                        context.add_message(Message::user(
+                            "[System: You fetched data via tool calls but ended the turn with NO \
+                             text response. The user's request was an analysis task (audit / \
+                             review / explain / compare / summarise) where the tool result is \
+                             INPUT to your answer, not the answer itself. Write the actual \
+                             analysis now — cite specific fields, line numbers, or values from \
+                             what you fetched. Do NOT run more tool calls; you already have the \
+                             data. Do NOT reply with 'Done.' or 'Got it.' — those are for \
+                             side-effect tasks, this is data interpretation. End once the \
+                             analysis is written.]"
+                                .to_string(),
+                        ));
+                        continue;
+                    }
+
                     tracing::info!("Agent completed after {} tool iterations", iteration);
                     // Emit final text so TUI persists it as a permanent message.
                     // CLI providers: helpers.rs already flushed cli_unflushed_text

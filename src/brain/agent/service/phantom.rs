@@ -227,6 +227,79 @@ fn prose_lead_in(text: &str) -> &str {
     text
 }
 
+/// Does the user message contain an analysis / data-interpretation verb?
+///
+/// Used to detect "the user asked me to AUDIT something" vs. "the user
+/// asked me to COMMIT something" so the runtime can react when a turn
+/// ends with `finish_reason: stop` and ZERO text after successful tool
+/// calls. For side-effect tasks (commit / push / edit / deploy), the
+/// tool call IS the deliverable — empty-text completion is fine. For
+/// analysis tasks, the tool fetched data the user expected the model
+/// to interpret — empty-text completion is a regression we shipped via
+/// the `FINISHING A TURN` directive in commit e843f405.
+///
+/// Matches at a word boundary so prose like "you describe this
+/// pattern" does NOT trip on "describe" inside another sentence. Only
+/// the leading-imperative / question form counts.
+///
+/// Coverage is intentionally English-only for now. Spanish / Portuguese
+/// / French / Russian variants follow the same shape; this MVP catches
+/// the common case and can be expanded as patterns emerge in logs.
+pub fn is_analysis_intent(text: &str) -> bool {
+    let lower = text.to_lowercase();
+    // Strip the channel prefix if present so `[Channel: Telegram ...]\n<msg>`
+    // matches on `<msg>` content, not on the bracketed wrapper.
+    let body = lower.rsplit('\n').next().unwrap_or(&lower);
+    // Look at the first ~200 chars only — the verb is in the request,
+    // not buried in a long quote.
+    let head: String = body.chars().take(200).collect();
+    // Phrase patterns to match. Each entry is matched as a contained
+    // substring on the head — short verbs need leading whitespace or
+    // start-of-string to avoid matching inside another word
+    // ("examine" should not trigger on "exam"; "audit" must not
+    // trigger on "auditorium" in a quoted URL).
+    let leading_word = |w: &str| -> bool {
+        // Match at start or after whitespace/punct, followed by space.
+        // Cheap manual scan rather than a regex — keeps this hot path
+        // allocation-free for the common no-match case.
+        let needle = format!(" {w} ");
+        if head.starts_with(&format!("{w} ")) {
+            return true;
+        }
+        head.contains(&needle)
+    };
+    const ANALYSIS_VERBS: &[&str] = &[
+        "audit",
+        "review",
+        "compare",
+        "explain",
+        "summarise",
+        "summarize",
+        "check",
+        "describe",
+        "analyse",
+        "analyze",
+        "find",
+        "look up",
+        "look at",
+        "what does",
+        "how does",
+        "why does",
+        "what is",
+        "what are",
+        "tell me",
+        "show me",
+        "investigate",
+        "diagnose",
+    ];
+    // "report" deliberately omitted — too noun-ambiguous. "the report
+    // says X" and "your report failed" would false-positive the
+    // analysis-nudge while no analysis was requested. `report on X`
+    // is rare enough that users who want it can rephrase as "explain
+    // X" or "summarise X" without losing precision.
+    ANALYSIS_VERBS.iter().any(|v| leading_word(v))
+}
+
 /// Heuristic: does `text` look like it was truncated mid-sentence?
 pub fn looks_truncated_mid_sentence(text: &str) -> bool {
     let trimmed = text.trim_end();

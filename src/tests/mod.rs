@@ -7,6 +7,7 @@ pub mod agent_service_mocks;
 pub mod agent_streaming_usage_test;
 pub mod agent_tool_normalization_test;
 pub mod altgr_input_test;
+pub mod analysis_intent_nudge_test;
 pub mod auto_title_e2e_test;
 pub mod auto_title_test;
 pub mod bash_feedback_enrichment_test;
