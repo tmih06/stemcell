@@ -121,27 +121,36 @@ fn phantom_eligible_gate_replaces_naked_is_cli_provider_check() {
 }
 
 #[test]
-fn brain_preamble_directs_one_line_completion() {
-    // The model needs to KNOW the expected shape of a completion
-    // turn, not just have the runtime catch the loop. Pin the
-    // directive's key phrases so a future preamble refactor doesn't
-    // accidentally drop it.
+fn brain_preamble_directs_clear_acknowledgement_not_silent_close() {
+    // Original directive wording ("ONE short acknowledgement line and
+    // stop", with bare-word examples like "Done.") was interpreted by
+    // the model as "produce no text at all" — it started emitting
+    // `finish_reason: stop` with empty delta on basically every
+    // side-effect turn. Looked like a silent crash to the user.
+    //
+    // The rewritten directive REQUIRES the acknowledgement and tells
+    // the model that empty completions are the worst possible outcome.
+    // Pin the key phrases that prevent the regression from sneaking
+    // back via a refactor.
     assert!(
         PROMPT_BUILDER_SRC.contains("FINISHING A TURN"),
         "BRAIN_PREAMBLE must carry the FINISHING A TURN directive header"
     );
     assert!(
-        PROMPT_BUILDER_SRC.contains("ONE short acknowledgement line"),
-        "directive must spell out the one-line shape"
+        PROMPT_BUILDER_SRC.contains("never disappear silently"),
+        "directive header must forbid empty closes — the bug it was added to prevent"
+    );
+    assert!(
+        PROMPT_BUILDER_SRC.contains("never end with empty content"),
+        "directive must explicitly forbid `finish_reason: stop` with no text"
+    );
+    assert!(
+        PROMPT_BUILDER_SRC.contains("Empty completions"),
+        "directive must call out empty completions as a failure mode, not a valid close"
     );
     assert!(
         PROMPT_BUILDER_SRC.contains("Do NOT run \"verification\" tool calls"),
         "directive must forbid verification re-runs — the secondary loop pattern"
-    );
-    assert!(
-        PROMPT_BUILDER_SRC.contains("you are looping on a completed task"),
-        "directive must give the model a self-detection signal so it can break out \
-         even when the runtime exemption hasn't caught up yet"
     );
 }
 
