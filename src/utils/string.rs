@@ -110,23 +110,28 @@ fn format_token_count(tokens: u32) -> String {
     }
 }
 
-/// Format a context budget footer line: "ctx: 8K/200K 4%".
+/// Format a context budget footer line: "ctx: 8K/200K 4% | 45 tok/s".
 ///
 /// Used by channel handlers to append a context usage indicator to the
 /// final message delivered to the user. Plain text so it works across all
 /// channel-specific formatters (Telegram HTML, Discord markdown, Slack mrkdwn, WhatsApp).
-pub fn format_ctx_footer(used: u32, max: u32) -> String {
+pub fn format_ctx_footer(used: u32, max: u32, tps: Option<f64>) -> String {
     let pct = if max > 0 {
         (used as f64 / max as f64) * 100.0
     } else {
         0.0
     };
-    format!(
+    let base = format!(
         "ctx: {}/{} {:.0}%",
         format_token_count(used),
         format_token_count(max),
         pct
-    )
+    );
+    if let Some(rate) = tps {
+        format!("{} | {:.0} tok/s", base, rate)
+    } else {
+        base
+    }
 }
 
 #[cfg(test)]
@@ -260,31 +265,49 @@ mod tests {
 
     #[test]
     fn test_format_ctx_footer_k_values() {
-        assert_eq!(format_ctx_footer(8000, 200000), "ctx: 8K/200K 4%");
+        assert_eq!(format_ctx_footer(8000, 200000, None), "ctx: 8K/200K 4%");
     }
 
     #[test]
     fn test_format_ctx_footer_small_values() {
-        assert_eq!(format_ctx_footer(500, 200000), "ctx: 500/200K 0%");
+        assert_eq!(format_ctx_footer(500, 200000, None), "ctx: 500/200K 0%");
     }
 
     #[test]
     fn test_format_ctx_footer_m_values() {
-        assert_eq!(format_ctx_footer(1200000, 2000000), "ctx: 1.2M/2.0M 60%");
+        assert_eq!(
+            format_ctx_footer(1200000, 2000000, None),
+            "ctx: 1.2M/2.0M 60%"
+        );
     }
 
     #[test]
     fn test_format_ctx_footer_zero_used() {
-        assert_eq!(format_ctx_footer(0, 200000), "ctx: 0/200K 0%");
+        assert_eq!(format_ctx_footer(0, 200000, None), "ctx: 0/200K 0%");
     }
 
     #[test]
     fn test_format_ctx_footer_zero_max() {
-        assert_eq!(format_ctx_footer(5000, 0), "ctx: 5K/0 0%");
+        assert_eq!(format_ctx_footer(5000, 0, None), "ctx: 5K/0 0%");
     }
 
     #[test]
     fn test_format_ctx_footer_full() {
-        assert_eq!(format_ctx_footer(200000, 200000), "ctx: 200K/200K 100%");
+        assert_eq!(
+            format_ctx_footer(200000, 200000, None),
+            "ctx: 200K/200K 100%"
+        );
+    }
+
+    #[test]
+    fn test_format_ctx_footer_with_tps() {
+        assert_eq!(
+            format_ctx_footer(8000, 200000, Some(45.7)),
+            "ctx: 8K/200K 4% | 46 tok/s"
+        );
+        assert_eq!(
+            format_ctx_footer(500, 200000, Some(123.4)),
+            "ctx: 500/200K 0% | 123 tok/s"
+        );
     }
 }

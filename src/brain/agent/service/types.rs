@@ -196,6 +196,9 @@ pub struct AgentResponse {
     /// Actual context window usage from the last API call (for display)
     pub context_tokens: u32,
 
+    /// Tokens per second for this turn (for display in channel footers)
+    pub tokens_per_second: Option<f64>,
+
     /// Cost in USD
     pub cost: f64,
 

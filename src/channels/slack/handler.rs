@@ -1082,7 +1082,7 @@ async fn handle_message(
                         .await;
                         let baseline = state.agent.base_context_tokens();
                         let ctx_max = state.agent.context_limit_for_session(new_session.id);
-                        let footer = crate::utils::format_ctx_footer(baseline, ctx_max);
+                        let footer = crate::utils::format_ctx_footer(baseline, ctx_max, None);
                         let msg_text = format!("✅ New session started.\n\n{footer}");
                         let token =
                             SlackApiToken::new(SlackApiTokenValue::from(state.current_bot_token()));
@@ -1844,7 +1844,7 @@ async fn handle_message(
             // This ensures it appears at the very end, after all response delivery is complete
             tokio::time::sleep(std::time::Duration::from_secs(2)).await;
             let ctx_max = state.agent.context_limit_for_session(session_id);
-            let footer = crate::utils::format_ctx_footer(response.context_tokens, ctx_max);
+            let footer = crate::utils::format_ctx_footer(response.context_tokens, ctx_max, response.tokens_per_second);
             let mut footer_request = SlackApiChatPostMessageRequest::new(
                 SlackChannelId::new(channel_id.clone()),
                 SlackMessageContent::new().with_text(footer.clone()),

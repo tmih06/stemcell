@@ -280,6 +280,9 @@ impl AgentService {
         progress_callback: Option<ProgressCallback>,
         question_callback: Option<QuestionCallback>,
     ) -> Result<AgentResponse> {
+        // Track turn start time for tok/s calculation in channel footers
+        let turn_start = std::time::Instant::now();
+
         // Get or create session
         let session_service = SessionService::new(self.context.clone());
         let session = session_service
@@ -572,6 +575,7 @@ impl AgentService {
                             ..Default::default()
                         },
                         context_tokens: context.token_count as u32,
+                        tokens_per_second: None,
                         cost: 0.0,
                         model: model_name,
                         provider_name: self.provider_name_for_session(session_id),
@@ -603,6 +607,7 @@ impl AgentService {
                             ..Default::default()
                         },
                         context_tokens: context.token_count as u32,
+                        tokens_per_second: None,
                         cost: 0.0,
                         model: model_name,
                         provider_name: self.provider_name_for_session(session_id),
@@ -4591,6 +4596,14 @@ impl AgentService {
             ));
         }
 
+        // Calculate tokens per second for channel footer display
+        let turn_duration = turn_start.elapsed().as_secs_f64();
+        let tokens_per_second = if turn_duration > 0.0 && total_output_tokens > 0 {
+            Some(total_output_tokens as f64 / turn_duration)
+        } else {
+            None
+        };
+
         Ok(AgentResponse {
             message_id: assistant_db_msg.id,
             content: final_text,
@@ -4603,6 +4616,7 @@ impl AgentService {
                 ..Default::default()
             },
             context_tokens: context.token_count as u32,
+            tokens_per_second,
             cost,
             model: response.model,
             provider_name: self.provider_name_for_session(session_id),

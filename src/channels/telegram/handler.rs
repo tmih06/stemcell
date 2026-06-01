@@ -1275,7 +1275,7 @@ pub(crate) async fn handle_message(
                         .await;
                         let baseline = agent.base_context_tokens();
                         let ctx_max = agent.context_limit_for_session(new_session.id);
-                        let footer = crate::utils::format_ctx_footer(baseline, ctx_max);
+                        let footer = crate::utils::format_ctx_footer(baseline, ctx_max, None);
                         let msg_text = format!("✅ New session started.\n\n{footer}");
                         message_in_thread(&bot, msg.chat.id, thread_id, &msg_text).await?;
                         tracing::info!(
@@ -2273,7 +2273,7 @@ pub(crate) async fn handle_message(
             // calls, intermediate text). The footer is metadata about the
             // turn, not part of the response body.
             let ctx_max = agent.context_limit_for_session(session_id);
-            let footer = crate::utils::format_ctx_footer(response.context_tokens, ctx_max);
+            let footer = crate::utils::format_ctx_footer(response.context_tokens, ctx_max, response.tokens_per_second);
             tracing::info!(
                 "Telegram footer: ctx footer='{}' (context_tokens={}, ctx_max={}) — will send as separate message after 2s delay",
                 footer,
@@ -2441,7 +2441,7 @@ pub(crate) async fn handle_message(
             // This ensures it appears at the very end, after all response delivery is complete
             tokio::time::sleep(std::time::Duration::from_secs(2)).await;
             let ctx_max = agent.context_limit_for_session(session_id);
-            let footer = crate::utils::format_ctx_footer(response.context_tokens, ctx_max);
+            let footer = crate::utils::format_ctx_footer(response.context_tokens, ctx_max, response.tokens_per_second);
             if let Err(e) = message_in_thread(&bot, msg.chat.id, thread_id, &footer).await {
                 tracing::warn!("Telegram: failed to send ctx footer: {}", e);
             } else {
@@ -2950,7 +2950,7 @@ pub(crate) async fn resume_session(
             // calls, intermediate text). The footer is metadata about the
             // turn, not part of the response body.
             let ctx_max = agent.context_limit_for_session(session_id);
-            let footer = crate::utils::format_ctx_footer(response.context_tokens, ctx_max);
+            let footer = crate::utils::format_ctx_footer(response.context_tokens, ctx_max, response.tokens_per_second);
             tracing::info!(
                 "Telegram footer: ctx footer='{}' (context_tokens={}, ctx_max={}) — will send as separate message after 2s delay",
                 footer,

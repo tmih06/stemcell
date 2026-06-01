@@ -80,6 +80,7 @@ impl AgentService {
             stop_reason: response.stop_reason,
             context_tokens: response.usage.input_tokens,
             usage: response.usage,
+            tokens_per_second: None,
             cost,
             model: response.model,
             provider_name: self.provider_name_for_session(session_id),
