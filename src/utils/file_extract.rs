@@ -124,11 +124,11 @@ fn collapse_double_extension(name: &str) -> String {
         return name.to_string();
     }
     let parts_rev = parts.into_iter().rev().collect::<Vec<_>>();
-    let inner = parts_rev[1].to_lowercase();
-    let outer = parts_rev[2].to_lowercase();
-    if inner == outer && !inner.is_empty() {
-        // Rebuild: base + "." + inner (drop the duplicate outer)
-        format!("{}.{}", &name[..name.len() - parts_rev[2].len() - 1], inner)
+    let inner = parts_rev[1];
+    let outer = parts_rev[2];
+    if inner.eq_ignore_ascii_case(outer) && !inner.is_empty() {
+        // Rebuild: base + "." + inner (preserve original case of inner ext)
+        format!("{}.{}", parts_rev[0], inner)
     } else {
         name.to_string()
     }
