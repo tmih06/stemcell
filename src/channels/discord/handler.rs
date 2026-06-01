@@ -844,7 +844,11 @@ pub(crate) async fn handle_message(
         }
         Err(e) => {
             tracing::error!("Discord: agent error: {}", e);
-            let error_msg = format!("Error: {}", e);
+            // Shared helper translates the raw error into something
+            // the user can act on (5xx exhausted, rate limit, context
+            // too large, stream broken, repetition loop). Same wording
+            // as the TUI + Telegram + Slack + WhatsApp paths.
+            let error_msg = format!("❌ Error\n\n{}", crate::brain::agent::format_user_error(&e));
             let _ = msg.channel_id.say(&ctx.http, error_msg).await;
         }
     }

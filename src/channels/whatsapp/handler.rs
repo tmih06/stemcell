@@ -1184,8 +1184,15 @@ pub(crate) async fn handle_message(
         }
         Err(e) => {
             tracing::error!("WhatsApp: agent error: {}", e);
+            // Shared helper translates the raw error into something
+            // actionable. Same wording as TUI / Telegram / Discord /
+            // Slack.
             let error_msg = waproto::whatsapp::Message {
-                conversation: Some(format!("{}\n\nError: {}", MSG_HEADER, e)),
+                conversation: Some(format!(
+                    "{}\n\n❌ Error\n\n{}",
+                    MSG_HEADER,
+                    crate::brain::agent::format_user_error(&e)
+                )),
                 ..Default::default()
             };
             let _ = client

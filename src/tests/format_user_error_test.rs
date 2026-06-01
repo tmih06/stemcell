@@ -1,0 +1,167 @@
+//! Tests for `brain::agent::format_user_error` — the shared helper that
+//! turns raw `AgentError` strings into something the user can act on.
+//!
+//! Before this helper landed, every surface (TUI toast, Telegram chat,
+//! Discord chat, Slack chat, WhatsApp chat) printed the raw
+//! `Provider error: API error (502): HTTP 502: error code: 502` and
+//! the TUI version auto-dismissed after 2.5s. Result: a user whose
+//! turn died because the 5xx fallback chain exhausted saw nothing
+//! actionable and concluded the agent silently dropped their request.
+//!
+//! These tests pin the wording per failure shape so a future refactor
+//! of the helper can't accidentally regress to leaking raw errors.
+
+use crate::brain::agent::{AgentError, format_user_error};
+use crate::brain::provider::ProviderError;
+
+// Build a synthetic `AgentError::Provider(ProviderError::ApiError)` that
+// stringifies as `Provider error: API error (NNN) [type]: msg` — the
+// exact shape `format_user_error` matches against to pull out the
+// status code. We don't construct real network errors here; the
+// helper looks at the text representation, so a synthetic ApiError
+// with the right status is enough.
+fn provider_err(msg: &str) -> AgentError {
+    // Pull `(NNN)` out of the synthetic message to populate `status`,
+    // so the helper's `to_string()` sees the canonical format.
+    let status = msg
+        .find('(')
+        .and_then(|i| {
+            let tail = &msg[i + 1..];
+            let n: String = tail.chars().take_while(|c| c.is_ascii_digit()).collect();
+            n.parse::<u16>().ok()
+        })
+        .unwrap_or(500);
+    AgentError::Provider(ProviderError::ApiError {
+        status,
+        message: msg.to_string(),
+        error_type: None,
+    })
+}
+
+#[test]
+fn maps_502_to_fallback_exhausted_message() {
+    let err = provider_err("API error (502): HTTP 502: error code: 502");
+    let msg = format_user_error(&err);
+    assert!(
+        msg.contains("502"),
+        "must keep the status code visible: {msg}"
+    );
+    assert!(
+        msg.contains("fallback"),
+        "must mention the fallback chain so the user knows self-heal already tried: {msg}"
+    );
+    assert!(
+        msg.contains("/models") || msg.contains("switch provider"),
+        "must point the user at the recovery action: {msg}"
+    );
+}
+
+#[test]
+fn maps_503_and_504_same_way_as_502() {
+    for code in [503, 504] {
+        let err = provider_err(&format!("API error ({code}): HTTP {code}"));
+        let msg = format_user_error(&err);
+        assert!(
+            msg.contains("fallback"),
+            "5xx code {code} must trigger the fallback-exhausted message: {msg}"
+        );
+    }
+}
+
+#[test]
+fn maps_429_to_rate_limit_message() {
+    let err = provider_err("API error (429): too many requests");
+    let msg = format_user_error(&err);
+    assert!(
+        msg.contains("Rate limit") || msg.contains("rate limit"),
+        "429 must produce a rate-limit message: {msg}"
+    );
+    assert!(
+        !msg.contains("HTTP 429"),
+        "the user doesn't need the HTTP shape leaked into the readable message: {msg}"
+    );
+}
+
+#[test]
+fn maps_401_and_403_to_auth_failure() {
+    for code in [401, 403] {
+        let err = provider_err(&format!("API error ({code}): forbidden"));
+        let msg = format_user_error(&err);
+        assert!(
+            msg.contains("Authentication") || msg.contains("API key"),
+            "{code} must mention auth / API key: {msg}"
+        );
+        assert!(
+            msg.contains("/onboard:provider") || msg.contains("keys.toml"),
+            "{code} must point the user at where to fix the key: {msg}"
+        );
+    }
+}
+
+#[test]
+fn maps_stream_broken_to_specific_message() {
+    let err = AgentError::Internal("error decoding response body: ...".to_string());
+    let msg = format_user_error(&err);
+    assert!(
+        msg.contains("stream") || msg.contains("Stream"),
+        "stream-broken signature must produce a stream-specific message: {msg}"
+    );
+    assert!(
+        msg.contains("Try again") || msg.contains("switch"),
+        "must include a recovery hint: {msg}"
+    );
+}
+
+#[test]
+fn maps_repetition_loop_to_loop_message() {
+    let err = AgentError::Internal("Repetition detected after 8000 bytes".to_string());
+    let msg = format_user_error(&err);
+    assert!(
+        msg.contains("stuck") || msg.contains("loop"),
+        "repetition-guard signature must produce a loop message: {msg}"
+    );
+}
+
+#[test]
+fn maps_context_too_large_to_compact_hint() {
+    let err = AgentError::ContextTooLarge {
+        current: 250_000,
+        limit: 200_000,
+    };
+    let msg = format_user_error(&err);
+    assert!(
+        msg.contains("250000") || msg.contains("250,000"),
+        "must quote the current token count: {msg}"
+    );
+    assert!(
+        msg.contains("200000") || msg.contains("200,000"),
+        "must quote the limit: {msg}"
+    );
+    assert!(
+        msg.contains("/compact"),
+        "must point the user at /compact: {msg}"
+    );
+}
+
+#[test]
+fn unknown_error_falls_back_to_raw_string() {
+    let err = AgentError::Internal("some weird new failure mode".to_string());
+    let msg = format_user_error(&err);
+    // We don't want to swallow unknown errors — better to leak the
+    // raw string than to print "An error occurred" with no detail.
+    assert!(
+        msg.contains("some weird new failure mode"),
+        "unknown errors must surface the raw text so they're diagnosable: {msg}"
+    );
+}
+
+#[test]
+fn unknown_4xx_includes_status_and_raw_for_debuggability() {
+    let err = provider_err("API error (418): I'm a teapot");
+    let msg = format_user_error(&err);
+    assert!(msg.contains("418"));
+    assert!(
+        msg.contains("teapot") || msg.contains("self-heal"),
+        "either the raw body or the self-heal context must appear: {msg}"
+    );
+}

@@ -1955,20 +1955,14 @@ impl App {
                     }
                     Err(e) => {
                         tracing::error!("[agent_task] ERROR: {}", e);
-                        // Translate cryptic provider errors into human-readable messages
-                        let raw = e.to_string();
-                        let user_message = if raw.contains("error decoding response body") {
-                            "Provider stream broke unexpectedly (connection dropped mid-response). \
-                             This can happen when the provider hits a token limit or network issue. \
-                             Try again or switch to a different model.".to_string()
-                        } else if raw.contains("Repetition detected") {
-                            "Provider got stuck in a loop repeating the same content. \
-                             The stream was terminated automatically. Try rephrasing your request \
-                             or switching models."
-                                .to_string()
-                        } else {
-                            raw
-                        };
+                        // Translate the raw error into a user-facing message
+                        // via the shared helper (`brain::agent::format_user_error`).
+                        // It handles 5xx-exhaustion, rate limits, context-too-large,
+                        // stream-broken, repetition-loop, etc. Both this TUI
+                        // path and the channel handlers use the same helper, so
+                        // a user on Telegram sees the same wording as a user on
+                        // the TUI when self-heal exhausts and the turn dies.
+                        let user_message = crate::brain::agent::format_user_error(&e);
                         if let Err(e2) = event_sender.send(TuiEvent::Error {
                             session_id,
                             message: user_message,

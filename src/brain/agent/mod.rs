@@ -9,7 +9,7 @@ pub mod service;
 
 // Re-exports
 pub use context::AgentContext;
-pub use error::{AgentError, Result};
+pub use error::{AgentError, Result, format_user_error};
 pub use service::{
     AgentResponse, AgentService, AgentStreamResponse, ApprovalCallback, ChannelSessionEvent,
     FollowUpQuestionInfo, MessageQueueCallback, ProgressCallback, ProgressEvent, QuestionCallback,

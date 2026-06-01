@@ -1870,7 +1870,10 @@ async fn handle_message(
             tracing::error!("Slack: agent error: {}", e);
             let token = SlackApiToken::new(SlackApiTokenValue::from(state.current_bot_token()));
             let session = client.open_session(&token);
-            let error_msg = format!("Error: {}", e);
+            // Shared helper — same wording as TUI / Telegram / Discord /
+            // WhatsApp so a user moving between channels sees consistent
+            // failure messages.
+            let error_msg = format!("❌ Error\n\n{}", crate::brain::agent::format_user_error(&e));
             let mut request = SlackApiChatPostMessageRequest::new(
                 SlackChannelId::new(channel_id),
                 SlackMessageContent::new().with_text(error_msg),

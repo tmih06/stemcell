@@ -266,6 +266,39 @@ pub(super) fn render_chat(f: &mut Frame, app: &mut App, area: Rect) {
             continue;
         }
 
+        if app.messages[msg_idx].role == "error" {
+            // Error messages: distinctive red treatment so a user
+            // scrolling through chat history sees instantly that the
+            // turn failed (vs. a turn that completed quietly with no
+            // text). Without this, a 5xx-exhaustion looks identical
+            // to a successful empty-completion turn — a user reports
+            // "the agent silently dropped my request" when in fact
+            // self-heal already gave up and tried to tell them.
+            // Reported 2026-06-01: a 502 fallback chain exhausted,
+            // `TuiEvent::Error` fired, `show_error` showed a 2.5s
+            // toast that vanished, the user only saw their prompt +
+            // tool call + Thinking with no completion.
+            let err_style = Style::default()
+                .fg(Color::Rgb(220, 70, 70))
+                .add_modifier(Modifier::BOLD);
+            let body_style = Style::default().fg(Color::Rgb(220, 130, 130));
+            for (i, text_line) in app.messages[msg_idx].content.lines().enumerate() {
+                let mut spans = vec![Span::styled("  ", Style::default())];
+                if i == 0 {
+                    spans.push(Span::styled("❌ Error: ", err_style));
+                } else {
+                    spans.push(Span::styled("   ", Style::default()));
+                }
+                spans.push(Span::styled(text_line.to_string(), body_style));
+                lines.push(Line::from(spans));
+            }
+            lines.push(Line::from(""));
+            for _ in lines_before..lines.len() {
+                line_to_msg.push(Some(msg_idx));
+            }
+            continue;
+        }
+
         // Dot/arrow message differentiation (no role labels needed)
         let is_user = app.messages[msg_idx].role == "user";
         // Highlight selected message with subtle background

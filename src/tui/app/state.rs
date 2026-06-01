@@ -3150,6 +3150,34 @@ impl App {
                 tool_group: Some(group),
             });
         }
+        // Persist the error as a permanent chat bubble so the user
+        // can see (and scroll back to) what went wrong AFTER the
+        // 2.5s transient toast expires. Without this the toast
+        // disappears and the user is left staring at a turn with
+        // tool calls + thinking but no completion, with no way to
+        // tell self-heal already gave up. Confirmed user report
+        // 2026-06-01: a 5xx exhaustion fired `TuiEvent::Error` →
+        // `show_error` → 2.5s toast → vanished. User saw nothing
+        // and assumed the agent silently dropped the request.
+        //
+        // Filter out the special `"Cancelled"` and
+        // `"Press Ctrl+C again to quit"` sentinels — those aren't
+        // turn-failure errors, they're transient UI hints.
+        if error != "Cancelled" && !error.starts_with("Press Ctrl+C") {
+            self.messages.push(DisplayMessage {
+                id: Uuid::new_v4(),
+                role: "error".to_string(),
+                content: error.clone(),
+                timestamp: chrono::Utc::now(),
+                token_count: None,
+                cost: None,
+                approval: None,
+                approve_menu: None,
+                details: None,
+                expanded: false,
+                tool_group: None,
+            });
+        }
         self.error_message = Some(error);
         self.error_message_shown_at = Some(std::time::Instant::now());
         // Auto-scroll to show the error

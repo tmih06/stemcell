@@ -2462,13 +2462,18 @@ pub(crate) async fn handle_message(
         }
         Err(e) => {
             tracing::error!("Telegram: agent error: {}", e);
-            // If a streaming message was started, edit it to show the error
+            // Translate via the shared helper so the message tells the
+            // user WHAT self-heal already tried + what to do next,
+            // instead of leaking the raw `API error (502)` shape that
+            // confused users into thinking the agent silently dropped
+            // their request. See `brain::agent::format_user_error` for
+            // the pattern matchers (5xx exhausted / 429 / context too
+            // large / stream broken / repetition loop / etc.).
+            let user_msg = format!("❌ Error\n\n{}", crate::brain::agent::format_user_error(&e));
             if let Some(mid) = streaming_msg_id {
-                let _ = bot
-                    .edit_message_text(msg.chat.id, mid, format!("Error: {}", e))
-                    .await;
+                let _ = bot.edit_message_text(msg.chat.id, mid, user_msg).await;
             } else {
-                message_in_thread(&bot, msg.chat.id, thread_id, format!("Error: {}", e)).await?;
+                message_in_thread(&bot, msg.chat.id, thread_id, user_msg).await?;
             }
         }
     }
