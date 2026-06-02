@@ -2,15 +2,8 @@ name: CI
 
 on:
   push:
-    branches: [ main ]
-    paths-ignore:
-      - 'CHANGELOG.md'
-      - 'README.md'
-  pull_request:
-    branches: [ main ]
-    paths-ignore:
-      - 'CHANGELOG.md'
-      - 'README.md'
+    tags:
+      - 'v*'
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -196,7 +189,7 @@ jobs:
   coverage:
     name: Code Coverage
     needs: [lint]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
