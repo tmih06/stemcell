@@ -827,7 +827,11 @@ pub(crate) async fn handle_message(
             // This ensures it appears at the very end, after all response delivery is complete
             tokio::time::sleep(std::time::Duration::from_secs(2)).await;
             let ctx_max = agent.context_limit_for_session(session_id);
-            let footer = crate::utils::format_ctx_footer(response.context_tokens, ctx_max, response.tokens_per_second);
+            let footer = crate::utils::format_ctx_footer(
+                response.context_tokens,
+                ctx_max,
+                response.tokens_per_second,
+            );
             if let Err(e) = msg.channel_id.say(&ctx.http, &footer).await {
                 tracing::warn!("Discord: failed to send ctx footer: {}", e);
             } else {
