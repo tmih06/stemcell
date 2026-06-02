@@ -2187,6 +2187,19 @@ impl App {
                 .insert(session.id, self.messages.clone());
         }
 
+        // Keep the live footer aligned with the model the turn actually ran
+        // on. When Anthropic ships a new Claude, the CLI resolves `opus` to
+        // the new version and reports it back in `response.model`; refreshing
+        // the in-memory override here makes the footer show it immediately
+        // instead of waiting for a restart. Only touch it when it actually
+        // changed so we don't churn the override on every message.
+        if let Some(ref session) = self.current_session
+            && self.agent_service.provider_model_for_session(session.id) != response.model
+        {
+            self.agent_service
+                .set_session_model(session.id, response.model.clone());
+        }
+
         // Spawn slow post-completion work in the background so the render loop
         // can draw the next frame immediately (is_processing is already false).
         // DB writes and file reads here were causing 5+ second spinner delays.

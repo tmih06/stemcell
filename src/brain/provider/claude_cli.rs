@@ -10,16 +10,94 @@ use super::types::*;
 use async_trait::async_trait;
 use futures::stream::StreamExt;
 use serde::Deserialize;
-use std::collections::HashSet;
+use std::collections::HashMap;
 use std::process::Stdio;
-use std::sync::{LazyLock, Mutex};
+use std::sync::{LazyLock, RwLock};
 use tokio::io::AsyncBufReadExt;
 use tokio::io::AsyncWriteExt;
 
-/// Deduper for `warn_if_model_drifted` — a given observed model is
-/// logged at WARN once per process, subsequent matches are silent.
-static CLI_MODEL_DRIFT_SEEN: LazyLock<Mutex<HashSet<String>>> =
-    LazyLock::new(|| Mutex::new(HashSet::new()));
+/// On-disk path for the learned alias → resolved-version map.
+#[cfg(not(test))]
+fn learned_models_path() -> std::path::PathBuf {
+    crate::config::profile::base_opencrabs_dir().join("claude_cli_models.json")
+}
+
+/// Load the persisted alias map from disk (production), or start empty
+/// (tests, so they never depend on or mutate the developer's real
+/// ~/.opencrabs/claude_cli_models.json).
+#[cfg(not(test))]
+fn load_learned_models() -> HashMap<String, String> {
+    std::fs::read_to_string(learned_models_path())
+        .ok()
+        .and_then(|s| serde_json::from_str::<HashMap<String, String>>(&s).ok())
+        .unwrap_or_default()
+}
+
+#[cfg(test)]
+fn load_learned_models() -> HashMap<String, String> {
+    HashMap::new()
+}
+
+/// Process-wide cache of the version the `claude` CLI actually resolves
+/// each bare alias to (e.g. `opus` → `opus-4-8`). Loaded from disk on
+/// first access and refreshed whenever the CLI reports a newer release.
+///
+/// This is how the provider tracks Anthropic's current Claude release
+/// automatically instead of relying on a hardcoded table that goes stale
+/// every time a new model ships. The CLI is the source of truth; we just
+/// learn from it and persist so footers/pricing stay correct across
+/// restarts with zero hand-editing.
+static LEARNED_MODELS: LazyLock<RwLock<HashMap<String, String>>> =
+    LazyLock::new(|| RwLock::new(load_learned_models()));
+
+/// The version this process has learned the CLI resolves `alias` to, if any.
+pub(crate) fn learned_alias(alias: &str) -> Option<String> {
+    LEARNED_MODELS.read().ok()?.get(alias).cloned()
+}
+
+/// Record the version the CLI actually resolved for a bare alias. Persists
+/// to disk only when the value changed, so the steady state is zero IO.
+pub(crate) fn record_alias(alias: &str, version: &str) {
+    // Fast path: already current — no lock upgrade, no write.
+    if let Ok(read) = LEARNED_MODELS.read()
+        && read.get(alias).map(String::as_str) == Some(version)
+    {
+        return;
+    }
+    let snapshot = {
+        let Ok(mut write) = LEARNED_MODELS.write() else {
+            return;
+        };
+        // Re-check under the write lock in case another turn raced us.
+        if write.get(alias).map(String::as_str) == Some(version) {
+            return;
+        }
+        write.insert(alias.to_string(), version.to_string());
+        write.clone()
+    };
+    tracing::info!(
+        "claude-cli: learned {alias} → {version} from the CLI; updating the alias map so footers and pricing track the current release"
+    );
+    #[cfg(not(test))]
+    {
+        let path = learned_models_path();
+        if let Ok(json) = serde_json::to_string_pretty(&snapshot) {
+            if let Some(parent) = path.parent() {
+                let _ = std::fs::create_dir_all(parent);
+            }
+            let _ = std::fs::write(&path, json);
+        }
+    }
+    let _ = snapshot;
+}
+
+/// Clear the learned cache. Test-only seam for deterministic assertions.
+#[cfg(test)]
+pub(crate) fn clear_learned_models() {
+    if let Ok(mut map) = LEARNED_MODELS.write() {
+        map.clear();
+    }
+}
 
 /// Canonical model list for Claude CLI. Single source of truth read by
 /// `Provider::supported_models` AND by the channel `/models` menu helper
@@ -89,48 +167,45 @@ impl ClaudeCliProvider {
         }
     }
 
-    /// Latest known normalized model for a bare CLI shorthand. Updating
-    /// this constant is one place to teach the provider about a new
-    /// Claude release (e.g. bumping sonnet to 4-7 when Anthropic ships
-    /// it). The CLI itself still does the actual resolution; if the
-    /// constant here drifts behind reality, `warn_if_model_drifted`
-    /// logs a warning on the first assistant response so the gap is
-    /// visible instead of silent.
-    fn default_for_alias(alias: &str) -> String {
-        match alias {
-            "opus" => "opus-4-7".to_string(),
-            "sonnet" => "sonnet-4-6".to_string(),
-            "haiku" => "haiku-4-5".to_string(),
-            other => other.to_string(),
+    /// Resolve a bare CLI shorthand (`opus`/`sonnet`/`haiku`) to its
+    /// concrete version. Prefers the version the CLI was last seen to
+    /// resolve to (learned at runtime, persisted to disk), falling back
+    /// to the built-in seed only on a brand-new install before any turn
+    /// has run. The CLI does the real resolution; we just remember it.
+    pub(crate) fn default_for_alias(alias: &str) -> String {
+        if let Some(learned) = learned_alias(alias) {
+            return learned;
+        }
+        match Self::seed_for_alias(alias) {
+            Some(seed) => seed.to_string(),
+            None => alias.to_string(),
         }
     }
 
-    /// Compare the model reported by the CLI with what our hardcoded
-    /// table advertises. When they diverge, log a single WARN with a
-    /// clear instruction — this is the signal that `default_for_alias`
-    /// needs updating in code (or that the user should pin a specific
-    /// version in `config.toml [providers.claude_cli] default_model`).
-    fn warn_if_model_drifted(&self, cli_full_model: &str) {
-        let observed = Self::normalize_model(cli_full_model);
-        if observed == self.default_model {
-            return;
+    /// Built-in fallback versions, used only until the CLI reports the
+    /// live release on the first response (then the learned cache takes
+    /// over). These are the last-known-good releases at build time; they
+    /// are intentionally NOT the place to chase new releases — the
+    /// runtime learning does that automatically. `None` for anything that
+    /// is not a bare alias (callers pass such ids through unchanged).
+    pub(crate) fn seed_for_alias(alias: &str) -> Option<&'static str> {
+        match alias {
+            "opus" => Some("opus-4-7"),
+            "sonnet" => Some("sonnet-4-6"),
+            "haiku" => Some("haiku-4-5"),
+            _ => None,
         }
-        let alias_seen_before = CLI_MODEL_DRIFT_SEEN
-            .lock()
-            .ok()
-            .map(|mut s| !s.insert(observed.clone()))
-            .unwrap_or(false);
-        if alias_seen_before {
-            return;
-        }
-        tracing::warn!(
-            "claude-cli model drift: CLI resolved to '{}' (normalized '{}') but provider advertises '{}'. \
-             Pin the exact model in config.toml [providers.claude_cli].default_model, or update \
-             ClaudeCliProvider::default_for_alias in claude_cli.rs to catch up with Anthropic's release.",
-            cli_full_model,
-            observed,
-            self.default_model,
-        );
+    }
+
+    /// Learn the version the CLI actually resolved an alias to. Called on
+    /// the first assistant message of every turn with the model the CLI
+    /// reported (e.g. `claude-opus-4-8`). Maps it back to its bare alias
+    /// and records the normalized version so the next pick, the default
+    /// model, pricing, and the footer all track the current release.
+    pub(crate) fn record_observed_model(cli_full_model: &str) {
+        let alias = Self::map_model(cli_full_model);
+        let version = Self::normalize_model(cli_full_model);
+        record_alias(alias, &version);
     }
 
     /// Build a plain-text prompt from LLMRequest messages.
@@ -476,7 +551,6 @@ impl Provider for ClaudeCliProvider {
         // Channel-based stream: parse NDJSON lines → StreamEvent
         let (tx, rx) = tokio::sync::mpsc::channel::<Result<StreamEvent>>(64);
 
-        let self_clone = self.clone();
         tokio::spawn(async move {
             let reader = tokio::io::BufReader::new(stdout);
             let mut lines = reader.lines();
@@ -571,23 +645,29 @@ impl Provider for ClaudeCliProvider {
                                     {
                                         input_tokens = cli_u.total_input();
                                     }
-                                    // Compare the CLI's actual model against our
-                                    // hardcoded alias mapping. Logs WARN once per
-                                    // observed model if they drift.
+                                    // Learn the version the CLI actually
+                                    // resolved this alias to, so the alias map
+                                    // tracks Anthropic's current release.
                                     if let Some(observed) = event
                                         .get("message")
                                         .and_then(|m| m.get("model"))
                                         .and_then(|m| m.as_str())
                                     {
-                                        self_clone.warn_if_model_drifted(observed);
+                                        Self::record_observed_model(observed);
                                     }
                                     match serde_json::from_value::<StreamEvent>(event) {
                                         Ok(mut se) => {
                                             // Patch input_tokens to include cache tokens
+                                            // and normalize the model id to the short
+                                            // form (e.g. claude-opus-4-8 → opus-4-8) so
+                                            // the display, writeback, and pricing all
+                                            // see one consistent, current value.
                                             if let StreamEvent::MessageStart { ref mut message } =
                                                 se
                                             {
                                                 message.usage.input_tokens = input_tokens;
+                                                message.model =
+                                                    Self::normalize_model(&message.model);
                                             }
                                             if tx.send(Ok(se)).await.is_err() {
                                                 break;
@@ -755,7 +835,7 @@ impl Provider for ClaudeCliProvider {
                                 format!("msg_{}", uuid::Uuid::new_v4().simple())
                             });
                             if let Some(ref raw) = message.model {
-                                self_clone.warn_if_model_drifted(raw);
+                                Self::record_observed_model(raw);
                             }
                             let msg_model = message
                                 .model
