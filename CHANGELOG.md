@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.3.34] - 2026-06-02
 
-37 commits since v0.3.33. Stability and UX release closing #141, #142, #147, #148, #149, #151. Alexey Leshchenko (`leshchenko1979`) contributed the file_extract double-extension fix (#146) and RSI counter cleanup (#150); the remaining 35 commits layered brain dedup automation, follow-up question polish across all channels, provider registry hardening, skill description injection, RTK sysadmin expansion, phantom detector hardening, channel footer tok/s parity, Claude CLI auto-learning, and error-handling improvements on top.
+39 commits since v0.3.33. Stability and UX release closing #141, #142, #147, #148, #149, #151, #152. Alexey Leshchenko (`leshchenko1979`) contributed the file_extract double-extension fix (#146) and RSI counter cleanup (#150); the remaining 37 commits layered brain dedup automation, follow-up question polish across all channels, provider registry hardening, skill description injection, RTK sysadmin expansion, phantom detector hardening, channel footer tok/s parity, Claude CLI auto-learning, fallback provider cascade coverage, and subagent config documentation on top.
 
 **Brain file dedup scan (closes #147, 6 commits):** New RSI proposal kind that scans all 11 brain files daily, clusters duplicate lines (minimum 10 chars, skips structural markdown like headings and separators), and files dedup proposals into Mission Control. Soft purple badge in the inbox, runs every 24 RSI cycles (about once per day at 1-hour intervals), never auto-applies. Human approval required through the existing `rsi_proposals` apply/reject flow. Core scan logic in `dedup_scan.rs` (393 lines), hooked into the RSI cycle with periodicity gating, 14 regression tests covering empty files, short-line filtering, cross-file detection, proposal format, and canonical selection.
 
@@ -40,9 +40,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 **Claude CLI model auto-learn (1 commit):** Footer showed Opus 4.7 after Anthropic shipped 4.8 because `default_for_alias` hardcoded `opus -> opus-4-7`. Now the provider learns the CLI-resolved version from `message_start` events, persists to `~/.opencrabs/claude_cli_models.json` (rewriting only when the value changes), and the TUI refreshes the session model live so the footer self-corrects to the actual version without code changes. `default_for_alias` prefers the learned cache and falls back to a build-time seed only on a fresh install. The SSE model is normalized to the short form so display, writeback, and pricing agree.
 
-Closes #141, #142, #146, #147, #148, #149, #151.
+**Fallback provider cascade (closes #152, 1 commit):** `/models` swaps and session restores were storing a raw provider instead of wrapping it in `FallbackProvider`, so the fallback cascade could not fire on 5xx/429 errors after a model switch. Every active provider now gets wrapped unless it is already a chain or no fallbacks are configured. 174-line integration test simulating 5xx cascades across swapped providers.
 
-70 files changed, +4,637/-389.
+**Subagent config docs (1 commit):** `spawn_agent`, `resume_agent`, and `team_create` tool descriptions now mention `subagent_provider` and `subagent_model` config keys so the LLM knows these exist instead of suggesting users set them per-call. README rewritten with a dedicated section. 91-line test verifies the descriptions contain the config key names.
+
+Closes #141, #142, #146, #147, #148, #149, #151, #152.
+
+80 files changed, +5,010/-398.
 
 BRAIN FILE DEDUP SCAN (6 commits, closes #147)
 
@@ -159,6 +163,18 @@ CLAUDE CLI MODEL AUTO-LEARN (1 commit)
 Footer showed Opus 4.7 after Anthropic shipped 4.8 because `default_for_alias` hardcoded the version. Now the provider learns the CLI-resolved version from `message_start`, persists to `~/.opencrabs/claude_cli_models.json`, and the TUI refreshes the session model live so the footer self-corrects without code changes.
 
 - 60127ee0 fix(claude-cli): learn resolved model version from the CLI, stop hardcoding it
+
+FALLBACK PROVIDER CASCADE (1 commit, closes #152)
+
+`/models` swaps and session restores stored a raw provider instead of wrapping in FallbackProvider, so fallback cascade could not fire on 5xx/429 after a model switch. Every active provider now gets wrapped unless already a chain or no fallbacks configured.
+
+- e39cd7c3 fix(fallback): wrap per-session providers in FallbackProvider so /models swaps keep cascade coverage
+
+SUBAGENT CONFIG DOCS (1 commit)
+
+spawn_agent, resume_agent, and team_create tool descriptions now mention subagent_provider and subagent_model config keys. README rewritten with dedicated section.
+
+- bf62682b docs(subagent): surface subagent_provider/subagent_model in tool descriptions (closes #152)
 
 ## [0.3.33] - 2026-05-31
 
