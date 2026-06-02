@@ -2101,18 +2101,38 @@ OpenCrabs supports spawning specialized sub-agents that run autonomously in isol
 
 Sub-agents never have access to recursive tools (`spawn_agent`, `resume_agent`, `wait_agent`, `send_input`, `close_agent`) or dangerous system tools (`rebuild`, `evolve`).
 
-**Subagent Provider and Model** — pick the provider and model for every spawned sub-agent in `config.toml`. `spawn_agent`, `resume_agent`, and `team_create` do not take a `model` parameter; routing happens through config so the same setting applies to every call site without needing to thread the choice through each prompt.
+**Subagent Provider and Model** — two ways to control which provider and model a sub-agent uses, in order of precedence:
+
+1. **Per-call parameters on `spawn_agent`, `resume_agent`, and `team_create`** — pass `provider` and `model` to route a single sub-agent (or each team member individually) to a specific model. Highest precedence. Use this when a skill orchestrates multiple steps that each want a different model (for example: plan with one model, code with another, review with a third).
+2. **Config defaults** — set `subagent_provider` and `subagent_model` under `[agent]` in `config.toml` to route every spawned sub-agent the same way when no per-call override is passed.
+3. **Parent inheritance** — when neither a per-call override nor a config default is set, the child inherits the parent session's provider and runs on that provider's default model.
 
 ```toml
 [agent]
-subagent_provider = "opencode-kimi"   # provider for child agents
-subagent_model    = "kimi-k2.6"       # model for child agents
-
-# Omit both keys and child agents inherit the parent session's provider
-# and run on that provider's default model.
+subagent_provider = "<your-provider-name>"   # global default
+subagent_model    = "<model-id-on-that-provider>"
 ```
 
-Common pattern: run a premium model for the main session, and route every child agent to a cheaper/faster one. Per-call overrides on the spawn tools are a planned follow-up; for now, switch the config and restart, or use a different config profile for the session that spawns the children.
+```jsonc
+// Skill-driven workflow that uses different models per step
+spawn_agent({ prompt: "Plan the refactor",      provider: "zhipu",    model: "glm-5" })
+spawn_agent({ prompt: "Implement the plan",     provider: "deepseek", model: "deepseek-coder" })
+spawn_agent({ prompt: "Review the diff",        provider: "zhipu",    model: "glm-5" })
+spawn_agent({ prompt: "Fix the review issues",  provider: "minimax",  model: "MiniMax-M3" })
+
+// Or all four members spawned together as one team
+team_create({
+  team_name: "build-review-fix",
+  agents: [
+    { prompt: "Plan",   provider: "zhipu",    model: "glm-5" },
+    { prompt: "Code",   provider: "deepseek", model: "deepseek-coder" },
+    { prompt: "Review", provider: "zhipu",    model: "glm-5" },
+    { prompt: "Fix",    provider: "minimax",  model: "MiniMax-M3" },
+  ],
+})
+```
+
+A typo in the `provider` field falls back to the parent's provider with a warning rather than failing the spawn, so a stale skill file can't break a session.
 
 ### System CLI Tools
 

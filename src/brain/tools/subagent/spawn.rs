@@ -41,12 +41,14 @@ impl Tool for SpawnAgentTool {
         "Spawn a child agent to handle a sub-task autonomously. The child gets its own session \
          and runs in the background. Returns an agent_id you can use with wait_agent, send_input, \
          close_agent, or resume_agent. Use this to delegate independent work items. \
-         \n\nProvider and model for the child are controlled via the user's config.toml \
-         [agent] section: set `subagent_provider` and `subagent_model` to route every spawned \
-         agent to a specific provider/model (for example a cheaper/faster model than the parent \
-         session). When those keys are unset the child inherits the parent session's provider \
-         and uses that provider's default model. Per-call overrides on this tool are not \
-         supported yet; route via config."
+         \n\nProvider and model resolution (highest priority first): \
+         (1) the optional `provider` / `model` parameters on THIS call, \
+         (2) the user's config.toml `[agent]` keys `subagent_provider` / `subagent_model`, \
+         (3) the parent session's provider with that provider's default model. \
+         Use the per-call params when a single skill orchestrates multiple steps that each \
+         want a different model (for example: plan with one model, code with another, review \
+         with a third). Use the config keys when every sub-agent in the session should share \
+         the same routing. Use no override to let the child inherit the parent."
     }
 
     fn input_schema(&self) -> Value {
@@ -65,6 +67,14 @@ impl Tool for SpawnAgentTool {
                     "type": "string",
                     "description": "Agent specialization: 'general' (full tools), 'explore' (read-only), 'plan' (read+bash), 'code' (full write), 'research' (web+read). Default: general",
                     "enum": ["general", "explore", "plan", "code", "research"]
+                },
+                "provider": {
+                    "type": "string",
+                    "description": "Optional provider override for THIS spawn (e.g., 'zhipu', 'openrouter', 'custom:my-provider'). Highest precedence — overrides config.agent.subagent_provider and parent inheritance. Use to route this single sub-agent differently from the global subagent config."
+                },
+                "model": {
+                    "type": "string",
+                    "description": "Optional model override for THIS spawn (model id as the chosen provider accepts it, e.g., 'glm-5', 'deepseek-coder'). Highest precedence — overrides config.agent.subagent_model. Pair with `provider` when the model lives on a provider other than the parent session's."
                 }
             },
             "required": ["prompt"]
@@ -120,19 +130,57 @@ impl Tool for SpawnAgentTool {
         let cancel_token = CancellationToken::new();
         let (input_tx, input_rx) = mpsc::unbounded_channel::<String>();
 
+        // Per-call provider / model overrides, read from the tool
+        // call's input. Precedence (issue #152): per-call > config >
+        // parent inheritance. Empty strings are treated as unset so an
+        // optional schema field passed as "" doesn't accidentally
+        // resolve to an invalid provider name.
+        let call_provider = input
+            .get("provider")
+            .and_then(|v| v.as_str())
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(str::to_string);
+        let call_model = input
+            .get("model")
+            .and_then(|v| v.as_str())
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(str::to_string);
+
         // Load config and extract model override before entering block scope
         let config = crate::config::Config::load()
             .map_err(|e| ToolError::Execution(format!("Config load failed: {}", e)))?;
-        let model_override = config.agent.subagent_model.clone();
+        // Precedence: per-call model > config.subagent_model > None
+        // (when None, the child uses its provider's default model).
+        let model_override = call_model
+            .clone()
+            .or_else(|| config.agent.subagent_model.clone());
+
+        // Resolve the effective provider name with the same precedence:
+        // per-call provider > config.subagent_provider > parent default.
+        // Captured for the log line so users picking a model on a
+        // different provider can see which one was actually used.
+        let effective_provider_name = call_provider
+            .clone()
+            .or_else(|| config.agent.subagent_provider.clone());
 
         // Build a minimal AgentService for the child
         let child_service = {
-            // Use subagent-specific provider if configured, otherwise inherit parent's
-            let provider = if let Some(ref provider_name) = config.agent.subagent_provider {
+            // Use the resolved per-call/config provider if any,
+            // otherwise inherit parent's. The fallback-on-failure
+            // path keeps a typo in the override from breaking the
+            // spawn entirely — same shape as the prior config-only
+            // resolution.
+            let provider = if let Some(ref provider_name) = effective_provider_name {
                 match crate::brain::provider::create_provider_by_name(&config, provider_name).await
                 {
                     Ok(p) => {
-                        tracing::info!("Sub-agent using configured provider '{}'", provider_name);
+                        let source =
+                            if call_provider.is_some() { "per-call" } else { "config" };
+                        tracing::info!(
+                            "Sub-agent using {source} provider '{provider_name}'"
+                        );
                         p
                     }
                     Err(e) => {

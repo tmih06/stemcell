@@ -36,11 +36,12 @@ impl Tool for ResumeAgentTool {
     fn description(&self) -> &str {
         "Resume a completed or failed sub-agent with a new prompt. \
          The agent continues in the same session, preserving its prior context. \
-         \n\nProvider and model on resume follow the same rule as spawn_agent: the \
-         user's config.toml [agent] section `subagent_provider` and `subagent_model` keys \
-         pick the provider/model when set, otherwise the resumed agent inherits the parent \
-         session's provider. Per-call overrides on this tool are not supported yet; route \
-         via config."
+         \n\nProvider and model resolution follows the same precedence as spawn_agent: \
+         (1) the optional `provider` / `model` parameters on THIS call, \
+         (2) the user's config.toml `[agent]` keys `subagent_provider` / `subagent_model`, \
+         (3) the parent session's provider. Resuming with a different model is useful when \
+         the original spawn used a cheap/fast model for a draft and the resume should \
+         escalate to a stronger model for a fix-up pass."
     }
 
     fn input_schema(&self) -> Value {
@@ -54,6 +55,14 @@ impl Tool for ResumeAgentTool {
                 "prompt": {
                     "type": "string",
                     "description": "New instruction/prompt for the resumed agent"
+                },
+                "provider": {
+                    "type": "string",
+                    "description": "Optional provider override for THIS resume (e.g., 'zhipu', 'openrouter', 'custom:my-provider'). Highest precedence — overrides config.agent.subagent_provider."
+                },
+                "model": {
+                    "type": "string",
+                    "description": "Optional model override for THIS resume (model id as the chosen provider accepts it). Highest precedence — overrides config.agent.subagent_model."
                 }
             },
             "required": ["agent_id", "prompt"]
@@ -129,19 +138,40 @@ impl Tool for ResumeAgentTool {
             )));
         }
 
+        // Per-call provider / model overrides (issue #152). Same
+        // precedence as spawn_agent: per-call > config > parent.
+        let call_provider = input
+            .get("provider")
+            .and_then(|v| v.as_str())
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(str::to_string);
+        let call_model = input
+            .get("model")
+            .and_then(|v| v.as_str())
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(str::to_string);
+
         // Build a new AgentService for the resumed run
         let config = crate::config::Config::load()
             .map_err(|e| ToolError::Execution(format!("Config load failed: {}", e)))?;
-        let subagent_model = config.agent.subagent_model.clone();
+        let subagent_model = call_model
+            .clone()
+            .or_else(|| config.agent.subagent_model.clone());
+        let effective_provider_name = call_provider
+            .clone()
+            .or_else(|| config.agent.subagent_provider.clone());
+
         let child_service = {
-            // Use subagent-specific provider if configured, otherwise inherit parent's
-            let provider = if let Some(ref provider_name) = config.agent.subagent_provider {
+            let provider = if let Some(ref provider_name) = effective_provider_name {
                 match crate::brain::provider::create_provider_by_name(&config, provider_name).await
                 {
                     Ok(p) => {
+                        let source =
+                            if call_provider.is_some() { "per-call" } else { "config" };
                         tracing::info!(
-                            "Resumed sub-agent using configured provider '{}'",
-                            provider_name
+                            "Resumed sub-agent using {source} provider '{provider_name}'"
                         );
                         p
                     }

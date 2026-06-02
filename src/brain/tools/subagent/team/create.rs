@@ -41,10 +41,12 @@ impl Tool for TeamCreateTool {
     fn description(&self) -> &str {
         "Create a named team by spawning multiple sub-agents at once. Each agent gets its own \
          task and optional type. Returns team name and all agent IDs. \
-         \n\nProvider and model for every team member follow the same rule as spawn_agent: \
-         the user's config.toml [agent] section `subagent_provider` and `subagent_model` keys \
-         pick the provider/model when set, otherwise each member inherits the parent session's \
-         provider. Per-call overrides on this tool are not supported yet; route via config."
+         \n\nProvider and model resolution is PER MEMBER. Each entry in the `agents` array \
+         can carry its own `provider` and `model` fields, with the same precedence as \
+         spawn_agent: per-member > config.agent.subagent_* > parent. This lets one \
+         team_create call spawn agents that each use a different model — useful when a \
+         skill orchestrates a plan-with-GLM / code-with-Deepseek / review-with-Kimi flow \
+         as one atomic team rather than chained spawn_agent calls."
     }
 
     fn input_schema(&self) -> Value {
@@ -72,6 +74,14 @@ impl Tool for TeamCreateTool {
                             "agent_type": {
                                 "type": "string",
                                 "enum": ["general", "explore", "plan", "code", "research"]
+                            },
+                            "provider": {
+                                "type": "string",
+                                "description": "Optional per-member provider override (e.g., 'zhipu', 'openrouter', 'custom:my-provider'). Highest precedence — overrides config.agent.subagent_provider for THIS member only."
+                            },
+                            "model": {
+                                "type": "string",
+                                "description": "Optional per-member model override. Highest precedence — overrides config.agent.subagent_model for THIS member only."
                             }
                         },
                         "required": ["prompt"]
@@ -123,7 +133,6 @@ impl Tool for TeamCreateTool {
 
         let config = crate::config::Config::load()
             .map_err(|e| ToolError::Execution(format!("Config load failed: {}", e)))?;
-        let model_override = config.agent.subagent_model.clone();
 
         let mut spawned_ids = Vec::new();
         let mut spawn_results = Vec::new();
@@ -148,6 +157,30 @@ impl Tool for TeamCreateTool {
                     .unwrap_or("general"),
             );
 
+            // Per-member provider / model overrides (issue #152). Same
+            // precedence as spawn_agent: per-member > config > parent.
+            // Resolved here inside the loop so each team member can
+            // route to a different model in a single team_create call
+            // — that's the orchestration shape the issue requested.
+            let member_provider = agent_def
+                .get("provider")
+                .and_then(|v| v.as_str())
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .map(str::to_string);
+            let member_model = agent_def
+                .get("model")
+                .and_then(|v| v.as_str())
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .map(str::to_string);
+            let model_override = member_model
+                .clone()
+                .or_else(|| config.agent.subagent_model.clone());
+            let effective_provider_name = member_provider
+                .clone()
+                .or_else(|| config.agent.subagent_provider.clone());
+
             // Create session for this agent
             let session_service = crate::services::SessionService::new(service_context.clone());
             let child_session = session_service
@@ -161,11 +194,18 @@ impl Tool for TeamCreateTool {
             let cancel_token = CancellationToken::new();
             let (input_tx, mut input_rx) = mpsc::unbounded_channel::<String>();
 
-            // Create provider
-            let provider = if let Some(ref provider_name) = config.agent.subagent_provider {
+            // Create provider — per-member override wins over config.
+            let provider = if let Some(ref provider_name) = effective_provider_name {
                 match crate::brain::provider::create_provider_by_name(&config, provider_name).await
                 {
-                    Ok(p) => p,
+                    Ok(p) => {
+                        let source =
+                            if member_provider.is_some() { "per-member" } else { "config" };
+                        tracing::info!(
+                            "Team member '{label}' using {source} provider '{provider_name}'"
+                        );
+                        p
+                    }
                     Err(_) => crate::brain::provider::create_provider(&config)
                         .await
                         .map_err(|e| {
