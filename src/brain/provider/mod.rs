@@ -19,6 +19,7 @@ pub use types::*;
 
 // Provider implementations
 pub mod anthropic;
+pub(crate) mod bare_tool_call_extractor;
 pub mod claude_cli;
 pub mod codex_cli;
 pub mod codex_oauth;

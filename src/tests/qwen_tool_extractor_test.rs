@@ -191,20 +191,24 @@ fn extract_tool_calls_array_envelope() {
 }
 
 #[test]
-fn openai_nested_function_name_without_wrapper() {
-    // Bare OpenAI object (no `tool_call:` prefix, no array wrapper).
-    // Currently we don't attempt to recover unprefixed bare JSON — users
-    // would want an extractor that checks every `{` prefix, which is far
-    // too aggressive for prose. This test locks in the "no false positive"
-    // expectation.
+fn openai_nested_function_name_recovered_via_bare_name_args_pass() {
+    // Bare OpenAI envelope with no `tool_call:` prefix, no array wrapper,
+    // and no `call_` id. The structured-tool_calls path can't see it,
+    // and none of the marker-based passes claim it either. Before
+    // 2026-06-02 this test asserted "no extraction" as a "we won't
+    // over-match prose" guard — but real production logs showed the
+    // model emitting exactly this shape as a JSON-stringified copy of
+    // a tool call that did dispatch via the structured path. We need
+    // to strip it; the bare_tool_call_extractor pass (Pass 1.9) now
+    // recovers the inner `function: {name, arguments}` object as a
+    // tool call. The KNOWN_TOOL_NAMES gate protects against this
+    // turning into a false-positive on arbitrary prose JSON.
     let text =
         r#"{"id":"c1","type":"function","function":{"name":"bash","arguments":{"command":"ls"}}}"#;
     let (calls, _) = extract_text_tool_calls(text);
-    assert_eq!(
-        calls.len(),
-        0,
-        "bare OpenAI JSON without a marker must NOT be auto-extracted"
-    );
+    assert_eq!(calls.len(), 1);
+    assert_eq!(calls[0].0, "bash");
+    assert_eq!(calls[0].1["command"], "ls");
 }
 
 #[test]
@@ -747,4 +751,133 @@ fn invoke_style_single_quoted_name_attribute() {
     assert_eq!(calls.len(), 1);
     assert_eq!(calls[0].0, "bash");
     assert_eq!(calls[0].1["command"], "echo hi");
+}
+
+// === Pass 1.7: bare `{"name": "<tool>", "arguments": {...}}` ===
+//
+// 2026-06-02 qwen-3.7-max-thinking via dialagram leaked tool calls
+// as JSON-stringified objects inside delta.content while ALSO
+// emitting the proper structured tool_calls delta. The structured
+// path executed the call; the text copy made it to Telegram as raw
+// JSON that looked like the user had pasted the tool args into the
+// chat. These tests pin the bare-object detection and dedupe.
+
+#[test]
+fn bare_name_args_with_arguments_object_is_stripped_and_extracted() {
+    // Exact shape from the 2026-06-02 leak (truncated arguments for
+    // brevity, keys preserved). Bare object dropped in prose: no
+    // <tool_call> wrapper, no `tool_call:` marker, no envelope.
+    let text = r#"I see the issue now. Let me fix it.
+
+{"name": "edit_file", "arguments": {"path": "/tmp/x.dart", "operation": "replace", "old_text": "foo", "new_text": "bar"}}
+
+Then we'll verify."#;
+    let (calls, cleaned) = extract_text_tool_calls(text);
+    assert_eq!(calls.len(), 1, "bare object must extract as one call");
+    assert_eq!(calls[0].0, "edit_file");
+    assert_eq!(calls[0].1["path"], "/tmp/x.dart");
+    assert_eq!(calls[0].1["operation"], "replace");
+    assert!(
+        !cleaned.contains("\"name\": \"edit_file\""),
+        "the bare JSON must be stripped from the visible text — \
+         leak shape that hit Telegram on 2026-06-02 must not survive"
+    );
+    assert!(cleaned.contains("I see the issue now."));
+    assert!(cleaned.contains("Then we'll verify."));
+}
+
+#[test]
+fn bare_name_args_deduplicated_against_already_parsed_call() {
+    // The model emits the SAME call twice in one assistant turn: once
+    // bare in the prose and once via a structured tool_calls delta
+    // (which is parsed upstream and shows up as `<tool_call>{json}</tool_call>`
+    // when re-serialised into text for this extractor's input). The
+    // bare copy must strip but NOT add a second call to the list.
+    let text = r#"Let me fix it. <tool_call>{"name":"edit_file","arguments":{"path":"/tmp/x","operation":"append","new_text":"y"}}</tool_call>
+
+{"name": "edit_file", "arguments": {"path": "/tmp/x", "operation": "append", "new_text": "y"}}"#;
+    let (calls, cleaned) = extract_text_tool_calls(text);
+    assert_eq!(
+        calls.len(),
+        1,
+        "the bare-copy duplicate must NOT add a second tool call — \
+         the structured-path call already executed the same args"
+    );
+    assert_eq!(calls[0].0, "edit_file");
+    assert!(
+        !cleaned.contains("\"name\": \"edit_file\""),
+        "both the wrapped AND the bare JSON must be stripped from \
+         the visible text — only the prose lead-in should remain"
+    );
+}
+
+#[test]
+fn bare_name_args_with_string_arguments_json_string_is_parsed() {
+    // Some providers double-encode: the model emits `arguments` as
+    // a JSON-stringified string instead of a nested object. The
+    // extractor must json::from_str the string before populating
+    // the call's args (matches the structured-path normalisation).
+    let text = r#"{"name": "bash", "arguments": "{\"command\":\"pwd\"}"}"#;
+    let (calls, cleaned) = extract_text_tool_calls(text);
+    assert_eq!(calls.len(), 1);
+    assert_eq!(calls[0].0, "bash");
+    assert_eq!(calls[0].1["command"], "pwd");
+    assert!(cleaned.trim().is_empty());
+}
+
+#[test]
+fn bare_name_args_requires_both_name_and_arguments_keys() {
+    // Object with `name` but no `arguments` (e.g. legitimate prose
+    // JSON like `{"name": "Adolfo"}`) must NOT trigger the extractor.
+    // The signal AND the per-object key check both have to fail.
+    let text = r#"Here's an example: {"name": "Adolfo", "role": "user"}. That's it."#;
+    let (calls, cleaned) = extract_text_tool_calls(text);
+    assert!(
+        calls.is_empty(),
+        "a `name`-only object without `arguments` is not a tool call \
+         envelope and must not be stripped or executed"
+    );
+    assert!(
+        cleaned.contains("\"name\": \"Adolfo\""),
+        "the legit prose JSON must survive — only tool-call-shaped \
+         objects get stripped"
+    );
+}
+
+#[test]
+fn bare_name_args_inside_nested_object_is_ignored() {
+    // `"name"` appearing as a nested key (not the FIRST key of its
+    // parent object) must not be mistaken for a tool-call envelope.
+    // Anchoring on the preceding `{` plus whitespace protects against
+    // this — `{"foo": ..., "name": ..., "arguments": ...}` has `"name"`
+    // preceded by `,`, not by `{`, so the pass skips it.
+    let text = r#"The config is {"version": 2, "name": "edit_file", "arguments": {"path": "/tmp"}}."#;
+    let (calls, cleaned) = extract_text_tool_calls(text);
+    assert!(
+        calls.is_empty(),
+        "`name` mid-object (not the first key) is not a tool-call \
+         envelope; nothing must dispatch"
+    );
+    assert!(cleaned.contains("The config is"));
+}
+
+#[test]
+fn bare_name_args_multiple_calls_in_one_message_extract_in_order() {
+    // Two bare tool-call objects in one assistant message — both
+    // must extract, both must strip, both must dispatch.
+    let text = r#"First read, then edit.
+
+{"name": "read_file", "arguments": {"path": "/tmp/a"}}
+
+{"name": "edit_file", "arguments": {"path": "/tmp/a", "operation": "append", "new_text": "x"}}
+
+Done."#;
+    let (calls, cleaned) = extract_text_tool_calls(text);
+    assert_eq!(calls.len(), 2);
+    assert_eq!(calls[0].0, "read_file");
+    assert_eq!(calls[1].0, "edit_file");
+    assert!(!cleaned.contains("\"name\": \"read_file\""));
+    assert!(!cleaned.contains("\"name\": \"edit_file\""));
+    assert!(cleaned.contains("First read, then edit."));
+    assert!(cleaned.contains("Done."));
 }

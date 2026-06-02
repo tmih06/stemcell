@@ -427,6 +427,16 @@ pub(crate) fn extract_text_tool_calls(text: &str) -> (Vec<(String, serde_json::V
     // Anchoring on `<invoke name=` is strict enough to skip prose like
     // `the <invoke> tag` while catching every real shape.
     let has_invoke_signal = text.contains("<invoke name=") || text.contains("invoke name=\"");
+    // Bare `{"name": "<tool>", "arguments": {...}}` signal — 2026-06-02
+    // qwen-3.7-max-thinking via dialagram. The model emits the same
+    // tool call TWICE: once as a proper structured `tool_calls` delta
+    // (which dispatches) and once as JSON-stringified text in
+    // `delta.content` (which leaks to Telegram as raw JSON). Full
+    // extraction lives in `bare_tool_call_extractor` — this module is
+    // already 5000+ lines, no point cramming another 100-line pattern
+    // inline.
+    let has_bare_name_args =
+        super::bare_tool_call_extractor::has_bare_name_args_signal(text);
     if !text.contains("<tool_call>")
         && !text.contains("<function=")
         && !text.contains("tool_call:")
@@ -437,6 +447,7 @@ pub(crate) fn extract_text_tool_calls(text: &str) -> (Vec<(String, serde_json::V
         && !has_dict_by_id_signal
         && !has_bare_command_args
         && !has_invoke_signal
+        && !has_bare_name_args
     {
         return (Vec::new(), text.to_string());
     }
@@ -986,6 +997,26 @@ pub(crate) fn extract_text_tool_calls(text: &str) -> (Vec<(String, serde_json::V
         widen_strip_to_known_wrappers(text, &mut strip_ranges);
     }
 
+    // Pass 1.9 — bare `{"name": "<tool>", "arguments": {...}}` objects
+    // emitted inline in delta.content. Logic in
+    // `bare_tool_call_extractor` — kept out of this file. MUST run
+    // after every marker-based pass so anchors that fall inside a
+    // `<tool_call>{...}</tool_call>` wrapper (already claimed) are
+    // correctly skipped instead of stripping the inner JSON and
+    // leaving an empty wrapper pair behind.
+    if has_bare_name_args {
+        for m in super::bare_tool_call_extractor::extract_bare_name_args_calls(
+            text,
+            &strip_ranges,
+            &tool_calls,
+        ) {
+            if !m.already_in_existing {
+                tool_calls.push((m.name, m.args));
+            }
+            strip_ranges.push((m.strip_start, m.strip_end));
+        }
+    }
+
     if strip_ranges.is_empty() {
         return (tool_calls, text.to_string());
     }
@@ -1021,7 +1052,7 @@ pub(crate) fn extract_text_tool_calls(text: &str) -> (Vec<(String, serde_json::V
 /// set explicit rather than matching any `<\w+>` pair avoids false
 /// positives on prose that mentions tags (e.g. `<html>`, `<body>`,
 /// `<script>`).
-const KNOWN_TOOL_NAMES: &[&str] = &[
+pub(crate) const KNOWN_TOOL_NAMES: &[&str] = &[
     "bash",
     "ls",
     "glob",
