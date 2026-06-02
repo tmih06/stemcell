@@ -336,6 +336,10 @@ impl Provider for FallbackProvider {
         self.primary.name()
     }
 
+    fn is_fallback_chain(&self) -> bool {
+        true
+    }
+
     fn base_url(&self) -> Option<&str> {
         // Forward the primary's base_url so features that identify specific
         // proxies by URL (e.g. dialagram gaslighting strip) keep working even

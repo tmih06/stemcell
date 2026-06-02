@@ -134,6 +134,20 @@ pub trait Provider: Send + Sync {
         None
     }
 
+    /// True when this provider is itself a chain wrapper (i.e.
+    /// `FallbackProvider`). Callers that want to install a provider as
+    /// the session's active backend use this to decide whether to wrap
+    /// the new provider in a fallback chain themselves. Without the
+    /// check, `swap_provider_for_session` would either (a) skip
+    /// wrapping and lose cascade coverage entirely — the regression
+    /// captured in logs 2026-06-02 02:33:25 where five "fallbacks"
+    /// cascaded in ~4s because the session's per-`/models` swap had
+    /// stripped the FallbackProvider wrapper — or (b) double-wrap
+    /// every re-swap and grow a nested onion of FallbackProviders.
+    fn is_fallback_chain(&self) -> bool {
+        false
+    }
+
     /// Calculate cost for token usage (in USD)
     fn calculate_cost(&self, model: &str, input_tokens: u32, output_tokens: u32) -> f64;
 

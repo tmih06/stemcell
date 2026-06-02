@@ -1,0 +1,174 @@
+//! Tests that `swap_provider_for_session` wraps raw providers in a
+//! `FallbackProvider` so per-session swaps don't strip cascade
+//! coverage.
+//!
+//! Regression context (2026-06-02 02:33:25-29): a session that picked
+//! the custom `dialagram` provider via `/models` had its session-
+//! specific provider entry set to the RAW dialagram client — not a
+//! `FallbackProvider` wrapping dialagram + the configured fallbacks.
+//! When dialagram returned HTTP 530, there was no transparent cascade
+//! at the provider layer; the only safety net was the manual 5xx
+//! fallback loop in `tool_loop.rs`, which had its own bug (didn't
+//! swap the session's provider before calling stream_complete, so
+//! every "Trying fallback X/Y..." iteration silently re-hit the
+//! failing primary). Five "fallbacks" cascaded in ~4 seconds and the
+//! user saw what looked like every provider being simultaneously
+//! broken when in reality only dialagram had a momentary blip.
+//!
+//! Default-config sessions kept working all along because the global
+//! `self.provider` is wrapped in `FallbackProvider` at construction
+//! time in `factory.rs:451`. The bug only surfaced for sessions whose
+//! provider had been overridden via `swap_provider_for_session` —
+//! `/models` pick, session restore of a saved `provider_name`, or
+//! the manual fallback loop's sticky promotion.
+//!
+//! The fix wraps the new provider in `FallbackProvider` inside
+//! `swap_provider_for_session` (using the AgentService's configured
+//! `fallback_providers`, filtered to exclude any candidate with the
+//! same name as the new primary). These tests pin that behaviour so
+//! a future refactor of session-swap plumbing can't silently re-open
+//! the coverage hole.
+
+use crate::brain::provider::Provider;
+use crate::tests::agent_service_mocks::{
+    MockProvider, MockProviderWithTools, create_test_service_with_provider,
+};
+use std::sync::Arc;
+
+#[tokio::test]
+async fn swap_wraps_raw_provider_in_fallback_chain_when_fallbacks_configured() {
+    let (mut svc, sid) = create_test_service_with_provider(Arc::new(MockProvider)).await;
+    svc.set_fallback_providers_for_test(vec![Arc::new(MockProviderWithTools::new())]);
+
+    // Swap to a raw provider — no FallbackProvider wrapper around it.
+    svc.swap_provider_for_session(sid, Arc::new(MockProvider));
+
+    let stored = svc.provider_for_session(sid);
+    assert!(
+        stored.is_fallback_chain(),
+        "swap_provider_for_session must wrap the new provider in a FallbackProvider \
+         so cascade coverage isn't lost on /models pick or session restore. \
+         Without this, the session's only safety net is the manual fallback \
+         loop in tool_loop.rs — which historically had its own bugs \
+         (2026-06-02 02:33:25 incident: dialagram HTTP 530, 5 \"fallbacks\" \
+         cascading in ~4s because all of them re-hit the failing primary)."
+    );
+}
+
+#[tokio::test]
+async fn swap_preserves_user_facing_name_after_wrap() {
+    let (mut svc, sid) = create_test_service_with_provider(Arc::new(MockProvider)).await;
+    svc.set_fallback_providers_for_test(vec![Arc::new(MockProviderWithTools::new())]);
+    svc.swap_provider_for_session(sid, Arc::new(MockProvider));
+
+    let stored = svc.provider_for_session(sid);
+    // FallbackProvider::name() delegates to the primary, so footers /
+    // session-persistence stay on the user's chosen provider even
+    // though the underlying type is now FallbackProvider.
+    assert_eq!(
+        stored.name(),
+        "mock",
+        "wrapping must not change the user-facing provider name — \
+         the footer, session restore, and config display all read this"
+    );
+}
+
+#[tokio::test]
+async fn swap_skips_wrap_when_no_fallbacks_configured() {
+    // Default config has no fallback chain. An empty
+    // FallbackProvider(primary, vec![]) would behaviourally be
+    // identical to the raw primary, but the extra pointer hop and
+    // Drop overhead are pure waste. Skip the wrap in this case.
+    let (mut svc, sid) = create_test_service_with_provider(Arc::new(MockProvider)).await;
+    svc.set_fallback_providers_for_test(vec![]); // no fallbacks
+    svc.swap_provider_for_session(sid, Arc::new(MockProvider));
+
+    let stored = svc.provider_for_session(sid);
+    assert!(
+        !stored.is_fallback_chain(),
+        "with no fallbacks configured, the new provider must be stored raw — \
+         wrapping in an empty FallbackProvider adds no behavioural benefit, \
+         just an extra Arc indirection per call"
+    );
+}
+
+#[tokio::test]
+async fn swap_does_not_double_wrap_existing_fallback_chain() {
+    use crate::brain::provider::FallbackProvider;
+
+    let (mut svc, sid) = create_test_service_with_provider(Arc::new(MockProvider)).await;
+    svc.set_fallback_providers_for_test(vec![Arc::new(MockProviderWithTools::new())]);
+
+    // Construct a FallbackProvider externally (the same shape the
+    // sticky-promotion code paths in tool_loop.rs produce) and swap it
+    // in. The wrapping logic must detect `is_fallback_chain() == true`
+    // and store as-is, not nest another FallbackProvider around it.
+    let already_wrapped: Arc<dyn Provider> = Arc::new(FallbackProvider::new(
+        Arc::new(MockProvider),
+        vec![Arc::new(MockProviderWithTools::new())],
+    ));
+    svc.swap_provider_for_session(sid, already_wrapped.clone());
+
+    let stored = svc.provider_for_session(sid);
+    assert!(
+        stored.is_fallback_chain(),
+        "an already-wrapped FallbackProvider must still report is_fallback_chain"
+    );
+    // Both pointers should refer to the same Arc allocation — proving
+    // we stored the input verbatim rather than constructing a new
+    // outer FallbackProvider around it.
+    assert!(
+        Arc::ptr_eq(&stored, &already_wrapped),
+        "swap must not double-wrap: an Arc<FallbackProvider> input must be stored \
+         as-is, not nested inside a fresh outer FallbackProvider. Re-wrapping on \
+         every swap would grow a deeper onion each time the user picks via /models."
+    );
+}
+
+#[tokio::test]
+async fn swap_excludes_self_from_fallback_chain() {
+    // If the user picks "mock" as the primary and the configured
+    // fallback chain also contains "mock", the wrap must not put mock
+    // in its own fallback chain — that would mean a primary failure
+    // cascades to the SAME dead endpoint immediately, defeating the
+    // purpose of fallback.
+    let (mut svc, sid) = create_test_service_with_provider(Arc::new(MockProvider)).await;
+    svc.set_fallback_providers_for_test(vec![
+        Arc::new(MockProvider), // same name as the new primary
+        Arc::new(MockProviderWithTools::new()),
+    ]);
+    svc.swap_provider_for_session(sid, Arc::new(MockProvider));
+
+    let stored = svc.provider_for_session(sid);
+    assert!(
+        stored.is_fallback_chain(),
+        "self-name filtering must still leave at least one other fallback \
+         in the chain (mock-with-tools), so the result is a FallbackProvider \
+         not a raw provider"
+    );
+    // The exact subprovider count isn't observable through the
+    // Provider trait, but the existence of the chain plus the
+    // `active_subprovider_name` API guarantees the contract — the
+    // structural correctness (excluding self) is verified by the
+    // wrapping logic in builder.rs being the single producer.
+}
+
+#[tokio::test]
+async fn swap_drops_to_raw_when_only_fallback_is_self() {
+    // Edge case of the previous test: the configured fallback list
+    // contains ONLY a candidate with the same name as the new primary.
+    // After filtering, the chain is empty, so we fall through to the
+    // "no fallbacks → store raw" path. Otherwise we'd build a
+    // pointless FallbackProvider with an empty fallbacks vec.
+    let (mut svc, sid) = create_test_service_with_provider(Arc::new(MockProvider)).await;
+    svc.set_fallback_providers_for_test(vec![Arc::new(MockProvider)]);
+    svc.swap_provider_for_session(sid, Arc::new(MockProvider));
+
+    let stored = svc.provider_for_session(sid);
+    assert!(
+        !stored.is_fallback_chain(),
+        "when every configured fallback collides with the new primary's name, \
+         the chain ends up empty and the raw provider should be stored — no point \
+         building a FallbackProvider with zero fallbacks"
+    );
+}

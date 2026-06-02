@@ -179,6 +179,19 @@ impl AgentService {
         Self::new(provider, context, &crate::config::Config::default()).await
     }
 
+    /// Test-only: replace the configured fallback chain after
+    /// construction. `Config::default()` carries no fallbacks, so
+    /// `new_for_test` produces an empty `fallback_providers` vec —
+    /// fine for tests that don't care about cascade behaviour, but
+    /// useless for tests that need to verify
+    /// `swap_provider_for_session` wraps in a `FallbackProvider`.
+    /// Marked `#[doc(hidden)]` because no production caller should
+    /// mutate this field after construction.
+    #[doc(hidden)]
+    pub fn set_fallback_providers_for_test(&mut self, providers: Vec<Arc<dyn Provider>>) {
+        self.fallback_providers = providers;
+    }
+
     /// Get the service context
     pub fn context(&self) -> &ServiceContext {
         &self.context
@@ -478,17 +491,65 @@ impl AgentService {
     /// pick and by `load_session` when restoring a session's saved
     /// `provider_name`.
     ///
+    /// Wraps the new provider in a `FallbackProvider` (using the
+    /// AgentService's configured `fallback_providers`, filtered to
+    /// exclude the new primary itself) when it isn't already a
+    /// fallback chain. Without this wrapping, per-session swaps
+    /// stripped FallbackProvider coverage entirely — a session that
+    /// picked a custom provider via `/models` lost the transparent
+    /// cascade that the global default sessions kept, and was left
+    /// to rely on the in-tool_loop manual fallback paths as its only
+    /// safety net. Logs 2026-06-02 02:33:25-29 captured the resulting
+    /// regression: with the dialagram primary returning HTTP 530 and
+    /// no FallbackProvider in front of it, every "Trying fallback
+    /// X/Y..." iteration in the tool loop re-hit dialagram because
+    /// the manual loop never swapped the session's provider before
+    /// calling stream_complete. Wrapping at swap time restores the
+    /// architectural invariant that every active provider in this
+    /// service is a fallback chain.
+    ///
     /// Also caches the provider's `configured_context_window()` into
     /// `session_context_limits` so compaction uses the correct budget
     /// even if the global provider changes later.
     pub fn swap_provider_for_session(&self, session_id: Uuid, new_provider: Arc<dyn Provider>) {
+        let context_window = new_provider.configured_context_window();
+        let stored: Arc<dyn Provider> = if new_provider.is_fallback_chain() {
+            new_provider
+        } else {
+            // Exclude any fallback with the same name as the new
+            // primary so a chain can't fall back to itself. Common
+            // case: user picks "dialagram" as the active provider via
+            // /models, and the configured fallback list also contains
+            // "dialagram" — the duplicate would just retry the same
+            // dead endpoint immediately on cascade.
+            let new_name = new_provider.name().to_string();
+            let chain: Vec<Arc<dyn Provider>> = self
+                .fallback_providers
+                .iter()
+                .filter(|p| p.name() != new_name)
+                .cloned()
+                .collect();
+            if chain.is_empty() {
+                // No fallbacks configured (or all of them collide with
+                // the new primary). Store the raw provider — wrapping
+                // it in an empty FallbackProvider would add a pointer
+                // hop with no behavioural difference.
+                new_provider
+            } else {
+                Arc::new(crate::brain::provider::FallbackProvider::new(
+                    new_provider,
+                    chain,
+                ))
+            }
+        };
+
         self.session_providers
             .write()
             .expect("session_providers lock poisoned")
-            .insert(session_id, new_provider.clone());
+            .insert(session_id, stored);
 
         // Cache context window for this session
-        if let Some(cw) = new_provider.configured_context_window() {
+        if let Some(cw) = context_window {
             self.session_context_limits
                 .write()
                 .expect("session_context_limits lock poisoned")
