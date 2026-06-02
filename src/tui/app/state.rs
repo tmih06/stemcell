@@ -80,12 +80,26 @@ impl StreamingTpsTracker {
     /// Stash the just-finished turn's rate as `last_tps` and reset the
     /// accumulator for the next turn. A turn with zero tokens leaves
     /// `last_tps` untouched (preserves the previous visible rate).
-    pub fn finalize(&mut self, total_tokens: u32) {
+    ///
+    /// `authoritative` is the agent service's computed tok/s from
+    /// `AgentResponse.tokens_per_second` — provider-reported output
+    /// tokens divided by summed per-iteration active streaming time.
+    /// When present, it overrides the local tiktoken-estimated rate
+    /// because (a) tiktoken's cl100k_base tokenizer over-counts
+    /// Qwen/Kimi/GLM bytes by ~1.5-2×, and (b) the local window
+    /// covers only the visible final-message streaming, not earlier
+    /// tool-call-iteration streaming. When `None` (CLI providers, or
+    /// any turn where the streaming layer couldn't measure active
+    /// time) we fall back to the local estimate so the footer
+    /// continues to show something rather than going blank.
+    pub fn finalize(&mut self, total_tokens: u32, authoritative: Option<f64>) {
         let active = match (self.window_start, self.last_token_at) {
             (Some(start), Some(last)) => self.active_secs + (last - start).as_secs_f64().max(0.0),
             _ => self.active_secs,
         };
-        if total_tokens > 0 && active > 0.0 {
+        if let Some(tps) = authoritative.filter(|t| t.is_finite() && *t > 0.0) {
+            self.last_tps = Some(tps);
+        } else if total_tokens > 0 && active > 0.0 {
             self.last_tps = Some(total_tokens as f64 / active);
         }
         self.active_secs = 0.0;
@@ -1304,8 +1318,9 @@ impl App {
     pub(crate) fn current_streaming_active_secs(&self) -> f64 {
         self.tps_tracker.active_secs_now(std::time::Instant::now())
     }
-    pub(crate) fn finalize_tps(&mut self) {
-        self.tps_tracker.finalize(self.streaming_output_tokens);
+    pub(crate) fn finalize_tps(&mut self, authoritative: Option<f64>) {
+        self.tps_tracker
+            .finalize(self.streaming_output_tokens, authoritative);
     }
     pub(crate) fn last_tps(&self) -> Option<f64> {
         self.tps_tracker.last_tps

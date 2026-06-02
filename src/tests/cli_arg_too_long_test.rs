@@ -54,6 +54,7 @@ impl Provider for ArgTooLongMockProvider {
                 output_tokens: 50,
                 ..Default::default()
             },
+            streaming_active_secs: None,
         })
     }
 
@@ -174,6 +175,7 @@ impl Provider for ContextLengthMockProvider {
                 output_tokens: 50,
                 ..Default::default()
             },
+            streaming_active_secs: None,
         })
     }
 

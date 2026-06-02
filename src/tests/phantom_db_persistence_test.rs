@@ -71,6 +71,7 @@ impl Provider for PhantomThenRealProvider {
                 output_tokens: 20,
                 ..Default::default()
             },
+            streaming_active_secs: None,
         })
     }
 

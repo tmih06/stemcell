@@ -32,6 +32,7 @@ impl Provider for MockProvider {
                 output_tokens: 20,
                 ..Default::default()
             },
+            streaming_active_secs: None,
         })
     }
 
@@ -134,6 +135,7 @@ impl Provider for MockProviderWithTools {
                     output_tokens: 20,
                     ..Default::default()
                 },
+                streaming_active_secs: None,
             })
         } else {
             Ok(LLMResponse {
@@ -148,6 +150,7 @@ impl Provider for MockProviderWithTools {
                     output_tokens: 25,
                     ..Default::default()
                 },
+                streaming_active_secs: None,
             })
         }
     }
@@ -357,6 +360,7 @@ impl Provider for MockProviderWithModel {
                 output_tokens: 20,
                 ..Default::default()
             },
+            streaming_active_secs: None,
         })
     }
 
@@ -461,6 +465,7 @@ impl Provider for MockProviderWithNamedTool {
                     output_tokens: 20,
                     ..Default::default()
                 },
+                streaming_active_secs: None,
             })
         } else {
             Ok(LLMResponse {
@@ -475,6 +480,7 @@ impl Provider for MockProviderWithNamedTool {
                     output_tokens: 25,
                     ..Default::default()
                 },
+                streaming_active_secs: None,
             })
         }
     }
@@ -611,6 +617,7 @@ impl Provider for MockProviderWithTwoToolCalls {
                     output_tokens: 20,
                     ..Default::default()
                 },
+                streaming_active_secs: None,
             })
         } else {
             Ok(LLMResponse {
@@ -625,6 +632,7 @@ impl Provider for MockProviderWithTwoToolCalls {
                     output_tokens: 25,
                     ..Default::default()
                 },
+                streaming_active_secs: None,
             })
         }
     }

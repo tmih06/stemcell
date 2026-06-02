@@ -143,6 +143,48 @@ impl AgentService {
         let mut billing_cache_creation = 0u32;
         let mut billing_cache_read = 0u32;
 
+        // --- Active-streaming-time accumulator ---
+        // Tracks the wall-clock time spent actually receiving output
+        // deltas (text / reasoning / thinking / tool-use JSON), with
+        // gaps longer than IDLE_GAP_SECS treated as idle (tool exec,
+        // network round-trip between message blocks, throttling).
+        // Used as the tok/s denominator instead of total turn wall-
+        // clock so the rate reflects the model's actual sustained
+        // generation speed, not the average-including-tool-exec rate.
+        //
+        // Invariant matches the TUI's StreamingTpsTracker: a window
+        // starts at the first delta event and extends to the most
+        // recent delta event. A delta arriving more than 1s after the
+        // previous one closes the current window and opens a new one.
+        // The wall-clock measured for each window is
+        // last_in_window - first_in_window, so a single isolated
+        // delta contributes 0 seconds (correct — one event has no
+        // measurable duration on its own).
+        const IDLE_GAP_SECS: f64 = 1.0;
+        let mut active_secs: f64 = 0.0;
+        let mut window_start: Option<std::time::Instant> = None;
+        let mut last_delta_at: Option<std::time::Instant> = None;
+        let note_delta = |now: std::time::Instant,
+                              active_secs: &mut f64,
+                              window_start: &mut Option<std::time::Instant>,
+                              last_delta_at: &mut Option<std::time::Instant>| {
+            match (*window_start, *last_delta_at) {
+                (None, _) => {
+                    *window_start = Some(now);
+                }
+                (Some(start), Some(last)) => {
+                    if (now - last).as_secs_f64() > IDLE_GAP_SECS {
+                        *active_secs += (last - start).as_secs_f64();
+                        *window_start = Some(now);
+                    }
+                }
+                (Some(_), None) => {
+                    *window_start = Some(now);
+                }
+            }
+            *last_delta_at = Some(now);
+        };
+
         // --- Text repetition detection ---
         // Some providers (e.g. MiniMax) loop the same content indefinitely without
         // sending a stop signal. We keep a sliding window of recent text chunks and
@@ -281,6 +323,17 @@ impl AgentService {
                 }
                 StreamEvent::ContentBlockDelta { index, delta } => {
                     if index < block_states.len() {
+                        // Every output-bearing delta — text, reasoning,
+                        // thinking, tool-use JSON — extends the active
+                        // streaming window. Done once up-front so the
+                        // four match arms below don't each need to
+                        // remember to call note_delta.
+                        note_delta(
+                            std::time::Instant::now(),
+                            &mut active_secs,
+                            &mut window_start,
+                            &mut last_delta_at,
+                        );
                         match delta {
                             ContentDelta::TextDelta { text } => {
                                 // Forward to TUI / per-call callback for real-time display
@@ -688,6 +741,25 @@ impl AgentService {
         } else {
             Some(reasoning_buf)
         };
+
+        // Finalize the active-streaming window: close the currently-
+        // open window using (last_delta - window_start). Same shape as
+        // the TUI's StreamingTpsTracker::finalize — window time is
+        // always measured between first and last delta, never extended
+        // to "now", so a long idle tail after the last token doesn't
+        // dilute the rate. Returns None when the stream never
+        // delivered a delta (active_secs == 0), so the channel footer
+        // shows no tok/s instead of a fake "0 tok/s" or NaN.
+        let final_active_secs = match (window_start, last_delta_at) {
+            (Some(start), Some(last)) => active_secs + (last - start).as_secs_f64().max(0.0),
+            _ => active_secs,
+        };
+        let streaming_active_secs = if final_active_secs > 0.0 {
+            Some(final_active_secs)
+        } else {
+            None
+        };
+
         Ok((
             LLMResponse {
                 id,
@@ -708,6 +780,7 @@ impl AgentService {
                     billing_cache_creation,
                     billing_cache_read,
                 },
+                streaming_active_secs,
             },
             reasoning,
         ))

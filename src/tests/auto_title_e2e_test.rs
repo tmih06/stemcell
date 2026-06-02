@@ -67,6 +67,7 @@ impl Provider for AutoTitleMockProvider {
                 output_tokens: 1,
                 ..Default::default()
             },
+            streaming_active_secs: None,
         })
     }
 
@@ -376,6 +377,7 @@ impl Provider for ThinkingOnlyTitleProvider {
                 output_tokens: 30,
                 ..Default::default()
             },
+            streaming_active_secs: None,
         })
     }
 

@@ -164,6 +164,8 @@ impl AnthropicProvider {
             content: response.content,
             stop_reason: response.stop_reason,
             usage: response.usage,
+            // Non-streaming path — active streaming time only meaningful for stream_complete.
+            streaming_active_secs: None,
         }
     }
 

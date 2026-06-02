@@ -2031,8 +2031,11 @@ impl App {
         self.streaming_response = None;
         // Stash the just-finished turn's tok/s into `last_tps` BEFORE we
         // zero the counters, so the footer keeps showing the rate until
-        // the next turn produces its first token.
-        self.finalize_tps();
+        // the next turn produces its first token. Pass the provider-
+        // reported tok/s from AgentResponse so the displayed rate
+        // matches the channel footer (and is correct for non-OpenAI
+        // models where tiktoken over-counts the local estimate).
+        self.finalize_tps(response.tokens_per_second);
         self.streaming_output_tokens = 0;
         let reasoning_details = self.streaming_reasoning.take();
         self.cancel_token = None;

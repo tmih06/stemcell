@@ -197,6 +197,17 @@ pub struct LLMResponse {
     pub stop_reason: Option<StopReason>,
     /// Token usage
     pub usage: TokenUsage,
+    /// Sum of active-streaming windows for this response, in seconds.
+    /// Excludes idle gaps >1s between content deltas (which would be
+    /// tool execution, approval waits, or between-message-block
+    /// round-trips). Used as the denominator for an accurate
+    /// tokens-per-second display so the channel footer reports the
+    /// model's actual sustained generation rate, not output-tokens
+    /// divided by full turn wall-clock (which silently halves the rate
+    /// on every tool-heavy turn). Only the streaming path populates
+    /// this; non-streaming `parse_response` sites leave it `None`.
+    #[serde(default)]
+    pub streaming_active_secs: Option<f64>,
 }
 
 /// Reason why the model stopped generating

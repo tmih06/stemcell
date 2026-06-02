@@ -165,6 +165,7 @@ mod fallback_runtime {
                         output_tokens: 0,
                         ..Default::default()
                     },
+                    streaming_active_secs: None,
                 })
             }
         }

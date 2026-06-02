@@ -46,6 +46,7 @@ impl Provider for MockDeferredUsageProvider {
                 output_tokens: self.output_tokens,
                 ..Default::default()
             },
+            streaming_active_secs: None,
         })
     }
 
@@ -161,6 +162,7 @@ impl Provider for MockInlineUsageProvider {
                 output_tokens: self.output_tokens,
                 ..Default::default()
             },
+            streaming_active_secs: None,
         })
     }
 
@@ -339,6 +341,7 @@ async fn test_deferred_usage_with_tool_calls() {
                         output_tokens: 100,
                         ..Default::default()
                     },
+                    streaming_active_secs: None,
                 })
             } else {
                 Ok(LLMResponse {
@@ -353,6 +356,7 @@ async fn test_deferred_usage_with_tool_calls() {
                         output_tokens: 50,
                         ..Default::default()
                     },
+                    streaming_active_secs: None,
                 })
             }
         }

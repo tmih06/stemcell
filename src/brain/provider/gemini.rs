@@ -332,6 +332,8 @@ impl GeminiProvider {
                 cache_creation_tokens,
                 ..Default::default()
             },
+            // Non-streaming path — active streaming time only meaningful for stream_complete.
+            streaming_active_secs: None,
         }
     }
 

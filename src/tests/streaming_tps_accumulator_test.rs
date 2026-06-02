@@ -103,7 +103,8 @@ fn finalize_stashes_rate_and_resets_accumulator() {
     let t0 = Instant::now();
     t.advance(t0);
     t.advance(t0 + Duration::from_millis(100)); // 100ms window, 100 tokens
-    t.finalize(100);
+    // None = use local estimate (the path tested here).
+    t.finalize(100, None);
     let tps = t.last_tps.expect("finalize must stash a rate");
     assert!(
         (tps - 1000.0).abs() < 1e-3,
@@ -119,7 +120,7 @@ fn finalize_with_zero_tokens_does_not_clobber_previous_last_tps() {
     t.last_tps = Some(42.0);
     let t0 = Instant::now();
     t.advance(t0);
-    t.finalize(0);
+    t.finalize(0, None);
     assert_eq!(
         t.last_tps,
         Some(42.0),
@@ -135,8 +136,57 @@ fn finalize_with_zero_active_secs_does_not_clobber_previous_last_tps() {
     t.last_tps = Some(42.0);
     let t0 = Instant::now();
     t.advance(t0);
-    t.finalize(50);
+    t.finalize(50, None);
     assert_eq!(t.last_tps, Some(42.0));
+}
+
+#[test]
+fn finalize_uses_authoritative_tps_when_provided() {
+    // The whole point of the AgentResponse.tokens_per_second wire-up:
+    // when the agent service computed an authoritative tok/s from
+    // provider-reported output_tokens divided by summed active
+    // streaming time, the TUI must display THAT number, not the
+    // tiktoken-estimated local rate. Otherwise users see two
+    // different numbers in the footer (local) vs the channel
+    // footer (authoritative) for the same turn.
+    let mut t = StreamingTpsTracker::default();
+    let t0 = Instant::now();
+    t.advance(t0);
+    t.advance(t0 + std::time::Duration::from_millis(100));
+    // Local estimate would be 1000 tok/s (100 tokens / 0.1s).
+    // Authoritative says 73 — use it.
+    t.finalize(100, Some(73.0));
+    assert_eq!(t.last_tps, Some(73.0));
+}
+
+#[test]
+fn finalize_falls_back_to_local_when_authoritative_is_none() {
+    // CLI providers and other non-streaming paths don't measure
+    // active streaming time and report tokens_per_second=None. The
+    // TUI must still show the local estimate in that case so the
+    // footer doesn't go blank.
+    let mut t = StreamingTpsTracker::default();
+    let t0 = Instant::now();
+    t.advance(t0);
+    t.advance(t0 + std::time::Duration::from_millis(100));
+    t.finalize(100, None);
+    let tps = t.last_tps.expect("local estimate must apply when authoritative is None");
+    assert!((tps - 1000.0).abs() < 1e-3);
+}
+
+#[test]
+fn finalize_ignores_non_finite_authoritative() {
+    // Guard against the agent service somehow emitting NaN / Infinity
+    // (e.g. divide-by-zero on a degenerate turn). Fall back to local.
+    let mut t = StreamingTpsTracker::default();
+    t.last_tps = Some(42.0);
+    let t0 = Instant::now();
+    t.advance(t0);
+    t.advance(t0 + std::time::Duration::from_millis(100));
+    t.finalize(100, Some(f64::NAN));
+    // Should have fallen back to local (1000 tok/s), not NaN.
+    let tps = t.last_tps.expect("NaN authoritative must fall back to local, not blank");
+    assert!((tps - 1000.0).abs() < 1e-3, "got {tps:?}, expected ~1000 from local fallback");
 }
 
 #[test]

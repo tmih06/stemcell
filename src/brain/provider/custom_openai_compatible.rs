@@ -2545,6 +2545,8 @@ impl OpenAIProvider {
                 cache_read_tokens: response.usage.effective_cache_read(),
                 ..Default::default()
             },
+            // Non-streaming parse path — streaming responses go through helpers.rs.
+            streaming_active_secs: None,
         }
     }
 

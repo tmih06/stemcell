@@ -280,9 +280,6 @@ impl AgentService {
         progress_callback: Option<ProgressCallback>,
         question_callback: Option<QuestionCallback>,
     ) -> Result<AgentResponse> {
-        // Track turn start time for tok/s calculation in channel footers
-        let turn_start = std::time::Instant::now();
-
         // Get or create session
         let session_service = SessionService::new(self.context.clone());
         let session = session_service
@@ -710,6 +707,14 @@ impl AgentService {
         let mut total_output_tokens = 0u32;
         let mut total_cache_creation = 0u32;
         let mut total_cache_read = 0u32;
+        // Sum of per-iteration active-streaming time, used as the tok/s
+        // denominator. Replaces the previous `turn_start.elapsed()`
+        // wall-clock which silently halved the displayed rate on every
+        // tool-heavy turn by including bash exec / approval waits / DB
+        // persistence in the denominator. Per-iteration values come
+        // from `LLMResponse.streaming_active_secs` populated by
+        // `stream_complete` in helpers.rs.
+        let mut total_streaming_active_secs: f64 = 0.0;
         // Last iteration's prompt size, used for the "current context
         // usage" indicator. Distinct from `total_input_tokens` which
         // sums across every iteration for cost/billing. The UI ctx
@@ -2203,6 +2208,9 @@ impl AgentService {
             total_input_tokens += call_input_tokens;
             last_iter_input_tokens = call_input_tokens;
             total_output_tokens += response.usage.output_tokens;
+            if let Some(secs) = response.streaming_active_secs {
+                total_streaming_active_secs += secs;
+            }
             // Use billing fields (cumulative across CLI rounds) when available
             total_cache_creation += if response.usage.billing_cache_creation > 0 {
                 response.usage.billing_cache_creation
@@ -4521,6 +4529,11 @@ impl AgentService {
                         ..Default::default()
                     },
                     stop_reason: Some(crate::brain::provider::StopReason::EndTurn),
+                    // Synthesised from accumulated state — the real
+                    // streaming windows already contributed via the
+                    // per-iteration LLMResponses; this top-level
+                    // synthesis is for content/usage handoff only.
+                    streaming_active_secs: None,
                 }
             }
             None => {
@@ -4596,13 +4609,32 @@ impl AgentService {
             ));
         }
 
-        // Calculate tokens per second for channel footer display
-        let turn_duration = turn_start.elapsed().as_secs_f64();
-        let tokens_per_second = if turn_duration > 0.0 && total_output_tokens > 0 {
-            Some(total_output_tokens as f64 / turn_duration)
-        } else {
-            None
-        };
+        // Calculate tokens per second for channel footer display.
+        //
+        // Numerator: provider-reported output_tokens summed across
+        // every iteration of the tool loop. This is the authoritative
+        // count from the provider's billing pipeline — never the
+        // tiktoken approximation the TUI uses during live streaming
+        // (cl100k_base over-counts Qwen/Kimi/GLM bytes by ~1.5-2×,
+        // which combined with sub-second burst windows showed users
+        // 700-800 tok/s for providers that genuinely run ~100 tok/s).
+        //
+        // Denominator: sum of per-iteration active-streaming windows
+        // populated by `stream_complete` in helpers.rs. Each window
+        // is the wall time between the first and last content delta
+        // of that iteration, with idle gaps >1s excluded — so tool
+        // execution, approval prompts, DB persistence, and the gap
+        // between iterations are all left out. The result is the
+        // model's actual sustained generation rate during streaming,
+        // not output-divided-by-full-turn-wall-clock (which silently
+        // halved the rate on tool-heavy turns).
+        //
+        let tokens_per_second =
+            if total_streaming_active_secs > 0.0 && total_output_tokens > 0 {
+                Some(total_output_tokens as f64 / total_streaming_active_secs)
+            } else {
+                None
+            };
 
         Ok(AgentResponse {
             message_id: assistant_db_msg.id,

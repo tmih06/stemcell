@@ -460,6 +460,8 @@ impl Provider for ClaudeCliProvider {
             content,
             stop_reason,
             usage,
+            // CLI subprocess output is parsed in one shot, not streamed.
+            streaming_active_secs: None,
         })
     }
 
