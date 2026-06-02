@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.3.34] - 2026-06-02
 
-30 commits since v0.3.33. Stability and UX release closing #141, #142, #147, #148, #149. Alexey Leshchenko (`leshchenko1979`) contributed the file_extract double-extension fix (#146) and RSI counter cleanup (#150); the remaining 28 commits layered brain dedup automation, follow-up question polish across all channels, provider registry hardening, and error-handling improvements on top.
+37 commits since v0.3.33. Stability and UX release closing #141, #142, #147, #148, #149, #151. Alexey Leshchenko (`leshchenko1979`) contributed the file_extract double-extension fix (#146) and RSI counter cleanup (#150); the remaining 35 commits layered brain dedup automation, follow-up question polish across all channels, provider registry hardening, skill description injection, RTK sysadmin expansion, phantom detector hardening, channel footer tok/s parity, Claude CLI auto-learning, and error-handling improvements on top.
 
 **Brain file dedup scan (closes #147, 6 commits):** New RSI proposal kind that scans all 11 brain files daily, clusters duplicate lines (minimum 10 chars, skips structural markdown like headings and separators), and files dedup proposals into Mission Control. Soft purple badge in the inbox, runs every 24 RSI cycles (about once per day at 1-hour intervals), never auto-applies. Human approval required through the existing `rsi_proposals` apply/reject flow. Core scan logic in `dedup_scan.rs` (393 lines), hooked into the RSI cycle with periodicity gating, 14 regression tests covering empty files, short-line filtering, cross-file detection, proposal format, and canonical selection.
 
@@ -30,9 +30,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 **Baseline additive merge (1 commit):** Additive merge so new models reach users without manual config edits.
 
-Closes #141, #142, #146, #147, #148, #149.
+**Skill description injection (closes #151, 1 commit):** Skill descriptions were documented in TOOLS.md as LLM auto-invoking triggers but were never actually injected into the system prompt, so the LLM could not auto-invoke from description. Added `push_skills_section()` to `prompt_builder.rs` that loads all skills via `crate::brain::skills::load_all_skills()` and formats each as `- skill_name: description`, appending an `## Available Skills` block to both `build_core_brain()` and `build_system_brain()`. 2 regression tests.
 
-38 files changed, +1,847/-312.
+**RTK sysadmin expansion (1 commit):** Closed the gap vs fast-rlm's 69.9% token reduction. Added 11 sysadmin commands (`ps`, `top`, `lsof`, `netstat`, `ss`, `journalctl`, `dmesg`, `dig`, `nslookup`, `host`, `traceroute`) that were bypassing RTK entirely. Bundled `rtk_filters.toml.example` with 8 conservative starter rules (ps-aux-compact, lsof-i-compact, netstat-compact, journalctl-recent, dmesg-recent, git-log-oneline-cap, git-diff-cap, gh-pr-list-cap, dig-answer-only). 6 sentinel tests pin the list shape.
+
+**Phantom detector hardening (2 commits):** Two narration shapes leaked past the phantom detector: pronounless deferment (`Need to read the X`) and bare gerunds (`Reading the current state of the affected files`). Added 28 pronounless EN variants, 15 telegraphic FR `besoin de` variants, and gerund+determiner bigrams. A new regression file pins both leaked sentences verbatim. Follow-up fixed French accent detection: `detect_language` missed `é/è/ë/ü`, so French narration fell through to English and the new `besoin de` phrases never matched. Added the 4 markers.
+
+**tok/s in channel footers (2 commits):** Channel context budget footers showed only `ctx: XK/YK Z%` while the TUI also showed `| N tok/s`. Added `tokens_per_second: Option<f64>` to `AgentResponse`, extended `format_ctx_footer` to accept a third `tps` parameter, computed tok/s from `total_output_tokens / turn_duration` across the whole turn in `tool_loop.rs`, and wired it through all four channels (Telegram, Discord, Slack, WhatsApp). Second commit is `cargo fmt` wrapping the long call sites.
+
+**Claude CLI model auto-learn (1 commit):** Footer showed Opus 4.7 after Anthropic shipped 4.8 because `default_for_alias` hardcoded `opus -> opus-4-7`. Now the provider learns the CLI-resolved version from `message_start` events, persists to `~/.opencrabs/claude_cli_models.json` (rewriting only when the value changes), and the TUI refreshes the session model live so the footer self-corrects to the actual version without code changes. `default_for_alias` prefers the learned cache and falls back to a build-time seed only on a fresh install. The SSE model is normalized to the short form so display, writeback, and pricing agree.
+
+Closes #141, #142, #146, #147, #148, #149, #151.
+
+70 files changed, +4,637/-389.
 
 BRAIN FILE DEDUP SCAN (6 commits, closes #147)
 
@@ -117,6 +127,38 @@ TEST INFRASTRUCTURE (1 commit)
 Added dummy API keys to ProviderConfig test helpers after registry cleanup.
 
 - ce963cac fix(tests): add dummy api_key to ProviderConfig helpers after registry cleanup
+
+SKILL DESCRIPTION INJECTION (1 commit, closes #151)
+
+Skill descriptions were documented in TOOLS.md as LLM auto-invoking triggers but were never actually injected into the system prompt. Added `push_skills_section()` to `prompt_builder.rs` that loads all skills and formats each as `- skill_name: description`, appending an `## Available Skills` block to both `build_core_brain()` and `build_system_brain()`. 2 regression tests.
+
+- f8ae7ac5 fix(brain): inject skill descriptions into system prompt
+
+RTK SYSADMIN EXPANSION (1 commit)
+
+Closed the gap vs fast-rlm's 69.9% token reduction. Added 11 sysadmin commands (`ps`, `top`, `lsof`, `netstat`, `ss`, `journalctl`, `dmesg`, `dig`, `nslookup`, `host`, `traceroute`) that were bypassing RTK entirely. Bundled `rtk_filters.toml.example` with 8 conservative starter rules. 6 sentinel tests.
+
+- fa821ed0 fix(rtk): expand RTK_SUPPORTED_COMMANDS with sysadmin family + bundle filter template
+
+PHANTOM DETECTOR HARDENING (2 commits)
+
+Two narration shapes leaked past the phantom detector: pronounless deferment (`Need to read the X`) and bare gerunds (`Reading the current state...`). Added 28 pronounless EN variants, 15 telegraphic FR `besoin de` variants, and gerund+determiner bigrams. Follow-up fixed French accent detection: `detect_language` missed `é/è/ë/ü`, so French narration fell through to English and the new `besoin de` phrases never matched.
+
+- 49a2ba3b fix(phantom): catch pronounless Need to X + bare-gerund openers
+- 8b972771 fix(phantom): add é/è/ë/ü to French marker set so besoin de phrases match
+
+TOK/S IN CHANNEL FOOTERS (2 commits)
+
+Channel context budget footers showed only `ctx: XK/YK Z%` while the TUI also showed `| N tok/s`. Added `tokens_per_second` to `AgentResponse`, extended `format_ctx_footer`, computed tok/s from `total_output_tokens / turn_duration` across the whole turn, and wired it through all four channels. Second commit is `cargo fmt` wrapping the long call sites.
+
+- 17aa6abb fix(channels): add tok/s to context budget footer to match TUI
+- 01222300 style(channels): wrap long format_ctx_footer call sites
+
+CLAUDE CLI MODEL AUTO-LEARN (1 commit)
+
+Footer showed Opus 4.7 after Anthropic shipped 4.8 because `default_for_alias` hardcoded the version. Now the provider learns the CLI-resolved version from `message_start`, persists to `~/.opencrabs/claude_cli_models.json`, and the TUI refreshes the session model live so the footer self-corrects without code changes.
+
+- 60127ee0 fix(claude-cli): learn resolved model version from the CLI, stop hardcoding it
 
 ## [0.3.33] - 2026-05-31
 
