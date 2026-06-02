@@ -40,7 +40,13 @@ impl Tool for SpawnAgentTool {
     fn description(&self) -> &str {
         "Spawn a child agent to handle a sub-task autonomously. The child gets its own session \
          and runs in the background. Returns an agent_id you can use with wait_agent, send_input, \
-         close_agent, or resume_agent. Use this to delegate independent work items."
+         close_agent, or resume_agent. Use this to delegate independent work items. \
+         \n\nProvider and model for the child are controlled via the user's config.toml \
+         [agent] section: set `subagent_provider` and `subagent_model` to route every spawned \
+         agent to a specific provider/model (for example a cheaper/faster model than the parent \
+         session). When those keys are unset the child inherits the parent session's provider \
+         and uses that provider's default model. Per-call overrides on this tool are not \
+         supported yet; route via config."
     }
 
     fn input_schema(&self) -> Value {

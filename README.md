@@ -2101,15 +2101,18 @@ OpenCrabs supports spawning specialized sub-agents that run autonomously in isol
 
 Sub-agents never have access to recursive tools (`spawn_agent`, `resume_agent`, `wait_agent`, `send_input`, `close_agent`) or dangerous system tools (`rebuild`, `evolve`).
 
-**Subagent Configuration** — optionally override the provider/model for all spawned sub-agents in `config.toml`:
+**Subagent Provider and Model** — pick the provider and model for every spawned sub-agent in `config.toml`. `spawn_agent`, `resume_agent`, and `team_create` do not take a `model` parameter; routing happens through config so the same setting applies to every call site without needing to thread the choice through each prompt.
 
 ```toml
 [agent]
-subagent_provider = "openrouter"   # provider for child agents (omit to inherit parent)
-subagent_model = "qwen/qwen3-235b" # model override for child agents (omit to inherit parent)
+subagent_provider = "opencode-kimi"   # provider for child agents
+subagent_model    = "kimi-k2.6"       # model for child agents
+
+# Omit both keys and child agents inherit the parent session's provider
+# and run on that provider's default model.
 ```
 
-This lets you run a powerful model for the main session while using a cheaper/faster model for sub-tasks.
+Common pattern: run a premium model for the main session, and route every child agent to a cheaper/faster one. Per-call overrides on the spawn tools are a planned follow-up; for now, switch the config and restart, or use a different config profile for the session that spawns the children.
 
 ### System CLI Tools
 

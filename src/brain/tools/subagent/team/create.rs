@@ -40,7 +40,11 @@ impl Tool for TeamCreateTool {
 
     fn description(&self) -> &str {
         "Create a named team by spawning multiple sub-agents at once. Each agent gets its own \
-         task and optional type. Returns team name and all agent IDs."
+         task and optional type. Returns team name and all agent IDs. \
+         \n\nProvider and model for every team member follow the same rule as spawn_agent: \
+         the user's config.toml [agent] section `subagent_provider` and `subagent_model` keys \
+         pick the provider/model when set, otherwise each member inherits the parent session's \
+         provider. Per-call overrides on this tool are not supported yet; route via config."
     }
 
     fn input_schema(&self) -> Value {

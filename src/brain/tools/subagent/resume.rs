@@ -35,7 +35,12 @@ impl Tool for ResumeAgentTool {
 
     fn description(&self) -> &str {
         "Resume a completed or failed sub-agent with a new prompt. \
-         The agent continues in the same session, preserving its prior context."
+         The agent continues in the same session, preserving its prior context. \
+         \n\nProvider and model on resume follow the same rule as spawn_agent: the \
+         user's config.toml [agent] section `subagent_provider` and `subagent_model` keys \
+         pick the provider/model when set, otherwise the resumed agent inherits the parent \
+         session's provider. Per-call overrides on this tool are not supported yet; route \
+         via config."
     }
 
     fn input_schema(&self) -> Value {
