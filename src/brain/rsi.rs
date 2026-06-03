@@ -532,9 +532,19 @@ pub fn spawn_rsi_engine(
             initial_delay % 60
         );
 
+        let cycle_number_path = dirs::home_dir()
+            .unwrap_or_default()
+            .join(".opencrabs/rsi/cycle_number");
+
         let mut first_iteration = true;
         let mut last_seen_count: i64 = 0;
-        let mut cycle_number: u64 = 0;
+        // Persist cycle_number across restarts so the dedup scan
+        // (every 24 cycles) actually fires. Without this, frequent
+        // restarts reset the counter and dedup never triggers.
+        let mut cycle_number: u64 = std::fs::read_to_string(&cycle_number_path)
+            .ok()
+            .and_then(|s| s.trim().parse().ok())
+            .unwrap_or(0);
         loop {
             let delay = if first_iteration {
                 first_iteration = false;
@@ -841,6 +851,7 @@ pub fn spawn_rsi_engine(
             // (default: once per day at 24 x 1h cycles). Files proposals
             // into Mission Control for user review. Does NOT auto-apply.
             cycle_number += 1;
+            let _ = std::fs::write(&cycle_number_path, cycle_number.to_string());
             if cycle_number.is_multiple_of(DEDUP_SCAN_EVERY_N_CYCLES) {
                 let brain_path = crate::config::opencrabs_home();
                 let store = crate::brain::rsi_proposals::ProposalsStore::new();
