@@ -21,9 +21,9 @@ pub use builder::AgentService;
 pub use gaslighting::{is_gaslighting_preamble, strip_gaslighting_preamble};
 pub use helpers::detect_text_repetition;
 pub use phantom::{
-    count_intent_line_starts, has_investigative_intent, has_phantom_tool_intent,
-    has_phantom_tool_intent_no_tools, is_analysis_intent, is_stuck_in_intent_loop,
-    looks_truncated_mid_sentence,
+    count_intent_line_starts, has_forward_intent_post_success, has_investigative_intent,
+    has_phantom_tool_intent, has_phantom_tool_intent_no_tools, is_analysis_intent,
+    is_stuck_in_intent_loop, looks_truncated_mid_sentence,
 };
 pub use types::{
     AgentResponse, AgentStreamResponse, ApprovalCallback, ChannelSessionEvent,

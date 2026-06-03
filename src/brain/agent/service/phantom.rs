@@ -80,6 +80,47 @@ pub fn has_investigative_intent(text: &str) -> bool {
     lang_intent_match(&lower, &lang.intent_phrases)
 }
 
+/// Forward-looking intent detector for the post-success path.
+///
+/// Behaves like `has_phantom_tool_intent_no_tools` but DROPS the
+/// past-tense completion-claim branch. Used as the eligibility gate
+/// for phantom self-heal AFTER a turn has already produced at least
+/// one successful tool call: at that point past-tense summaries
+/// (`Pushed.`, `Committed.`, `On main.`) are legitimate completion
+/// acks and must not re-fire the detector — that's the whole reason
+/// the post-success exemption exists. But FORWARD-looking intent
+/// (`Let me dig into …`, `I'll check the …`, `Let me read the …`,
+/// `need to update the …`) signals more tool calls promised and
+/// dropped, which IS phantom regardless of how many tools already
+/// ran this turn.
+///
+/// Logs 2026-06-03: a turn that ran one `git branch --show-current`
+/// tool call then emitted "Good, on main. Let me dig into the delete
+/// invitation endpoint, the email send path, and the invite flow to
+/// find the bugs." silently ended without ever dispatching the three
+/// promised investigations because the original exemption gate
+/// (`phantom_eligible = tools_completed == 0`) disabled phantom
+/// detection entirely for the post-tool-call portion of the turn.
+///
+/// Uses `prose_lead_in` so structural content (tables, code blocks,
+/// bullet lists) past the lead-in doesn't contribute matches —
+/// matches the host detector's own filter and keeps commit-message
+/// tables from re-triggering the original false positive that
+/// `e843f405` fixed.
+pub fn has_forward_intent_post_success(text: &str) -> bool {
+    let trimmed = text.trim();
+    if trimmed.len() < 20 {
+        return false;
+    }
+    let lead = prose_lead_in(trimmed);
+    if lead.is_empty() {
+        return false;
+    }
+    let lower = lead.to_lowercase();
+    let lang = phantom_lang::detect_language(trimmed);
+    lang_intent_match(&lower, &lang.intent_phrases)
+}
+
 /// Count line-start intent phrases — `Let me <verb>`, `I'll <verb>`,
 /// `Let's <verb>`, or `Now let me / Now I'll <verb>`. A high count in a
 /// single iteration's text means the model is spinning in place: emitting

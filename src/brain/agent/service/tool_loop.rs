@@ -3005,14 +3005,37 @@ impl AgentService {
                 // already-completed work. Symptom: 8+ "Phantom tool
                 // calls detected" alerts after a clean commit+push,
                 // 293s and 4683 tokens wasted finalising nothing.
-                let phantom_eligible = !is_cli_provider && tool_calls_completed_this_turn == 0;
+                // POST-SUCCESS EXEMPTION (refined). Phantom-eligibility gate. Two regimes:
+                //
+                //   1. No tool call completed this turn: standard
+                //      phantom check — the iteration's text must not
+                //      narrate an action without a tool call.
+                //   2. Tool call(s) ALREADY completed: phantom stays
+                //      exempt for pure completion acks (`Done.` /
+                //      `Pushed.` / `On main.`) BUT re-engages when
+                //      the text carries a FORWARD-looking intent
+                //      phrase (`Let me dig into …`, `I'll check the
+                //      …`). Forward intent after a tool call means
+                //      the model promised more work and dropped it.
+                //      Logs 2026-06-03 captured this regression:
+                //      "Good, on main. Let me dig into the delete
+                //      invitation endpoint, the email send path, and
+                //      the invite flow to find the bugs." silently
+                //      closed with three promised investigations un-
+                //      dispatched because the original exemption
+                //      disabled phantom for the whole post-tool
+                //      portion of the turn.
+                let phantom_eligible = !is_cli_provider
+                    && (tool_calls_completed_this_turn == 0
+                        || super::phantom::has_forward_intent_post_success(&iteration_text));
                 if !phantom_eligible && tool_calls_completed_this_turn > 0 {
                     tracing::info!(
                         target: "phantom",
                         tools_completed = tool_calls_completed_this_turn,
                         text_len = iteration_text.len(),
-                        "phantom detection skipped: turn already produced successful tool calls; \
-                         text-only iteration is a completion acknowledgement, not phantom intent"
+                        "phantom detection skipped: turn already produced successful tool calls \
+                         and the text-only iteration is a pure completion acknowledgement \
+                         (no forward-looking intent phrase)"
                     );
                 }
                 let stuck_loop_now =

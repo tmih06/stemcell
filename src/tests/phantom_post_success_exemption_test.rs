@@ -102,12 +102,28 @@ fn phantom_eligible_gate_replaces_naked_is_cli_provider_check() {
         .split_ascii_whitespace()
         .collect::<Vec<_>>()
         .join(" ");
-    let expected_chain =
-        "let phantom_eligible = !is_cli_provider && tool_calls_completed_this_turn == 0;";
+    // Two-regime gate (refined 2026-06-03 for forward-intent re-engagement
+    // after a successful tool call). The original single-condition form
+    // was correct until logs showed "Let me dig into …" leaking through
+    // after one tool — see `forward_intent_after_tool_call_fires_phantom_via_dedicated_detector`.
+    let expected_lead = "let phantom_eligible = !is_cli_provider";
     assert!(
-        normalized.contains(expected_chain),
-        "phantom_eligible gate must be defined at the top of the phantom block — \
-         expected substring: {expected_chain}"
+        normalized.contains(expected_lead),
+        "phantom_eligible gate must lead with `!is_cli_provider` — \
+         expected substring: {expected_lead}"
+    );
+    let expected_zero_tools = "tool_calls_completed_this_turn == 0";
+    assert!(
+        normalized.contains(expected_zero_tools),
+        "phantom_eligible gate must still include the zero-tools branch — \
+         expected substring: {expected_zero_tools}"
+    );
+    let expected_forward_intent_call = "has_forward_intent_post_success";
+    assert!(
+        normalized.contains(expected_forward_intent_call),
+        "phantom_eligible gate must call has_forward_intent_post_success so \
+         forward-looking intent after a tool call re-engages self-heal — \
+         expected substring: {expected_forward_intent_call}"
     );
     // The four phantom-detection conditions must check phantom_eligible.
     // Counting "phantom_eligible" usages inside the window gives us a
@@ -168,5 +184,132 @@ fn comment_documents_the_post_success_exemption_rationale() {
     assert!(
         TOOL_LOOP_SRC.contains("completion acknowledgement"),
         "comment must name what the text-only iteration actually is"
+    );
+}
+
+// === Forward-intent re-engagement after a successful tool call ===
+//
+// 2026-06-03 regression: a turn ran one `bash: git branch
+// --show-current` tool call then emitted prose with three FORWARD-
+// looking intent phrases:
+//
+//   "Good, on main. Let me dig into the delete invitation endpoint,
+//    the email send path, and the invite flow to find the bugs."
+//
+// No further tool call followed. The original exemption disabled
+// phantom for the whole post-tool portion of the turn, so the three
+// promised investigations silently dropped. The refined gate flips
+// `phantom_eligible` back ON when the iteration text carries a
+// forward-looking intent phrase, while keeping pure completion acks
+// (`Pushed.` / `Committed.` / `On main.`) exempt as before.
+
+use crate::brain::agent::service::{has_forward_intent_post_success, has_phantom_tool_intent_no_tools};
+
+#[test]
+fn forward_intent_after_tool_call_fires_phantom_via_dedicated_detector() {
+    // The exact text from the 2026-06-03 screenshot. Must trigger
+    // the post-success forward-intent detector even though the turn
+    // had already produced a successful tool call.
+    let text = "Good, on main. Let me dig into the delete invitation endpoint, the email \
+                send path, and the invite flow to find the bugs.";
+    assert!(
+        has_forward_intent_post_success(text),
+        "the exact leak text from 2026-06-03 must fire the post-success \
+         forward-intent detector — three promised investigations dropped \
+         silently because the previous exemption gated phantom on tools-\
+         completed == 0 and disabled the check entirely after the first tool"
+    );
+}
+
+#[test]
+fn pure_completion_ack_after_tool_does_not_fire_forward_intent_detector() {
+    // The whole point of the original exemption (e843f405): once a
+    // tool call has succeeded, the model's wrap-up text is a
+    // legitimate completion ack and must NOT trigger phantom. The
+    // forward-intent variant skips the past-tense branch entirely
+    // so these ack shapes pass through clean.
+    for ack in [
+        "Pushed.",
+        "Committed.",
+        "Done. On main.",
+        "Pushed and tagged. All green on CI.",
+        "Migration created. Files saved.",
+        "Updated the file. Bumped the version.",
+    ] {
+        assert!(
+            !has_forward_intent_post_success(ack),
+            "pure completion ack must NOT fire post-success forward-intent \
+             detector — that's what the original exemption protects against. \
+             Got a hit on: {ack:?}"
+        );
+    }
+}
+
+#[test]
+fn presentation_verbs_after_tool_do_not_fire_forward_intent_detector() {
+    // Common post-completion phrasings that LOOK like "let me X" but
+    // are presentation/communication actions, not pre-tool narration.
+    // The curated intent_phrases list deliberately excludes these
+    // verbs (`know`, `show`, `explain`, `tell`); the dual-check via
+    // KNOWN_TOOL_NAMES protects against false positives here.
+    for safe in [
+        "All done. Let me know if you need anything else.",
+        "Pushed. Let me show you the diff in a sec.",
+        "Committed. I'll explain the structure if useful.",
+        "Tag added. Let me tell you what changed since the last release.",
+    ] {
+        assert!(
+            !has_forward_intent_post_success(safe),
+            "presentation-verb phrasing must NOT fire the post-success \
+             forward-intent detector. Got a hit on: {safe:?}"
+        );
+    }
+}
+
+#[test]
+fn forward_intent_detector_uses_prose_lead_in_filter() {
+    // Structural content past the lead-in (tables, code blocks,
+    // bullet lists, commit message bodies) must NOT contribute to
+    // matches. This mirrors `has_phantom_tool_intent_no_tools` and
+    // protects against the e843f405 original false positive where
+    // commit messages containing "Let me X" inside their body
+    // re-triggered the detector after a successful push.
+    let text = "All set. Pushed and tagged.\n\
+                \n\
+                | step | result |\n\
+                | --- | --- |\n\
+                | Let me check the build | passed |\n\
+                | Let me dig into logs | clean |\n";
+    assert!(
+        !has_forward_intent_post_success(text),
+        "the prose lead-in here is just 'All set. Pushed and tagged.' — \
+         the structural table past it must NOT contribute matches even \
+         though it contains literal 'let me check' / 'let me dig' phrases"
+    );
+}
+
+#[test]
+fn standard_phantom_detector_still_fires_on_zero_tool_case() {
+    // Sanity: the broader `has_phantom_tool_intent_no_tools` (used by
+    // the zero-tool-call regime) still catches the same forward
+    // intent it always did. The new function is a sister to that
+    // one, not a replacement.
+    let text = "Good, on main. Let me dig into the delete invitation endpoint.";
+    assert!(has_phantom_tool_intent_no_tools(text));
+    assert!(has_forward_intent_post_success(text));
+}
+
+#[test]
+fn eligibility_gate_in_tool_loop_uses_forward_intent_path_after_first_tool() {
+    // Source-level guard: the eligibility gate must include the
+    // forward-intent detector inside its disjunction so a future
+    // refactor that "simplifies" the gate back to the original
+    // `tools_completed == 0` form fails this test rather than
+    // silently re-opening the 2026-06-03 drop.
+    assert!(
+        TOOL_LOOP_SRC.contains("has_forward_intent_post_success"),
+        "the phantom-eligibility gate in run_tool_loop_inner must call \
+         has_forward_intent_post_success so forward-looking intent after \
+         a successful tool call re-engages self-heal"
     );
 }

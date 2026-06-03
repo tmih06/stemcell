@@ -53,13 +53,3 @@ pub(crate) fn rotating_quip(elapsed_secs: u64) -> &'static str {
     TOOL_STATUS_QUIPS[idx]
 }
 
-/// Same as `rotating_quip` but skips ahead by a deterministic offset
-/// so two pre-tool fallbacks at the same elapsed time (one with a
-/// preview, one without) don't accidentally pick the same quip and
-/// confuse a user reading the same message in two places. Caller
-/// passes the offset; we wrap on the slice length.
-#[cfg_attr(not(test), allow(dead_code))]
-pub(crate) fn rotating_quip_at(elapsed_secs: u64, offset: usize) -> &'static str {
-    let idx = ((elapsed_secs / WINDOW_SECS) as usize + offset) % TOOL_STATUS_QUIPS.len();
-    TOOL_STATUS_QUIPS[idx]
-}
