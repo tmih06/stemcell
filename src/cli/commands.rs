@@ -2012,3 +2012,48 @@ pub(crate) async fn cmd_profile(operation: ProfileCommands) -> Result<()> {
         }
     }
 }
+
+/// Check for and install the latest OpenCrabs release
+pub(crate) async fn cmd_evolve(check_only: bool) -> Result<()> {
+    let current_version = crate::VERSION;
+    println!("🔄 OpenCrabs v{current_version} — checking for updates...\n");
+
+    if check_only {
+        match crate::brain::tools::evolve::check_for_update().await {
+            Some(latest) => {
+                println!("✅ Update available: v{current_version} → v{latest}");
+                println!("   Run `opencrabs evolve` to install.");
+            }
+            None => {
+                println!("✅ Already on the latest version (v{current_version}).");
+            }
+        }
+        return Ok(());
+    }
+
+    // Full evolve — instantiate the tool and execute
+    use crate::brain::tools::evolve::EvolveTool;
+    use crate::brain::tools::{Tool, ToolExecutionContext};
+    use serde_json::json;
+    use std::collections::HashMap;
+
+    let tool = EvolveTool::new(None);
+    let input = json!({"check_only": false});
+    let context = ToolExecutionContext {
+        session_id: uuid::Uuid::new_v4(),
+        working_directory: std::env::current_dir().unwrap_or_default(),
+        env_vars: HashMap::new(),
+        auto_approve: true, // CLI user explicitly invoked evolve
+        timeout_secs: 300,
+        sudo_callback: None,
+        ssh_callback: None,
+        shared_working_directory: None,
+        service_context: None,
+        question_callback: None,
+    };
+
+    let result = tool.execute(input, &context).await?;
+    println!("{}", result.output);
+
+    Ok(())
+}

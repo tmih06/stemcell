@@ -158,6 +158,13 @@ pub enum Commands {
 
     /// Print version and exit
     Version,
+
+    /// Check for and install the latest OpenCrabs release
+    Evolve {
+        /// Only check for updates without installing
+        #[arg(long)]
+        check_only: bool,
+    },
 }
 
 #[derive(Subcommand, Debug)]
@@ -474,5 +481,6 @@ pub async fn run() -> Result<()> {
             println!("opencrabs {}", env!("CARGO_PKG_VERSION"));
             Ok(())
         }
+        Some(Commands::Evolve { check_only }) => commands::cmd_evolve(check_only).await,
     }
 }
