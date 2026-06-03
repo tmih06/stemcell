@@ -205,7 +205,7 @@ impl TelegramAgent {
                                     .parse_mode(teloxide::types::ParseMode::Html)
                                     .await;
                                 }
-                                let _ = bot.answer_callback_query(&query.id).await;
+                                let _ = bot.answer_callback_query(query.id.clone()).await;
                                 return Ok::<(), teloxide::RequestError>(());
                             }
 
@@ -235,7 +235,7 @@ impl TelegramAgent {
                                     if !resp.current_model.is_empty() {
                                         let _ = crate::channels::commands::switch_model(&agent, &resp.current_model, session_id, Some(provider_name)).await;
                                     }
-                                    let _ = bot.answer_callback_query(&query.id).await;
+                                    let _ = bot.answer_callback_query(query.id.clone()).await;
                                     // Send synthetic message to agent so it handles follow-up
                                     let prompt = if resp.current_model.is_empty() {
                                         format!(
@@ -290,12 +290,12 @@ impl TelegramAgent {
 
                                 if resp.models.is_empty() {
                                     let _ = bot
-                                        .answer_callback_query(&query.id)
+                                        .answer_callback_query(query.id.clone())
                                         .text("No models available for this provider")
                                         .await;
                                     return ResponseResult::Ok(());
                                 }
-                                let _ = bot.answer_callback_query(&query.id).await;
+                                let _ = bot.answer_callback_query(query.id.clone()).await;
                                 if let Some(msg) = &query.message {
                                     use teloxide::payloads::EditMessageTextSetters;
                                     use teloxide::prelude::Requester;
@@ -375,7 +375,7 @@ impl TelegramAgent {
                                         Err(e) => (false, format!("⚠️ {}", e)),
                                     }
                                 };
-                                let _ = bot.answer_callback_query(&query.id).await;
+                                let _ = bot.answer_callback_query(query.id.clone()).await;
                                 if let Some(msg) = &query.message {
                                     use teloxide::payloads::EditMessageTextSetters;
                                     use teloxide::prelude::Requester;
@@ -427,7 +427,7 @@ impl TelegramAgent {
                                     }
 
                                     let _ = bot
-                                        .answer_callback_query(&query.id)
+                                        .answer_callback_query(query.id.clone())
                                         .text("Session switched")
                                         .await;
                                     if let Some(msg) = &query.message {
@@ -453,7 +453,7 @@ impl TelegramAgent {
                                     }
                                 } else {
                                     let _ = bot
-                                        .answer_callback_query(&query.id)
+                                        .answer_callback_query(query.id.clone())
                                         .text("Invalid session ID")
                                         .await;
                                 }
@@ -478,7 +478,7 @@ impl TelegramAgent {
                                     idx,
                                     resolved
                                 );
-                                let _ = bot.answer_callback_query(&query.id).await;
+                                let _ = bot.answer_callback_query(query.id.clone()).await;
                                 if let Some(answer) = resolved
                                     && let Some(msg) = &query.message
                                 {
@@ -519,7 +519,7 @@ impl TelegramAgent {
                                     (false, false, false, id.to_string())
                                 } else {
                                     tracing::warn!("Telegram: unknown callback data: {}", data);
-                                    let _ = bot.answer_callback_query(&query.id).await;
+                                    let _ = bot.answer_callback_query(query.id.clone()).await;
                                     return ResponseResult::Ok(());
                                 };
 
@@ -539,7 +539,7 @@ impl TelegramAgent {
                                     id
                                 );
                             }
-                            let _ = bot.answer_callback_query(&query.id).await;
+                            let _ = bot.answer_callback_query(query.id.clone()).await;
 
                             // Edit the approval message: keep original context, append outcome, remove buttons
                             if let Some(msg) = &query.message {
@@ -573,13 +573,17 @@ impl TelegramAgent {
                             }
                         } else {
                             tracing::warn!("Telegram: callback query with no data");
-                            let _ = bot.answer_callback_query(&query.id).await;
+                            let _ = bot.answer_callback_query(query.id.clone()).await;
                         }
                         ResponseResult::Ok(())
                     }
                 }
             });
 
+            // Note: service messages (member joins/leaves) are regular Message
+            // updates in teloxide 0.17+ — they flow through msg_handler and are
+            // captured in handler.rs BEFORE the allowlist check so bot/user IDs
+            // are logged even when the joining user isn't allowlisted yet.
             let tree = dptree::entry().branch(msg_handler).branch(cb_handler);
 
             // Retry loop: if the dispatcher exits (network hiccup, Telegram conflict

@@ -439,7 +439,9 @@ impl Tool for TelegramSendTool {
                         "'poll_options' must have at least 2 options.".to_string(),
                     ));
                 }
-                match bot.send_poll(ChatId(chat_id), question, opts).await {
+                let poll_opts: Vec<teloxide::types::InputPollOption> =
+                    opts.into_iter().map(|s| s.into()).collect();
+                match bot.send_poll(ChatId(chat_id), question, poll_opts).await {
                     Ok(_) => Ok(ToolResult::success(format!("Poll sent to chat {chat_id}."))),
                     Err(e) => Ok(ToolResult::error(format!("Failed to send poll: {e}"))),
                 }
@@ -571,7 +573,7 @@ impl Tool for TelegramSendTool {
                             teloxide::types::ChatMemberKind::Administrator { .. } => {
                                 "administrator"
                             }
-                            teloxide::types::ChatMemberKind::Member => "member",
+                            teloxide::types::ChatMemberKind::Member(_) => "member",
                             teloxide::types::ChatMemberKind::Restricted { .. } => "restricted",
                             teloxide::types::ChatMemberKind::Left => "left",
                             teloxide::types::ChatMemberKind::Banned { .. } => "banned",

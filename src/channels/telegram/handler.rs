@@ -188,6 +188,72 @@ pub(crate) async fn handle_message(
 
     // Read latest config from watch channel — single source of truth
     let cfg = config_rx.borrow().clone();
+
+    // ── Service message: member join detection ──────────────────────────
+    // Capture new_chat_members BEFORE the allowlist check so bot/user IDs
+    // are logged and the owner is notified even when the joining user
+    // isn't allowlisted yet. This is the fix for the "can't see bot ID"
+    // issue — teloxide 0.17+ delivers service messages as regular Message
+    // updates, so they flow through handle_message.
+    if let Some(members) = msg.new_chat_members() {
+        let chat_title = msg.chat.title().unwrap_or("unknown");
+        let chat_id = msg.chat.id.0;
+        for member in members {
+            let uid = member.id.0;
+            let name = member.username.as_deref().unwrap_or(&member.first_name);
+            let is_bot = member.is_bot;
+            tracing::info!(
+                "Telegram: member joined chat \"{}\" (chat_id={}) — user_id={} username={} is_bot={}",
+                chat_title,
+                chat_id,
+                uid,
+                name,
+                is_bot,
+            );
+
+            // Notify the owner when a bot joins so they can grab the ID
+            if is_bot {
+                let tg_cfg = &cfg.channels.telegram;
+                if let Some(owner_id_str) = tg_cfg.allowed_users.first()
+                    && let Ok(owner_id) = owner_id_str.parse::<i64>()
+                {
+                    let notify = format!(
+                        "🤖 Bot joined \"{}\" (chat_id={}): @{} (user_id={}). \
+                         Add this ID to allowed_users if you want me to respond to it.",
+                        chat_title, chat_id, name, uid,
+                    );
+                    // Send notification to owner's DM
+                    let _ = crate::channels::telegram::send::message_in_thread(
+                        &bot,
+                        teloxide::types::ChatId(owner_id),
+                        None,
+                        notify,
+                    )
+                    .await;
+                }
+            }
+        }
+        // Service messages have no further content to process
+        return Ok(());
+    }
+
+    // ── Service message: member left ────────────────────────────────────
+    if let Some(left) = msg.left_chat_member() {
+        let chat_title = msg.chat.title().unwrap_or("unknown");
+        let chat_id = msg.chat.id.0;
+        let uid = left.id.0;
+        let name = left.username.as_deref().unwrap_or(&left.first_name);
+        tracing::info!(
+            "Telegram: member left chat \"{}\" (chat_id={}) — user_id={} username={} is_bot={}",
+            chat_title,
+            chat_id,
+            uid,
+            name,
+            left.is_bot,
+        );
+        return Ok(());
+    }
+
     let tg_cfg = &cfg.channels.telegram;
     let allowed: HashSet<i64> = tg_cfg
         .allowed_users
@@ -225,7 +291,7 @@ pub(crate) async fn handle_message(
     let chat_kind = match &msg.chat.kind {
         ChatKind::Private { .. } => "private",
         ChatKind::Public(public) => match &public.kind {
-            teloxide::types::PublicChatKind::Group { .. } => "group",
+            teloxide::types::PublicChatKind::Group => "group",
             teloxide::types::PublicChatKind::Supergroup { .. } => "supergroup",
             teloxide::types::PublicChatKind::Channel { .. } => "channel",
         },
@@ -408,8 +474,14 @@ pub(crate) async fn handle_message(
             .await;
 
         // Download the voice file from Telegram
-        let Some(file) =
-            fetch_file_or_notify(&bot, &voice.file.id, msg.chat.id, thread_id, "voice note").await
+        let Some(file) = fetch_file_or_notify(
+            &bot,
+            voice.file.id.clone(),
+            msg.chat.id,
+            thread_id,
+            "voice note",
+        )
+        .await
         else {
             return Ok(());
         };
@@ -482,7 +554,8 @@ pub(crate) async fn handle_message(
         );
 
         let Some(file) =
-            fetch_file_or_notify(&bot, &photo.file.id, msg.chat.id, thread_id, "photo").await
+            fetch_file_or_notify(&bot, photo.file.id.clone(), msg.chat.id, thread_id, "photo")
+                .await
         else {
             return Ok(());
         };
@@ -524,7 +597,13 @@ pub(crate) async fn handle_message(
             // Album photo — buffer with caption for batching
             let caption = msg.caption().map(|s| s.to_string());
             let buffer_size = telegram_state
-                .buffer_photo(chat_id, user_id, media_group_id, img_marker, caption)
+                .buffer_photo(
+                    chat_id,
+                    user_id,
+                    media_group_id.0.as_str(),
+                    img_marker,
+                    caption,
+                )
                 .await;
             tracing::info!(
                 "Telegram: buffered album photo {} for user {} in chat {} (media_group={})",
@@ -538,7 +617,7 @@ pub(crate) async fn handle_message(
             // it cancels this wait and we return early. If 3 seconds pass with no new photos,
             // we drain the buffer and process all photos together.
             let token = telegram_state
-                .reset_photo_debounce(chat_id, user_id, media_group_id)
+                .reset_photo_debounce(chat_id, user_id, media_group_id.0.as_str())
                 .await;
             let expired = telegram_state.wait_photo_debounce(token).await;
 
@@ -552,10 +631,10 @@ pub(crate) async fn handle_message(
 
             // Debounce expired — drain all buffered photos for this album
             let buffered = telegram_state
-                .drain_photo_buffer(chat_id, user_id, media_group_id)
+                .drain_photo_buffer(chat_id, user_id, media_group_id.0.as_str())
                 .await;
             telegram_state
-                .cleanup_photo_debounce(chat_id, user_id, media_group_id)
+                .cleanup_photo_debounce(chat_id, user_id, media_group_id.0.as_str())
                 .await;
 
             // Bail out if buffer is empty (edge case: ghost dispatch)
@@ -630,7 +709,7 @@ pub(crate) async fn handle_message(
         );
 
         let Some(file) =
-            fetch_file_or_notify(&bot, &vid.file.id, msg.chat.id, thread_id, "video").await
+            fetch_file_or_notify(&bot, vid.file.id.clone(), msg.chat.id, thread_id, "video").await
         else {
             return Ok(());
         };
@@ -685,8 +764,14 @@ pub(crate) async fn handle_message(
             anim.duration
         );
 
-        let Some(file) =
-            fetch_file_or_notify(&bot, &anim.file.id, msg.chat.id, thread_id, "animation").await
+        let Some(file) = fetch_file_or_notify(
+            &bot,
+            anim.file.id.clone(),
+            msg.chat.id,
+            thread_id,
+            "animation",
+        )
+        .await
         else {
             return Ok(());
         };
@@ -743,8 +828,14 @@ pub(crate) async fn handle_message(
             vnote.length
         );
 
-        let Some(file) =
-            fetch_file_or_notify(&bot, &vnote.file.id, msg.chat.id, thread_id, "video note").await
+        let Some(file) = fetch_file_or_notify(
+            &bot,
+            vnote.file.id.clone(),
+            msg.chat.id,
+            thread_id,
+            "video note",
+        )
+        .await
         else {
             return Ok(());
         };
@@ -809,8 +900,14 @@ pub(crate) async fn handle_message(
             mime
         );
 
-        let Some(file) =
-            fetch_file_or_notify(&bot, &doc.file.id, msg.chat.id, thread_id, "document").await
+        let Some(file) = fetch_file_or_notify(
+            &bot,
+            doc.file.id.clone(),
+            msg.chat.id,
+            thread_id,
+            "document",
+        )
+        .await
         else {
             return Ok(());
         };
@@ -3309,13 +3406,13 @@ fn tool_context(name: &str, input: &serde_json::Value) -> String {
 /// should `return Ok(())`).
 async fn fetch_file_or_notify(
     bot: &Bot,
-    file_id: &str,
+    file_id: teloxide::types::FileId,
     chat_id: ChatId,
     thread_id: Option<teloxide::types::ThreadId>,
     kind: &str,
 ) -> Option<teloxide::types::File> {
     use teloxide::payloads::SendMessageSetters;
-    match bot.get_file(file_id).await {
+    match bot.get_file(file_id.clone()).await {
         Ok(f) => Some(f),
         Err(e) => {
             let s = e.to_string();
