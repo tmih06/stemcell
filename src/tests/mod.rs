@@ -208,6 +208,7 @@ pub mod telegram_send_thread_id_override_test;
 pub mod telegram_status_message_test;
 pub mod telegram_thread_id_lookup_test;
 pub mod telegram_topic_listing_test;
+pub mod telegram_join_detection_test;
 pub mod text_complete_test;
 pub mod tui_tool_stack_test;
 #[cfg(feature = "local-tts")]

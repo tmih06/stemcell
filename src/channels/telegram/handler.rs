@@ -217,11 +217,7 @@ pub(crate) async fn handle_message(
                 if let Some(owner_id_str) = tg_cfg.allowed_users.first()
                     && let Ok(owner_id) = owner_id_str.parse::<i64>()
                 {
-                    let notify = format!(
-                        "🤖 Bot joined \"{}\" (chat_id={}): @{} (user_id={}). \
-                         Add this ID to allowed_users if you want me to respond to it.",
-                        chat_title, chat_id, name, uid,
-                    );
+                    let notify = format_bot_join_notification(chat_title, chat_id, name, uid);
                     // Send notification to owner's DM
                     let _ = crate::channels::telegram::send::message_in_thread(
                         &bot,
@@ -3675,6 +3671,14 @@ pub(crate) fn markdown_to_telegram_html(text: &str) -> String {
     }
 
     result.trim_end().to_string()
+}
+
+/// Format notification when a bot joins a group chat
+pub(crate) fn format_bot_join_notification(chat_title: &str, chat_id: i64, username: &str, user_id: u64) -> String {
+    format!(
+        "🤖 Bot joined \"{}\" (chat_id={}): @{} (user_id={}). Add this ID to allowed_users if you want me to respond to it.",
+        chat_title, chat_id, username, user_id,
+    )
 }
 
 /// Escape HTML special characters
