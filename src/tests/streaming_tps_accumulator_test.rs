@@ -170,7 +170,9 @@ fn finalize_falls_back_to_local_when_authoritative_is_none() {
     t.advance(t0);
     t.advance(t0 + std::time::Duration::from_millis(100));
     t.finalize(100, None);
-    let tps = t.last_tps.expect("local estimate must apply when authoritative is None");
+    let tps = t
+        .last_tps
+        .expect("local estimate must apply when authoritative is None");
     assert!((tps - 1000.0).abs() < 1e-3);
 }
 
@@ -185,8 +187,13 @@ fn finalize_ignores_non_finite_authoritative() {
     t.advance(t0 + std::time::Duration::from_millis(100));
     t.finalize(100, Some(f64::NAN));
     // Should have fallen back to local (1000 tok/s), not NaN.
-    let tps = t.last_tps.expect("NaN authoritative must fall back to local, not blank");
-    assert!((tps - 1000.0).abs() < 1e-3, "got {tps:?}, expected ~1000 from local fallback");
+    let tps = t
+        .last_tps
+        .expect("NaN authoritative must fall back to local, not blank");
+    assert!(
+        (tps - 1000.0).abs() < 1e-3,
+        "got {tps:?}, expected ~1000 from local fallback"
+    );
 }
 
 #[test]

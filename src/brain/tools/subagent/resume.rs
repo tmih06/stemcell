@@ -168,8 +168,11 @@ impl Tool for ResumeAgentTool {
                 match crate::brain::provider::create_provider_by_name(&config, provider_name).await
                 {
                     Ok(p) => {
-                        let source =
-                            if call_provider.is_some() { "per-call" } else { "config" };
+                        let source = if call_provider.is_some() {
+                            "per-call"
+                        } else {
+                            "config"
+                        };
                         tracing::info!(
                             "Resumed sub-agent using {source} provider '{provider_name}'"
                         );

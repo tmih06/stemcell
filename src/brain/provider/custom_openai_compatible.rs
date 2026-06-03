@@ -435,8 +435,7 @@ pub(crate) fn extract_text_tool_calls(text: &str) -> (Vec<(String, serde_json::V
     // extraction lives in `bare_tool_call_extractor` — this module is
     // already 5000+ lines, no point cramming another 100-line pattern
     // inline.
-    let has_bare_name_args =
-        super::bare_tool_call_extractor::has_bare_name_args_signal(text);
+    let has_bare_name_args = super::bare_tool_call_extractor::has_bare_name_args_signal(text);
     if !text.contains("<tool_call>")
         && !text.contains("<function=")
         && !text.contains("tool_call:")

@@ -263,11 +263,11 @@ impl Tool for WriteOpenCrabsFileTool {
                     .open(&full_path)
                 {
                     Ok(mut f) => match f.write_all(effective_content.as_bytes()) {
-                    Ok(()) => Ok(ToolResult::success(format!(
-                        "Appended {} bytes to {}",
-                        effective_content.len(),
-                        full_path.display()
-                    ))),
+                        Ok(()) => Ok(ToolResult::success(format!(
+                            "Appended {} bytes to {}",
+                            effective_content.len(),
+                            full_path.display()
+                        ))),
                         Err(e) => Ok(ToolResult::error(format!(
                             "Failed to append to {}: {}",
                             path_str, e

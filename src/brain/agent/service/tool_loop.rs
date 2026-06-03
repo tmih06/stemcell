@@ -4629,12 +4629,11 @@ impl AgentService {
         // not output-divided-by-full-turn-wall-clock (which silently
         // halved the rate on tool-heavy turns).
         //
-        let tokens_per_second =
-            if total_streaming_active_secs > 0.0 && total_output_tokens > 0 {
-                Some(total_output_tokens as f64 / total_streaming_active_secs)
-            } else {
-                None
-            };
+        let tokens_per_second = if total_streaming_active_secs > 0.0 && total_output_tokens > 0 {
+            Some(total_output_tokens as f64 / total_streaming_active_secs)
+        } else {
+            None
+        };
 
         Ok(AgentResponse {
             message_id: assistant_db_msg.id,

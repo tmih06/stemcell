@@ -38,17 +38,11 @@ impl TimedDeltaProvider {
 
 #[async_trait]
 impl Provider for TimedDeltaProvider {
-    async fn complete(
-        &self,
-        _request: LLMRequest,
-    ) -> Result<LLMResponse, ProviderError> {
+    async fn complete(&self, _request: LLMRequest) -> Result<LLMResponse, ProviderError> {
         unreachable!("test uses stream(), not complete()");
     }
 
-    async fn stream(
-        &self,
-        _request: LLMRequest,
-    ) -> Result<ProviderStream, ProviderError> {
+    async fn stream(&self, _request: LLMRequest) -> Result<ProviderStream, ProviderError> {
         // Drive a real time gap between deltas by spawning a producer
         // that sleeps and sends through an mpsc channel, then wrap
         // the receiver in a Stream. `futures::stream::iter` would
@@ -57,8 +51,7 @@ impl Provider for TimedDeltaProvider {
         let chunks = self.chunks.clone();
         let delay = self.delay_between_chunks;
         let total_text: String = chunks.join("");
-        let (tx, rx) =
-            tokio::sync::mpsc::unbounded_channel::<Result<StreamEvent, ProviderError>>();
+        let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<Result<StreamEvent, ProviderError>>();
 
         tokio::spawn(async move {
             let _ = tx.send(Ok(StreamEvent::MessageStart {

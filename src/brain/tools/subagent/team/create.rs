@@ -199,8 +199,11 @@ impl Tool for TeamCreateTool {
                 match crate::brain::provider::create_provider_by_name(&config, provider_name).await
                 {
                     Ok(p) => {
-                        let source =
-                            if member_provider.is_some() { "per-member" } else { "config" };
+                        let source = if member_provider.is_some() {
+                            "per-member"
+                        } else {
+                            "config"
+                        };
                         tracing::info!(
                             "Team member '{label}' using {source} provider '{provider_name}'"
                         );

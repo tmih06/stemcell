@@ -851,7 +851,8 @@ fn bare_name_args_inside_nested_object_is_ignored() {
     // Anchoring on the preceding `{` plus whitespace protects against
     // this — `{"foo": ..., "name": ..., "arguments": ...}` has `"name"`
     // preceded by `,`, not by `{`, so the pass skips it.
-    let text = r#"The config is {"version": 2, "name": "edit_file", "arguments": {"path": "/tmp"}}."#;
+    let text =
+        r#"The config is {"version": 2, "name": "edit_file", "arguments": {"path": "/tmp"}}."#;
     let (calls, cleaned) = extract_text_tool_calls(text);
     assert!(
         calls.is_empty(),

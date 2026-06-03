@@ -121,7 +121,10 @@ fn spawn_agent_schema_exposes_per_call_provider_and_model() {
         "`provider` must be optional — config and parent inheritance \
          remain valid fallbacks"
     );
-    assert!(!required_keys.contains(&"model"), "`model` must be optional");
+    assert!(
+        !required_keys.contains(&"model"),
+        "`model` must be optional"
+    );
 }
 
 #[test]

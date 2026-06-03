@@ -165,7 +165,10 @@ fn in_any_range(ranges: &[(usize, usize)], pos: usize) -> bool {
 }
 
 fn existing_ranges_from(matches: &[BareToolCallMatch]) -> Vec<(usize, usize)> {
-    matches.iter().map(|m| (m.strip_start, m.strip_end)).collect()
+    matches
+        .iter()
+        .map(|m| (m.strip_start, m.strip_end))
+        .collect()
 }
 
 /// `arguments` must be an object, or a JSON-string that parses to one.
@@ -180,7 +183,9 @@ fn parse_arguments_value(arguments_val: Option<&Value>) -> Option<Value> {
             if !s.starts_with('{') || !s.ends_with('}') {
                 return None;
             }
-            serde_json::from_str::<Value>(s).ok().filter(|p| p.is_object())
+            serde_json::from_str::<Value>(s)
+                .ok()
+                .filter(|p| p.is_object())
         }
         _ => None,
     }

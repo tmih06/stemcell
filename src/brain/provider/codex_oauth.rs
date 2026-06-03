@@ -53,7 +53,9 @@ const SCOPES: &str =
 
 /// Path to the token storage file.
 fn token_path() -> std::path::PathBuf {
-    crate::config::opencrabs_home().join("auth").join("codex.json")
+    crate::config::opencrabs_home()
+        .join("auth")
+        .join("codex.json")
 }
 
 // ─── Token Storage ───────────────────────────────────────────────────────────

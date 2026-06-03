@@ -176,11 +176,12 @@ impl Tool for SpawnAgentTool {
                 match crate::brain::provider::create_provider_by_name(&config, provider_name).await
                 {
                     Ok(p) => {
-                        let source =
-                            if call_provider.is_some() { "per-call" } else { "config" };
-                        tracing::info!(
-                            "Sub-agent using {source} provider '{provider_name}'"
-                        );
+                        let source = if call_provider.is_some() {
+                            "per-call"
+                        } else {
+                            "config"
+                        };
+                        tracing::info!("Sub-agent using {source} provider '{provider_name}'");
                         p
                     }
                     Err(e) => {

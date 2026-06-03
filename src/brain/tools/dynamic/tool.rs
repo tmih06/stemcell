@@ -713,10 +713,7 @@ url = "https://example.com/health"
                 coerce_null_to: Default::default(),
             }],
         )
-        .execute(
-            serde_json::json!({"msg": "line1\nline2"}),
-            &ctx(),
-        )
+        .execute(serde_json::json!({"msg": "line1\nline2"}), &ctx())
         .await
         .unwrap();
         assert!(result.success);

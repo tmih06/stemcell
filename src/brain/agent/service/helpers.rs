@@ -165,9 +165,9 @@ impl AgentService {
         let mut window_start: Option<std::time::Instant> = None;
         let mut last_delta_at: Option<std::time::Instant> = None;
         let note_delta = |now: std::time::Instant,
-                              active_secs: &mut f64,
-                              window_start: &mut Option<std::time::Instant>,
-                              last_delta_at: &mut Option<std::time::Instant>| {
+                          active_secs: &mut f64,
+                          window_start: &mut Option<std::time::Instant>,
+                          last_delta_at: &mut Option<std::time::Instant>| {
             match (*window_start, *last_delta_at) {
                 (None, _) => {
                     *window_start = Some(now);
