@@ -8,7 +8,15 @@ use std::sync::Arc;
 pub struct DynamicToolLoader;
 
 impl DynamicToolLoader {
+    /// Resolve the tools.toml path: profile-aware first, fallback to global.
+    ///
+    /// Option C from #157 — backward-compatible with existing global setups
+    /// while supporting per-profile isolation.
     pub fn default_path() -> Option<PathBuf> {
+        let profile_path = crate::config::opencrabs_home().join("tools.toml");
+        if profile_path.exists() {
+            return Some(profile_path);
+        }
         dirs::home_dir().map(|h| h.join(".opencrabs").join("tools.toml"))
     }
 

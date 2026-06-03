@@ -1,7 +1,7 @@
 //! Sub-agent progress streaming via JSON status files.
 //!
 //! Each sub-agent writes its state/progress to
-//! `~/.opencrabs/tmp/subagents/<agent_id>.json`. The main orchestrator
+//! `<opencrabs_home>/tmp/subagents/<agent_id>.json`. The main orchestrator
 //! can `read_file` these at any time for real-time visibility — no
 //! `session_search` needed.
 //!
@@ -21,9 +21,7 @@ pub fn status_dir() -> PathBuf {
             return p;
         }
     }
-    dirs::home_dir()
-        .unwrap_or_default()
-        .join(".opencrabs")
+    crate::config::opencrabs_home()
         .join("tmp")
         .join("subagents")
 }
@@ -298,8 +296,8 @@ mod tests {
     #[test]
     fn status_dir_returns_correct_path() {
         // No isolation: this test verifies the *default* path.
-        let home = dirs::home_dir().unwrap_or_default();
-        let expected = home.join(".opencrabs").join("tmp").join("subagents");
+        let home = crate::config::opencrabs_home();
+        let expected = home.join("tmp").join("subagents");
         assert_eq!(status_dir(), expected);
     }
 
