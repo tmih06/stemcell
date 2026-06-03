@@ -201,9 +201,10 @@ pub(crate) async fn handle_message(
 
     // Allowlist check — read from config (hot-reloaded via watch channel)
     if !allowed.is_empty() && !allowed.contains(&user_id) {
-        tracing::debug!(
-            "Telegram: ignoring message from non-allowed user {}",
-            user_id
+        tracing::info!(
+            "Telegram: ignoring message from non-allowed user {} (username={})",
+            user_id,
+            user.username.as_deref().unwrap_or("unknown"),
         );
         message_in_thread(
             &bot,
@@ -3220,30 +3221,41 @@ fn build_status_message(
     })
 }
 
-/// Pre-tool rolling phrase for the status line, derived from the user
-/// message preview + elapsed time. Returns `None` when there is no
-/// preview to anchor to OR when not enough time has elapsed to make
-/// a status worth showing (the typing-indicator dots cover the first
-/// ~5s on their own).
+/// Pre-tool rolling phrase for the status line.
 ///
-/// The leading verb rotates across four elapsed buckets so the line
-/// visibly changes as time passes:
+/// 5-59s: lead phrase escalates across three elapsed buckets, always
+///        anchored to the user's preview so they can tell which
+///        question is being chewed on:
 ///
 ///   5-14s : "Working on: ..."
 ///   15-29s: "Still working on: ..."
 ///   30-59s: "Long one — still on: ..."
-///   60s+  : "Marathon mode — still on: ..."
 ///
-/// All four use the same user-derived body so the user can always
-/// tell exactly which of their questions the agent is chewing on.
+/// 60s+: drops the preview and rotates through the project-author-
+///       original `TOOL_STATUS_QUIPS` pool every ~15s. Before this
+///       change the line froze at "Marathon mode — still on: <preview>"
+///       for the entire remaining wait (3+ minutes observed
+///       2026-06-03) because there was no fifth bucket and the static
+///       phrase carried no new information. The quip pool gives
+///       movement and personality without inventing anything new —
+///       it's the same list the bot has shipped under since
+///       `f5b5de1a`.
+///
+/// `preview` is required for the 5-59s buckets — if the caller has
+/// no preview those buckets stay silent. The marathon bucket fires
+/// regardless of preview availability.
 pub(crate) fn pre_tool_rolling(preview: Option<&str>, elapsed_secs: u64) -> Option<String> {
-    let preview = preview?.trim();
-    if preview.is_empty() || elapsed_secs < 5 {
+    if elapsed_secs < 5 {
         return None;
     }
-    let lead = if elapsed_secs >= 60 {
-        "Marathon mode — still on"
-    } else if elapsed_secs >= 30 {
+    if elapsed_secs >= 60 {
+        return Some(super::rolling_status_quips::rotating_quip(elapsed_secs).to_string());
+    }
+    let preview = preview?.trim();
+    if preview.is_empty() {
+        return None;
+    }
+    let lead = if elapsed_secs >= 30 {
         "Long one — still on"
     } else if elapsed_secs >= 15 {
         "Still working on"

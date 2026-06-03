@@ -39,28 +39,29 @@ fn returns_none_before_threshold_so_typing_indicator_speaks_alone() {
 }
 
 #[test]
-fn returns_none_when_preview_is_missing() {
-    // The whole point of the rolling line is to anchor on real
-    // context. With no preview we have no honest content to show,
-    // so silence is the right answer (this is the case
-    // `resume_session` will always hit since it doesn't capture a
-    // fresh user input).
+fn returns_none_when_preview_is_missing_in_anchored_buckets() {
+    // The 5-59s buckets exist to anchor the line on real user
+    // context. With no preview those buckets stay silent — better
+    // than emitting "Working on: " with an empty tail. The 60s+
+    // marathon bucket is a separate shape that DOES fire without a
+    // preview (covered by `marathon_bucket_fires_even_without_preview`).
     assert_eq!(pre_tool_rolling(None, 10), None);
-    assert_eq!(pre_tool_rolling(None, 120), None);
+    assert_eq!(pre_tool_rolling(None, 30), None);
+    assert_eq!(pre_tool_rolling(None, 59), None);
     assert_eq!(pre_tool_rolling(Some(""), 10), None);
     assert_eq!(pre_tool_rolling(Some("   "), 10), None);
 }
 
 #[test]
 fn leading_verb_rotates_across_elapsed_buckets() {
-    // Same preview body, four different elapsed times → four
-    // different leading phrases. This is the rolling effect.
+    // Same preview body, three different elapsed times in the
+    // preview-anchored range → three different leading phrases. The
+    // 60s+ marathon bucket is a separate (no-preview) shape — covered
+    // by `marathon_bucket_rotates_through_quip_pool_instead_of_freezing`.
     let preview = Some("audit the telegram fallback chain");
     let at_5 = pre_tool_rolling(preview, 5).unwrap();
     let at_15 = pre_tool_rolling(preview, 15).unwrap();
     let at_30 = pre_tool_rolling(preview, 30).unwrap();
-    let at_60 = pre_tool_rolling(preview, 60).unwrap();
-    let at_180 = pre_tool_rolling(preview, 180).unwrap();
 
     assert!(
         at_5.starts_with("Working on:"),
@@ -74,22 +75,71 @@ fn leading_verb_rotates_across_elapsed_buckets() {
         at_30.starts_with("Long one"),
         "30s should call out the duration: {at_30}"
     );
-    assert!(
-        at_60.starts_with("Marathon mode"),
-        "60s should flag the marathon: {at_60}"
-    );
-    assert_eq!(
-        at_60, at_180,
-        "the marathon bucket is the terminal one — same lead for 60s and 3m"
-    );
-    // All four must end with the same user-derived body so the user
-    // can always see WHICH question is taking long.
-    for line in [&at_5, &at_15, &at_30, &at_60] {
+    for line in [&at_5, &at_15, &at_30] {
         assert!(
             line.ends_with(": audit the telegram fallback chain"),
             "the rolling line must always carry the preview body: {line}"
         );
     }
+}
+
+#[test]
+fn marathon_bucket_rotates_through_quip_pool_instead_of_freezing() {
+    // Regression for 2026-06-03: at 60s+ the line used to freeze on
+    // a static "Marathon mode — still on: <preview>" for the entire
+    // remaining wait (3+ minutes observed). The fix swaps the static
+    // lead for a rotating pick from the project-author-original
+    // TOOL_STATUS_QUIPS pool every WINDOW_SECS seconds. This test
+    // pins that the line CHANGES across the marathon bucket and that
+    // every pick is from the canonical pool — never invented copy.
+    use crate::channels::telegram::rolling_status_quips::TOOL_STATUS_QUIPS;
+
+    let preview = Some("audit the telegram fallback chain");
+    let mut seen: Vec<String> = Vec::new();
+    // Sample across ~4 minutes of marathon time. With WINDOW_SECS=15
+    // and a 15-entry pool this samples every entry at least once.
+    for t in [60u64, 75, 90, 105, 120, 135, 150, 165, 180, 195, 210, 225] {
+        let line = pre_tool_rolling(preview, t).unwrap();
+        assert!(
+            TOOL_STATUS_QUIPS.contains(&line.as_str()),
+            "marathon-bucket line must be a verbatim entry from the \
+             project-author-original quip pool, got: {line:?}"
+        );
+        seen.push(line);
+    }
+    // Same input → same output (deterministic rotation), so the
+    // same 15s window at 60s+ produces the same quip on every tick.
+    assert_eq!(
+        pre_tool_rolling(preview, 60).unwrap(),
+        pre_tool_rolling(preview, 74).unwrap(),
+        "ticks inside the same 15s window must stay on the same quip — \
+         a different one every 2s tick would be jittery"
+    );
+    // At least 3 different quips across the 4-minute sample — proves
+    // it's not stuck on a single entry for the whole marathon.
+    let unique: std::collections::HashSet<&String> = seen.iter().collect();
+    assert!(
+        unique.len() >= 3,
+        "expected at least 3 distinct quips across 60s..225s, got {} unique: {seen:?}",
+        unique.len()
+    );
+}
+
+#[test]
+fn marathon_bucket_fires_even_without_preview() {
+    // No preview → silence in the preview-anchored buckets, but
+    // marathon mode still shows a quip. Without this guard a turn
+    // where the user's message preview couldn't be built (empty
+    // payload, all-whitespace, resume_session reconnects) would
+    // stay completely silent past 60s, leaving the user with no
+    // signal that the agent is still alive.
+    let line = pre_tool_rolling(None, 120)
+        .expect("marathon bucket must produce a line even with no preview");
+    use crate::channels::telegram::rolling_status_quips::TOOL_STATUS_QUIPS;
+    assert!(
+        TOOL_STATUS_QUIPS.contains(&line.as_str()),
+        "no-preview marathon line must still be from the canonical pool, got: {line:?}"
+    );
 }
 
 #[test]
