@@ -857,7 +857,6 @@ impl App {
     /// themselves. Cleanup happens in `complete_response_for` (drops
     /// the entry when its turn finalises) and `demote_to_background`
     /// (snapshots foreground state in, drops empty entries).
-    #[allow(dead_code)]
     pub(crate) fn session_state_mut(
         &mut self,
         session_id: Uuid,
@@ -879,7 +878,6 @@ impl App {
     ///
     /// An empty snapshot (no live state) skips insertion to keep
     /// the map bounded.
-    #[allow(dead_code)]
     pub(crate) fn demote_to_background(&mut self, session_id: Uuid) {
         let bg = super::background_session::BackgroundSessionState {
             streaming_response: self.streaming_response.clone(),
@@ -903,7 +901,6 @@ impl App {
     /// session that just gained focus) into the `AppState` live
     /// fields. Returns true when an entry was found and promoted,
     /// false otherwise (caller falls back to the DB-reload path).
-    #[allow(dead_code)]
     pub(crate) fn promote_to_foreground(&mut self, session_id: Uuid) -> bool {
         let Some(bg) = self.background_sessions.remove(&session_id) else {
             return false;
@@ -1764,9 +1761,11 @@ impl App {
                         .map(|s| s.len())
                         .unwrap_or(0)
                 );
-                if is_current {
-                    self.append_streaming_chunk(text);
-                }
+                // Route to foreground OR the per-session background
+                // sidecar so the inactive pane sees streaming chunks
+                // live instead of catching up on focus switch.
+                self.session_state_mut(session_id)
+                    .append_streaming_chunk(&text);
             }
             TuiEvent::StripStreamedContent {
                 session_id,
@@ -1808,23 +1807,12 @@ impl App {
                 }
             }
             TuiEvent::ReasoningChunk { session_id, text } => {
-                if self.is_current_session(session_id) {
-                    // Skip empty chunks so we never end up with `Some("")`,
-                    // which renders a "Thinking" label with no content.
-                    // Also skip pure-whitespace chunks (e.g. "\n\n" separators)
-                    // when no real reasoning has been accumulated yet.
-                    let is_whitespace = text.trim().is_empty();
-                    if !text.is_empty() {
-                        if let Some(ref mut existing) = self.streaming_reasoning {
-                            existing.push_str(&text);
-                        } else if !is_whitespace {
-                            self.streaming_reasoning = Some(text);
-                        }
-                    }
-                    if self.auto_scroll {
-                        self.scroll_offset = 0;
-                    }
-                }
+                // Route to foreground OR background sidecar. The
+                // routing helper handles empty/whitespace filtering
+                // and the foreground-only `scroll_offset = 0` nudge
+                // for the auto-scroll behaviour.
+                self.session_state_mut(session_id)
+                    .append_reasoning_chunk(&text);
             }
             TuiEvent::ResponseComplete {
                 session_id,
@@ -1844,6 +1832,13 @@ impl App {
                     self.processing_sessions.remove(&session_id);
                     self.session_cancel_tokens.remove(&session_id);
                     self.sessions_with_unread.insert(session_id);
+                    // Drop the background live-state sidecar — the
+                    // turn is finalised and the next focus switch
+                    // re-reads from the DB anyway. Without this the
+                    // sidecar's `streaming_response` / `active_tool_group`
+                    // would linger forever for a session the user
+                    // never re-focuses, leaking memory in long sessions.
+                    self.background_sessions.remove(&session_id);
                     // Refresh pane cache so inactive pane shows the completed response
                     if self.pane_manager.is_split() {
                         self.preload_pane_session(session_id).await;
@@ -1930,14 +1925,16 @@ impl App {
                 session_id,
                 tool_name,
                 tool_input,
-            } if self.is_current_session(session_id) && self.is_processing => {
-                tracing::info!(
-                    "[TUI] ToolCallStarted: {} (active_group={}, msg_count={})",
-                    tool_name,
-                    self.active_tool_group.is_some(),
-                    self.messages.len()
-                );
-                // Show tool call in progress
+            } => {
+                // Drop the original `is_current_session && is_processing`
+                // guard. Background sessions are still mid-turn from
+                // the agent's perspective; the `is_processing` check
+                // would have been false on the foreground `AppState`
+                // for any non-focused session anyway. Each session's
+                // processing flag is now tracked per-state by
+                // `ChannelProcessingStarted`/`Finished` and migrates
+                // with focus, so the gating is meaningful per
+                // session rather than only for the focused one.
                 let desc = Self::format_tool_description(&tool_name, &tool_input);
                 let entry = ToolCallEntry {
                     description: desc,
@@ -1946,16 +1943,27 @@ impl App {
                     completed: false,
                     tool_input: tool_input.clone(),
                 };
-                if let Some(ref mut group) = self.active_tool_group {
-                    group.calls.push(entry);
-                } else {
-                    self.active_tool_group = Some(ToolCallGroup {
-                        calls: vec![entry],
-                        expanded: false,
-                    });
+                {
+                    let mut state = self.session_state_mut(session_id);
+                    if let Some(group) = state.active_tool_group_mut() {
+                        group.calls.push(entry);
+                    } else {
+                        state.set_active_tool_group(Some(ToolCallGroup {
+                            calls: vec![entry],
+                            expanded: false,
+                        }));
+                    }
                 }
-                if self.auto_scroll {
-                    self.scroll_offset = 0;
+                if self.is_current_session(session_id) {
+                    tracing::info!(
+                        "[TUI] ToolCallStarted: {} (active_group={}, msg_count={})",
+                        tool_name,
+                        self.active_tool_group.is_some(),
+                        self.messages.len()
+                    );
+                    if self.auto_scroll {
+                        self.scroll_offset = 0;
+                    }
                 }
             }
             TuiEvent::IntermediateText {
@@ -2167,9 +2175,7 @@ impl App {
                 tool_input,
                 success,
                 summary,
-            } if self.is_current_session(session_id) && self.is_processing => {
-                // Reset timer so "thinking..." counter restarts after each tool call
-                self.processing_started_at = Some(std::time::Instant::now());
+            } => {
                 let desc = Self::format_tool_description(&tool_name, &tool_input);
                 let details = if summary.is_empty() {
                     None
@@ -2177,77 +2183,89 @@ impl App {
                     Some(summary)
                 };
 
-                // Update the existing Started entry instead of pushing a duplicate.
-                // Match by description — the Started entry that hasn't completed yet.
-                let updated = if let Some(ref mut group) = self.active_tool_group {
-                    if let Some(existing) = group
-                        .calls
-                        .iter_mut()
-                        .rev()
-                        .find(|c| c.description == desc && !c.completed)
-                    {
-                        existing.success = success;
-                        existing.details = details.clone();
-                        existing.completed = true;
-                        true
+                // Update the matching Started entry in the active
+                // tool group (foreground OR background). Foreground
+                // edits affect the active pane's render; background
+                // edits keep the inactive pane's "X tool calls"
+                // badge accurate live.
+                {
+                    let mut state = self.session_state_mut(session_id);
+                    let updated = if let Some(group) = state.active_tool_group_mut() {
+                        if let Some(existing) = group
+                            .calls
+                            .iter_mut()
+                            .rev()
+                            .find(|c| c.description == desc && !c.completed)
+                        {
+                            existing.success = success;
+                            existing.details = details.clone();
+                            existing.completed = true;
+                            true
+                        } else {
+                            false
+                        }
                     } else {
                         false
-                    }
-                } else {
-                    false
-                };
-
-                // Fallback: push as new entry if no matching Started entry found
-                if !updated {
-                    let entry = ToolCallEntry {
-                        description: desc,
-                        success,
-                        details,
-                        completed: true,
-                        tool_input: tool_input.clone(),
                     };
-                    if let Some(ref mut group) = self.active_tool_group {
-                        group.calls.push(entry);
-                    } else {
-                        self.active_tool_group = Some(ToolCallGroup {
-                            calls: vec![entry],
+                    if !updated {
+                        let entry = ToolCallEntry {
+                            description: desc,
+                            success,
+                            details,
+                            completed: true,
+                            tool_input: tool_input.clone(),
+                        };
+                        if let Some(group) = state.active_tool_group_mut() {
+                            group.calls.push(entry);
+                        } else {
+                            state.set_active_tool_group(Some(ToolCallGroup {
+                                calls: vec![entry],
+                                expanded: false,
+                            }));
+                        }
+                    }
+                }
+
+                // Foreground-only flushes: message append, plan
+                // reload, scroll. Background sessions accumulate
+                // their group inside `active_tool_group` until the
+                // session is promoted to foreground (where the next
+                // IntermediateText / ResponseComplete handles the
+                // flush) or until the agent's own DB-persisted
+                // message arrives on focus switch via the
+                // `preload_pane_session` reload path.
+                if self.is_current_session(session_id) && self.is_processing {
+                    self.processing_started_at = Some(std::time::Instant::now());
+                    if tool_name == "plan" {
+                        self.reload_plan();
+                    }
+                    if self.auto_scroll {
+                        self.scroll_offset = 0;
+                    }
+                    let all_done = self
+                        .active_tool_group
+                        .as_ref()
+                        .is_some_and(|g| g.calls.iter().all(|c| c.completed));
+                    if all_done && let Some(group) = self.active_tool_group.take() {
+                        let count = group.calls.len();
+                        self.messages.push(DisplayMessage {
+                            id: Uuid::new_v4(),
+                            role: "tool_group".to_string(),
+                            content: format!(
+                                "{} tool call{}",
+                                count,
+                                if count == 1 { "" } else { "s" }
+                            ),
+                            timestamp: chrono::Utc::now(),
+                            token_count: None,
+                            cost: None,
+                            approval: None,
+                            approve_menu: None,
+                            details: None,
                             expanded: false,
+                            tool_group: Some(group),
                         });
                     }
-                }
-                // Reload plan from disk whenever the plan tool completes
-                if tool_name == "plan" {
-                    self.reload_plan();
-                }
-                if self.auto_scroll {
-                    self.scroll_offset = 0;
-                }
-
-                // Flush the active tool group immediately when all calls are done
-                // instead of waiting for the next IntermediateText event
-                let all_done = self
-                    .active_tool_group
-                    .as_ref()
-                    .is_some_and(|g| g.calls.iter().all(|c| c.completed));
-                if all_done && let Some(group) = self.active_tool_group.take() {
-                    let count = group.calls.len();
-                    self.messages.push(DisplayMessage {
-                        id: Uuid::new_v4(),
-                        role: "tool_group".to_string(),
-                        content: format!(
-                            "{} tool call{}",
-                            count,
-                            if count == 1 { "" } else { "s" }
-                        ),
-                        timestamp: chrono::Utc::now(),
-                        token_count: None,
-                        cost: None,
-                        approval: None,
-                        approve_menu: None,
-                        details: None,
-                        expanded: false,
-                        tool_group: Some(group),
-                    });
                 }
             }
             TuiEvent::CompactionSummary {
@@ -2338,31 +2356,34 @@ impl App {
                 tracing::info!("Config reloaded — refreshed commands, approval policy, agent");
             }
             TuiEvent::TokenCountUpdated { session_id, count } => {
-                // Write to the session's slot regardless of focus so a
-                // background turn's counter stays accurate when the user
-                // switches back. Only mirror into the visible
-                // `last_input_tokens` when THIS session is the focused one —
-                // otherwise pane A's ctx display would jump around when
-                // pane B's turn emits token updates.
+                // Always cache the per-session value so a future
+                // focus switch shows accurate context usage.
                 self.session_input_tokens.insert(session_id, count as u32);
-                if self.is_current_session(session_id) {
-                    self.display_token_count = count;
-                    self.last_input_tokens = Some(count as u32);
-                }
+                // Mirror into the visible display fields via the
+                // routing helper so the inactive pane's footer
+                // updates live, not just on focus switch.
+                let mut state = self.session_state_mut(session_id);
+                state.set_display_token_count(count);
+                state.set_last_input_tokens(count as u32);
             }
-            TuiEvent::StreamingOutputTokens { session_id, tokens }
-                if self.is_current_session(session_id) =>
-            {
-                self.streaming_output_tokens += tokens;
-                self.advance_streaming_window();
+            TuiEvent::StreamingOutputTokens { session_id, tokens } => {
+                self.session_state_mut(session_id)
+                    .add_streaming_output_tokens(tokens);
             }
-            // Silently ignore events for background sessions (already handled above for ResponseComplete/Error)
-            TuiEvent::ToolCallStarted { .. }
-            | TuiEvent::ToolCallCompleted { .. }
-            | TuiEvent::IntermediateText { .. }
+            // Silently ignore events for non-focused background sessions
+            // that still need an explicit fall-through arm. ToolCallStarted /
+            // ToolCallCompleted / StreamingOutputTokens are routed via
+            // session_state_mut now and reach all sessions; they're no
+            // longer in this catch-all. IntermediateText and
+            // QueuedUserMessage mutate `self.messages` which is foreground-
+            // only state — background sessions catch up on focus switch via
+            // the `preload_pane_session` DB reload. CompactionSummary's
+            // primary handler above also gates on the current session;
+            // non-current variants fall through here so the match stays
+            // exhaustive.
+            TuiEvent::IntermediateText { .. }
             | TuiEvent::QueuedUserMessage { .. }
-            | TuiEvent::CompactionSummary { .. }
-            | TuiEvent::StreamingOutputTokens { .. } => {}
+            | TuiEvent::CompactionSummary { .. } => {}
 
             TuiEvent::SessionUpdated(session_id) => {
                 // A remote channel updated a session. Don't reload immediately —
@@ -2387,28 +2408,38 @@ impl App {
 
             TuiEvent::ChannelProcessingStarted(session_id) => {
                 self.channel_processing_sessions.insert(session_id);
-                // If it's the current session, mark as processing so the TUI
-                // queues user messages instead of starting a concurrent tool loop.
-                if self.is_current_session(session_id) {
-                    self.processing_sessions.insert(session_id);
-                    self.is_processing = true;
-                    self.processing_started_at = Some(std::time::Instant::now());
-                }
+                self.processing_sessions.insert(session_id);
+                // Mark the session as processing in foreground OR
+                // background state so the inactive pane's
+                // `[processing...]` label fires the moment a remote
+                // channel starts a turn, not on focus switch.
+                self.session_state_mut(session_id).set_processing(true);
             }
 
             TuiEvent::ChannelProcessingFinished(session_id) => {
                 self.channel_processing_sessions.remove(&session_id);
-                // Only clear processing if the TUI itself didn't also start a task.
-                // The TUI's own tasks are tracked via cancel_token; channel tasks are not.
-                if self.is_current_session(session_id) && self.cancel_token.is_none() {
+                // Foreground-only safeguard: only clear the
+                // foreground's processing/cancel_token state when
+                // this is the focused session AND no local task is
+                // also running. Background sessions clear via the
+                // routing helper unconditionally — their turn really
+                // did just finish.
+                let clear_state = if self.is_current_session(session_id) {
+                    self.cancel_token.is_none()
+                } else {
+                    true
+                };
+                if clear_state {
                     self.processing_sessions.remove(&session_id);
-                    self.is_processing = false;
-                    self.processing_started_at = None;
-                    // Schedule a debounced refresh instead of blocking with
-                    // load_session().await — a direct DB query here freezes the
-                    // event loop, eating queued terminal events and garbling the
-                    // display when channels process messages in parallel.
-                    self.pending_session_refresh = Some((session_id, std::time::Instant::now()));
+                    self.session_state_mut(session_id).set_processing(false);
+                    if self.is_current_session(session_id) {
+                        // Schedule a debounced refresh instead of blocking with
+                        // load_session().await — a direct DB query here freezes the
+                        // event loop, eating queued terminal events and garbling the
+                        // display when channels process messages in parallel.
+                        self.pending_session_refresh =
+                            Some((session_id, std::time::Instant::now()));
+                    }
                 }
             }
 

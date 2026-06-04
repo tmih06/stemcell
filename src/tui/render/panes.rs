@@ -40,6 +40,17 @@ pub(super) fn render_inactive_pane(f: &mut Frame, app: &App, pane_id: PaneId, ar
         ""
     };
 
+    // Background live state for this session — populated by the
+    // routing helper from any TuiEvent that arrived while this
+    // session wasn't the focused pane. Drives the live tool /
+    // thinking / streaming preview rows appended below the
+    // cached message snapshot. `None` when the session has no
+    // sidecar entry (either it's idle or never had a turn while
+    // off-screen).
+    let live = pane
+        .session_id
+        .and_then(|sid| app.background_sessions.get(&sid));
+
     let block = Block::default()
         .borders(Borders::ALL)
         .border_style(Style::default().fg(Color::DarkGray))
@@ -68,6 +79,59 @@ pub(super) fn render_inactive_pane(f: &mut Frame, app: &App, pane_id: PaneId, ar
     if let Some(messages) = cached {
         for msg in messages {
             render_simple_message(&mut lines, msg);
+        }
+    }
+
+    // Live in-flight rows. These show what's happening in this
+    // session RIGHT NOW even though it isn't the focused pane —
+    // before this code existed the inactive pane was frozen at
+    // whatever was last DB-loaded and the user saw stale state
+    // until they tabbed back.
+    if let Some(bg) = live {
+        if let Some(ref group) = bg.active_tool_group {
+            let n = group.calls.len();
+            let all_done = group.calls.iter().all(|c| c.completed);
+            let any_failed = group.calls.iter().any(|c| c.completed && !c.success);
+            let (icon, color) = if !all_done {
+                ("⚙", Color::Yellow)
+            } else if any_failed {
+                ("●", Color::Red)
+            } else {
+                ("●", Color::DarkGray)
+            };
+            lines.push(Line::from(Span::styled(
+                format!(
+                    "  {} {} tool call{}",
+                    icon,
+                    n,
+                    if n == 1 { "" } else { "s" }
+                ),
+                Style::default().fg(color),
+            )));
+        }
+        if bg.streaming_reasoning.is_some() {
+            lines.push(Line::from(Span::styled(
+                "  ▸ Thinking",
+                Style::default()
+                    .fg(Color::DarkGray)
+                    .add_modifier(Modifier::ITALIC),
+            )));
+        }
+        if let Some(ref text) = bg.streaming_response {
+            let trimmed = text.trim();
+            if !trimmed.is_empty() {
+                // Show a single-line preview of the in-flight
+                // streaming response. The active pane gets the
+                // full rendered chat; here we only signal "text is
+                // streaming in this session" so the user knows
+                // there's progress to tab back to.
+                let preview: String =
+                    trimmed.lines().next().unwrap_or("").chars().take(120).collect();
+                lines.push(Line::from(Span::styled(
+                    preview,
+                    Style::default().fg(Color::Reset),
+                )));
+            }
         }
     }
 

@@ -10,6 +10,7 @@ pub mod altgr_input_test;
 pub mod analysis_intent_nudge_test;
 pub mod auto_title_e2e_test;
 pub mod auto_title_test;
+pub mod background_session_test;
 pub mod baseline_merge_test;
 pub mod bash_feedback_enrichment_test;
 pub mod bash_interactive_reject_test;

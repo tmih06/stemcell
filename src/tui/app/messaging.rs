@@ -131,6 +131,18 @@ impl App {
                 .insert(old_session.id, self.messages.clone());
         }
 
+        // Demote the outgoing session's live-turn state into the
+        // background-sessions sidecar so a background turn that's
+        // still in flight keeps accumulating events (streaming
+        // chunks, tool calls, thinking) while the user looks at
+        // the new session. Without this snapshot the routing
+        // helper has no anchor for events that arrive between now
+        // and the next focus-switch back.
+        let old_session_id = self.current_session.as_ref().map(|s| s.id);
+        if let Some(old_sid) = old_session_id {
+            self.demote_to_background(old_sid);
+        }
+
         // Clear streaming state from previous session so it doesn't
         // bleed into the newly loaded session's chat view.
         self.streaming_response = None;
@@ -169,6 +181,16 @@ impl App {
         self.messages = expanded;
         self.auto_scroll = true;
         self.scroll_offset = 0;
+
+        // Promote any background sidecar entry for the newly
+        // focused session back into the AppState live fields, so
+        // anything that accumulated while the user looked at the
+        // other pane is immediately visible without waiting for the
+        // next event. No-op when there's no sidecar entry (typical
+        // first-load case); the DB reload above already populated
+        // the static message list.
+        let _restored = self.promote_to_foreground(session_id);
+
         // Re-read approval policy from config (persisted by /approve)
         (self.approval_auto_session, self.approval_auto_always) =
             Self::read_approval_policy_from_config();
