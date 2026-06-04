@@ -1,0 +1,150 @@
+{
+  "title": "Rust Full Path",
+  "description": "Large Rust change (> 100 lines, cross-file) or complex refactor. Plan gate, full PR checklist, modum, deep self-review. Stops at PR — user handles CI, review, merge.",
+  "tasks": [
+    {
+      "order": 1,
+      "title": "Context Read",
+      "description": "Read relevant Rust source code. Understand the problem, affected modules, function signatures, and callers. Check related tests. Research architecture context.",
+      "task_type": "Research",
+      "complexity": 3,
+      "acceptance_criteria": [
+        "problem fully understood",
+        "all affected modules identified",
+        "architecture decisions clear",
+        "test strategy known"
+      ]
+    },
+    {
+      "order": 2,
+      "title": "⏸ GATE: Approve Plan",
+      "description": "Human gate. Present the implementation plan to the user. Wait for explicit approval before proceeding.",
+      "task_type": "Research",
+      "complexity": 1,
+      "dependencies": [
+        1
+      ],
+      "acceptance_criteria": [
+        "user approves the plan"
+      ]
+    },
+    {
+      "order": 3,
+      "title": "Verify branch + rebase to origin/main",
+      "description": "Verify branch is new: `git branch -r | grep <branch-name>` — if it exists on any remote, rename (add `-v2`).\n\nFetch and rebase onto origin/main (NOT upstream/main — they have diverged; upstream/main has commits not in origin/main):\n```\ngit fetch origin\ngit rebase origin/main\n```\nVerify: `git diff origin/main --stat` shows ONLY the files you intend to change.",
+      "task_type": "Configuration",
+      "complexity": 1,
+      "dependencies": [
+        2
+      ],
+      "acceptance_criteria": [
+        "branch name is unique across remotes",
+        "rebased onto origin/main",
+        "git diff origin/main --stat shows only intended files"
+      ]
+    },
+    {
+      "order": 4,
+      "title": "Write tests",
+      "description": "Add test cases for the new behaviour. Rust tests live in the same file (unit tests, `#[cfg(test)] mod tests`) or `tests/` directory (integration tests). Every new code path should have a test. Edge cases (empty, null, None, overflow) must be covered.",
+      "task_type": "Test",
+      "complexity": 3,
+      "dependencies": [
+        3
+      ],
+      "acceptance_criteria": [
+        "tests capture expected behaviour",
+        "edge cases covered",
+        "tests fail without implementation"
+      ]
+    },
+    {
+      "order": 5,
+      "title": "Implement",
+      "description": "Write the code change. Keep it scoped to one issue — one logical change per PR. Do NOT bundle unrelated fixes.",
+      "task_type": "Edit",
+      "complexity": 3,
+      "dependencies": [
+        4
+      ],
+      "acceptance_criteria": [
+        "change is minimal and focused",
+        "all callers updated",
+        "no scope creep"
+      ]
+    },
+    {
+      "order": 6,
+      "title": "modum check",
+      "description": "Run `modum check --mode error` on the crate root. Fix violations before proceeding.",
+      "task_type": "Test",
+      "complexity": 1,
+      "dependencies": [
+        5
+      ],
+      "acceptance_criteria": [
+        "modum exits 0"
+      ]
+    },
+    {
+      "order": 7,
+      "title": "Deep self-review",
+      "description": "Read the ENTIRE diff (`git diff origin/main`) line by line. Check:\n- Logic errors: Does the control flow handle all edge cases? (early returns, None/Err paths, fallthroughs, type conversions)\n- **Unchanged call sites: Did you update ALL callers of a refactored function? Grep for old signatures everywhere — this is the most common failure pattern**\n- Message correctness: Do user-facing strings reference the right flags, paths, and commands?\n- Edge cases: What happens when a dependency is missing, a subprocess fails, a config is empty?\n- Consistency: Are variable names, function signatures, and arg ordering consistent across the change?\n- Test coverage: Do the tests actually test the new behaviour, or just the old one with renamed variables?",
+      "task_type": "Research",
+      "complexity": 3,
+      "dependencies": [
+        6
+      ],
+      "acceptance_criteria": [
+        "no logic errors",
+        "ALL callers of changed functions updated",
+        "edge cases documented and handled",
+        "messages reference correct flags/paths",
+        "test coverage adequate"
+      ]
+    },
+    {
+      "order": 8,
+      "title": "Fix self-review findings",
+      "description": "Address any issues found during self-review. Then re-run modum.",
+      "task_type": "Edit",
+      "complexity": 2,
+      "dependencies": [
+        7
+      ],
+      "acceptance_criteria": [
+        "all findings addressed",
+        "modum still passes"
+      ]
+    },
+    {
+      "order": 9,
+      "title": "Verify PR diff is clean",
+      "description": "`git diff origin/main --stat`. Must show ONLY the intended changed files. If it shows hundreds of files, the branch is based on the wrong branch — abort and start fresh:\n```\ngit checkout origin/main -b fix/your-fix-v2\n```\nDo not try to fix a dirty branch by rebasing. Start fresh from origin/main.",
+      "task_type": "Research",
+      "complexity": 1,
+      "dependencies": [
+        8
+      ],
+      "acceptance_criteria": [
+        "diff shows only intended files",
+        "base is origin/main"
+      ]
+    },
+    {
+      "order": 10,
+      "title": "Push + PR",
+      "description": "Push to upstream (NOT origin): `git push upstream <branch>`\n\nCreate PR: `gh pr create --repo adolfousier/opencrabs --head leshchenko1979:<branch>`\n\nImmediately verify PR diff: `gh pr diff --name-only` should match expected files. If it doesn't, close the PR and start over from origin/main.",
+      "task_type": "Configuration",
+      "complexity": 1,
+      "dependencies": [
+        9
+      ],
+      "acceptance_criteria": [
+        "branch pushed to upstream",
+        "PR created",
+        "PR diff matches expected"
+      ]
+    }
+  ]
+}

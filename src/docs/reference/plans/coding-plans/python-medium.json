@@ -1,0 +1,103 @@
+{
+  "title": "Python Medium Path",
+  "description": "Moderate change (20–100 lines, possibly 2–3 files). Self-review + Sourcery (both CLI and GH App). Stops at PR — user handles CI, review, merge.",
+  "tasks": [
+    {
+      "order": 1,
+      "title": "Context Read",
+      "description": "Read relevant code, understand the problem space. Check logs, related files, existing tests.",
+      "task_type": "Research",
+      "complexity": 2,
+      "acceptance_criteria": [
+        "problem fully understood",
+        "affected files identified",
+        "test strategy clear"
+      ]
+    },
+    {
+      "order": 2,
+      "title": "TDD: Write Failing Test",
+      "description": "Write a regression test (bug) or behaviour test (feature) that captures the expected change. Watch it fail first.",
+      "task_type": "Test",
+      "complexity": 2,
+      "dependencies": [
+        1
+      ],
+      "acceptance_criteria": [
+        "test captures the expected behaviour",
+        "test fails before implementation"
+      ]
+    },
+    {
+      "order": 3,
+      "title": "Implement",
+      "description": "Write the actual code change to make the test pass. Keep it minimal and focused.",
+      "task_type": "Edit",
+      "complexity": 2,
+      "dependencies": [
+        2
+      ],
+      "acceptance_criteria": [
+        "test passes",
+        "implementation is minimal",
+        "no unrelated changes"
+      ]
+    },
+    {
+      "order": 4,
+      "title": "ruff + pytest",
+      "description": "Run linter and test suite. Fix any issues.",
+      "task_type": "Test",
+      "complexity": 1,
+      "dependencies": [
+        3
+      ],
+      "acceptance_criteria": [
+        "ruff exits 0",
+        "all tests green"
+      ]
+    },
+    {
+      "order": 5,
+      "title": "Self-Review",
+      "description": "Read through the entire diff. Check logic, edge cases, unchanged call sites, message correctness, test coverage.",
+      "task_type": "Research",
+      "complexity": 1,
+      "dependencies": [
+        4
+      ],
+      "acceptance_criteria": [
+        "no logic errors",
+        "all callers updated",
+        "edge cases handled",
+        "messages correct"
+      ]
+    },
+    {
+      "order": 6,
+      "title": "Sourcery CLI",
+      "description": "Run `sourcery review <files>` locally. Review findings and fix if needed.",
+      "task_type": "Test",
+      "complexity": 1,
+      "dependencies": [
+        5
+      ],
+      "acceptance_criteria": [
+        "Sourcery CLI passes or findings addressed"
+      ]
+    },
+    {
+      "order": 7,
+      "title": "Sourcery GH App",
+      "description": "Comment @sourcery-ai review on the PR. Different ruleset from CLI — review findings separately.",
+      "task_type": "Test",
+      "complexity": 1,
+      "dependencies": [
+        6
+      ],
+      "acceptance_criteria": [
+        "Sourcery GH App findings reviewed and addressed"
+      ]
+    }
+  ]
+}

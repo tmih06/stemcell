@@ -1,0 +1,46 @@
+{
+  "title": "Python Fast Path",
+  "description": "Trivial change (< 20 lines, single file). Lint, test, commit to main. No PR, no gates, no reviews.",
+  "tasks": [
+    {
+      "order": 1,
+      "title": "ruff check --fix",
+      "description": "Run ruff linting and auto-fix. Fix any remaining issues manually.",
+      "task_type": "Test",
+      "complexity": 1,
+      "acceptance_criteria": [
+        "ruff exits 0",
+        "no remaining lint errors"
+      ]
+    },
+    {
+      "order": 2,
+      "title": "pytest",
+      "description": "Run full test suite. All tests must pass.",
+      "task_type": "Test",
+      "complexity": 1,
+      "dependencies": [
+        1
+      ],
+      "acceptance_criteria": [
+        "all tests green",
+        "no regressions"
+      ]
+    },
+    {
+      "order": 3,
+      "title": "Commit to main",
+      "description": "Commit the change with a descriptive message and push directly to main. No PR, no branch, no review. Link to issue if applicable.",
+      "task_type": "Edit",
+      "complexity": 1,
+      "dependencies": [
+        2
+      ],
+      "acceptance_criteria": [
+        "commit on main",
+        "pushed to origin/main",
+        "message follows convention: type(scope): description"
+      ]
+    }
+  ]
+}

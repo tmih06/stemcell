@@ -1,0 +1,143 @@
+# Plan JSON Schema Reference
+
+## Minimal Import Format
+
+Only **3 fields required** at the root and **3 per task** for a valid import:
+
+### Root Level (3 fields)
+```json
+{
+  "title": "Plan name",
+  "description": "What this plan accomplishes",
+  "tasks": [...]
+}
+```
+
+### Task Level (3 fields per task)
+```json
+{
+  "title": "Task name",
+  "description": "What this task does",
+  "task_type": "research"
+}
+```
+
+## Optional Task Fields
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `dependencies` | `integer[]` or `string[]` | *(omitted)* | **Optional.** Omit when there are no dependencies — empty `[]` is redundant. When present, use 1-based integer indices (e.g. `[1, 2]`) for readability. UUID strings also accepted. |
+| `complexity` | `number` | `3` | 1-5 scale: 1=trivial, 2=simple, 3=moderate, 4=complex, 5=very complex |
+| `acceptance_criteria` | `string[]` | `[]` | List of conditions that mark this task complete |
+
+## Auto-Generated Fields (Do NOT Provide)
+
+These are always overwritten on import:
+
+### Root Level
+- `id` — UUID, regenerated
+- `session_id` — UUID, from session
+- `status` — always `"Draft"`
+- `created_at` — ISO timestamp
+- `updated_at` — ISO timestamp  
+- `approved_at` — always `null`
+- `context` — defaults to empty string
+- `risks` — defaults to `[]`
+- `technical_stack` — defaults to `[]`
+- `test_strategy` — defaults to empty string
+
+### Task Level
+- `id` — UUID, auto-minted (do not provide — see Optional Fields note above)
+- `order` — 1-based; auto-assigned from array position if omitted (recommended to omit)
+- `status` — always `"Pending"`
+- `notes` — always `null`
+- `completed_at` — always `null`
+- `execution_history` — always `[]`
+- `retry_count` — always `0`
+- `max_retries` — defaults to `3`
+- `artifacts` — always `[]`
+- `reflection` — always `null`
+
+## task_type Values
+
+Case-insensitive. Examples: `"Research"`, `"research"`, `"RESEARCH"` all work.
+
+| Value | Description |
+|-------|-------------|
+| `research` | Investigate, explore, understand |
+| `edit` | Modify existing code/files |
+| `create` | Build new things from scratch |
+| `delete` | Remove code/files |
+| `test` | Write or run tests |
+| `documentation` | Docs, comments, specs |
+| `configuration` | Config, setup, infrastructure |
+
+## Dependencies
+
+Use **1-based integer indices** (human-friendly). **Omit the field when there are no dependencies** — do not write `"dependencies": []`.
+
+```json
+"dependencies": [1, 2]        // depends on tasks 1 and 2
+"dependencies": [1]            // depends on task 1 only
+// (no field at all)           // no dependencies — preferred over []
+```
+
+## JSON Schema (Machine-Readable)
+
+```json
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "required": ["title", "description", "tasks"],
+  "additionalProperties": true,
+  "properties": {
+    "title": { "type": "string" },
+    "description": { "type": "string" },
+    "tasks": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["title", "description", "task_type"],
+        "additionalProperties": true,
+        "properties": {
+          "title": { "type": "string" },
+          "description": { "type": "string" },
+          "task_type": { 
+            "type": "string",
+            "enum": ["research", "edit", "create", "delete", "test", "documentation", "configuration"],
+            "pattern": "^(?i)(research|edit|create|delete|test|documentation|configuration)$"
+          },
+          "dependencies": {
+            "type": "array",
+            "items": { "oneOf": [{ "type": "integer", "minimum": 1 }, { "type": "string", "pattern": "^[0-9a-fA-F-]{36}$" }] },
+            "default": []
+          },
+          "complexity": { "type": "integer", "minimum": 1, "maximum": 5, "default": 3 },
+          "acceptance_criteria": { "type": "array", "items": { "type": "string" }, "default": [] }
+        }
+      }
+    }
+  }
+}
+```
+
+## Example Minimal Plan
+
+```json
+{
+  "title": "Add user authentication",
+  "description": "Implement login/logout flow with session management",
+  "tasks": [
+    { "title": "Research auth patterns", "description": "Look at existing auth code and pick a pattern", "task_type": "research" },
+    { "title": "Write login handler", "description": "POST /auth/login with password verification", "task_type": "create", "dependencies": [1] },
+    { "title": "Add session middleware", "description": "Attach user context to requests", "task_type": "configuration", "dependencies": [2] },
+    { "title": "Write auth tests", "description": "Test login, logout, and session expiry", "task_type": "test", "dependencies": [3], "complexity": 2 }
+  ]
+}
+```
+
+## Files
+
+- **Minimal example**: `~/.opencrabs/profiles/ops/plans/coding-plans/sample-minimal-plan.json`
+- **Full example**: `~/.opencrabs/profiles/ops/plans/coding-plans/rust-full.json`

@@ -19,6 +19,7 @@ pub mod self_update;
 pub mod skills;
 pub mod tokenizer;
 pub mod tools;
+pub mod plans;
 
 // Brain re-exports
 pub use commands::{CommandLoader, UserCommand};
