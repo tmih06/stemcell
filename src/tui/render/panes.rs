@@ -82,6 +82,17 @@ pub(super) fn render_inactive_pane(f: &mut Frame, app: &App, pane_id: PaneId, ar
         }
     }
 
+    // Pending-message delta — flushed assistant text, tool-group
+    // bullets, and queued user messages that arrived while this
+    // session was off-screen. Rendered with the same simplified
+    // shape as cached messages so the user sees a coherent feed
+    // even when the inactive pane has accumulated several rounds.
+    if let Some(bg) = live {
+        for msg in &bg.pending_messages {
+            render_simple_message(&mut lines, msg);
+        }
+    }
+
     // Live in-flight rows. These show what's happening in this
     // session RIGHT NOW even though it isn't the focused pane —
     // before this code existed the inactive pane was frozen at

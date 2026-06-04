@@ -1891,6 +1891,12 @@ impl App {
                 self.session_service.delete_session(session_id).await?;
                 // Clean up all cached state for this session
                 self.pane_message_cache.remove(&session_id);
+                // Also drop any background-session sidecar entry —
+                // without this a session that was processing in
+                // background at delete time would leak its
+                // pending_messages and tps_tracker forever. See
+                // background_session.rs doc for the routing model.
+                self.background_sessions.remove(&session_id);
                 if let Ok(mut q) = self.queued_messages.lock() {
                     q.remove(&session_id);
                 }

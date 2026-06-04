@@ -187,3 +187,156 @@ fn display_token_count_and_last_input_tokens_route() {
     assert_eq!(bg.display_token_count, 81449);
     assert_eq!(bg.last_input_tokens, Some(81449));
 }
+
+#[test]
+fn push_message_routes_to_pending_messages_for_background() {
+    use crate::tui::app::DisplayMessage;
+    let mut bg = BackgroundSessionState::default();
+    let msg = DisplayMessage {
+        id: uuid::Uuid::new_v4(),
+        role: "user".to_string(),
+        content: "queued while in background".to_string(),
+        timestamp: chrono::Utc::now(),
+        token_count: None,
+        cost: None,
+        approval: None,
+        approve_menu: None,
+        details: None,
+        expanded: false,
+        tool_group: None,
+    };
+    {
+        let mut routing = SessionStateMut::Background(&mut bg);
+        routing.push_message(msg.clone());
+    }
+    assert_eq!(bg.pending_messages.len(), 1);
+    assert_eq!(bg.pending_messages[0].content, msg.content);
+    assert!(
+        bg.has_live_state(),
+        "a pending message must mark the state as live so demote_to_background \
+         keeps the entry around for the next focus switch"
+    );
+}
+
+#[test]
+fn last_message_mut_returns_latest_pending_for_background() {
+    use crate::tui::app::DisplayMessage;
+    let mut bg = BackgroundSessionState::default();
+    {
+        let mut routing = SessionStateMut::Background(&mut bg);
+        for content in ["one", "two", "three"] {
+            routing.push_message(DisplayMessage {
+                id: uuid::Uuid::new_v4(),
+                role: "assistant".to_string(),
+                content: content.to_string(),
+                timestamp: chrono::Utc::now(),
+                token_count: None,
+                cost: None,
+                approval: None,
+                approve_menu: None,
+                details: None,
+                expanded: false,
+                tool_group: None,
+            });
+        }
+        let last = routing
+            .last_message_mut()
+            .expect("pending_messages non-empty");
+        last.content = "three-edited".to_string();
+    }
+    assert_eq!(bg.pending_messages.last().unwrap().content, "three-edited");
+}
+
+#[test]
+fn last_message_mut_returns_none_on_empty_background() {
+    let mut bg = BackgroundSessionState::default();
+    let mut routing = SessionStateMut::Background(&mut bg);
+    assert!(routing.last_message_mut().is_none());
+}
+
+#[test]
+fn clear_turn_state_preserves_pending_messages() {
+    use crate::tui::app::DisplayMessage;
+    let mut bg = BackgroundSessionState::default();
+    {
+        let mut routing = SessionStateMut::Background(&mut bg);
+        routing.push_message(DisplayMessage {
+            id: uuid::Uuid::new_v4(),
+            role: "assistant".to_string(),
+            content: "flushed text".to_string(),
+            timestamp: chrono::Utc::now(),
+            token_count: None,
+            cost: None,
+            approval: None,
+            approve_menu: None,
+            details: None,
+            expanded: false,
+            tool_group: None,
+        });
+        routing.append_streaming_chunk("in flight");
+        routing.set_processing(true);
+        routing.clear_turn_state();
+    }
+    // In-flight streaming state is wiped by clear_turn_state...
+    assert_eq!(bg.streaming_response, None);
+    assert!(!bg.is_processing);
+    // ...but pending_messages survive so the user can still see
+    // what flushed while the session was off-screen on focus
+    // switch. They are NOT a transient in-flight buffer.
+    assert_eq!(bg.pending_messages.len(), 1);
+    assert!(bg.has_live_state());
+}
+
+// ── Source-level invariant guard ──────────────────────────────────
+//
+// Approval prompts (tool approval, sudo password, ssh password)
+// MUST stay foreground-only. A turn waiting on approval for a
+// non-focused session would otherwise queue forever with no UI
+// surface, blocking the agent's tool loop until the user happened
+// to switch focus. Pin the contract via a source-level check so a
+// future refactor that "for consistency, routes ApprovalRequested
+// via session_state_mut too" fails this test loudly.
+
+const STATE_SRC: &str = include_str!("../tui/app/state.rs");
+
+#[test]
+fn approval_requests_are_not_routed_through_session_state_mut() {
+    // Strip line comments and string literals so a doc-comment
+    // discussing routing doesn't false-match.
+    let no_comments: String = STATE_SRC
+        .lines()
+        .filter(|line| !line.trim_start().starts_with("//"))
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    for variant in [
+        "TuiEvent::ToolApprovalRequested",
+        "TuiEvent::SudoPasswordRequested",
+        "TuiEvent::SshPasswordRequested",
+    ] {
+        // The handler arm for an approval variant must NOT call
+        // session_state_mut. We don't grep for the absence of the
+        // call directly (it could legitimately appear in unrelated
+        // arms above/below) — instead, locate the arm's slice and
+        // assert it doesn't contain the routing helper.
+        let arm_start = no_comments
+            .find(variant)
+            .unwrap_or_else(|| panic!("expected {variant} arm in state.rs"));
+        // Walk forward until the next `TuiEvent::` arm to bound
+        // the slice. This is a heuristic but tight enough: every
+        // arm starts with `TuiEvent::Foo`.
+        let rest = &no_comments[arm_start + variant.len()..];
+        let arm_end = rest
+            .find("\n            TuiEvent::")
+            .map(|off| arm_start + variant.len() + off)
+            .unwrap_or(no_comments.len());
+        let arm = &no_comments[arm_start..arm_end];
+        assert!(
+            !arm.contains("session_state_mut"),
+            "{variant} must stay foreground-only — routing it through \
+             session_state_mut would let a background-session turn block on \
+             approval with no UI surface. See background_session.rs doc \
+             for the routing model."
+        );
+    }
+}

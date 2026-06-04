@@ -879,6 +879,15 @@ impl App {
     /// An empty snapshot (no live state) skips insertion to keep
     /// the map bounded.
     pub(crate) fn demote_to_background(&mut self, session_id: Uuid) {
+        // Preserve any pending_messages that accumulated while this
+        // session was previously in background — they're flushed
+        // entries waiting to merge back on the next promote. New
+        // demote, same session: extend rather than overwrite.
+        let prior_pending = self
+            .background_sessions
+            .remove(&session_id)
+            .map(|prev| prev.pending_messages)
+            .unwrap_or_default();
         let bg = super::background_session::BackgroundSessionState {
             streaming_response: self.streaming_response.clone(),
             streaming_reasoning: self.streaming_reasoning.clone(),
@@ -889,11 +898,10 @@ impl App {
             streaming_output_tokens: self.streaming_output_tokens,
             display_token_count: self.display_token_count,
             tps_tracker: self.tps_tracker.clone(),
+            pending_messages: prior_pending,
         };
         if bg.has_live_state() {
             self.background_sessions.insert(session_id, bg);
-        } else {
-            self.background_sessions.remove(&session_id);
         }
     }
 
@@ -914,6 +922,17 @@ impl App {
         self.streaming_output_tokens = bg.streaming_output_tokens;
         self.display_token_count = bg.display_token_count;
         self.tps_tracker = bg.tps_tracker;
+        // Merge the per-session message delta into the freshly DB-
+        // loaded `self.messages`. The caller (`load_session`) has
+        // already trimmed `self.messages` to the display budget;
+        // pending_messages from the background are the deltas
+        // accumulated AFTER that DB snapshot, so they belong at
+        // the tail. Each `DisplayMessage` carries its own UUID so
+        // a future DB reload that picks up the persisted form
+        // won't collide.
+        if !bg.pending_messages.is_empty() {
+            self.messages.extend(bg.pending_messages);
+        }
         true
     }
 
@@ -1970,180 +1989,55 @@ impl App {
                 session_id,
                 text,
                 reasoning,
-            } if self.is_current_session(session_id) && self.is_processing => {
-                tracing::info!(
-                    "[TUI] IntermediateText: len={} active_group={} streaming={}",
-                    text.len(),
-                    self.active_tool_group.is_some(),
-                    self.streaming_response.is_some()
-                );
-                // Reset timer for next thinking phase
-                self.processing_started_at = Some(std::time::Instant::now());
+            } => {
+                // Background sessions also flush text + tool groups
+                // between agent rounds — routing this through the
+                // session_state_mut helper means the inactive pane
+                // sees flushed assistant messages and tool-group
+                // bullets as they happen instead of only on focus
+                // switch. The original `is_processing` guard moves
+                // into the foreground-only `intermediate_text_received`
+                // mirror at the bottom; background sessions don't
+                // use that flag (it gates the foreground "the agent
+                // is mid-stream" detection and would force-clear
+                // useful state if mirrored).
+                let is_foreground = self.is_current_session(session_id);
+                if is_foreground {
+                    tracing::info!(
+                        "[TUI] IntermediateText: len={} active_group={} streaming={}",
+                        text.len(),
+                        self.active_tool_group.is_some(),
+                        self.streaming_response.is_some()
+                    );
+                }
 
-                // Capture reasoning from either the event or the streaming accumulator
-                let reasoning_details = reasoning.or_else(|| self.streaming_reasoning.take());
-
-                // Clear streaming response - text is now going to be a permanent message
-                self.streaming_response = None;
-                self.streaming_render_cache = None;
-                self.streaming_reasoning = None;
-                self.intermediate_text_received = true;
-
-                let text_clean = crate::utils::sanitize::strip_llm_artifacts(&text);
-                let has_text = !text_clean.trim().is_empty();
-                let has_reasoning = reasoning_details
-                    .as_ref()
-                    .is_some_and(|r| !r.trim().is_empty());
-
-                // Build a tool_group message helper
-                let make_tool_group = |group: ToolCallGroup| {
-                    let count = group.calls.len();
-                    DisplayMessage {
-                        id: Uuid::new_v4(),
-                        role: "tool_group".to_string(),
-                        content: format!(
-                            "{} tool call{}",
-                            count,
-                            if count == 1 { "" } else { "s" }
-                        ),
-                        timestamp: chrono::Utc::now(),
-                        token_count: None,
-                        cost: None,
-                        approval: None,
-                        approve_menu: None,
-                        details: None,
-                        expanded: false,
-                        tool_group: Some(group),
+                // Capture reasoning from the routed state's streaming
+                // accumulator: foreground uses self.streaming_reasoning,
+                // background uses the sidecar's. Either way the take()
+                // clears the source so the next round starts fresh.
+                let reasoning_details = if let Some(r) = reasoning {
+                    Some(r)
+                } else {
+                    let mut state = self.session_state_mut(session_id);
+                    match &mut state {
+                        super::background_session::SessionStateMut::Foreground(app) => {
+                            app.streaming_reasoning.take()
+                        }
+                        super::background_session::SessionStateMut::Background(bg) => {
+                            bg.streaming_reasoning.take()
+                        }
                     }
                 };
 
-                if has_text {
-                    // Standard case: previous tool group → new text+reasoning message
-                    if let Some(group) = self.active_tool_group.take() {
-                        self.messages.push(make_tool_group(group));
-                    }
-                    let assistant_id = Uuid::new_v4();
-                    self.messages.push(DisplayMessage {
-                        id: assistant_id,
-                        role: "assistant".to_string(),
-                        content: text_clean,
-                        timestamp: chrono::Utc::now(),
-                        token_count: None,
-                        cost: None,
-                        approval: None,
-                        approve_menu: None,
-                        details: reasoning_details.clone(),
-                        expanded: false,
-                        tool_group: None,
-                    });
-                    // DB persistence happens in tool_loop's per-iteration
-                    // append_content with `<!-- reasoning -->` markers — this
-                    // DisplayMessage.id is TUI-local and intentionally does NOT
-                    // match any DB row, so writing here would silently no-op.
-                } else if has_reasoning {
-                    // Reasoning-only iteration (no visible text, no new
-                    // tool_use blocks yet). Prefer MERGING with the
-                    // immediately preceding thinking-only assistant
-                    // message over pushing a fresh one — consecutive
-                    // `<think>…</think>` iterations without any tools or
-                    // text between them are really one logical thinking
-                    // phase, and rendering them as two separate
-                    // collapsible blocks (screenshot 2026-04-17 16:25)
-                    // is pure noise. Merge criteria: last message is an
-                    // assistant row with empty content, non-empty
-                    // details, no tool_group — i.e. the exact shape
-                    // THIS branch creates.
-                    let reasoning_text = reasoning_details.unwrap_or_default();
-                    let merged = self
-                        .messages
-                        .last_mut()
-                        .filter(|m| {
-                            m.role == "assistant"
-                                && m.content.trim().is_empty()
-                                && m.tool_group.is_none()
-                                && m.details.as_deref().is_some_and(|d| !d.trim().is_empty())
-                        })
-                        .map(|prev| {
-                            let mut combined = prev.details.take().unwrap_or_default();
-                            if !combined.ends_with("\n\n") {
-                                combined.push_str("\n\n");
-                            }
-                            combined.push_str(&reasoning_text);
-                            prev.details = Some(combined);
-                            prev.timestamp = chrono::Utc::now();
-                        })
-                        .is_some();
-                    if !merged {
-                        // CLI step boundary with reasoning only — push thinking msg
-                        // BEFORE the tool group so order is: think → tools → next.
-                        let thinking_id = Uuid::new_v4();
-                        self.messages.push(DisplayMessage {
-                            id: thinking_id,
-                            role: "assistant".to_string(),
-                            content: String::new(),
-                            timestamp: chrono::Utc::now(),
-                            token_count: None,
-                            cost: None,
-                            approval: None,
-                            approve_menu: None,
-                            details: Some(reasoning_text),
-                            expanded: false,
-                            tool_group: None,
-                        });
-                    }
-                    // DB persistence happens in tool_loop's per-iteration
-                    // append_content with `<!-- reasoning -->` markers.
-                    if let Some(group) = self.active_tool_group.take() {
-                        self.messages.push(make_tool_group(group));
-                    }
-                } else {
-                    // Pure flush trigger (CLI Ping with no pending content) —
-                    // just flush the tool group if any.
-                    if let Some(group) = self.active_tool_group.take() {
-                        self.messages.push(make_tool_group(group));
-                    }
-                }
-
-                if self.auto_scroll {
-                    self.scroll_offset = 0;
-                }
-            }
-            TuiEvent::QueuedUserMessage { session_id, text }
-                if self.is_current_session(session_id) =>
-            {
-                tracing::info!(
-                    "[TUI] QueuedUserMessage inline: len={} active_group={}",
-                    text.len(),
-                    self.active_tool_group.is_some()
-                );
-
-                // Flush any active tool group so the user message appears after it
-                if let Some(group) = self.active_tool_group.take() {
-                    let count = group.calls.len();
-                    self.messages.push(DisplayMessage {
-                        id: Uuid::new_v4(),
-                        role: "tool".to_string(),
-                        content: format!(
-                            "{} tool call{} completed",
-                            count,
-                            if count == 1 { "" } else { "s" }
-                        ),
-                        timestamp: chrono::Utc::now(),
-                        token_count: None,
-                        cost: None,
-                        approval: None,
-                        approve_menu: None,
-                        details: None,
-                        expanded: false,
-                        tool_group: Some(group),
-                    });
-                }
-
-                // Add the queued user message inline in the chat flow
-                self.messages.push(DisplayMessage {
+                // Build a tool_group DisplayMessage helper.
+                let make_tool_group = |group: ToolCallGroup| DisplayMessage {
                     id: Uuid::new_v4(),
-                    role: "user".to_string(),
-                    content: text,
+                    role: "tool_group".to_string(),
+                    content: format!(
+                        "{} tool call{}",
+                        group.calls.len(),
+                        if group.calls.len() == 1 { "" } else { "s" }
+                    ),
                     timestamp: chrono::Utc::now(),
                     token_count: None,
                     cost: None,
@@ -2151,22 +2045,198 @@ impl App {
                     approve_menu: None,
                     details: None,
                     expanded: false,
-                    tool_group: None,
-                });
+                    tool_group: Some(group),
+                };
 
-                // Clear the preview and input buffer — message is now in the chat
-                if let Some(sid) = self.current_session.as_ref().map(|s| s.id)
-                    && let Ok(mut q) = self.queued_messages.lock()
+                let text_clean = crate::utils::sanitize::strip_llm_artifacts(&text);
+                let has_text = !text_clean.trim().is_empty();
+                let has_reasoning = reasoning_details
+                    .as_ref()
+                    .is_some_and(|r| !r.trim().is_empty());
+
                 {
-                    q.remove(&sid);
-                }
-                if !self.input_buffer.is_empty() {
-                    self.input_buffer.clear();
-                    self.cursor_position = 0;
+                    let mut state = self.session_state_mut(session_id);
+                    // Clear the in-flight streaming response — the
+                    // text is now becoming a permanent message.
+                    match &mut state {
+                        super::background_session::SessionStateMut::Foreground(app) => {
+                            app.streaming_response = None;
+                            app.streaming_render_cache = None;
+                        }
+                        super::background_session::SessionStateMut::Background(bg) => {
+                            bg.streaming_response = None;
+                        }
+                    }
+
+                    state.reset_processing_clock();
+
+                    if has_text {
+                        // Standard case: flush prior tool group, then
+                        // push assistant text+reasoning message.
+                        if let Some(group) = state.take_active_tool_group() {
+                            state.push_message(make_tool_group(group));
+                        }
+                        state.push_message(DisplayMessage {
+                            id: Uuid::new_v4(),
+                            role: "assistant".to_string(),
+                            content: text_clean,
+                            timestamp: chrono::Utc::now(),
+                            token_count: None,
+                            cost: None,
+                            approval: None,
+                            approve_menu: None,
+                            details: reasoning_details.clone(),
+                            expanded: false,
+                            tool_group: None,
+                        });
+                        // DB persistence happens in tool_loop's per-iteration
+                        // append_content with `<!-- reasoning -->` markers — this
+                        // DisplayMessage.id is TUI-local and intentionally does NOT
+                        // match any DB row, so writing here would silently no-op.
+                    } else if has_reasoning {
+                        // Reasoning-only iteration: prefer MERGING with
+                        // the immediately preceding thinking-only
+                        // assistant message — consecutive
+                        // `<think>…</think>` iterations without any
+                        // tools or text between them are really one
+                        // logical thinking phase. Merge criteria: last
+                        // message is an assistant row with empty
+                        // content, non-empty details, no tool_group.
+                        //
+                        // For background sessions, "last message" means
+                        // the last pending_messages entry — the cached
+                        // snapshot is read-only here. If pending is
+                        // empty, fall through to push a fresh entry;
+                        // the DB-reload on focus switch will pick up
+                        // the authoritative shape.
+                        let reasoning_text = reasoning_details.unwrap_or_default();
+                        let merged = state
+                            .last_message_mut()
+                            .filter(|m| {
+                                m.role == "assistant"
+                                    && m.content.trim().is_empty()
+                                    && m.tool_group.is_none()
+                                    && m.details
+                                        .as_deref()
+                                        .is_some_and(|d| !d.trim().is_empty())
+                            })
+                            .map(|prev| {
+                                let mut combined = prev.details.take().unwrap_or_default();
+                                if !combined.ends_with("\n\n") {
+                                    combined.push_str("\n\n");
+                                }
+                                combined.push_str(&reasoning_text);
+                                prev.details = Some(combined);
+                                prev.timestamp = chrono::Utc::now();
+                            })
+                            .is_some();
+                        if !merged {
+                            // CLI step boundary with reasoning only — push thinking msg
+                            // BEFORE the tool group so order is: think → tools → next.
+                            state.push_message(DisplayMessage {
+                                id: Uuid::new_v4(),
+                                role: "assistant".to_string(),
+                                content: String::new(),
+                                timestamp: chrono::Utc::now(),
+                                token_count: None,
+                                cost: None,
+                                approval: None,
+                                approve_menu: None,
+                                details: Some(reasoning_text),
+                                expanded: false,
+                                tool_group: None,
+                            });
+                        }
+                        if let Some(group) = state.take_active_tool_group() {
+                            state.push_message(make_tool_group(group));
+                        }
+                    } else {
+                        // Pure flush trigger (CLI Ping with no
+                        // pending content) — just flush the tool
+                        // group if any.
+                        if let Some(group) = state.take_active_tool_group() {
+                            state.push_message(make_tool_group(group));
+                        }
+                    }
                 }
 
-                if self.auto_scroll {
-                    self.scroll_offset = 0;
+                if is_foreground {
+                    self.intermediate_text_received = true;
+                    if self.auto_scroll {
+                        self.scroll_offset = 0;
+                    }
+                }
+            }
+            TuiEvent::QueuedUserMessage { session_id, text } => {
+                let is_foreground = self.is_current_session(session_id);
+                if is_foreground {
+                    tracing::info!(
+                        "[TUI] QueuedUserMessage inline: len={} active_group={}",
+                        text.len(),
+                        self.active_tool_group.is_some()
+                    );
+                }
+
+                {
+                    let mut state = self.session_state_mut(session_id);
+                    // Flush any active tool group so the queued user
+                    // message appears after it in the chronological
+                    // chat flow. Background sessions accumulate this
+                    // in pending_messages and merge on focus return.
+                    if let Some(group) = state.take_active_tool_group() {
+                        let count = group.calls.len();
+                        state.push_message(DisplayMessage {
+                            id: Uuid::new_v4(),
+                            role: "tool".to_string(),
+                            content: format!(
+                                "{} tool call{} completed",
+                                count,
+                                if count == 1 { "" } else { "s" }
+                            ),
+                            timestamp: chrono::Utc::now(),
+                            token_count: None,
+                            cost: None,
+                            approval: None,
+                            approve_menu: None,
+                            details: None,
+                            expanded: false,
+                            tool_group: Some(group),
+                        });
+                    }
+
+                    state.push_message(DisplayMessage {
+                        id: Uuid::new_v4(),
+                        role: "user".to_string(),
+                        content: text,
+                        timestamp: chrono::Utc::now(),
+                        token_count: None,
+                        cost: None,
+                        approval: None,
+                        approve_menu: None,
+                        details: None,
+                        expanded: false,
+                        tool_group: None,
+                    });
+                }
+
+                // Foreground-only post-hooks: clear the queued-
+                // message preview and input buffer (those are
+                // foreground UI state), reset scroll. Background
+                // sessions' queued_messages get cleared by their
+                // own send-loop on the channels side.
+                if is_foreground {
+                    if let Some(sid) = self.current_session.as_ref().map(|s| s.id)
+                        && let Ok(mut q) = self.queued_messages.lock()
+                    {
+                        q.remove(&sid);
+                    }
+                    if !self.input_buffer.is_empty() {
+                        self.input_buffer.clear();
+                        self.cursor_position = 0;
+                    }
+                    if self.auto_scroll {
+                        self.scroll_offset = 0;
+                    }
                 }
             }
             TuiEvent::ToolCallCompleted {
@@ -2268,21 +2338,6 @@ impl App {
                     }
                 }
             }
-            TuiEvent::CompactionSummary {
-                session_id,
-                summary: _,
-            } if self.is_current_session(session_id) => {
-                // Compaction shrinks the AGENT's prompt budget. It is fully
-                // transparent to the user — no scrollback wipe, no divider,
-                // no notice. Only reset internal streaming state so the next
-                // assistant turn renders cleanly.
-                self.streaming_response = None;
-                self.streaming_render_cache = None;
-                self.streaming_reasoning = None;
-                self.active_tool_group = None;
-                // Allow post-compaction TokenCountUpdated to set a lower value
-                self.last_input_tokens = None;
-            }
             TuiEvent::BuildLine(line) => {
                 // Keep a rolling window of the last 6 build lines
                 self.build_lines.push(line);
@@ -2370,20 +2425,17 @@ impl App {
                 self.session_state_mut(session_id)
                     .add_streaming_output_tokens(tokens);
             }
-            // Silently ignore events for non-focused background sessions
-            // that still need an explicit fall-through arm. ToolCallStarted /
-            // ToolCallCompleted / StreamingOutputTokens are routed via
-            // session_state_mut now and reach all sessions; they're no
-            // longer in this catch-all. IntermediateText and
-            // QueuedUserMessage mutate `self.messages` which is foreground-
-            // only state — background sessions catch up on focus switch via
-            // the `preload_pane_session` DB reload. CompactionSummary's
-            // primary handler above also gates on the current session;
-            // non-current variants fall through here so the match stays
-            // exhaustive.
-            TuiEvent::IntermediateText { .. }
-            | TuiEvent::QueuedUserMessage { .. }
-            | TuiEvent::CompactionSummary { .. } => {}
+            // Automatic compaction is fully silent — the agent's
+            // `ProgressEvent::CompactionSummary` is dropped at the
+            // channel bridge (`cli/ui.rs:528-530`, "summary goes to
+            // memory log only") and manual `/compact` triggers a
+            // normal `MessageSubmitted` rather than this variant.
+            // Nothing in the codebase constructs
+            // `TuiEvent::CompactionSummary` today; this no-op arm
+            // exists only so a future re-wiring of visible
+            // compaction has a designated landing site rather than
+            // silently falling through to a panic.
+            TuiEvent::CompactionSummary { .. } => {}
 
             TuiEvent::SessionUpdated(session_id) => {
                 // A remote channel updated a session. Don't reload immediately —

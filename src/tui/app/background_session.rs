@@ -51,7 +51,7 @@
 //!   token counters. Without it the inactive pane misses every
 //!   chunk between turns.
 
-use crate::tui::app::state::{StreamingTpsTracker, ToolCallGroup};
+use crate::tui::app::state::{DisplayMessage, StreamingTpsTracker, ToolCallGroup};
 use std::time::Instant;
 
 /// Sidecar live-state cache for a non-focused session.
@@ -93,6 +93,18 @@ pub struct BackgroundSessionState {
     /// so the rate stays accurate across focus switches. See
     /// `StreamingTpsTracker` doc for the active-window invariant.
     pub tps_tracker: StreamingTpsTracker,
+    /// Per-session message delta accumulated while the session is
+    /// in background. Each `IntermediateText` / `QueuedUserMessage`
+    /// flush for a non-focused session appends here instead of to
+    /// `App.messages` (which is foreground-only). On
+    /// `promote_to_foreground` the delta is merged into the
+    /// reloaded `App.messages` so the user sees everything that
+    /// flushed while they were on the other pane, in chronological
+    /// order. The inactive-pane renderer also reads from this Vec
+    /// for the live preview rows so the user sees text/tool-group
+    /// flushes appear in real time rather than only on focus
+    /// switch.
+    pub pending_messages: Vec<DisplayMessage>,
 }
 
 impl BackgroundSessionState {
@@ -105,6 +117,7 @@ impl BackgroundSessionState {
             || self.active_tool_group.is_some()
             || self.is_processing
             || self.streaming_output_tokens > 0
+            || !self.pending_messages.is_empty()
     }
 }
 
@@ -242,6 +255,59 @@ impl SessionStateMut<'_> {
         }
     }
 
+    /// Take the active tool-call group out of the routed state,
+    /// leaving `None` behind. Used by handlers that flush the
+    /// group into a finalised `DisplayMessage` (e.g.
+    /// `IntermediateText`) so the next tool batch starts with a
+    /// clean group.
+    pub fn take_active_tool_group(&mut self) -> Option<ToolCallGroup> {
+        match self {
+            Self::Foreground(app) => app.active_tool_group.take(),
+            Self::Background(bg) => bg.active_tool_group.take(),
+        }
+    }
+
+    /// Append a finalised `DisplayMessage` to the routed message
+    /// list. Foreground pushes to `App.messages`; background
+    /// pushes to the sidecar's `pending_messages` Vec, which
+    /// `promote_to_foreground` later drains into `App.messages`
+    /// when this session becomes focused. Either way the inactive-
+    /// pane renderer can read both paths for its preview rows.
+    pub fn push_message(&mut self, msg: DisplayMessage) {
+        match self {
+            Self::Foreground(app) => app.messages.push(msg),
+            Self::Background(bg) => bg.pending_messages.push(msg),
+        }
+    }
+
+    /// Borrow the last message of the routed list mutably so the
+    /// `IntermediateText` reasoning-merge path can append to an
+    /// existing thinking-only assistant entry rather than pushing
+    /// a duplicate. Returns `None` when the list is empty.
+    ///
+    /// For background sessions, only `pending_messages` is
+    /// considered — the cached snapshot in `pane_message_cache` is
+    /// read-only at this point. If the last message the user would
+    /// see is actually in the snapshot, the merge is skipped and a
+    /// fresh entry is pushed; the next focus-switch re-reads from
+    /// DB which holds the authoritative shape.
+    pub fn last_message_mut(&mut self) -> Option<&mut DisplayMessage> {
+        match self {
+            Self::Foreground(app) => app.messages.last_mut(),
+            Self::Background(bg) => bg.pending_messages.last_mut(),
+        }
+    }
+
+    /// Reset the foreground processing-started clock used by the
+    /// `[processing...]` footer. No-op for background — the
+    /// `processing_started_at` instant on the sidecar is set by
+    /// `set_processing`.
+    pub fn reset_processing_clock(&mut self) {
+        if let Self::Foreground(app) = self {
+            app.processing_started_at = Some(Instant::now());
+        }
+    }
+
     /// Clear all in-flight turn state — used at `ResponseComplete`
     /// when the turn has been finalized into the message store.
     pub fn clear_turn_state(&mut self) {
@@ -261,6 +327,14 @@ impl SessionStateMut<'_> {
                 bg.is_processing = false;
                 bg.processing_started_at = None;
                 bg.streaming_output_tokens = 0;
+                // Keep pending_messages — they're a delta of FLUSHED
+                // messages from the just-ended turn, not in-flight
+                // state. The caller (ResponseComplete cleanup or
+                // promote_to_foreground) decides whether to merge
+                // them into App.messages or drop them along with the
+                // sidecar entry. Wiping them here would erase the
+                // user-visible turn before they had a chance to see
+                // it after focus switch.
             }
         }
     }
