@@ -186,6 +186,16 @@ impl Tool for WriteOpenCrabsFileTool {
                     {
                         return Ok(ToolResult::error(message));
                     }
+                    // Record pruned sections when shrinking is allowed (dedup/cleanup)
+                    if dedup_intent || cleanup_intent {
+                        let removed =
+                            crate::brain::rsi_pruned::detect_removed_sections(&existing, content);
+                        if !removed.is_empty() {
+                            let mut pruned_state = crate::brain::rsi_pruned::PrunedState::load();
+                            pruned_state.record_pruned(path_str, removed);
+                            let _ = pruned_state.save();
+                        }
+                    }
                 }
                 if let Some(parent) = full_path.parent()
                     && let Err(e) = std::fs::create_dir_all(parent)
@@ -328,6 +338,16 @@ impl Tool for WriteOpenCrabsFileTool {
                     )
                 {
                     return Ok(ToolResult::error(message));
+                }
+                // Record pruned sections when shrinking is allowed (dedup/cleanup)
+                if dedup_intent || cleanup_intent {
+                    let removed =
+                        crate::brain::rsi_pruned::detect_removed_sections(&existing, &updated);
+                    if !removed.is_empty() {
+                        let mut pruned_state = crate::brain::rsi_pruned::PrunedState::load();
+                        pruned_state.record_pruned(path_str, removed);
+                        let _ = pruned_state.save();
+                    }
                 }
                 if let Err(e) = brain_file_safety::backup_before_write(&full_path) {
                     tracing::warn!("write_opencrabs_file: backup failed for {path_str}: {e}");

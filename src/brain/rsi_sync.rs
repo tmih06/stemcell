@@ -400,6 +400,20 @@ async fn sync_single_file(local_path: &Path, filename: &str, _timestamp: &str) -
         };
     }
 
+    // 3b. Filter out sections the user has previously pruned
+    let pruned_state = crate::brain::rsi_pruned::PrunedState::load();
+    let new_sections =
+        crate::brain::rsi_pruned::filter_pruned_sections(&new_sections, &pruned_state, filename);
+    if new_sections.trim().is_empty() {
+        tracing::info!("RSI sync: {filename} — all new sections were pruned by user, skipping");
+        return FileSyncResult {
+            filename: filename.to_string(),
+            synced: true,
+            sections_added: 0,
+            error: None,
+        };
+    }
+
     let sections_count = new_sections
         .lines()
         .filter(|l| l.starts_with("## "))

@@ -311,6 +311,19 @@ impl Tool for SelfImproveTool {
                     return Ok(ToolResult::error(message));
                 }
 
+                // Record pruned sections when dedup shrinks a brain file.
+                // This is how the sidecar learns what the RSI loop removed so
+                // sync_templates() does not re-add it on the next upstream sync.
+                if dedup_intent {
+                    let removed =
+                        crate::brain::rsi_pruned::detect_removed_sections(&existing, &updated);
+                    if !removed.is_empty() {
+                        let mut pruned_state = crate::brain::rsi_pruned::PrunedState::load();
+                        pruned_state.record_pruned(target_file, removed);
+                        let _ = pruned_state.save();
+                    }
+                }
+
                 // Ensure RSI dirs exist for logging
                 ensure_rsi_dirs(&home).map_err(|e| {
                     crate::brain::tools::ToolError::Execution(format!(
