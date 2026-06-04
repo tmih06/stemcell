@@ -36,8 +36,30 @@ const MIN_LINE_LEN: usize = 10;
 /// Minimum occurrences to flag as duplicate.
 const MIN_DUPLICATE_COUNT: usize = 2;
 
+/// Purpose-order ranking for canonical-file selection. Lower rank wins.
+/// Issue #164 fix 3: identity-shaping files (SOUL, then AGENTS, TOOLS,
+/// CODE, SECURITY, MEMORY, USER) outrank everything else, regardless of
+/// alphabetical position. Unknown files fall to the bottom and tie-break
+/// alphabetically via the caller's `.then(...)`.
+pub(crate) fn canonical_file_rank(filename: &str) -> u8 {
+    match filename {
+        "SOUL.md" => 0,
+        "AGENTS.md" => 1,
+        "TOOLS.md" => 2,
+        "CODE.md" => 3,
+        "SECURITY.md" => 4,
+        "MEMORY.md" => 5,
+        "USER.md" => 6,
+        _ => u8::MAX,
+    }
+}
+
 /// Lines that look like markdown structure — skip these.
-fn is_structural_line(line: &str) -> bool {
+/// `pub(crate)` so the regression test file under `src/tests/` can
+/// exercise it directly (memory rule forbids inline `#[cfg(test)] mod
+/// tests` blocks; every test lives under `src/tests/` and is registered
+/// in `mod.rs`).
+pub(crate) fn is_structural_line(line: &str) -> bool {
     let trimmed = line.trim();
     if trimmed.is_empty() {
         return true;
@@ -122,7 +144,15 @@ pub fn scan_brain_files(brain_path: &Path) -> Vec<DuplicateCluster> {
             by_file.entry(file.clone()).or_default().push(*line);
         }
         let mut loc_vec: Vec<(String, Vec<usize>)> = by_file.into_iter().collect();
-        loc_vec.sort_by(|a, b| a.0.cmp(&b.0));
+        // Purpose-ordered sort (issue #164 fix 3): pick the most semantically
+        // authoritative file as canonical instead of the alphabetical winner.
+        // Pre-fix, `AGENTS.md` beat `SOUL.md` purely by lexical order, so
+        // identity-shaping lines kept getting proposed for removal from SOUL.
+        loc_vec.sort_by(|a, b| {
+            canonical_file_rank(&a.0)
+                .cmp(&canonical_file_rank(&b.0))
+                .then(a.0.cmp(&b.0))
+        });
 
         clusters.push(DuplicateCluster {
             text,
@@ -136,38 +166,77 @@ pub fn scan_brain_files(brain_path: &Path) -> Vec<DuplicateCluster> {
     clusters
 }
 
-/// Convert a duplicate cluster into a `ProposedBrainDedup` payload.
+/// Convert a duplicate cluster into a list of `ProposedBrainDedup`
+/// payloads — one per non-canonical location.
 ///
-/// Picks the first file/line as the "canonical" location and proposes
-/// removing the duplicates from other locations (or later occurrences
-/// in the same file).
-pub fn cluster_to_proposal(cluster: &DuplicateCluster) -> Option<ProposedBrainDedup> {
+/// Issue #164 fix 3: pre-fix this emitted at most ONE proposal per cluster
+/// regardless of how many files held duplicates (comment in pre-fix code:
+/// "For simplicity, target the second file in the list"). For a 5-file
+/// duplicate, four proposals went silently uncreated and the duplicates
+/// stayed on disk forever. Now we generate N-1 proposals — one per non-
+/// canonical file — so the inbox accurately reflects the cleanup work.
+pub fn cluster_to_proposals(cluster: &DuplicateCluster) -> Vec<ProposedBrainDedup> {
     if cluster.locations.is_empty() {
-        return None;
+        return Vec::new();
     }
 
-    // Pick the first location as canonical (keep it), remove from others
     let (canonical_file, canonical_lines) = &cluster.locations[0];
+    let mut proposals = Vec::new();
 
-    // If there's only one file but multiple lines, remove all but the first
-    // If there are multiple files, remove from all files except canonical
-    let (target_file, lines_to_remove) = if cluster.locations.len() == 1 {
-        // Same file, multiple occurrences
+    if cluster.locations.len() == 1 {
+        // Same file, multiple occurrences — one proposal removing the
+        // non-first occurrences within this file.
         if canonical_lines.len() <= 1 {
-            return None; // Nothing to remove
+            return proposals;
         }
-        (canonical_file.clone(), canonical_lines[1..].to_vec())
-    } else {
-        // Multiple files — remove from all non-canonical files
-        // For simplicity, target the second file in the list
-        let (other_file, other_lines) = &cluster.locations[1];
-        (other_file.clone(), other_lines.clone())
-    };
+        let lines_to_remove = canonical_lines[1..].to_vec();
+        if let Some(p) = build_proposal(
+            cluster,
+            canonical_file,
+            canonical_lines[0],
+            canonical_file,
+            &lines_to_remove,
+        ) {
+            proposals.push(p);
+        }
+        return proposals;
+    }
 
+    // Multiple files — one proposal per non-canonical file. Each names
+    // the canonical file/line as `duplicate_of` and lists the line range
+    // to remove from the target.
+    for (other_file, other_lines) in cluster.locations.iter().skip(1) {
+        if let Some(p) = build_proposal(
+            cluster,
+            canonical_file,
+            canonical_lines[0],
+            other_file,
+            other_lines,
+        ) {
+            proposals.push(p);
+        }
+    }
+    proposals
+}
+
+/// Backwards-compatible single-proposal wrapper. Returns the first proposal
+/// from `cluster_to_proposals` so existing call sites keep working while
+/// we transition to N-1 semantics. New code should call `cluster_to_proposals`.
+#[deprecated(note = "use cluster_to_proposals for N-1 per-file proposals")]
+pub fn cluster_to_proposal(cluster: &DuplicateCluster) -> Option<ProposedBrainDedup> {
+    cluster_to_proposals(cluster).into_iter().next()
+}
+
+fn build_proposal(
+    cluster: &DuplicateCluster,
+    canonical_file: &str,
+    canonical_first_line: usize,
+    target_file: &str,
+    lines_to_remove: &[usize],
+) -> Option<ProposedBrainDedup> {
     if lines_to_remove.is_empty() {
         return None;
     }
-
     let line_range = if lines_to_remove.len() == 1 {
         format!("{}", lines_to_remove[0])
     } else {
@@ -177,25 +246,36 @@ pub fn cluster_to_proposal(cluster: &DuplicateCluster) -> Option<ProposedBrainDe
             lines_to_remove.iter().max().unwrap()
         )
     };
-
-    let duplicate_of = format!("{}:{}", canonical_file, canonical_lines[0]);
-
+    let duplicate_of = format!("{}:{}", canonical_file, canonical_first_line);
     Some(ProposedBrainDedup {
-        target_file,
+        target_file: target_file.to_string(),
         duplicate_text: cluster.text.clone(),
         line_range,
         duplicate_of,
-        count: cluster.total_count - 1, // subtract the canonical copy we keep
+        count: lines_to_remove.len(),
+        warnings: Vec::new(),
     })
 }
 
 /// Run the full scan and return proposals ready for the inbox.
+///
+/// Issue #164 fix 3: now emits N-1 proposals per cluster (was 1) AND
+/// runs a post-hoc stub-risk scan that annotates each proposal's
+/// `warnings` field with the names of headers whose body region would
+/// be emptied by the proposed removals.
 pub fn generate_dedup_proposals(brain_path: &Path) -> Vec<(ProposedBrainDedup, String)> {
     let clusters = scan_brain_files(brain_path);
     let mut results = Vec::new();
 
+    // Build a per-file map of all lines proposed for removal across all
+    // clusters in this scan. The stub-risk check needs to consider the
+    // CUMULATIVE removal set so it doesn't miss the case where two
+    // clusters each remove half of a header's body lines.
+    let mut planned_removals: HashMap<String, Vec<usize>> = HashMap::new();
+    let mut staged: Vec<(ProposedBrainDedup, String)> = Vec::new();
+
     for cluster in &clusters {
-        if let Some(proposal) = cluster_to_proposal(cluster) {
+        for proposal in cluster_to_proposals(cluster) {
             let rationale = format!(
                 "Found '{}' appearing {} times across brain files. \
                  Keeping canonical copy at {}, removing duplicate(s).",
@@ -203,11 +283,129 @@ pub fn generate_dedup_proposals(brain_path: &Path) -> Vec<(ProposedBrainDedup, S
                 cluster.total_count,
                 proposal.duplicate_of,
             );
-            results.push((proposal, rationale));
+            planned_removals
+                .entry(proposal.target_file.clone())
+                .or_default()
+                .extend(parse_line_range(&proposal.line_range));
+            staged.push((proposal, rationale));
         }
     }
 
+    // Post-hoc stub-risk scan. For each affected file, re-read it and
+    // compute which header bodies would be emptied by the planned
+    // removals, then thread those warnings back into each proposal that
+    // touches that file.
+    let stub_risk_by_file: HashMap<String, Vec<String>> = planned_removals
+        .iter()
+        .map(|(filename, removed)| {
+            let warnings = compute_stub_risk(brain_path, filename, removed);
+            (filename.clone(), warnings)
+        })
+        .collect();
+
+    for (mut proposal, rationale) in staged {
+        if let Some(warnings) = stub_risk_by_file.get(&proposal.target_file)
+            && !warnings.is_empty()
+        {
+            // Attribute every per-file warning to every proposal that
+            // touches the file. A more precise per-proposal attribution
+            // would need to re-simulate each removal individually; the
+            // current shape errs on the side of surfacing the same
+            // warning twice rather than missing it.
+            proposal.warnings = warnings.clone();
+        }
+        results.push((proposal, rationale));
+    }
+
     results
+}
+
+/// Parse a `line_range` field ("42" or "42-58") back into the explicit
+/// list of line numbers in the range. The stub-risk scan needs the
+/// individual numbers, not just the bounds.
+fn parse_line_range(range: &str) -> Vec<usize> {
+    if let Some((start, end)) = range.split_once('-') {
+        let start = start.trim().parse::<usize>().ok();
+        let end = end.trim().parse::<usize>().ok();
+        match (start, end) {
+            (Some(s), Some(e)) if e >= s => (s..=e).collect(),
+            _ => Vec::new(),
+        }
+    } else if let Ok(n) = range.trim().parse::<usize>() {
+        vec![n]
+    } else {
+        Vec::new()
+    }
+}
+
+/// For a single brain file plus the set of line numbers proposed for
+/// removal, return the list of header lines whose body region would be
+/// empty after the removals. Empty Vec means no stub risk.
+///
+/// "Empty" matches the rules in `brain::filter::strip_empty_sections` —
+/// blank, horizontal rule, table separator, short blockquote, HTML
+/// comment. Real content (including TBD/TODO/WIP/placeholder markers)
+/// keeps the section alive.
+fn compute_stub_risk(brain_path: &Path, filename: &str, removed: &[usize]) -> Vec<String> {
+    let file_path = brain_path.join(filename);
+    let Ok(content) = std::fs::read_to_string(&file_path) else {
+        return Vec::new();
+    };
+    let lines: Vec<&str> = content.lines().collect();
+    let total = lines.len();
+    let removed_set: std::collections::HashSet<usize> = removed.iter().copied().collect();
+
+    // Build the post-removal view (1-indexed line filter), then run the
+    // filter module's strip detector against it. Headers it identifies
+    // as having empty bodies are the stub risks.
+    let post: Vec<&str> = lines
+        .iter()
+        .enumerate()
+        .filter_map(|(i, l)| {
+            let line_num = i + 1;
+            if removed_set.contains(&line_num) {
+                None
+            } else {
+                Some(*l)
+            }
+        })
+        .collect();
+    let post_str = post.join("\n");
+
+    // Compute headers in original content. If any header was non-empty
+    // before but its body is empty after, it's a stub-risk.
+    let pre_headers = headers_with_empty_body(&content);
+    let post_headers = headers_with_empty_body(&post_str);
+
+    // Stub-risk set = post − pre (headers that newly became empty).
+    post_headers
+        .into_iter()
+        .filter(|h| !pre_headers.contains(h))
+        .collect::<Vec<_>>()
+        .tap_mut(|v| {
+            let _ = total; // suppress unused warning when in non-trace builds
+            v.sort();
+            v.dedup();
+        })
+}
+
+/// Tiny inline trait so we can chain a mutation on a Vec without an
+/// intermediate binding — keeps the post-filter expression readable.
+trait TapMut: Sized {
+    fn tap_mut<F: FnOnce(&mut Self)>(mut self, f: F) -> Self {
+        f(&mut self);
+        self
+    }
+}
+impl<T> TapMut for Vec<T> {}
+
+/// Headers whose body region is empty by the same definition as
+/// `brain::filter::strip_empty_sections`. We delegate to the filter
+/// module so the dedup proposal warnings and the read-time strip stay
+/// in lockstep — what one calls "stub" the other must agree on.
+fn headers_with_empty_body(content: &str) -> std::collections::HashSet<String> {
+    let res = crate::brain::filter::strip_empty_sections(content);
+    res.stripped_headers.into_iter().collect()
 }
 
 /// Run the scan and file proposals into the ProposalsStore.
@@ -233,169 +431,7 @@ pub fn file_dedup_proposals(
     count
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::fs;
-    use tempfile::TempDir;
-
-    fn write_brain_file(dir: &Path, name: &str, content: &str) {
-        fs::write(dir.join(name), content).unwrap();
-    }
-
-    #[test]
-    fn test_structural_line_detection() {
-        assert!(is_structural_line(""));
-        assert!(is_structural_line("# Heading"));
-        assert!(is_structural_line("---"));
-        assert!(is_structural_line("| --- | --- |"));
-        assert!(!is_structural_line(
-            "This is a real line with actual content that should be scanned"
-        ));
-    }
-
-    #[test]
-    fn test_scan_finds_duplicates_in_same_file() {
-        let dir = TempDir::new().unwrap();
-        let content = "# SOUL.md\n\n\
-                        Keep responses under 3 sentences when possible.\n\n\
-                        Some other content here that is unique.\n\n\
-                        Keep responses under 3 sentences when possible.\n\n\
-                        More unique content here.\n";
-        write_brain_file(dir.path(), "SOUL.md", content);
-
-        let clusters = scan_brain_files(dir.path());
-        assert!(!clusters.is_empty(), "Should find duplicate line");
-
-        let dup = &clusters[0];
-        assert_eq!(dup.total_count, 2);
-        assert!(dup.text.contains("Keep responses under 3 sentences"));
-    }
-
-    #[test]
-    fn test_scan_finds_duplicates_across_files() {
-        let dir = TempDir::new().unwrap();
-        let shared_line =
-            "Never push tags or releases without EXPLICIT user approval. This is critical.";
-        write_brain_file(
-            dir.path(),
-            "SOUL.md",
-            &format!("# SOUL.md\n\n{}\n\nOther soul content.\n", shared_line),
-        );
-        write_brain_file(
-            dir.path(),
-            "AGENTS.md",
-            &format!("# AGENTS.md\n\n{}\n\nOther agents content.\n", shared_line),
-        );
-
-        let clusters = scan_brain_files(dir.path());
-        assert!(!clusters.is_empty(), "Should find cross-file duplicate");
-
-        let dup = &clusters[0];
-        assert_eq!(dup.total_count, 2);
-        assert_eq!(dup.locations.len(), 2);
-    }
-
-    #[test]
-    fn test_scan_skips_structural_lines() {
-        let dir = TempDir::new().unwrap();
-        let content = "# SOUL.md\n\n# Heading\n\n# Heading\n\n---\n\n---\n";
-        write_brain_file(dir.path(), "SOUL.md", content);
-
-        let clusters = scan_brain_files(dir.path());
-        assert!(
-            clusters.is_empty(),
-            "Should not flag headings or separators as duplicates"
-        );
-    }
-
-    #[test]
-    fn test_cluster_to_proposal_same_file() {
-        let cluster = DuplicateCluster {
-            text: "Duplicate line content here that is long enough".to_string(),
-            locations: vec![("SOUL.md".to_string(), vec![5, 10, 15])],
-            total_count: 3,
-        };
-
-        let proposal = cluster_to_proposal(&cluster).unwrap();
-        assert_eq!(proposal.target_file, "SOUL.md");
-        assert_eq!(proposal.duplicate_of, "SOUL.md:5");
-        assert_eq!(proposal.count, 2);
-        assert!(proposal.line_range.contains("10"));
-    }
-
-    #[test]
-    fn test_cluster_to_proposal_cross_file() {
-        let cluster = DuplicateCluster {
-            text: "Shared rule that appears in both files here".to_string(),
-            locations: vec![
-                ("AGENTS.md".to_string(), vec![20]),
-                ("SOUL.md".to_string(), vec![30]),
-            ],
-            total_count: 2,
-        };
-
-        let proposal = cluster_to_proposal(&cluster).unwrap();
-        // First location alphabetically is canonical (AGENTS.md)
-        // Second (SOUL.md) is the target for removal
-        assert_eq!(proposal.target_file, "SOUL.md");
-        assert_eq!(proposal.duplicate_of, "AGENTS.md:20");
-        assert_eq!(proposal.count, 1);
-    }
-
-    #[test]
-    fn test_generate_dedup_proposals_end_to_end() {
-        let dir = TempDir::new().unwrap();
-        let repeated = "Keep responses under 3 sentences when possible.";
-        let content = format!(
-            "# SOUL.md\n\n{}\n\nUnique content.\n\n{}\n\nMore unique.\n\n{}\n",
-            repeated, repeated, repeated
-        );
-        write_brain_file(dir.path(), "SOUL.md", &content);
-
-        let proposals = generate_dedup_proposals(dir.path());
-        assert!(
-            !proposals.is_empty(),
-            "Should generate at least one proposal"
-        );
-
-        let (proposal, rationale) = &proposals[0];
-        assert_eq!(proposal.target_file, "SOUL.md");
-        assert!(rationale.contains("3 times"));
-    }
-
-    #[test]
-    fn test_no_duplicates_means_no_proposals() {
-        let dir = TempDir::new().unwrap();
-        let content = "# SOUL.md\n\nEvery line here is unique.\n\nNo repetition at all.\n\nCompletely distinct content.\n";
-        write_brain_file(dir.path(), "SOUL.md", content);
-
-        let proposals = generate_dedup_proposals(dir.path());
-        assert!(
-            proposals.is_empty(),
-            "Should not generate proposals when no duplicates exist"
-        );
-    }
-
-    #[test]
-    fn test_file_dedup_proposals_into_store() {
-        let brain_dir = TempDir::new().unwrap();
-        let rsi_dir = TempDir::new().unwrap();
-        let repeated = "Keep responses under 3 sentences when possible.";
-        let content = format!(
-            "# SOUL.md\n\n{}\n\nUnique content.\n\n{}\n\nMore unique.\n\n{}\n",
-            repeated, repeated, repeated
-        );
-        write_brain_file(brain_dir.path(), "SOUL.md", &content);
-
-        let store =
-            crate::brain::rsi_proposals::ProposalsStore::with_dir(rsi_dir.path().to_path_buf());
-        let count = file_dedup_proposals(brain_dir.path(), &store);
-
-        assert!(count > 0, "Should file at least one proposal");
-        let pending = store.list_brain_dedup_proposals();
-        assert_eq!(pending.len(), count);
-        assert_eq!(pending[0].proposer, "rsi-dedup-scan");
-        assert_eq!(pending[0].dedup.target_file, "SOUL.md");
-    }
-}
+// Tests live under `src/tests/rsi_brain_dedup_test.rs` per project
+// policy (no inline `#[cfg(test)] mod tests` blocks). Internal helpers
+// like `is_structural_line` and `canonical_file_rank` are `pub(crate)`
+// so the test file can reach them directly.

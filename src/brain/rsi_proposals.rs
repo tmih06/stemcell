@@ -154,6 +154,13 @@ pub struct ProposedBrainDedup {
     pub duplicate_of: String,
     /// How many duplicate instances were found in this cluster.
     pub count: usize,
+    /// Stub-risk warnings produced by the post-hoc scan: each entry names
+    /// a header whose body region would be emptied by this removal,
+    /// turning it into a header stub. Read-time strip (issue #164 fix 4)
+    /// catches these later but the user sees them at proposal time too.
+    /// Empty when no risk detected.
+    #[serde(default)]
+    pub warnings: Vec<String>,
 }
 
 #[derive(Debug, Default, Serialize, Deserialize)]
