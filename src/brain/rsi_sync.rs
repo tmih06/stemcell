@@ -635,12 +635,23 @@ async fn sync_single_file(local_path: &Path, filename: &str, _timestamp: &str) -
         chrono::Utc::now().format("%Y-%m-%d %H:%M UTC"),
         crate::VERSION,
     );
-    if let Ok(mut f) = std::fs::OpenOptions::new()
+    match std::fs::OpenOptions::new()
         .create(true)
         .append(true)
         .open(&improvements_path)
     {
-        let _ = f.write_all(entry.as_bytes());
+        Ok(mut f) => {
+            if let Err(e) = f.write_all(entry.as_bytes()) {
+                tracing::warn!(
+                    "RSI sync: failed to append synced-entry for {filename} to improvements.md: {e}"
+                );
+            }
+        }
+        Err(e) => {
+            tracing::warn!(
+                "RSI sync: failed to open improvements.md for synced-entry append on {filename}: {e}"
+            );
+        }
     }
 
     tracing::info!(

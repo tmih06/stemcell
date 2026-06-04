@@ -6,9 +6,15 @@
 //!
 //! State is persisted to `~/.opencrabs/rsi/pruned.toml`:
 //! ```toml
+//! schema_version = 2
+//!
 //! [SOUL.md]
 //! pruned = ["## Old Section", "### Old Subsection"]
 //! pruned_at = "2026-06-04T10:00:00Z"
+//! moved = [
+//!   ["## Old Home", "AGENTS.md"],
+//!   ["### Subnote", "MEMORY.md"],
+//! ]
 //! ```
 //!
 //! Hook points:
@@ -17,17 +23,62 @@
 //!   sections and record them.
 //! - `sync_templates()`: before appending a new upstream section,
 //!   check if its header is in the pruned list and skip if so.
+//!
+//! Schema versioning: `schema_version` lets future format changes detect
+//! and migrate older sidecars. v1 had no version field (treated as
+//! implicit version 1). v2 adds `moved` per-file mappings so a header
+//! that was relocated to a different brain file isn't re-added on the
+//! source side by upstream sync.
 
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
+/// Current on-disk schema version. v1 was unversioned (only `pruned` +
+/// `pruned_at` per file). v2 adds `moved` (header → destination filename)
+/// so syncs can skip headers the user explicitly relocated.
+pub const SCHEMA_VERSION: u32 = 2;
+
+/// One `moved` record: a header that the user relocated from its source
+/// brain file to a different one. Stored as a struct (not a tuple) so
+/// every read site uses named fields instead of `(h, _)` / `(_, dest)`
+/// destructures.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MovedEntry {
+    /// The `## Header` line that was moved from the source file.
+    pub header: String,
+    /// Destination filename the header was moved to (e.g. "AGENTS.md").
+    pub dest: String,
+}
+
 /// In-memory representation of the pruned sidecar.
-#[derive(Debug, Clone, Default, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct PrunedState {
+    /// Sidecar schema version. Always the loaded value; `save()` always
+    /// writes `SCHEMA_VERSION` (i.e. older sidecars get upgraded in place
+    /// the first time we write to them). Issue #164 edge-cases call this
+    /// out explicitly so future format changes don't break older files.
+    pub schema_version: u32,
     /// Map from filename (e.g. "SOUL.md") to list of pruned headers.
     pub pruned: HashMap<String, Vec<String>>,
     /// Map from filename to ISO-8601 timestamp of last prune event.
     pub pruned_at: HashMap<String, String>,
+    /// Per-file list of `MovedEntry` records for headers the user moved
+    /// to a different brain file. `sync_templates()` uses this to skip
+    /// re-adding the header on the source side AND to warn when the
+    /// destination doesn't exist (e.g. user later deleted it, the
+    /// upstream renamed it, or the destination was never created).
+    pub moved: HashMap<String, Vec<MovedEntry>>,
+}
+
+impl Default for PrunedState {
+    fn default() -> Self {
+        Self {
+            schema_version: SCHEMA_VERSION,
+            pruned: HashMap::new(),
+            pruned_at: HashMap::new(),
+            moved: HashMap::new(),
+        }
+    }
 }
 
 impl PrunedState {
@@ -51,13 +102,57 @@ impl PrunedState {
     /// Parse TOML content into PrunedState.
     /// Simple hand-rolled parser to avoid pulling in a TOML crate just
     /// for this one file. Format is simple enough.
-    fn parse(content: &str) -> Self {
-        let mut state = Self::default();
+    ///
+    /// v1 sidecars (no `schema_version` line) parse as version 1 and
+    /// have no `moved` entries — `save()` will rewrite them at the
+    /// current `SCHEMA_VERSION` on the next write.
+    ///
+    /// `pub(crate)` so the regression tests under `src/tests/` can
+    /// exercise the parser directly without file I/O.
+    pub(crate) fn parse(content: &str) -> Self {
+        let mut state = Self {
+            schema_version: 1,
+            pruned: HashMap::new(),
+            pruned_at: HashMap::new(),
+            moved: HashMap::new(),
+        };
         let mut current_file: Option<String> = None;
+        // `moved` arrays can span multiple lines (one pair per row), so
+        // we have to buffer until the closing `]`.
+        let mut moved_buffer: Option<String> = None;
 
         for line in content.lines() {
-            let trimmed = line.trim();
+            let raw = line;
+            let trimmed = raw.trim();
+
+            // If we're inside a multi-line moved array, append until we
+            // hit the terminating `]`.
+            if let Some(ref mut buf) = moved_buffer {
+                buf.push_str(raw);
+                buf.push('\n');
+                if trimmed.ends_with(']') {
+                    let buf_taken = std::mem::take(buf);
+                    moved_buffer = None;
+                    if let Some(ref file) = current_file {
+                        let pairs = Self::parse_moved_array(&buf_taken);
+                        if !pairs.is_empty() {
+                            state.moved.insert(file.clone(), pairs);
+                        }
+                    }
+                }
+                continue;
+            }
+
             if trimmed.is_empty() || trimmed.starts_with('#') {
+                continue;
+            }
+            // Top-level `schema_version = N`
+            if current_file.is_none()
+                && let Some((key, value)) = trimmed.split_once('=')
+                && key.trim() == "schema_version"
+                && let Ok(v) = value.trim().parse::<u32>()
+            {
+                state.schema_version = v;
                 continue;
             }
             // Section header: [SOUL.md]
@@ -79,10 +174,67 @@ impl PrunedState {
                     if !headers.is_empty() {
                         state.pruned.insert(file.clone(), headers);
                     }
+                } else if key == "moved" {
+                    // Single-line case: closes on same line.
+                    if value.starts_with('[') && value.ends_with(']') {
+                        let pairs = Self::parse_moved_array(value);
+                        if !pairs.is_empty() {
+                            state.moved.insert(file.clone(), pairs);
+                        }
+                    } else if value.starts_with('[') {
+                        // Multi-line case: start buffering.
+                        moved_buffer = Some(format!("{value}\n"));
+                    }
                 }
             }
         }
         state
+    }
+
+    /// Parse a TOML array of `[header, destination]` pairs into a list
+    /// of `MovedEntry`. Accepts both single-line `[["a", "b"], ["c", "d"]]`
+    /// and multi-line forms. Each pair must be a two-element string array;
+    /// malformed entries are silently skipped to keep older sidecars
+    /// loading even when a hand-edited line is wrong.
+    fn parse_moved_array(value: &str) -> Vec<MovedEntry> {
+        let mut depth = 0i32;
+        let mut current = String::new();
+        let mut pairs_raw: Vec<String> = Vec::new();
+        for ch in value.chars() {
+            match ch {
+                '[' => {
+                    depth += 1;
+                    if depth >= 2 {
+                        current.push(ch);
+                    }
+                }
+                ']' => {
+                    if depth == 2 {
+                        current.push(ch);
+                        pairs_raw.push(std::mem::take(&mut current));
+                    } else if depth >= 2 {
+                        current.push(ch);
+                    }
+                    depth -= 1;
+                }
+                _ if depth >= 2 => current.push(ch),
+                _ => {}
+            }
+        }
+        pairs_raw
+            .into_iter()
+            .filter_map(|raw| {
+                let strings = Self::parse_string_array(&raw);
+                if strings.len() == 2 {
+                    Some(MovedEntry {
+                        header: strings[0].clone(),
+                        dest: strings[1].clone(),
+                    })
+                } else {
+                    None
+                }
+            })
+            .collect()
     }
 
     /// Parse a TOML array of strings like `["## Foo", "### Bar"]`.
@@ -125,24 +277,44 @@ impl PrunedState {
     }
 
     /// Save state to `~/.opencrabs/rsi/pruned.toml`.
+    ///
+    /// Always writes `schema_version = SCHEMA_VERSION` at the top.
+    /// Older v1 sidecars get auto-upgraded the first time a write happens
+    /// because `parse()` already loaded them into the new in-memory shape.
     pub fn save(&self) -> std::io::Result<()> {
         let path = Self::state_path();
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
         }
-        let mut content = String::from(
+        let mut content = format!(
             "# Pruned brain-file sections.\n\
              # Sections listed here will NOT be re-added by sync_templates().\n\
-             # Edit manually or use `opencrabs pruned clear` to reset.\n\n",
+             # Edit manually or use `opencrabs pruned clear` to reset.\n\n\
+             schema_version = {SCHEMA_VERSION}\n\n",
         );
-        let mut files: Vec<&String> = self.pruned.keys().collect();
+
+        // Stable order: union of all filenames that have any entry across
+        // pruned / pruned_at / moved, sorted alphabetically. A file with
+        // only a `moved` entry (no `pruned`) still gets its section.
+        let mut files: HashSet<&String> = HashSet::new();
+        files.extend(self.pruned.keys());
+        files.extend(self.pruned_at.keys());
+        files.extend(self.moved.keys());
+        let mut files: Vec<&String> = files.into_iter().collect();
         files.sort();
+
         for file in files {
-            if let Some(headers) = self.pruned.get(file) {
-                if headers.is_empty() {
-                    continue;
-                }
-                content.push_str(&format!("[{file}]\n"));
+            let pruned_headers = self.pruned.get(file);
+            let moved_pairs = self.moved.get(file);
+            let has_any = pruned_headers.map(|h| !h.is_empty()).unwrap_or(false)
+                || moved_pairs.map(|m| !m.is_empty()).unwrap_or(false);
+            if !has_any {
+                continue;
+            }
+            content.push_str(&format!("[{file}]\n"));
+            if let Some(headers) = pruned_headers
+                && !headers.is_empty()
+            {
                 content.push_str("pruned = [");
                 let escaped: Vec<String> = headers
                     .iter()
@@ -150,11 +322,22 @@ impl PrunedState {
                     .collect();
                 content.push_str(&escaped.join(", "));
                 content.push_str("]\n");
-                if let Some(ts) = self.pruned_at.get(file) {
-                    content.push_str(&format!("pruned_at = \"{ts}\"\n"));
-                }
-                content.push('\n');
             }
+            if let Some(ts) = self.pruned_at.get(file) {
+                content.push_str(&format!("pruned_at = \"{ts}\"\n"));
+            }
+            if let Some(pairs) = moved_pairs
+                && !pairs.is_empty()
+            {
+                content.push_str("moved = [\n");
+                for entry in pairs {
+                    let h_esc = entry.header.replace('\\', "\\\\").replace('"', "\\\"");
+                    let d_esc = entry.dest.replace('\\', "\\\\").replace('"', "\\\"");
+                    content.push_str(&format!("  [\"{h_esc}\", \"{d_esc}\"],\n"));
+                }
+                content.push_str("]\n");
+            }
+            content.push('\n');
         }
         std::fs::write(&path, content)
     }
@@ -198,14 +381,46 @@ impl PrunedState {
     }
 
     /// Clear all pruned entries for a file (or all files if filename is None).
+    /// Also clears `moved` entries for the same scope so a single
+    /// "forget about this file" action resets both lists in one call.
     pub fn clear(&mut self, filename: Option<&str>) {
         if let Some(f) = filename {
             self.pruned.remove(f);
             self.pruned_at.remove(f);
+            self.moved.remove(f);
         } else {
             self.pruned.clear();
             self.pruned_at.clear();
+            self.moved.clear();
         }
+    }
+
+    /// Record that the user moved headers from `source_file` to one or
+    /// more destinations. `sync_templates()` uses this on the source
+    /// side to skip re-adding each header, and at warn time to flag
+    /// missing destinations (e.g. the dest file was later deleted).
+    /// No-op when `entries` is empty.
+    pub fn record_moved(&mut self, source_file: &str, entries: Vec<MovedEntry>) {
+        if entries.is_empty() {
+            return;
+        }
+        let bucket = self.moved.entry(source_file.to_string()).or_default();
+        for new_entry in entries {
+            if !bucket.iter().any(|e| e.header == new_entry.header) {
+                bucket.push(new_entry);
+            }
+        }
+        let now = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string();
+        self.pruned_at.insert(source_file.to_string(), now);
+    }
+
+    /// Look up the destination file for a moved header. Returns `None`
+    /// when the header isn't in the moved list for this source file.
+    pub fn moved_destination(&self, source_file: &str, header: &str) -> Option<&str> {
+        self.moved
+            .get(source_file)
+            .and_then(|entries| entries.iter().find(|e| e.header == header))
+            .map(|e| e.dest.as_str())
     }
 }
 
@@ -225,9 +440,19 @@ pub fn detect_removed_sections(old: &str, new: &str) -> Vec<String> {
 
 /// Filter out pruned sections from a string of new sections to append.
 /// Returns the filtered string with pruned section blocks removed.
+///
+/// A header is filtered out if EITHER it appears in the file's `pruned`
+/// list OR it appears as the source of a `moved` entry. Both mean
+/// "the user explicitly decided this header doesn't belong here" — the
+/// only difference is whether they relocated it elsewhere.
 pub fn filter_pruned_sections(new_sections: &str, state: &PrunedState, filename: &str) -> String {
     let pruned = state.pruned_headers(filename);
-    if pruned.is_empty() {
+    let moved_sources: HashSet<String> = state
+        .moved
+        .get(filename)
+        .map(|entries| entries.iter().map(|e| e.header.clone()).collect())
+        .unwrap_or_default();
+    if pruned.is_empty() && moved_sources.is_empty() {
         return new_sections.to_string();
     }
 
@@ -252,8 +477,13 @@ pub fn filter_pruned_sections(new_sections: &str, state: &PrunedState, filename:
 
     let kept: Vec<String> = blocks
         .into_iter()
-        .filter(|(header, _)| !pruned.contains(header))
-        .map(|(_, content)| content.join("\n"))
+        .filter_map(|(header, content)| {
+            if pruned.contains(&header) || moved_sources.contains(&header) {
+                None
+            } else {
+                Some(content.join("\n"))
+            }
+        })
         .collect();
 
     if kept.is_empty() {
@@ -263,124 +493,8 @@ pub fn filter_pruned_sections(new_sections: &str, state: &PrunedState, filename:
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_parse_empty() {
-        let state = PrunedState::parse("");
-        assert!(state.pruned.is_empty());
-        assert!(state.pruned_at.is_empty());
-    }
-
-    #[test]
-    fn test_parse_basic() {
-        let toml = "[SOUL.md]\npruned = [\"## Old Section\", \"### Old Subsection\"]\npruned_at = \"2026-06-04T10:00:00Z\"\n\n[TOOLS.md]\npruned = [\"## Deprecated Docs\"]\n";
-        let state = PrunedState::parse(toml);
-        assert_eq!(state.pruned.len(), 2);
-        assert_eq!(
-            state.pruned.get("SOUL.md").unwrap(),
-            &vec!["## Old Section", "### Old Subsection"]
-        );
-        assert_eq!(
-            state.pruned_at.get("SOUL.md").unwrap(),
-            "2026-06-04T10:00:00Z"
-        );
-        assert_eq!(
-            state.pruned.get("TOOLS.md").unwrap(),
-            &vec!["## Deprecated Docs"]
-        );
-    }
-
-    #[test]
-    fn test_parse_escaped_quotes() {
-        let toml = "[SOUL.md]\npruned = [\"## Section with \\\"quotes\\\"\"]\n";
-        let state = PrunedState::parse(toml);
-        let headers = state.pruned.get("SOUL.md").unwrap();
-        assert_eq!(headers, &vec!["## Section with \"quotes\""]);
-    }
-
-    #[test]
-    fn test_is_pruned() {
-        let mut state = PrunedState::default();
-        state.record_pruned("SOUL.md", vec!["## Old".to_string()]);
-        assert!(state.is_pruned("SOUL.md", "## Old"));
-        assert!(!state.is_pruned("SOUL.md", "## New"));
-        assert!(!state.is_pruned("TOOLS.md", "## Old"));
-    }
-
-    #[test]
-    fn test_record_pruned_no_duplicates() {
-        let mut state = PrunedState::default();
-        state.record_pruned("SOUL.md", vec!["## A".to_string(), "## B".to_string()]);
-        state.record_pruned("SOUL.md", vec!["## B".to_string(), "## C".to_string()]);
-        let headers = state.pruned.get("SOUL.md").unwrap();
-        assert_eq!(headers, &vec!["## A", "## B", "## C"]);
-    }
-
-    #[test]
-    fn test_clear_specific() {
-        let mut state = PrunedState::default();
-        state.record_pruned("SOUL.md", vec!["## A".to_string()]);
-        state.record_pruned("TOOLS.md", vec!["## B".to_string()]);
-        state.clear(Some("SOUL.md"));
-        assert!(!state.pruned.contains_key("SOUL.md"));
-        assert!(state.pruned.contains_key("TOOLS.md"));
-    }
-
-    #[test]
-    fn test_clear_all() {
-        let mut state = PrunedState::default();
-        state.record_pruned("SOUL.md", vec!["## A".to_string()]);
-        state.record_pruned("TOOLS.md", vec!["## B".to_string()]);
-        state.clear(None);
-        assert!(state.pruned.is_empty());
-    }
-
-    #[test]
-    fn test_detect_removed_sections() {
-        let old = "# Title\n\n## Keep\ncontent\n\n## Remove Me\nold stuff\n\n### Also Removed\n";
-        let new = "# Title\n\n## Keep\ncontent\n\n## New Section\n";
-        let removed = detect_removed_sections(old, new);
-        assert_eq!(removed, vec!["## Remove Me", "### Also Removed"]);
-    }
-
-    #[test]
-    fn test_detect_removed_sections_no_changes() {
-        let content = "# Title\n\n## Keep\ncontent\n";
-        let removed = detect_removed_sections(content, content);
-        assert!(removed.is_empty());
-    }
-
-    #[test]
-    fn test_save_roundtrip() {
-        let mut state = PrunedState::default();
-        state.record_pruned("SOUL.md", vec!["## Old Section".to_string()]);
-
-        let tmp =
-            std::env::temp_dir().join(format!("opencrabs_pruned_test_{}", std::process::id()));
-        std::fs::create_dir_all(&tmp).unwrap();
-        let path = tmp.join("pruned.toml");
-
-        let mut content = String::from("[SOUL.md]\npruned = [");
-        let escaped: Vec<String> = state
-            .pruned
-            .get("SOUL.md")
-            .unwrap()
-            .iter()
-            .map(|h| format!("\"{}\"", h.replace('"', "\\\"")))
-            .collect();
-        content.push_str(&escaped.join(", "));
-        content.push_str("]\n");
-        std::fs::write(&path, &content).unwrap();
-
-        let loaded = PrunedState::parse(&std::fs::read_to_string(&path).unwrap());
-        assert_eq!(
-            loaded.pruned.get("SOUL.md").unwrap(),
-            &vec!["## Old Section"]
-        );
-
-        let _ = std::fs::remove_dir_all(&tmp);
-    }
-}
+// Tests live under `src/tests/rsi_pruned_test.rs` per project policy
+// (no inline `#[cfg(test)] mod tests` blocks).
+//
+// `PrunedState::parse` is `pub(crate)` so the test file can reach the
+// parser directly without going through file I/O.

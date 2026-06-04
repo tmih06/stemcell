@@ -193,7 +193,20 @@ impl Tool for WriteOpenCrabsFileTool {
                         if !removed.is_empty() {
                             let mut pruned_state = crate::brain::rsi_pruned::PrunedState::load();
                             pruned_state.record_pruned(path_str, removed);
-                            let _ = pruned_state.save();
+                            if let Err(e) = pruned_state.save() {
+                                tracing::warn!(
+                                    "write_opencrabs_file (create-update path): recorded {} pruned header(s) for {} \
+                                     but pruned.toml save failed: {} — sync_templates() will re-add those sections \
+                                     on the next sync until this is fixed",
+                                    pruned_state
+                                        .pruned
+                                        .get(path_str)
+                                        .map(|h| h.len())
+                                        .unwrap_or(0),
+                                    path_str,
+                                    e
+                                );
+                            }
                         }
                     }
                 }
@@ -346,7 +359,20 @@ impl Tool for WriteOpenCrabsFileTool {
                     if !removed.is_empty() {
                         let mut pruned_state = crate::brain::rsi_pruned::PrunedState::load();
                         pruned_state.record_pruned(path_str, removed);
-                        let _ = pruned_state.save();
+                        if let Err(e) = pruned_state.save() {
+                            tracing::warn!(
+                                "write_opencrabs_file (update path): recorded {} pruned header(s) for {} \
+                                 but pruned.toml save failed: {} — sync_templates() will re-add those sections \
+                                 on the next sync until this is fixed",
+                                pruned_state
+                                    .pruned
+                                    .get(path_str)
+                                    .map(|h| h.len())
+                                    .unwrap_or(0),
+                                path_str,
+                                e
+                            );
+                        }
                     }
                 }
                 if let Err(e) = brain_file_safety::backup_before_write(&full_path) {

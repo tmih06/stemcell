@@ -320,7 +320,19 @@ impl Tool for SelfImproveTool {
                     if !removed.is_empty() {
                         let mut pruned_state = crate::brain::rsi_pruned::PrunedState::load();
                         pruned_state.record_pruned(target_file, removed);
-                        let _ = pruned_state.save();
+                        if let Err(e) = pruned_state.save() {
+                            tracing::warn!(
+                                "self_improve dedup: recorded {} pruned header(s) for {} but pruned.toml save failed: {} \
+                                 — sync_templates() will re-add those sections on the next sync until this is fixed",
+                                pruned_state
+                                    .pruned
+                                    .get(target_file)
+                                    .map(|h| h.len())
+                                    .unwrap_or(0),
+                                target_file,
+                                e
+                            );
+                        }
                     }
                 }
 

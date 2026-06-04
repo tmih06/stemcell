@@ -351,22 +351,19 @@ fn compute_stub_risk(brain_path: &Path, filename: &str, removed: &[usize]) -> Ve
     let Ok(content) = std::fs::read_to_string(&file_path) else {
         return Vec::new();
     };
-    let lines: Vec<&str> = content.lines().collect();
-    let total = lines.len();
     let removed_set: std::collections::HashSet<usize> = removed.iter().copied().collect();
 
     // Build the post-removal view (1-indexed line filter), then run the
     // filter module's strip detector against it. Headers it identifies
     // as having empty bodies are the stub risks.
-    let post: Vec<&str> = lines
-        .iter()
+    let post: Vec<&str> = content
+        .lines()
         .enumerate()
         .filter_map(|(i, l)| {
-            let line_num = i + 1;
-            if removed_set.contains(&line_num) {
+            if removed_set.contains(&(i + 1)) {
                 None
             } else {
-                Some(*l)
+                Some(l)
             }
         })
         .collect();
@@ -378,26 +375,14 @@ fn compute_stub_risk(brain_path: &Path, filename: &str, removed: &[usize]) -> Ve
     let post_headers = headers_with_empty_body(&post_str);
 
     // Stub-risk set = post − pre (headers that newly became empty).
-    post_headers
+    let mut out: Vec<String> = post_headers
         .into_iter()
         .filter(|h| !pre_headers.contains(h))
-        .collect::<Vec<_>>()
-        .tap_mut(|v| {
-            let _ = total; // suppress unused warning when in non-trace builds
-            v.sort();
-            v.dedup();
-        })
+        .collect();
+    out.sort();
+    out.dedup();
+    out
 }
-
-/// Tiny inline trait so we can chain a mutation on a Vec without an
-/// intermediate binding — keeps the post-filter expression readable.
-trait TapMut: Sized {
-    fn tap_mut<F: FnOnce(&mut Self)>(mut self, f: F) -> Self {
-        f(&mut self);
-        self
-    }
-}
-impl<T> TapMut for Vec<T> {}
 
 /// Headers whose body region is empty by the same definition as
 /// `brain::filter::strip_empty_sections`. We delegate to the filter
