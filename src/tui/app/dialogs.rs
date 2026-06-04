@@ -1335,16 +1335,31 @@ impl App {
             "qwen" => "providers.qwen",
             "ollama" => "providers.ollama",
             "" => {
-                // Custom provider: resolve name from UI field or active config
-                let cname = if !self.ps.custom_name.is_empty() {
-                    self.ps.custom_name.clone()
-                } else if let Some((name, _)) = config.providers.active_custom() {
-                    name.to_string()
-                } else {
-                    // No name → can't save; skip silently
+                // Custom provider: resolve name from UI field. NEVER fall
+                // back to `active_custom()` — the previous code did, and
+                // that's how the 2026-06-04 dialagram section got its
+                // base_url silently overwritten with modelscope-qwen's
+                // URL. Flow that triggers it: cursor on dialagram row
+                // (active custom) → user navigates to "+ Add new custom"
+                // → `reload_model_selector_custom_fields` clears
+                // `custom_name` (correct) → user types base_url for the
+                // new entry → per-field save fires with `custom_name=""`
+                // → the fallback rescues with `active_custom()` =
+                // "dialagram" → `try_write("providers.custom.dialagram",
+                // "base_url", "<new-entry-url>")` corrupts dialagram's
+                // section, leaving its `default_model` intact because
+                // `write_key` is a per-key merge. Empty `custom_name` in
+                // the "" provider arm now means exactly one thing: the
+                // user hasn't typed a name for the draft yet — nothing
+                // legitimate to save.
+                if self.ps.custom_name.is_empty() {
+                    tracing::debug!(
+                        "save_provider: empty custom_name (drafting new custom?) — skipping write \
+                         to avoid corrupting whichever section active_custom() would have resolved to"
+                    );
                     return Ok(());
-                };
-                custom_section = format!("providers.custom.{}", cname);
+                }
+                custom_section = format!("providers.custom.{}", self.ps.custom_name);
                 &custom_section
             }
             _ => {
