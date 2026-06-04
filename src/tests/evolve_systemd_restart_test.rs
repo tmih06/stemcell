@@ -169,3 +169,28 @@ fn spawn_failed_message_mentions_user_flag() {
         "SpawnFailed user message must mention --user restart as an option"
     );
 }
+
+#[test]
+fn evolve_falls_back_to_user_level_when_system_level_empty() {
+    // The core fix in PR #162: when system-level count returns 0,
+    // evolve must check user-level units before giving up.
+    // This sentinel ensures the fallback logic doesn't get removed.
+    let src = include_str!("../brain/tools/evolve.rs");
+    assert!(
+        src.contains("count_matching_systemd_units(SYSTEMD_UNIT_PATTERN, true)"),
+            "evolve must fall back to user-level unit count when system-level returns 0, \
+             removing this re-introduces the 'evolve said success but daemon didn't restart' bug (#136)"
+    );
+}
+
+#[test]
+fn evolve_logs_user_level_unit_count_on_fallback() {
+    // When the fallback triggers, evolve must log the user-level count
+    // so operators can debug "why didn't my daemon restart" from logs.
+    let src = include_str!("../brain/tools/evolve.rs");
+    assert!(
+        src.contains("using {n} user-level units"),
+        "evolve must log user-level unit count on fallback for debugging, \
+         silent fallbacks make #136-style issues impossible to diagnose"
+    );
+}
