@@ -136,8 +136,13 @@ pub(super) fn render_inactive_pane(f: &mut Frame, app: &App, pane_id: PaneId, ar
                 // full rendered chat; here we only signal "text is
                 // streaming in this session" so the user knows
                 // there's progress to tab back to.
-                let preview: String =
-                    trimmed.lines().next().unwrap_or("").chars().take(120).collect();
+                let preview: String = trimmed
+                    .lines()
+                    .next()
+                    .unwrap_or("")
+                    .chars()
+                    .take(120)
+                    .collect();
                 lines.push(Line::from(Span::styled(
                     preview,
                     Style::default().fg(Color::Reset),

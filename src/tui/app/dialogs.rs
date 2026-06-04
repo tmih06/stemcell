@@ -1768,20 +1768,83 @@ impl App {
             }
         }
 
-        if let Some(ref mut session) = self.current_session {
-            session.provider_name = Some(agent_provider_name.clone());
-            session.model = Some(actual_model.clone());
-            let session_copy = session.clone();
-            if let Err(e) = self.session_service.update_session(&session_copy).await {
-                tracing::warn!("Failed to persist provider to session: {}", e);
+        // Resolve the session id the user just configured this provider for.
+        // Prefer `current_session` (the foreground chat), then fall back to
+        // the focused pane's session_id. Without the fallback, a save that
+        // fires while `current_session` is momentarily None (e.g. mid-pane-
+        // switch, between load_session calls) silently skipped the DB
+        // persist while the cosmetic "[Model changed to ...]" banner still
+        // ran — and the next turn shipped the stale prior-provider model
+        // because session.model in DB was never updated (2026-06-04 17:38
+        // incident: modelscope-qwen newly configured but request went out
+        // with qwen-3.7-max-thinking from a dialagram-era sticky pin).
+        let target_session_id = self
+            .current_session
+            .as_ref()
+            .map(|s| s.id)
+            .or_else(|| {
+                self.pane_manager
+                    .focused_pane()
+                    .and_then(|p| p.session_id)
+            });
+        if let Some(session_id) = target_session_id {
+            // Update in-memory copy if it's the same session (keeps footer
+            // and any subsequent reads in this turn aligned).
+            if let Some(ref mut session) = self.current_session
+                && session.id == session_id
+            {
+                session.provider_name = Some(agent_provider_name.clone());
+                session.model = Some(actual_model.clone());
+            }
+            // Always re-fetch from DB, mutate, and write back — covers the
+            // current_session=None case AND keeps the write authoritative
+            // when other fields on the row were touched between read and
+            // write upstream.
+            match self.session_service.get_session(session_id).await {
+                Ok(Some(mut row)) => {
+                    row.provider_name = Some(agent_provider_name.clone());
+                    row.model = Some(actual_model.clone());
+                    if let Err(e) = self.session_service.update_session(&row).await {
+                        tracing::warn!(
+                            "save_provider_settings: persist to session {} failed: {}",
+                            session_id,
+                            e
+                        );
+                    } else {
+                        tracing::info!(
+                            "save_provider_settings: persisted provider={} model={} to session {}",
+                            agent_provider_name,
+                            actual_model,
+                            session_id
+                        );
+                    }
+                }
+                Ok(None) => {
+                    tracing::warn!(
+                        "save_provider_settings: target session {} not found in DB — provider/model not persisted",
+                        session_id
+                    );
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        "save_provider_settings: get_session({}) failed: {} — provider/model not persisted",
+                        session_id,
+                        e
+                    );
+                }
             }
             self.agent_service
-                .swap_provider_for_session(session.id, provider_arc.clone());
+                .swap_provider_for_session(session_id, provider_arc.clone());
 
             // Update context_max_tokens to reflect the new provider's context window.
             // Without this, the footer shows stale values (e.g., 128k) after switching
             // to a model with a different limit (e.g., 200k).
-            self.context_max_tokens = self.agent_service.context_limit_for_session(session.id);
+            self.context_max_tokens = self.agent_service.context_limit_for_session(session_id);
+        } else {
+            tracing::warn!(
+                "save_provider_settings: no current_session and no focused-pane session — \
+                 provider/model written to config.toml but not pinned to any session"
+            );
         }
         // Cache the provider instance for fast session switching
         self.provider_cache

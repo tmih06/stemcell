@@ -19,6 +19,33 @@ use uuid::Uuid;
 /// times consecutively successfully, the 4th it sticks".
 const STICKY_FALLBACK_THRESHOLD: u32 = 4;
 
+/// Cross-provider model leak guard. Returns the model the next LLM call
+/// should ship with, plus `Some(stale)` when the resolved pin had to be
+/// substituted (so the caller can log the swap once with rich context).
+///
+/// Logic: if the active provider's `supported_models()` list is non-empty
+/// AND the pinned model isn't in it, substitute the provider's own default
+/// and report the original as stale. Empty `supported_models()` means the
+/// provider hasn't declared a catalogue (no `/v1/models` impl, manual config
+/// without a `models = [...]` array) — accept the pin in that case so those
+/// providers still work.
+///
+/// Why a free function: the caller is an async method on `AgentService` with
+/// DB / provider lookups, but the substitution itself is pure. Factoring it
+/// out keeps the guard unit-testable from a synchronous test file under
+/// `src/tests/` without spinning a runtime or mocking SessionService.
+pub(crate) fn guard_cross_provider_model_leak(
+    resolved: String,
+    provider_default: &str,
+    supported: &[String],
+) -> (String, Option<String>) {
+    if supported.is_empty() || supported.iter().any(|m| m == &resolved) {
+        (resolved, None)
+    } else {
+        (provider_default.to_string(), Some(resolved))
+    }
+}
+
 /// Strip ANSI escape codes from raw tool output before persisting to DB.
 /// Prevents garbled artifacts in session history.
 /// Build the content string sent to the LLM for a tool result.
@@ -305,11 +332,29 @@ impl AgentService {
         // successful fallback's model — otherwise subsequent tool-loop
         // iterations in the same turn rebuild requests with the primary
         // model name pointed at the fallback provider → 400 unknown model.
-        let mut model_name = model.or_else(|| session.model.clone()).unwrap_or_else(|| {
-            self.provider_for_session(session_id)
-                .default_model()
-                .to_string()
+        let session_provider = self.provider_for_session(session_id);
+        let resolved_model = model.or_else(|| session.model.clone()).unwrap_or_else(|| {
+            session_provider.default_model().to_string()
         });
+        let provider_default = session_provider.default_model().to_string();
+        let supported = session_provider.supported_models();
+        let (mut model_name, leaked) = guard_cross_provider_model_leak(
+            resolved_model,
+            &provider_default,
+            &supported,
+        );
+        if let Some(stale) = leaked {
+            tracing::warn!(
+                "Stale model pin '{}' for session {} is not in active provider '{}' catalogue ({} entries) — \
+                 substituting provider default '{}'. \
+                 This usually means an earlier sticky-fallback or provider switch left a cross-provider model pinned in session.model.",
+                stale,
+                session_id,
+                session_provider.name(),
+                supported.len(),
+                provider_default
+            );
+        }
         let context_window = self.context_limit_for_session(session_id);
 
         // Load from last compaction point — find the last CONTEXT COMPACTION marker

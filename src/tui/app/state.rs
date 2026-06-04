@@ -2116,9 +2116,7 @@ impl App {
                                 m.role == "assistant"
                                     && m.content.trim().is_empty()
                                     && m.tool_group.is_none()
-                                    && m.details
-                                        .as_deref()
-                                        .is_some_and(|d| !d.trim().is_empty())
+                                    && m.details.as_deref().is_some_and(|d| !d.trim().is_empty())
                             })
                             .map(|prev| {
                                 let mut combined = prev.details.take().unwrap_or_default();

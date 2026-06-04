@@ -178,7 +178,7 @@ fn evolve_falls_back_to_user_level_when_system_level_empty() {
     let src = include_str!("../brain/tools/evolve.rs");
     assert!(
         src.contains("count_matching_systemd_units(SYSTEMD_UNIT_PATTERN, true)"),
-            "evolve must fall back to user-level unit count when system-level returns 0, \
+        "evolve must fall back to user-level unit count when system-level returns 0, \
              removing this re-introduces the 'evolve said success but daemon didn't restart' bug (#136)"
     );
 }
