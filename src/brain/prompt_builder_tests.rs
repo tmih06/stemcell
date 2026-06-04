@@ -149,7 +149,6 @@ fn test_memory_index_lists_existing_files_only() {
     let dir = TempDir::new().unwrap();
     // MEMORY.md does NOT exist
     let brain = loader(&dir).build_core_brain(None, None);
-    assert!();
     assert!(
         !brain.contains("MEMORY.md"),
         "index must NOT list MEMORY.md (does not exist)"

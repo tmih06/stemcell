@@ -245,7 +245,6 @@ pub(crate) fn seed_brain_templates(profile_dir: &Path) {
             "SOUL.md",
             include_str!("../docs/reference/templates/SOUL.md"),
         ),
-        (),
         (
             "USER.md",
             include_str!("../docs/reference/templates/USER.md"),

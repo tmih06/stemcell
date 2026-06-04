@@ -198,9 +198,6 @@ Below are the 5 template files. Replace ALL <placeholder> tags and HTML comments
 ===TEMPLATE: SOUL.md===
 {soul}
 
-===TEMPLATE: IDENTITY.md===
-{identity}
-
 ===TEMPLATE: USER.md===
 {user}
 
@@ -277,11 +274,10 @@ CRITICAL OUTPUT RULES:
         }
 
         self.generated_soul = parsed[0].clone();
-        self.generated_identity = parsed[1].clone();
-        self.generated_user = parsed[2].clone();
-        self.generated_agents = parsed[3].clone();
-        self.generated_tools = parsed[4].clone();
-        self.generated_memory = parsed[5].clone();
+        self.generated_user = parsed[1].clone();
+        self.generated_agents = parsed[2].clone();
+        self.generated_tools = parsed[3].clone();
+        self.generated_memory = parsed[4].clone();
 
         self.brain_generated = true;
         self.brain_generating = false;
@@ -294,7 +290,7 @@ CRITICAL OUTPUT RULES:
 /// header-style fallbacks so a model that forgets the exact format
 /// can still be recovered.
 pub(crate) fn parse_brain_sections(response: &str) -> [Option<String>; 5] {
-    const NAMES: [&str; 6] = ["SOUL", "USER", "AGENTS", "TOOLS", "MEMORY"];
+    const NAMES: [&str; 5] = ["SOUL", "USER", "AGENTS", "TOOLS", "MEMORY"];
 
     // Each entry: (section_index, byte position of header start, header length)
     let mut hits: Vec<(usize, usize, usize)> = Vec::new();

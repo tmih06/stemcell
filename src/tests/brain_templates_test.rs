@@ -8,10 +8,7 @@ fn template_files_contains_soul() {
     );
 }
 
-#[test]
-fn template_files_contains_identity() {
-    assert!(TEMPLATE_FILES.iter());
-}
+
 
 #[test]
 fn template_files_contains_code_md() {

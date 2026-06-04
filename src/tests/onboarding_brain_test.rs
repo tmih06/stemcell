@@ -193,8 +193,8 @@ fn apply_valid_response_sets_all_fields() {
     assert!(!w.brain_generating);
     assert!(w.brain_error.is_none());
     assert_eq!(w.generated_soul.as_deref(), Some("Soul content"));
-    assert_eq!(w.generated_identity.as_deref(), Some("Identity content"));
     assert_eq!(w.generated_user.as_deref(), Some("User content"));
+    assert_eq!(w.generated_agents.as_deref(), Some("Agents content"));
 }
 
 #[test]
@@ -209,7 +209,7 @@ fn apply_partial_response_missing_required_sets_error() {
 #[test]
 fn apply_response_with_only_three_required() {
     let mut w = OnboardingWizard::new();
-    let response = "---SOUL---\nS\n---IDENTITY---\nI\n---USER---\nU";
+    let response = "---SOUL---\nS\n---USER---\nU\n---AGENTS---\nA";
     w.apply_generated_brain(response);
     assert!(w.brain_generated);
     assert!(w.brain_error.is_none());
