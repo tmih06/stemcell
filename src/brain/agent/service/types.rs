@@ -150,6 +150,12 @@ pub enum ChannelSessionEvent {
     Updated(uuid::Uuid),
     /// A remote channel finished processing a session
     ProcessingFinished(uuid::Uuid),
+    /// Session title was generated or changed (e.g. by the auto-title path).
+    /// Carries the new title so the TUI can update its in-memory copy
+    /// without a DB roundtrip. Cheap counterpart to `Updated` for the
+    /// specific case of "the title changed and nothing else needs to
+    /// reload" — see TuiEvent::SessionTitleUpdated for the consumer side.
+    TitleUpdated(uuid::Uuid, String),
 }
 
 /// Callback for requesting sudo password from the user.

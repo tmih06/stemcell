@@ -23,6 +23,7 @@ pub mod brain_templates_test;
 pub mod browser_close_test;
 pub mod cross_provider_model_leak_guard_test;
 pub mod custom_provider_section_resolver_test;
+pub mod new_session_pane_binding_test;
 pub mod browser_default_linux_test;
 pub mod browser_default_test;
 pub mod browser_default_windows_test;

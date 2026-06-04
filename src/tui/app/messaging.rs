@@ -62,6 +62,20 @@ impl App {
             .await;
 
         self.current_session = Some(session.clone());
+        // Bind the focused pane to the new session id. Without this, the
+        // pane's `session_id` field still points at whatever was loaded
+        // before Ctrl+N, so Tab-away + Tab-back loads the previous (just-
+        // abandoned) session via the `is_focus_next_pane` handler in
+        // state.rs — user sees the new chat "disappear" and has to
+        // /sessions back to find it. Mirrors the same sync in
+        // `load_session` further down this file. Persisting the layout
+        // makes the binding survive restarts when the pane is split.
+        if let Some(pane) = self.pane_manager.focused_pane_mut() {
+            pane.session_id = Some(session.id);
+        }
+        if self.pane_manager.is_split() {
+            self.pane_manager.save_layout();
+        }
         // Persist as last active so the next startup resumes this session.
         // Without this, `last_session` kept pointing at whatever chat the
         // user was on BEFORE creating the new one — restarts loaded the

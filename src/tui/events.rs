@@ -221,6 +221,15 @@ pub enum TuiEvent {
     /// response — the TUI should refresh if it's the current session.
     SessionUpdated(Uuid),
 
+    /// Session title was generated/updated (e.g. by the auto-title path in
+    /// `tool_loop`). Cheap in-memory refresh of `current_session.title` and
+    /// the cached sessions list — no DB reload, no message reshuffle. Without
+    /// this, the footer kept showing "New Chat" after Ctrl+N until the user
+    /// switched sessions, because the auto-title spawn wrote to DB but never
+    /// notified the TUI. The full `SessionUpdated` event triggers a heavy
+    /// `load_session` which is overkill for a title change.
+    SessionTitleUpdated { session_id: Uuid, title: String },
+
     /// A remote channel started processing a session — TUI should block sends
     /// on this session to prevent concurrent tool loops.
     ChannelProcessingStarted(Uuid),

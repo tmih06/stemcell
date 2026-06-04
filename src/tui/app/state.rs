@@ -2435,6 +2435,24 @@ impl App {
             // silently falling through to a panic.
             TuiEvent::CompactionSummary { .. } => {}
 
+            TuiEvent::SessionTitleUpdated { session_id, title } => {
+                // Cheap in-memory refresh — update the title field on
+                // current_session if it matches, and on the cached
+                // sessions list entry so the /sessions screen reflects
+                // the new title without a re-query. No DB roundtrip, no
+                // message reload, no scroll disturbance. Fires from the
+                // auto-title spawn in tool_loop after the first user
+                // message of a fresh session.
+                if let Some(ref mut s) = self.current_session
+                    && s.id == session_id
+                {
+                    s.title = Some(title.clone());
+                }
+                if let Some(entry) = self.sessions.iter_mut().find(|s| s.id == session_id) {
+                    entry.title = Some(title);
+                }
+            }
+
             TuiEvent::SessionUpdated(session_id) => {
                 // A remote channel updated a session. Don't reload immediately —
                 // during multi-tool runs this fires after every tool call, and each

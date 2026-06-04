@@ -392,6 +392,12 @@ impl AgentService {
             let title_model = model_name.clone();
             let title_msg = user_message.chars().take(500).collect::<String>();
             let session_svc = SessionService::new(self.context.clone());
+            // Capture the channel BEFORE spawn so the new title can fan
+            // out to the TUI/footer the moment it lands in DB. Without
+            // this, the footer kept showing "New Chat" after Ctrl+N
+            // until the user switched sessions and load_session re-read
+            // the row from DB.
+            let title_update_tx = self.session_updated_tx.clone();
             // Mark auto_title_attempted BEFORE spawning to prevent race
             // conditions where the next message arrives before the
             // background task completes. The Err arm resets it.
@@ -434,9 +440,34 @@ impl AgentService {
                             } else {
                                 format!("{}{} {}", prefix, clean_title, chat_suffix)
                             };
-                            let _ = session_svc
-                                .update_session_title(session_id, Some(final_title))
-                                .await;
+                            match session_svc
+                                .update_session_title(session_id, Some(final_title.clone()))
+                                .await
+                            {
+                                Ok(()) => {
+                                    if let Some(tx) = title_update_tx.as_ref()
+                                        && let Err(e) = tx.send(
+                                            crate::brain::agent::ChannelSessionEvent::TitleUpdated(
+                                                session_id,
+                                                final_title,
+                                            ),
+                                        )
+                                    {
+                                        tracing::warn!(
+                                            "Auto-title: title written to DB but TUI notify channel \
+                                             closed, footer will lag until next session switch: {}",
+                                            e
+                                        );
+                                    }
+                                }
+                                Err(e) => {
+                                    tracing::warn!(
+                                        "Auto-title: update_session_title failed for {}: {}",
+                                        session_id,
+                                        e
+                                    );
+                                }
+                            }
                         } else {
                             // Empty/unusable title — allow the next message
                             // to retry. Same recovery path as the Err arm.

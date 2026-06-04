@@ -849,8 +849,19 @@ async fn cmd_chat_inner(
                     ChannelSessionEvent::ProcessingFinished(id) => {
                         crate::tui::events::TuiEvent::ChannelProcessingFinished(id)
                     }
+                    ChannelSessionEvent::TitleUpdated(id, title) => {
+                        crate::tui::events::TuiEvent::SessionTitleUpdated {
+                            session_id: id,
+                            title,
+                        }
+                    }
                 };
-                let _ = event_sender.send(tui_event);
+                if let Err(e) = event_sender.send(tui_event) {
+                    tracing::warn!(
+                        "ChannelSessionEvent bridge: TUI event channel closed, dropping event: {}",
+                        e
+                    );
+                }
             }
         });
     }
