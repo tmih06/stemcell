@@ -174,9 +174,30 @@ impl BrainLoader {
     }
 
     /// Read a single markdown file from the workspace. Returns `None` if missing.
+    ///
+    /// Applies read-time empty-section stripping (issue #164 fix 4) so
+    /// header stubs left behind by manual prunes or dedup passes never
+    /// reach the system prompt. Disk stays authoritative — this is a
+    /// view filter only. Honours `[brain] strip_empty_sections = false`
+    /// in config for users who want the raw on-disk view.
     pub fn load_file(&self, name: &str) -> Option<String> {
         let path = self.workspace_path.join(name);
-        std::fs::read_to_string(&path).ok()
+        let raw = std::fs::read_to_string(&path).ok()?;
+        let strip_enabled = crate::config::Config::load()
+            .map(|c| c.brain.strip_empty_sections)
+            .unwrap_or(true);
+        if !strip_enabled {
+            return Some(raw);
+        }
+        let res = crate::brain::filter::strip_empty_sections(&raw);
+        if !res.stripped_headers.is_empty() {
+            tracing::debug!(
+                "prompt_builder::load_file({}): stripped {} empty section(s)",
+                name,
+                res.stripped_headers.len()
+            );
+        }
+        Some(res.content)
     }
 
     /// Build the full system brain from workspace files + brain preamble.

@@ -62,8 +62,23 @@ impl Tool for LoadBrainFileTool {
 
         let home = crate::config::opencrabs_home();
 
+        // Read-time empty-section stripping. Default on; opt out via
+        // `[brain] strip_empty_sections = false` in config.toml.
+        // Disk stays authoritative — writes never run through this.
+        let strip_enabled = crate::config::Config::load()
+            .map(|c| c.brain.strip_empty_sections)
+            .unwrap_or(true);
+        let apply_filter = |raw: String| -> (String, Vec<String>) {
+            if !strip_enabled {
+                return (raw, Vec::new());
+            }
+            let res = crate::brain::filter::strip_empty_sections(&raw);
+            (res.content, res.stripped_headers)
+        };
+
         if name == "all" {
             let mut out = String::new();
+            let mut stripped_all: Vec<String> = Vec::new();
             let mut seen = std::collections::HashSet::new();
 
             // Known contextual files first (stable order)
@@ -71,9 +86,13 @@ impl Tool for LoadBrainFileTool {
                 seen.insert(fname.to_lowercase());
                 let path = home.join(fname);
                 if let Ok(content) = std::fs::read_to_string(&path) {
-                    let trimmed = content.trim();
+                    let (filtered, stripped) = apply_filter(content);
+                    let trimmed = filtered.trim();
                     if !trimmed.is_empty() {
                         out.push_str(&format!("--- {} ({}) ---\n{}\n\n", fname, label, trimmed));
+                    }
+                    for h in stripped {
+                        stripped_all.push(format!("{}: {}", fname, h));
                     }
                 }
             }
@@ -91,12 +110,24 @@ impl Tool for LoadBrainFileTool {
                 for entry in extras {
                     let fname = entry.file_name().to_string_lossy().to_string();
                     if let Ok(content) = std::fs::read_to_string(entry.path()) {
-                        let trimmed = content.trim();
+                        let (filtered, stripped) = apply_filter(content);
+                        let trimmed = filtered.trim();
                         if !trimmed.is_empty() {
                             out.push_str(&format!("--- {} (user) ---\n{}\n\n", fname, trimmed));
                         }
+                        for h in stripped {
+                            stripped_all.push(format!("{}: {}", fname, h));
+                        }
                     }
                 }
+            }
+
+            if !stripped_all.is_empty() {
+                tracing::info!(
+                    "load_brain_file(all): stripped {} empty section(s) on read: {:?}",
+                    stripped_all.len(),
+                    stripped_all
+                );
             }
 
             return if out.is_empty() {
@@ -124,7 +155,16 @@ impl Tool for LoadBrainFileTool {
         let path = home.join(canonical);
         match std::fs::read_to_string(&path) {
             Ok(content) => {
-                let trimmed = content.trim();
+                let (filtered, stripped) = apply_filter(content);
+                if !stripped.is_empty() {
+                    tracing::info!(
+                        "load_brain_file({}): stripped {} empty section(s) on read: {:?}",
+                        canonical,
+                        stripped.len(),
+                        stripped
+                    );
+                }
+                let trimmed = filtered.trim();
                 if trimmed.is_empty() {
                     Ok(ToolResult::success(format!(
                         "{} exists but is empty.",

@@ -69,6 +69,37 @@ pub struct Config {
     /// Memory / embedding configuration
     #[serde(default)]
     pub memory: MemoryConfig,
+
+    /// Brain-file behaviour: read-time empty-section stripping and other
+    /// per-file knobs. Optional — defaults preserve historical behaviour
+    /// where strip-on-load was off.
+    #[serde(default)]
+    pub brain: BrainConfig,
+}
+
+/// Brain-file behaviour configuration. Issue #164 added read-time stripping
+/// of empty header stubs (`## Header` with no body) so the LLM never sees
+/// dead sections, plus a knob to opt out for power users who want disk-
+/// authoritative reads even when they include stubs.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BrainConfig {
+    /// Strip header stubs from brain-file reads. Default true. Writes are
+    /// never affected — disk stays authoritative; only the loaded view is
+    /// filtered.
+    #[serde(default = "default_strip_empty_sections")]
+    pub strip_empty_sections: bool,
+}
+
+fn default_strip_empty_sections() -> bool {
+    true
+}
+
+impl Default for BrainConfig {
+    fn default() -> Self {
+        Self {
+            strip_empty_sections: default_strip_empty_sections(),
+        }
+    }
 }
 
 /// Daemon mode configuration (systemd / launchd service).
@@ -2056,6 +2087,7 @@ impl Default for Config {
             image: ImageConfig::default(),
             cron: CronConfig::default(),
             memory: MemoryConfig::default(),
+            brain: BrainConfig::default(),
         }
     }
 }
@@ -2676,6 +2708,7 @@ impl Config {
             image: overlay.image,
             cron: overlay.cron,
             memory: overlay.memory,
+            brain: overlay.brain,
         }
     }
 
