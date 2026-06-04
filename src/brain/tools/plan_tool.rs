@@ -437,16 +437,18 @@ impl Tool for PlanTool {
                     ));
                 }
 
-                // Check for symlinks in path components (security)
-                for ancestor in import_path.ancestors() {
-                    if ancestor.exists() {
-                        let meta = std::fs::symlink_metadata(ancestor).map_err(ToolError::Io)?;
-                        if meta.is_symlink() {
-                            return Err(ToolError::InvalidInput(
-                                "Import path contains a symlink (security restriction)"
-                                    .to_string(),
-                            ));
-                        }
+                // Check if the import target itself is a symlink (security).
+                // We only check the file, not ancestors — on macOS /var is a
+                // symlink to /private/var, so ancestor-walking would reject
+                // every TempDir path.
+                if import_path.exists() {
+                    let meta =
+                        std::fs::symlink_metadata(import_path).map_err(ToolError::Io)?;
+                    if meta.is_symlink() {
+                        return Err(ToolError::InvalidInput(
+                            "Import path contains a symlink (security restriction)"
+                                .to_string(),
+                        ));
                     }
                 }
 
@@ -496,6 +498,21 @@ impl Tool for PlanTool {
                 imported.created_at = chrono::Utc::now();
                 imported.updated_at = chrono::Utc::now();
                 imported.approved_at = None;
+
+                // Validate no orphan dependencies before remapping — a dep
+                // pointing at a UUID not in the imported task set is a
+                // malformed plan and must be rejected explicitly rather
+                // than silently dropped.
+                for task in &imported.tasks {
+                    for dep in &task.dependencies {
+                        if !old_to_new.contains_key(dep) {
+                            return Err(ToolError::InvalidInput(format!(
+                                "Task '{}' depends on unknown task id {}",
+                                task.title, dep
+                            )));
+                        }
+                    }
+                }
 
                 // Reset all task state — imported tasks start fresh
                 for task in &mut imported.tasks {
