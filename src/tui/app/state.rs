@@ -655,6 +655,14 @@ pub struct App {
     /// Cached messages for inactive panes (keyed by session_id).
     /// Snapshotted when focus leaves a pane so it can be rendered read-only.
     pub(crate) pane_message_cache: HashMap<Uuid, Vec<DisplayMessage>>,
+    /// Per-non-focused-session live state — see
+    /// `super::background_session` for the shape and routing model.
+    /// Entries are created lazily when an event arrives for a
+    /// non-focused session and dropped on `ResponseComplete` or
+    /// when the session becomes the focused pane (in which case
+    /// the state is promoted into the `AppState` live fields).
+    pub(crate) background_sessions:
+        HashMap<Uuid, crate::tui::app::background_session::BackgroundSessionState>,
 
     /// Shared WhatsApp state — single bot instance broadcasts QR/connected events.
     #[cfg(feature = "whatsapp")]
@@ -806,6 +814,7 @@ impl App {
             plan_file_path: None,
             pane_manager: PaneManager::load_layout(),
             pane_message_cache: HashMap::new(),
+            background_sessions: HashMap::new(),
             #[cfg(feature = "whatsapp")]
             whatsapp_state,
             session_service: SessionService::new(context.clone()),
@@ -835,6 +844,80 @@ impl App {
     /// Check if a session_id matches the currently active session
     pub(crate) fn is_current_session(&self, session_id: Uuid) -> bool {
         self.current_session.as_ref().map(|s| s.id) == Some(session_id)
+    }
+
+    /// Route a per-session mutator to either the foreground
+    /// `AppState` fields or the matching background-session sidecar.
+    /// Used by the `TuiEvent` handlers in this file so each one is a
+    /// one-liner regardless of whether the targeted session happens
+    /// to be the focused one.
+    ///
+    /// Lazily creates a `BackgroundSessionState` entry on first
+    /// background hit so handlers don't have to .or_default()
+    /// themselves. Cleanup happens in `complete_response_for` (drops
+    /// the entry when its turn finalises) and `demote_to_background`
+    /// (snapshots foreground state in, drops empty entries).
+    #[allow(dead_code)]
+    pub(crate) fn session_state_mut(
+        &mut self,
+        session_id: Uuid,
+    ) -> super::background_session::SessionStateMut<'_> {
+        if self.is_current_session(session_id) {
+            super::background_session::SessionStateMut::Foreground(self)
+        } else {
+            super::background_session::SessionStateMut::Background(
+                self.background_sessions.entry(session_id).or_default(),
+            )
+        }
+    }
+
+    /// Snapshot the current `AppState` live-turn fields into the
+    /// background-sessions map for `session_id` (typically the
+    /// session that just lost focus). Called from the focus-switch
+    /// path BEFORE the new pane's state is loaded so the leaving
+    /// session keeps accumulating events while it's off-screen.
+    ///
+    /// An empty snapshot (no live state) skips insertion to keep
+    /// the map bounded.
+    #[allow(dead_code)]
+    pub(crate) fn demote_to_background(&mut self, session_id: Uuid) {
+        let bg = super::background_session::BackgroundSessionState {
+            streaming_response: self.streaming_response.clone(),
+            streaming_reasoning: self.streaming_reasoning.clone(),
+            active_tool_group: self.active_tool_group.clone(),
+            is_processing: self.is_processing,
+            processing_started_at: self.processing_started_at,
+            last_input_tokens: self.last_input_tokens,
+            streaming_output_tokens: self.streaming_output_tokens,
+            display_token_count: self.display_token_count,
+            tps_tracker: self.tps_tracker.clone(),
+        };
+        if bg.has_live_state() {
+            self.background_sessions.insert(session_id, bg);
+        } else {
+            self.background_sessions.remove(&session_id);
+        }
+    }
+
+    /// Pop the background entry for `session_id` (typically the
+    /// session that just gained focus) into the `AppState` live
+    /// fields. Returns true when an entry was found and promoted,
+    /// false otherwise (caller falls back to the DB-reload path).
+    #[allow(dead_code)]
+    pub(crate) fn promote_to_foreground(&mut self, session_id: Uuid) -> bool {
+        let Some(bg) = self.background_sessions.remove(&session_id) else {
+            return false;
+        };
+        self.streaming_response = bg.streaming_response;
+        self.streaming_reasoning = bg.streaming_reasoning;
+        self.active_tool_group = bg.active_tool_group;
+        self.is_processing = bg.is_processing;
+        self.processing_started_at = bg.processing_started_at;
+        self.last_input_tokens = bg.last_input_tokens;
+        self.streaming_output_tokens = bg.streaming_output_tokens;
+        self.display_token_count = bg.display_token_count;
+        self.tps_tracker = bg.tps_tracker;
+        true
     }
 
     /// Set the plan file path for a session and attempt to load it.
