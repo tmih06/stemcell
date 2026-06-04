@@ -6,6 +6,90 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
+## [0.3.35] - 2026-06-04
+
+22 commits since v0.3.34. Quality-of-life release closing #152, #153, #155, #156, #157, #159, #161. Alexey Leshchenko (`leshchenko1979`) contributed dynamic shell tool single-quote escaping (#153) and plan import from JSON files (#160); the remaining 20 commits added `opencrabs evolve` CLI, per-call provider/model overrides for subagents, profile-aware paths, phantom detector hardening, IDENTITY.md consolidation, and teloxide 0.13 → 0.17 upgrade.
+
+**Plan import (closes #160, 1 commit):** New `import` operation loads pre-defined plans from JSON files. Security: target-only symlink check (rejects `/var` ancestor false positive on macOS), explicit orphan dependency validation.
+
+**Per-call subagent overrides (closes #152, 1 commit):** `spawn_agent`, `resume_agent`, and `team_create` now accept optional `provider` and `model` fields that override config defaults for a single call. Enables mixed-model teams (e.g., plan with GLM, code with Deepseek, review with Kimi).
+
+**`opencrabs evolve` CLI (1 commit):** Terminal command to check for and install updates, matching the existing `/evolve` TUI slash command. Supports `--check-only` flag.
+
+**IDENTITY.md removal (closes #159, 2 commits):** Dropped redundant IDENTITY.md template and all brain file references. SOUL.md already owns identity (name, vibe, boundaries), so the separate file was duplication. PR #159 closed.
+
+**Profile-aware paths (closes #155, #156, #157, 3 commits):** Replaced hardcoded `~/.opencrabs/` paths with `opencrabs_home()` throughout. Subagent status dir and tools.toml fallback now profile-aware. `write_opencrabs_file` confirmations show actual resolved paths.
+
+**Phantom detector hardening (2 commits):** Re-engaged self-heal on forward intent after successful tool calls. Cleaned up destructive verb intent phrases across all five languages (EN, ES, FR, PT, RU).
+
+**RSI cycle_number persistence (1 commit):** `cycle_number` now persists to `~/.opencrabs/rsi/cycle_number` so the dedup scan (every 24 cycles) fires correctly across TUI restarts.
+
+**Telegram polish + teloxide upgrade (3 commits):** Upgraded teloxide 0.13 → 0.17 with member join detection before allowlist. Marathon-bucket rolling status now rotates through project-author quip pool. Join detection notification tests added.
+
+**tok/s footer parity (1 commit):** Channel context budget footers now match TUI with `| N tok/s` using provider-reported tokens divided by active streaming time.
+
+**Qwen tool-call leak strip (1 commit):** Stripped bare `{"name":...,"arguments":...}` JSON tool-call leaks from Qwen content text via new `bare_tool_call_extractor`.
+
+**Shell tool single-quote escape (closes #153, PR #153):** Dynamic shell tool params now properly escape single quotes.
+
+**CI release-only trigger (1 commit):** CI now runs only on release tags (`v*`), coverage workflow on main pushes.
+
+**Team agent spawn fix (closes #161, 1 commit):** Added missing `mark_awaiting_input` in team agent spawn loop so the TUI correctly reflects waiting state.
+
+Closes #152, #153, #155, #156, #157, #159, #161.
+
+82 files changed, +3,358/-776.
+
+PLAN IMPORT (1 commit, closes #160)
+- 188d188c feat(plan): add import operation — load pre-defined plan from JSON file
+- 0c10caff fix(tools): narrow symlink check to target-only, add orphan dep validation
+
+PER-CALL SUBAGENT OVERRIDES (1 commit, closes #152)
+- 9018b595 feat(subagent): per-call provider/model override on spawn/resume/team_create
+
+EVOLVE CLI (1 commit)
+- 2d1871e7 fix(cli): add evolve subcommand to check for and install updates
+
+IDENTITY.MD REMOVAL (2 commits, closes #159)
+- e816206e refactor(brain): drop IDENTITY.md — SOUL.md already owns identity
+- ce857664 refactor(brain): remove IDENTITY.md template and fix compile errors
+
+PROFILE-AWARE PATHS (3 commits, closes #155, #156, #157)
+- c21e2b2e fix: replace hardcoded ~/.opencrabs/ paths with profile-aware opencrabs_home()
+- bb91f4da fix(profiles): profile-aware subagent status dir + tools.toml fallback
+- 0367a906 fix: show actual resolved path in write_opencrabs_file confirmation messages
+
+PHANTOM DETECTOR (2 commits)
+- 471e2663 fix(phantom): re-engage self-heal on forward intent after a successful tool call
+- d1f9b39b fix(phantom): cleanup / destructive verb intent phrases across all five languages
+
+RSI PERSISTENCE (1 commit)
+- 5729232f fix(rsi): persist cycle_number across restarts so dedup scan actually fires
+
+TELEGRAM + TELOXIDE (3 commits)
+- 214200ba upgrade teloxide 0.13 → 0.17 and add member join detection before allowlist
+- 82780614 fix(telegram): rotate marathon-bucket rolling status through project-author quip pool
+- 8628a716 test: add join detection notification tests
+
+TOK/S FOOTER (1 commit)
+- 3c398a77 fix(tok/s): provider-reported tokens / active streaming time, shared by TUI + channels
+
+QWEN TOOL-CALL STRIP (1 commit)
+- 201e85d8 fix(qwen): strip bare `{"name":...,"arguments":...}` tool-call leaks from content text
+
+SHELL SINGLE-QUOTE ESCAPE (1 commit, closes #153)
+- 8f98862d fix: escape single quotes in dynamic shell tool params
+
+CI RELEASE-ONLY (1 commit)
+- 109c53af fix(ci): CI triggers only on release tags, coverage on main pushes
+
+TEAM SPAWN FIX (1 commit, closes #161)
+- 17264333 fix(team): add missing mark_awaiting_input in team agent spawn loop
+
+HOUSEKEEPING (3 commits)
+- 11953732 chore: remove unrelated .codegraph dir from PR #156 merge
+- 7d7b3a9b style: apply cargo fmt formatting
+- (fmt fixup staged with release)
 ## [0.3.34] - 2026-06-02
 
 39 commits since v0.3.33. Stability and UX release closing #141, #142, #147, #148, #149, #151, #152. Alexey Leshchenko (`leshchenko1979`) contributed the file_extract double-extension fix (#146) and RSI counter cleanup (#150); the remaining 37 commits layered brain dedup automation, follow-up question polish across all channels, provider registry hardening, skill description injection, RTK sysadmin expansion, phantom detector hardening, channel footer tok/s parity, Claude CLI auto-learning, fallback provider cascade coverage, and subagent config documentation on top.
@@ -5309,3 +5393,5 @@ fixes.
 [0.1.1]: https://github.com/adolfousier/opencrabs/releases/tag/v0.1.1
 [0.1.0]: https://github.com/adolfousier/opencrabs/releases/tag/v0.1.0
 [0.3.34]: https://github.com/adolfousier/opencrabs/compare/v0.3.33...v0.3.34
+
+[0.3.35]: https://github.com/adolfousier/opencrabs/compare/v0.3.34...v0.3.35

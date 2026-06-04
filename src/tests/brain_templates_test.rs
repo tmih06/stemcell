@@ -8,8 +8,6 @@ fn template_files_contains_soul() {
     );
 }
 
-
-
 #[test]
 fn template_files_contains_code_md() {
     assert!(

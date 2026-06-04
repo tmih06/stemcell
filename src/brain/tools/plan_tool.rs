@@ -442,12 +442,10 @@ impl Tool for PlanTool {
                 // symlink to /private/var, so ancestor-walking would reject
                 // every TempDir path.
                 if import_path.exists() {
-                    let meta =
-                        std::fs::symlink_metadata(import_path).map_err(ToolError::Io)?;
+                    let meta = std::fs::symlink_metadata(import_path).map_err(ToolError::Io)?;
                     if meta.is_symlink() {
                         return Err(ToolError::InvalidInput(
-                            "Import path contains a symlink (security restriction)"
-                                .to_string(),
+                            "Import path contains a symlink (security restriction)".to_string(),
                         ));
                     }
                 }
@@ -469,10 +467,8 @@ impl Tool for PlanTool {
                     .await
                     .map_err(ToolError::Io)?;
 
-                let mut imported: PlanDocument =
-                    serde_json::from_str(&content).map_err(|e| {
-                        ToolError::InvalidInput(format!("Invalid plan JSON: {}", e))
-                    })?;
+                let mut imported: PlanDocument = serde_json::from_str(&content)
+                    .map_err(|e| ToolError::InvalidInput(format!("Invalid plan JSON: {}", e)))?;
 
                 // Log overwrite if a plan already exists
                 if let Some(existing_plan) = plan.as_ref() {
@@ -1160,4 +1156,3 @@ impl Tool for PlanTool {
         Ok(ToolResult::success(result))
     }
 }
-
