@@ -163,7 +163,6 @@ impl OnboardingWizard {
 
         // Read current brain files from workspace, fall back to static templates
         let soul_template_static = include_str!("../../docs/reference/templates/SOUL.md");
-        let identity_template_static = include_str!("../../docs/reference/templates/IDENTITY.md");
         let user_template_static = include_str!("../../docs/reference/templates/USER.md");
         let agents_template_static = include_str!("../../docs/reference/templates/AGENTS.md");
         let tools_template_static = include_str!("../../docs/reference/templates/TOOLS.md");
@@ -171,8 +170,6 @@ impl OnboardingWizard {
 
         let soul_template = std::fs::read_to_string(workspace.join("SOUL.md"))
             .unwrap_or_else(|_| soul_template_static.to_string());
-        let identity_template = std::fs::read_to_string(workspace.join("IDENTITY.md"))
-            .unwrap_or_else(|_| identity_template_static.to_string());
         let user_template = std::fs::read_to_string(workspace.join("USER.md"))
             .unwrap_or_else(|_| user_template_static.to_string());
         let agents_template = std::fs::read_to_string(workspace.join("AGENTS.md"))
@@ -196,7 +193,7 @@ The user dumped two blocks of info. One about themselves (name, role, links, pro
 === TODAY'S DATE ===
 {date}
 
-Below are the 6 template files. Replace ALL <placeholder> tags and HTML comments with real values based on what the user provided. Keep the exact markdown structure. Fill what you can from the user's info, leave sensible defaults for anything not provided. Don't invent facts — if the user didn't mention something, use a reasonable placeholder like "TBD" or remove that line.
+Below are the 5 template files. Replace ALL <placeholder> tags and HTML comments with real values based on what the user provided. Keep the exact markdown structure. Fill what you can from the user's info, leave sensible defaults for anything not provided. Don't invent facts — if the user didn't mention something, use a reasonable placeholder like "TBD" or remove that line.
 
 ===TEMPLATE: SOUL.md===
 {soul}
@@ -218,15 +215,15 @@ Below are the 6 template files. Replace ALL <placeholder> tags and HTML comments
 
 CRITICAL OUTPUT RULES:
 1. Start your response IMMEDIATELY with ---SOUL--- (no preamble, no "Here are", no commentary)
-2. Use EXACTLY these delimiters on their own line: ---SOUL--- ---IDENTITY--- ---USER--- ---AGENTS--- ---TOOLS--- ---MEMORY---
+2. Use EXACTLY these delimiters on their own line: ---SOUL--- ---USER--- ---AGENTS--- ---TOOLS--- ---MEMORY---
 3. After the last section (MEMORY content), STOP. No closing remarks, no "Let me know", no summary, no notes.
 4. Do NOT wrap output in markdown code fences (no ```). Raw content only.
 5. Each section is the complete file content — valid markdown, ready to save as-is.
 
 ---SOUL---
 (generated SOUL.md content)
----IDENTITY---
-(generated IDENTITY.md content)
+
+
 ---USER---
 (generated USER.md content)
 ---AGENTS---
@@ -254,7 +251,6 @@ CRITICAL OUTPUT RULES:
             },
             date = today,
             soul = soul_template,
-            identity = identity_template,
             user = user_template,
             agents = agents_template,
             tools = tools_template,
@@ -268,12 +264,12 @@ CRITICAL OUTPUT RULES:
     /// are tried first, and if any are missing we fall back to loose matching
     /// that also accepts common markdown-header variants the model sometimes
     /// emits instead (e.g. `## SOUL.md`, `### IDENTITY`, `**USER**`). As long
-    /// as we can recover at least SOUL + IDENTITY + USER we count the
+    /// as we can recover at least SOUL + USER we count the
     /// generation as a success and fill in whatever else we find.
     pub fn apply_generated_brain(&mut self, response: &str) {
         let parsed = parse_brain_sections(response);
 
-        // Need at least SOUL, IDENTITY, USER to consider it a success
+        // Need at least SOUL, USER to consider it a success
         if parsed[0].is_none() || parsed[1].is_none() || parsed[2].is_none() {
             self.brain_error = Some("Couldn't parse AI response — using defaults".to_string());
             self.brain_generating = false;
@@ -293,12 +289,12 @@ CRITICAL OUTPUT RULES:
 }
 
 /// Parse an AI response into six optional brain sections
-/// (SOUL, IDENTITY, USER, AGENTS, TOOLS, MEMORY) in that order.
+/// (SOUL, USER, AGENTS, TOOLS, MEMORY) in that order.
 /// Accepts both the strict `---NAME---` delimiters and a variety of
 /// header-style fallbacks so a model that forgets the exact format
 /// can still be recovered.
-pub(crate) fn parse_brain_sections(response: &str) -> [Option<String>; 6] {
-    const NAMES: [&str; 6] = ["SOUL", "IDENTITY", "USER", "AGENTS", "TOOLS", "MEMORY"];
+pub(crate) fn parse_brain_sections(response: &str) -> [Option<String>; 5] {
+    const NAMES: [&str; 6] = ["SOUL", "USER", "AGENTS", "TOOLS", "MEMORY"];
 
     // Each entry: (section_index, byte position of header start, header length)
     let mut hits: Vec<(usize, usize, usize)> = Vec::new();
@@ -311,7 +307,7 @@ pub(crate) fn parse_brain_sections(response: &str) -> [Option<String>; 6] {
 
     hits.sort_by_key(|(_, pos, _)| *pos);
 
-    let mut out: [Option<String>; 6] = Default::default();
+    let mut out: [Option<String>; 5] = Default::default();
     for (idx, &(section, pos, len)) in hits.iter().enumerate() {
         let start = pos + len;
         let end = if idx + 1 < hits.len() {

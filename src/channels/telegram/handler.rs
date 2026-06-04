@@ -3674,7 +3674,12 @@ pub(crate) fn markdown_to_telegram_html(text: &str) -> String {
 }
 
 /// Format notification when a bot joins a group chat
-pub(crate) fn format_bot_join_notification(chat_title: &str, chat_id: i64, username: &str, user_id: u64) -> String {
+pub(crate) fn format_bot_join_notification(
+    chat_title: &str,
+    chat_id: i64,
+    username: &str,
+    user_id: u64,
+) -> String {
     format!(
         "🤖 Bot joined \"{}\" (chat_id={}): @{} (user_id={}). Add this ID to allowed_users if you want me to respond to it.",
         chat_title, chat_id, username, user_id,

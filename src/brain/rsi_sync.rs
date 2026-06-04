@@ -43,7 +43,6 @@ const TRACKED_FILES: &[&str] = &[
     "MEMORY.md",
     "BOOT.md",
     "BOOTSTRAP.md",
-    "IDENTITY.md",
     "HEARTBEAT.md",
     "VOICE.md",
 ];
@@ -341,7 +340,6 @@ pub async fn sync_templates() -> Vec<FileSyncResult> {
 fn seed_missing_templates_if_blank(home: &std::path::Path) {
     const CORE: &[&str] = &[
         "SOUL.md",
-        "IDENTITY.md",
         "USER.md",
         "AGENTS.md",
         "TOOLS.md",

@@ -990,7 +990,6 @@ impl OnboardingWizard {
                 // Use AI-generated content when available, static template as fallback
                 let generated = match *filename {
                     "SOUL.md" => self.generated_soul.as_deref(),
-                    "IDENTITY.md" => self.generated_identity.as_deref(),
                     "USER.md" => self.generated_user.as_deref(),
                     "AGENTS.md" => self.generated_agents.as_deref(),
                     "TOOLS.md" => self.generated_tools.as_deref(),

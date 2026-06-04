@@ -328,10 +328,7 @@ pub const TEMPLATE_FILES: &[(&str, &str)] = &[
         "SOUL.md",
         include_str!("../../docs/reference/templates/SOUL.md"),
     ),
-    (
-        "IDENTITY.md",
-        include_str!("../../docs/reference/templates/IDENTITY.md"),
-    ),
+    (),
     (
         "USER.md",
         include_str!("../../docs/reference/templates/USER.md"),

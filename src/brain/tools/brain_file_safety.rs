@@ -27,7 +27,6 @@ const PROTECTED_BRAIN_FILES: &[&str] = &[
     "SECURITY.md",
     "MEMORY.md",
     "BOOT.md",
-    "IDENTITY.md",
 ];
 
 /// True if `name` (a bare file name, no directories) is one of the

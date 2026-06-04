@@ -26,7 +26,6 @@ mod protected_predicate {
             "SECURITY.md",
             "MEMORY.md",
             "BOOT.md",
-            "IDENTITY.md",
         ] {
             assert!(is_protected_brain_file(name), "{name} should be protected");
         }

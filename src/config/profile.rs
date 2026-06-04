@@ -192,8 +192,6 @@ impl ProfileRegistry {
 /// or re-ran the full onboarding wizard with the profile active.
 /// Issue noticed during the audit of #120's `ops` profile breakdown.
 ///
-/// We materialize the same 8 files the wizard does (SOUL, IDENTITY,
-/// USER, AGENTS, TOOLS, MEMORY, CODE, SECURITY) so every profile
 /// starts with a working brain identical to a fresh default install.
 pub fn create_profile(name: &str, description: Option<&str>) -> Result<PathBuf> {
     validate_profile_name(name)?;
@@ -247,10 +245,7 @@ pub(crate) fn seed_brain_templates(profile_dir: &Path) {
             "SOUL.md",
             include_str!("../docs/reference/templates/SOUL.md"),
         ),
-        (
-            "IDENTITY.md",
-            include_str!("../docs/reference/templates/IDENTITY.md"),
-        ),
+        (),
         (
             "USER.md",
             include_str!("../docs/reference/templates/USER.md"),

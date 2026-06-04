@@ -203,7 +203,9 @@ fn comment_documents_the_post_success_exemption_rationale() {
 // forward-looking intent phrase, while keeping pure completion acks
 // (`Pushed.` / `Committed.` / `On main.`) exempt as before.
 
-use crate::brain::agent::service::{has_forward_intent_post_success, has_phantom_tool_intent_no_tools};
+use crate::brain::agent::service::{
+    has_forward_intent_post_success, has_phantom_tool_intent_no_tools,
+};
 
 #[test]
 fn forward_intent_after_tool_call_fires_phantom_via_dedicated_detector() {

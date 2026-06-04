@@ -52,4 +52,3 @@ pub(crate) fn rotating_quip(elapsed_secs: u64) -> &'static str {
     let idx = (elapsed_secs / WINDOW_SECS) as usize % TOOL_STATUS_QUIPS.len();
     TOOL_STATUS_QUIPS[idx]
 }
-

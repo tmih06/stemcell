@@ -20,7 +20,6 @@ use crate::brain::rsi_proposals::ProposedBrainDedup;
 const BRAIN_FILES_TO_SCAN: &[&str] = &[
     "SOUL.md",
     "USER.md",
-    "IDENTITY.md",
     "AGENTS.md",
     "CODE.md",
     "TOOLS.md",

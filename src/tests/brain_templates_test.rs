@@ -10,12 +10,7 @@ fn template_files_contains_soul() {
 
 #[test]
 fn template_files_contains_identity() {
-    assert!(
-        TEMPLATE_FILES
-            .iter()
-            .any(|(name, _)| *name == "IDENTITY.md"),
-        "TEMPLATE_FILES must include IDENTITY.md"
-    );
+    assert!(TEMPLATE_FILES.iter());
 }
 
 #[test]

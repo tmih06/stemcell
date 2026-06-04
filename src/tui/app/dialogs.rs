@@ -2695,7 +2695,7 @@ impl App {
                     // Parse and write directly to workspace
                     let parsed = crate::tui::onboarding::parse_brain_sections(&text);
 
-                    let names = ["SOUL", "IDENTITY", "USER", "AGENTS", "TOOLS", "MEMORY"];
+                    let names = ["SOUL", "USER", "AGENTS", "TOOLS", "MEMORY"];
                     let found: Vec<&str> = names
                         .iter()
                         .zip(parsed.iter())
@@ -2712,8 +2712,8 @@ impl App {
                         missing.join(", ")
                     );
 
-                    // Need at least SOUL + IDENTITY + USER
-                    if parsed[0].is_none() || parsed[1].is_none() || parsed[2].is_none() {
+                    // Need at least SOUL + USER
+                    if parsed[0].is_none() || parsed[0].is_none() || parsed[1].is_none() {
                         tracing::warn!(
                             "Brain gen: couldn't parse response (first 500 chars): {}",
                             &text[..text.len().min(500)]
@@ -2726,11 +2726,10 @@ impl App {
                         let ws = std::path::Path::new(&workspace);
                         let file_map = [
                             ("SOUL.md", &parsed[0]),
-                            ("IDENTITY.md", &parsed[1]),
-                            ("USER.md", &parsed[2]),
-                            ("AGENTS.md", &parsed[3]),
-                            ("TOOLS.md", &parsed[4]),
-                            ("MEMORY.md", &parsed[5]),
+                            ("USER.md", &parsed[1]),
+                            ("AGENTS.md", &parsed[2]),
+                            ("TOOLS.md", &parsed[3]),
+                            ("MEMORY.md", &parsed[4]),
                         ];
                         let mut written = 0;
                         for (filename, content) in &file_map {

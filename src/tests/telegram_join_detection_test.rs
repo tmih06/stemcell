@@ -5,7 +5,8 @@ use crate::channels::telegram::handler::format_bot_join_notification;
 
 #[test]
 fn format_bot_join_notification_contains_all_fields() {
-    let notify = format_bot_join_notification("Test Group", -1001234567890, "atlas_bot", 8365623776);
+    let notify =
+        format_bot_join_notification("Test Group", -1001234567890, "atlas_bot", 8365623776);
     assert!(notify.contains("🤖 Bot joined"));
     assert!(notify.contains("Test Group"));
     assert!(notify.contains("-1001234567890"));

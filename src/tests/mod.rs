@@ -201,6 +201,7 @@ pub mod pdf_smart_routing_test;
 pub mod pdf_vision_test;
 pub mod slack_handler_test;
 pub mod telegram_handler_test;
+pub mod telegram_join_detection_test;
 pub mod telegram_photo_batching_test;
 pub mod telegram_plan_render_test;
 pub mod telegram_pre_tool_rolling_test;
@@ -209,7 +210,6 @@ pub mod telegram_send_thread_id_override_test;
 pub mod telegram_status_message_test;
 pub mod telegram_thread_id_lookup_test;
 pub mod telegram_topic_listing_test;
-pub mod telegram_join_detection_test;
 pub mod text_complete_test;
 pub mod tui_tool_stack_test;
 #[cfg(feature = "local-tts")]

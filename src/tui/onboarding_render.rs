@@ -1207,7 +1207,7 @@ fn render_workspace(lines: &mut Vec<Line<'static>>, wizard: &OnboardingWizard) {
     ]));
 
     lines.push(Line::from(Span::styled(
-        "       SOUL.md, IDENTITY.md, USER.md, ...",
+        "       SOUL.md, USER.md, ...",
         Style::default().fg(Color::DarkGray),
     )));
 }

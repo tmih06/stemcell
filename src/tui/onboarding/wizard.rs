@@ -487,11 +487,6 @@ impl OnboardingWizard {
             wizard.about_me = truncated.clone();
             wizard.original_about_me = truncated;
         }
-        if let Ok(content) = std::fs::read_to_string(workspace.join("IDENTITY.md")) {
-            let truncated = Self::truncate_preview(&content, 200);
-            wizard.about_opencrabs = truncated.clone();
-            wizard.original_about_opencrabs = truncated;
-        }
 
         wizard
     }

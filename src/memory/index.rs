@@ -10,7 +10,6 @@ use super::{COLLECTION_BRAIN, COLLECTION_MEMORY, embedding_api_config, embedding
 /// Brain files loaded from the workspace root (`~/.opencrabs/`).
 pub const BRAIN_FILES: &[&str] = &[
     "SOUL.md",
-    "IDENTITY.md",
     "USER.md",
     "AGENTS.md",
     "TOOLS.md",

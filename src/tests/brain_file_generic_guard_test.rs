@@ -136,7 +136,6 @@ async fn write_file_rejects_every_protected_brain_file() {
         "SECURITY.md",
         "MEMORY.md",
         "BOOT.md",
-        "IDENTITY.md",
     ];
 
     for name in names {

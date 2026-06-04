@@ -1467,7 +1467,6 @@ fn test_resolve_profile_home_default_explicit() {
 /// wizard's `TEMPLATE_FILES`.
 const EXPECTED_SEEDED_BRAIN_FILES: &[&str] = &[
     "SOUL.md",
-    "IDENTITY.md",
     "USER.md",
     "AGENTS.md",
     "TOOLS.md",

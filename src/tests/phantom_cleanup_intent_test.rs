@@ -37,7 +37,9 @@
 //! cleanup verbs from any one language fails here loudly instead
 //! of silently re-opening the gap for users in that locale.
 
-use crate::brain::agent::service::{has_forward_intent_post_success, has_phantom_tool_intent_no_tools};
+use crate::brain::agent::service::{
+    has_forward_intent_post_success, has_phantom_tool_intent_no_tools,
+};
 
 #[test]
 fn english_exact_2026_06_04_leak_text_fires_phantom() {

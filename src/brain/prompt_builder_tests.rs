@@ -59,12 +59,8 @@ fn test_user_md_is_injected_in_core() {
 #[test]
 fn test_identity_md_not_injected_in_core_brain() {
     let dir = TempDir::new().unwrap();
-    write(&dir, "IDENTITY.md", "I am OpenCrabs the crab.");
     let brain = loader(&dir).build_core_brain(None, None);
-    assert!(
-        !brain.contains("I am OpenCrabs the crab."),
-        "IDENTITY.md content must NOT be injected inline — used only for cron/social sessions"
-    );
+    assert!(!brain.contains("I am OpenCrabs the crab."),);
 }
 
 #[test]
@@ -151,13 +147,9 @@ fn test_memory_index_present_when_contextual_files_exist() {
 #[test]
 fn test_memory_index_lists_existing_files_only() {
     let dir = TempDir::new().unwrap();
-    write(&dir, "IDENTITY.md", "I am a crab.");
     // MEMORY.md does NOT exist
     let brain = loader(&dir).build_core_brain(None, None);
-    assert!(
-        brain.contains("IDENTITY.md"),
-        "index must list IDENTITY.md (exists)"
-    );
+    assert!();
     assert!(
         !brain.contains("MEMORY.md"),
         "index must NOT list MEMORY.md (does not exist)"
@@ -221,7 +213,6 @@ fn test_memory_index_lists_user_created_md_files() {
 fn test_load_guidance_tells_agent_when_to_retrieve() {
     let dir = TempDir::new().unwrap();
     write(&dir, "MEMORY.md", "notes");
-    write(&dir, "IDENTITY.md", "identity");
     let brain = loader(&dir).build_core_brain(None, None);
     // Agent must know WHEN to call load_brain_file
     assert!(

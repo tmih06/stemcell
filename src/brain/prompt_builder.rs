@@ -15,10 +15,8 @@ const CORE_BRAIN_FILES: &[(&str, &str)] =
     &[("SOUL.md", "personality"), ("USER.md", "user profile")];
 
 /// Contextual brain files — loaded on demand via the `load_brain_file` tool.
-/// IDENTITY.md lives here — only needed for cron jobs and social media replies.
 /// TOOLS.md and CODE.md moved here (2026-05) to slim core prompt.
 pub(crate) const CONTEXTUAL_BRAIN_FILES: &[(&str, &str)] = &[
-    ("IDENTITY.md", "identity — social/cron replies only"),
     ("AGENTS.md", "workspace rules"),
     ("CODE.md", "coding standards"),
     ("TOOLS.md", "tool notes & config"),
@@ -30,8 +28,7 @@ pub(crate) const CONTEXTUAL_BRAIN_FILES: &[(&str, &str)] = &[
 ];
 
 /// All brain files in assembly order — kept for `build_system_brain` (full mode).
-/// IDENTITY.md excluded — only loaded on-demand for cron/social agent sessions.
-/// TOOLS.md and CODE.md excluded from full mode too — they're contextual now.
+/// TOOLS.md and CODE.md excluded from full mode — they're contextual now.
 const BRAIN_FILES: &[(&str, &str)] = &[
     ("SOUL.md", "personality"),
     ("USER.md", "user"),
@@ -254,9 +251,9 @@ impl BrainLoader {
         prompt
     }
 
-    /// Build a lean "core" system brain: only SOUL.md + IDENTITY.md are injected.
+    /// Build a lean "core" system brain: only SOUL.md + USER.md are injected.
     ///
-    /// All other brain files (USER.md, MEMORY.md, AGENTS.md, etc.) are listed in a
+    /// All other brain files (MEMORY.md, AGENTS.md, etc.) are listed in a
     /// "Available Context Files" index section so the agent knows they exist and can
     /// load them on demand via the `load_brain_file` tool — only when actually needed.
     ///
@@ -273,7 +270,7 @@ impl BrainLoader {
         prompt.push_str(BRAIN_PREAMBLE);
         prompt.push_str("\n\n");
 
-        // 2. Core files only (SOUL.md + IDENTITY.md)
+        // 2. Core files only (SOUL.md + USER.md)
         for (filename, label) in CORE_BRAIN_FILES {
             if let Some(content) = self.load_file(filename) {
                 let trimmed = content.trim();

@@ -1002,7 +1002,6 @@ mod self_improve_tool {
             "SECURITY.md",
             "MEMORY.md",
             "BOOT.md",
-            "IDENTITY.md",
         ];
 
         let ctx = setup_ctx_no_db();

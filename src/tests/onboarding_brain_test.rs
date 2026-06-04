@@ -168,7 +168,6 @@ fn brain_prompt_includes_template_markers() {
     let w = OnboardingWizard::new();
     let prompt = w.build_brain_prompt();
     assert!(prompt.contains("===TEMPLATE: SOUL.md==="));
-    assert!(prompt.contains("===TEMPLATE: IDENTITY.md==="));
     assert!(prompt.contains("===TEMPLATE: USER.md==="));
     assert!(prompt.contains("===TEMPLATE: AGENTS.md==="));
     assert!(prompt.contains("===TEMPLATE: TOOLS.md==="));
@@ -188,7 +187,7 @@ fn brain_prompt_includes_response_delimiters() {
 #[test]
 fn apply_valid_response_sets_all_fields() {
     let mut w = OnboardingWizard::new();
-    let response = "---SOUL---\nSoul content\n---IDENTITY---\nIdentity content\n---USER---\nUser content\n---AGENTS---\nAgents content\n---TOOLS---\nTools content\n---MEMORY---\nMemory content";
+    let response = "---SOUL---\nSoul content\n---USER---\nUser content\n---AGENTS---\nAgents content\n---TOOLS---\nTools content\n---MEMORY---\nMemory content";
     w.apply_generated_brain(response);
     assert!(w.brain_generated);
     assert!(!w.brain_generating);

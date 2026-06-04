@@ -35,7 +35,6 @@ pub(crate) async fn cmd_status(config: &crate::config::Config) -> Result<()> {
     let brain_files: Vec<&str> = [
         "persona.md",
         "system.md",
-        "IDENTITY.md",
         "USER.md",
         "MEMORY.md",
         "AGENTS.md",
@@ -257,17 +256,11 @@ pub(crate) async fn cmd_doctor(config: &crate::config::Config) -> Result<()> {
     // 5. Brain files
     let brain_path = BrainLoader::resolve_path();
     if brain_path.exists() {
-        let brain_files: Vec<&str> = [
-            "persona.md",
-            "system.md",
-            "IDENTITY.md",
-            "USER.md",
-            "MEMORY.md",
-        ]
-        .iter()
-        .filter(|f| brain_path.join(f).exists())
-        .copied()
-        .collect();
+        let brain_files: Vec<&str> = ["persona.md", "system.md", "USER.md", "MEMORY.md"]
+            .iter()
+            .filter(|f| brain_path.join(f).exists())
+            .copied()
+            .collect();
         if brain_files.is_empty() {
             println!(
                 "  ⚠️  Brain: directory exists but no brain files found at {}",
@@ -1456,7 +1449,6 @@ pub(crate) async fn cmd_memory(operation: MemoryCommands) -> Result<()> {
 
             let brain_files = [
                 "MEMORY.md",
-                "IDENTITY.md",
                 "USER.md",
                 "AGENTS.md",
                 "TOOLS.md",
@@ -1529,17 +1521,10 @@ pub(crate) async fn cmd_memory(operation: MemoryCommands) -> Result<()> {
         MemoryCommands::Stats => {
             println!("🦀 Memory Statistics\n");
 
-            let brain_files: Vec<_> = [
-                "MEMORY.md",
-                "IDENTITY.md",
-                "USER.md",
-                "AGENTS.md",
-                "TOOLS.md",
-                "SOUL.md",
-            ]
-            .iter()
-            .filter(|f| brain_path.join(f).exists())
-            .collect();
+            let brain_files: Vec<_> = ["MEMORY.md", "USER.md", "AGENTS.md", "TOOLS.md", "SOUL.md"]
+                .iter()
+                .filter(|f| brain_path.join(f).exists())
+                .collect();
 
             let brain_size: u64 = brain_files
                 .iter()

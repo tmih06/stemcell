@@ -27,7 +27,6 @@ const ALLOWED_FILES: &[&str] = &[
     "SECURITY.md",
     "MEMORY.md",
     "BOOT.md",
-    "IDENTITY.md",
 ];
 
 /// Heuristic guard: reject brain-file content that looks like a raw failure
