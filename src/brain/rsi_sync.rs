@@ -128,12 +128,36 @@ impl SyncState {
 }
 
 /// Result of a single file sync attempt.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct FileSyncResult {
     pub filename: String,
     pub synced: bool,
     pub sections_added: usize,
     pub error: Option<String>,
+    /// `Some(report)` when the sync bailed because the merged content
+    /// would exceed `[brain.caps] <filename>` (or `default_cap`).
+    /// `synced=false` in that case too, but `bailed_for_cap` distinguishes
+    /// "cap reached, user must act" from "transient error, will retry".
+    /// Issue #164 fix 2.
+    pub bailed_for_cap: Option<CapBailReport>,
+}
+
+/// Diagnostic surfaced when `sync_single_file` refuses to write because
+/// the merged content would exceed the configured per-file line cap. The
+/// user sees this via tracing + an entry appended to
+/// `~/.opencrabs/rsi/improvements.md` so they can either raise the cap,
+/// prune the file, or add the offending sections to the pruned sidecar.
+#[derive(Debug, Clone, Default)]
+pub struct CapBailReport {
+    pub filename: String,
+    pub local_lines: usize,
+    pub upstream_lines: usize,
+    pub merged_lines: usize,
+    pub cap: usize,
+    /// Up to 3 largest new sections (`## Header (N lines)`) that the
+    /// sync would have added. Helps the user judge whether to raise the
+    /// cap or prune those headers specifically.
+    pub top_new_sections: Vec<String>,
 }
 
 /// Check if a version change requires a sync.
@@ -285,6 +309,7 @@ pub async fn sync_templates() -> Vec<FileSyncResult> {
             synced: false,
             sections_added: 0,
             error: Some(format!("Failed to create backups dir: {e}")),
+            bailed_for_cap: None,
         }];
     }
 
@@ -360,6 +385,103 @@ fn seed_missing_templates_if_blank(home: &std::path::Path) {
     crate::config::profile::seed_brain_templates(home);
 }
 
+/// Test re-export of `top_new_sections_by_size` so the regression tests
+/// under `src/tests/` can exercise the ranking without going through the
+/// async `sync_single_file` path (which needs network + disk + config).
+pub fn top_new_sections_by_size_for_test(new_sections: &str, n: usize) -> Vec<String> {
+    top_new_sections_by_size(new_sections, n)
+}
+
+/// Extract the top-N largest new sections (by line count) from the appended
+/// content. Returns formatted strings like `"## Section Name (42 lines)"`.
+/// Used by the cap-bail report so the user knows which headers dominate.
+fn top_new_sections_by_size(new_sections: &str, n: usize) -> Vec<String> {
+    let mut by_header: Vec<(String, usize)> = Vec::new();
+    let mut current_header: Option<String> = None;
+    let mut current_count: usize = 0;
+    for line in new_sections.lines() {
+        if line.starts_with("## ") {
+            if let Some(h) = current_header.take() {
+                by_header.push((h, current_count));
+            }
+            current_header = Some(line.to_string());
+            current_count = 1;
+        } else if current_header.is_some() {
+            current_count += 1;
+        }
+    }
+    if let Some(h) = current_header {
+        by_header.push((h, current_count));
+    }
+    by_header.sort_by_key(|b| std::cmp::Reverse(b.1));
+    by_header
+        .into_iter()
+        .take(n)
+        .map(|(h, c)| format!("{h} ({c} lines)"))
+        .collect()
+}
+
+/// Append a cap-bail diagnostic to `~/.opencrabs/rsi/improvements.md`
+/// so the user sees it next session without having to scrape stdout.
+fn log_cap_bail_to_improvements(report: &CapBailReport) {
+    let home = crate::config::opencrabs_home();
+    let improvements_path = home.join("rsi/improvements.md");
+    if let Some(parent) = improvements_path.parent()
+        && let Err(e) = std::fs::create_dir_all(parent)
+    {
+        tracing::warn!(
+            "RSI sync cap-bail: failed to create rsi dir for improvements log: {e}"
+        );
+        return;
+    }
+    let top_list = if report.top_new_sections.is_empty() {
+        "(none detected)".to_string()
+    } else {
+        report
+            .top_new_sections
+            .iter()
+            .map(|s| format!("  - {s}"))
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
+    let entry = format!(
+        "\n## [Bailed] Sync cap exceeded for {filename}\n\n\
+         **Date:** {date}\n\
+         **Cap:** {cap} lines\n\
+         **Local file size:** {local} lines\n\
+         **Upstream template size:** {upstream} lines\n\
+         **Merged would be:** {merged} lines\n\
+         **Top new sections that would have been added:**\n{top}\n\n\
+         To resolve: raise `[brain.caps].{filename}` in config.toml, prune \
+         the file, or add the offending headers to ~/.opencrabs/rsi/pruned.toml.\n",
+        filename = report.filename,
+        date = chrono::Utc::now().format("%Y-%m-%d %H:%M UTC"),
+        cap = report.cap,
+        local = report.local_lines,
+        upstream = report.upstream_lines,
+        merged = report.merged_lines,
+        top = top_list,
+    );
+    match std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&improvements_path)
+    {
+        Ok(mut f) => {
+            if let Err(e) = f.write_all(entry.as_bytes()) {
+                tracing::warn!(
+                    "RSI sync cap-bail: failed to append entry to improvements.md: {e}"
+                );
+            }
+        }
+        Err(e) => {
+            tracing::warn!(
+                "RSI sync cap-bail: failed to open improvements.md for append: {e}"
+            );
+        }
+    }
+}
+
 /// Sync a single brain file.
 async fn sync_single_file(local_path: &Path, filename: &str, _timestamp: &str) -> FileSyncResult {
     // 1. Read local content
@@ -371,6 +493,7 @@ async fn sync_single_file(local_path: &Path, filename: &str, _timestamp: &str) -
                 synced: false,
                 sections_added: 0,
                 error: Some(format!("Failed to read local {filename}: {e}")),
+                bailed_for_cap: None,
             };
         }
     };
@@ -384,6 +507,7 @@ async fn sync_single_file(local_path: &Path, filename: &str, _timestamp: &str) -
                 synced: false,
                 sections_added: 0,
                 error: Some(e),
+                bailed_for_cap: None,
             };
         }
     };
@@ -397,6 +521,7 @@ async fn sync_single_file(local_path: &Path, filename: &str, _timestamp: &str) -
             synced: true,
             sections_added: 0,
             error: None,
+            bailed_for_cap: None,
         };
     }
 
@@ -411,6 +536,7 @@ async fn sync_single_file(local_path: &Path, filename: &str, _timestamp: &str) -
             synced: true,
             sections_added: 0,
             error: None,
+            bailed_for_cap: None,
         };
     }
 
@@ -418,6 +544,44 @@ async fn sync_single_file(local_path: &Path, filename: &str, _timestamp: &str) -
         .lines()
         .filter(|l| l.starts_with("## "))
         .count();
+
+    // 3c. Per-file line cap (issue #164 fix 2). Compute the merged line
+    // count and BAIL if it would exceed the configured cap. The cap is
+    // read from `[brain.caps] <filename>` with `[brain] default_cap` as
+    // the fallback (500 by default). Bailing means no write, no append
+    // to improvements.md beyond the warning entry below, and the caller
+    // sees `bailed_for_cap = Some(...)` so Mission Control can surface
+    // the situation distinctly from a transient I/O failure.
+    let brain_cfg = crate::config::Config::load()
+        .map(|c| c.brain)
+        .unwrap_or_default();
+    let cap = brain_cfg.cap_for(filename);
+    let merged_line_count = local_content.lines().count() + new_sections.lines().count();
+    if merged_line_count > cap {
+        let report = CapBailReport {
+            filename: filename.to_string(),
+            local_lines: local_content.lines().count(),
+            upstream_lines: upstream_content.lines().count(),
+            merged_lines: merged_line_count,
+            cap,
+            top_new_sections: top_new_sections_by_size(&new_sections, 3),
+        };
+        tracing::warn!(
+            "RSI sync: {filename} BAILED — merged would be {merged} lines, cap is {cap}. \
+             Top new sections: {top:?}. Raise [brain.caps].{filename} or prune sections.",
+            merged = report.merged_lines,
+            cap = report.cap,
+            top = report.top_new_sections,
+        );
+        log_cap_bail_to_improvements(&report);
+        return FileSyncResult {
+            filename: filename.to_string(),
+            synced: false,
+            sections_added: 0,
+            error: None,
+            bailed_for_cap: Some(report),
+        };
+    }
 
     // 4. Backup before writing
     match brain_file_safety::backup_before_write(local_path) {
@@ -445,6 +609,7 @@ async fn sync_single_file(local_path: &Path, filename: &str, _timestamp: &str) -
             synced: false,
             sections_added: 0,
             error: Some("Sanity check failed: merged content is empty".to_string()),
+            bailed_for_cap: None,
         };
     }
 
@@ -454,6 +619,7 @@ async fn sync_single_file(local_path: &Path, filename: &str, _timestamp: &str) -
             synced: false,
             sections_added: 0,
             error: Some(format!("Failed to write {filename}: {e}")),
+            bailed_for_cap: None,
         };
     }
 
@@ -487,5 +653,6 @@ async fn sync_single_file(local_path: &Path, filename: &str, _timestamp: &str) -
         synced: true,
         sections_added: sections_count,
         error: None,
+        bailed_for_cap: None,
     }
 }

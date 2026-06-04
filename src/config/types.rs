@@ -79,8 +79,8 @@ pub struct Config {
 
 /// Brain-file behaviour configuration. Issue #164 added read-time stripping
 /// of empty header stubs (`## Header` with no body) so the LLM never sees
-/// dead sections, plus a knob to opt out for power users who want disk-
-/// authoritative reads even when they include stubs.
+/// dead sections, plus a per-file line cap so `sync_templates` cannot
+/// silently grow a file past the user's budget.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BrainConfig {
     /// Strip header stubs from brain-file reads. Default true. Writes are
@@ -88,17 +88,46 @@ pub struct BrainConfig {
     /// filtered.
     #[serde(default = "default_strip_empty_sections")]
     pub strip_empty_sections: bool,
+
+    /// Per-file line caps for `sync_templates`. When a merged file would
+    /// exceed its cap, the sync BAILS instead of writing — the user sees
+    /// a warning naming the file, the current and upstream line counts,
+    /// and the top-3 largest new sections that would have been added.
+    /// Empty map means no cap configured beyond `default_brain_file_cap`.
+    /// Issue #164 fix 2.
+    #[serde(default)]
+    pub caps: std::collections::BTreeMap<String, usize>,
+
+    /// Fallback cap applied to any brain file not explicitly listed in
+    /// `caps`. Default 500 lines per the issue's recommended budget.
+    #[serde(default = "default_brain_file_cap")]
+    pub default_cap: usize,
 }
 
 fn default_strip_empty_sections() -> bool {
     true
 }
 
+fn default_brain_file_cap() -> usize {
+    500
+}
+
 impl Default for BrainConfig {
     fn default() -> Self {
         Self {
             strip_empty_sections: default_strip_empty_sections(),
+            caps: std::collections::BTreeMap::new(),
+            default_cap: default_brain_file_cap(),
         }
+    }
+}
+
+impl BrainConfig {
+    /// Resolve the line cap for a specific filename. Looks up `caps` first,
+    /// falls back to `default_cap`. Filenames are matched exactly (case
+    /// sensitive) so `TOOLS.md` and `tools.md` are distinct entries.
+    pub fn cap_for(&self, filename: &str) -> usize {
+        self.caps.get(filename).copied().unwrap_or(self.default_cap)
     }
 }
 
