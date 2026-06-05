@@ -155,7 +155,7 @@ unicode-normalization = "0.1.25"
 [dev-dependencies]
 rstest = "0.25"
 proptest = "1.6"
-mockall = "0.13"
+mockall = "0.14"
 criterion = { version = "0.5", features = ["html_reports"] }
 insta = { version = "1.42", features = ["json", "yaml"] }
 tempfile = "3.25"
