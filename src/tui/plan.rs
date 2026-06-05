@@ -155,18 +155,20 @@ where
     }
 }
 
-/// Task dependency: stored as UUID but deserialized from integer index (1-based) or UUID string
+// Serde default helpers for auto-generated fields
+fn default_uuid() -> Uuid { Uuid::new_v4() }
+fn default_now() -> DateTime<Utc> { Utc::now() }
 
 /// Plan document containing tasks and metadata
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PlanDocument {
     /// Unique plan ID
-    #[serde(default)]
-    pub id: Option<Uuid>,
+    #[serde(default = "default_uuid")]
+    pub id: Uuid,
 
     /// Session this plan belongs to
-    #[serde(default)]
-    pub session_id: Option<Uuid>,
+    #[serde(default = "default_uuid")]
+    pub session_id: Uuid,
 
     /// Plan title/goal
     pub title: String,
@@ -198,16 +200,16 @@ pub struct PlanDocument {
     pub status: PlanStatus,
 
     /// When the plan was created
-    #[serde(default)]
-    pub created_at: Option<DateTime<Utc>>,
+    #[serde(default = "default_now")]
+    pub created_at: DateTime<Utc>,
 
     /// When the plan was last updated
-    #[serde(default)]
-    pub updated_at: Option<DateTime<Utc>>,
+    #[serde(default = "default_now")]
+    pub updated_at: DateTime<Utc>,
 
     /// When the plan was approved (if applicable)
     #[serde(default)]
-    pub approved_at: Option<Option<DateTime<Utc>>>,
+    pub approved_at: Option<DateTime<Utc>>,
 }
 
 impl PlanDocument {
@@ -247,10 +249,8 @@ impl PlanDocument {
         // Use 1-based indexing for tasks
         let mut order_to_id: HashMap<usize, Uuid> = HashMap::new();
         for (idx, task) in self.tasks.iter().enumerate() {
-            let order = task.order.unwrap_or(idx + 1);
-            if let Some(id) = task.id {
-                order_to_id.insert(order, id);
-            }
+            let order = if task.order > 0 { task.order } else { idx + 1 };
+            order_to_id.insert(order, task.id);
         }
         
         // Second pass: resolve any index dependencies to UUIDs
@@ -404,15 +404,13 @@ impl PlanDocument {
         // Check for invalid task references
         for task in &self.tasks {
             for dep in &task.dependencies {
-                if let Some(dep_id) = dep.as_uuid() {
-                    if !task_ids.contains(&dep_id) {
-                        return Err(format!(
-                            "❌ Invalid Dependency\n\n\
-                             Task '{}' (#{}) depends on a task that doesn't exist.\n\n\
-                             💡 Fix: Remove this dependency or ensure the referenced task is added first.",
-                            task.title, task.order
-                        ));
-                    }
+                if dep.as_uuid().is_some_and(|id| !task_ids.contains(&id)) {
+                    return Err(format!(
+                        "❌ Invalid Dependency\n\n\
+                         Task '{}' (#{}) depends on a task that doesn't exist.\n\n\
+                         💡 Fix: Remove this dependency or ensure the referenced task is added first.",
+                        task.title, task.order
+                    ));
                 }
             }
         }
@@ -457,7 +455,7 @@ impl PlanDocument {
                 && task
                     .dependencies
                     .iter()
-                    .all(|dep| dep.as_uuid().map_or(false, |id| completed_ids.contains(&id)))
+                                        .all(|dep| dep.as_uuid().is_some_and(|id| completed_ids.contains(&id)))
         })
     }
 
@@ -476,7 +474,7 @@ impl PlanDocument {
                 && task
                     .dependencies
                     .iter()
-                    .all(|dep| dep.as_uuid().map_or(false, |id| completed_ids.contains(&id)))
+                                        .all(|dep| dep.as_uuid().is_some_and(|id| completed_ids.contains(&id)))
         })
     }
 
@@ -624,9 +622,10 @@ pub struct ExecutionSummary {
 }
 
 /// Status of a plan
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub enum PlanStatus {
     /// Plan is being drafted
+    #[default]
     Draft,
     /// Plan is ready for review
     PendingApproval,
@@ -660,12 +659,12 @@ impl std::fmt::Display for PlanStatus {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PlanTask {
     /// Unique task ID
-    #[serde(default)]
-    pub id: Option<Uuid>,
+    #[serde(default = "default_uuid")]
+    pub id: Uuid,
 
     /// Task number/order
     #[serde(default)]
-    pub order: Option<usize>,
+    pub order: usize,
 
     /// Task title/summary
     pub title: String,
@@ -957,9 +956,10 @@ impl std::fmt::Display for TaskType {
 }
 
 /// Status of individual tasks
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub enum TaskStatus {
     /// Not started
+    #[default]
     Pending,
     /// Currently being worked on
     InProgress,

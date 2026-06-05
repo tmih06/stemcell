@@ -4,7 +4,7 @@
 
 use super::error::{Result, ToolError};
 use super::r#trait::{Tool, ToolCapability, ToolExecutionContext, ToolResult};
-use crate::tui::plan::{PlanDocument, PlanStatus, PlanTask, TaskType, ToolCall as PlanToolCall};
+use crate::tui::plan::{PlanDocument, PlanStatus, PlanTask, TaskDep, TaskType, ToolCall as PlanToolCall};
 use async_trait::async_trait;
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
@@ -510,13 +510,13 @@ impl Tool for PlanTool {
                 // than silently dropped.
                 for task in &imported.tasks {
                     for dep in &task.dependencies {
-                        if let Some(dep_id) = dep.as_uuid() {
-                            if !old_to_new.contains_key(&dep_id) {
-                                return Err(ToolError::InvalidInput(format!(
-                                    "Task '{}' depends on unknown task id {}",
-                                    task.title, dep_id
-                                )));
-                            }
+                        if let Some(dep_id) = dep.as_uuid()
+                            && !old_to_new.contains_key(&dep_id)
+                        {
+                            return Err(ToolError::InvalidInput(format!(
+                                "Task '{}' depends on unknown task id {}",
+                                task.title, dep_id
+                            )));
                         }
                     }
                 }
