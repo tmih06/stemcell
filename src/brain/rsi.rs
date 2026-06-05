@@ -616,9 +616,21 @@ pub fn spawn_rsi_engine(
                 .stats_by_dimension_since("tool_", Some(&window_since))
                 .await
             {
-                for s in stats
-                    .iter()
-                    .filter(|s| s.total_events >= 5 && s.success_rate < 0.8)
+            // Sentinel dimensions that fire as "failures" by design
+            // (self-heal detectors, regression probes). Excluding them
+            // prevents noise like "phantom_intent_loop has 100% failure".
+            const SENTINEL_DIMENSIONS: &[&str] = &[
+                "phantom_intent_loop",
+                "phantom_tool_call",
+                "self_improve_exact_match_fail",
+                "sticky_fallback_regression",
+                "thinking_persistence_qwen36",
+                "",                  // empty tool name (internal bookkeeping)
+            ];
+            for s in stats
+                .iter()
+                .filter(|s| s.total_events >= 5 && s.success_rate < 0.8)
+                .filter(|s| !SENTINEL_DIMENSIONS.contains(&s.dimension.as_str()))
                 {
                     // Suppress the alert when the source repo has a
                     // commit since the window opened whose subject
