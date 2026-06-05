@@ -101,7 +101,7 @@ teloxide = { version = "0.17", features = ["macros"], optional = true }
 whatsapp-rust = { version = "0.4.1", optional = true, default-features = false, features = ["tokio-transport", "ureq-client", "tokio-native", "tokio-runtime"] }
 whatsapp-rust-tokio-transport = { version = "0.4.1", optional = true }
 whatsapp-rust-ureq-http-client = { version = "0.4.1", optional = true }
-wacore = { version = "0.4.1", optional = true, default-features = false }
+wacore = { version = "0.6.0", optional = true, default-features = false }
 wacore-binary = { version = "0.4.1", optional = true, default-features = false, features = ["serde"] }
 waproto = { version = "0.4.1", optional = true }
 qrcode = { version = "0.14", optional = true }
