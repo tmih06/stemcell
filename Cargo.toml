@@ -35,7 +35,7 @@ rusqlite = { version = "0.38", features = ["bundled"] }
 rusqlite_migration = "2.4"
 
 # Cron scheduling
-cron = "0.15"
+cron = "0.16"
 
 # Serialization
 serde = { version = "1.0", features = ["derive", "rc"] }
