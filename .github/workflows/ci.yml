@@ -179,14 +179,10 @@ jobs:
         #     0.13.x.
         run: cargo audit --ignore RUSTSEC-2024-0437
 
-  # ── Stage 5: Coverage (gated on lint, runs only on main pushes) ──────────
-  # Coverage runs only on main to save PR wall-clock — tarpaulin is the
-  # slowest job (~12 min). PRs still get full test coverage via the
-  # `test` job above; this job just publishes the report.
+  # ── Stage 5: Coverage (gated on lint) ────────────────────────────────────
   coverage:
     name: Code Coverage
     needs: [lint]
-    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -348,11 +344,10 @@ jobs:
   # ── Required gate ────────────────────────────────────────────────────────
   # Single status check for branch protection. Internal job structure
   # can change without touching branch protection settings.
-  # Coverage is intentionally excluded — it's main-only.
   ci-gate:
     name: CI Required Gate
     if: always()
-    needs: [lint, build, test, audit, msrv, doc, deny, typos, secrets, build-no-default]
+    needs: [lint, build, test, audit, coverage, msrv, doc, deny, typos, secrets, build-no-default]
     runs-on: ubuntu-latest
     steps:
       - name: Check results
