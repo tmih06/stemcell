@@ -75,12 +75,12 @@ fn skill_only_dispatches_when_no_user_command_matches() {
 }
 
 #[test]
-fn unknown_slash_returns_not_a_command_even_with_skills_loaded() {
+fn unknown_slash_returns_unknown_command_even_with_skills_loaded() {
     let skills = vec![skill("audit", "Skill body.")];
-    assert!(matches!(
-        match_user_command_inner("/does-not-exist", &[], &skills),
-        ChannelCommand::NotACommand
-    ));
+    match match_user_command_inner("/does-not-exist", &[], &skills) {
+        ChannelCommand::UnknownCommand(msg) => assert!(msg.contains("/does-not-exist")),
+        _other => panic!("expected UnknownCommand, got something else"),
+    }
 }
 
 #[test]

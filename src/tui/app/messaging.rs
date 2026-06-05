@@ -897,10 +897,10 @@ impl App {
                     let _ = sender.send(TuiEvent::MessageSubmitted(prompt));
                     return true;
                 }
-                self.push_system_message(format!(
-                    "Unknown command: {}. Type /help for available commands.",
-                    cmd
-                ));
+                // Unknown slash command — warn the user but don't send to agent
+                self.push_system_message(
+                    format!("⚡ Unknown command: {}. Type /help for available commands.", cmd),
+                );
                 true
             }
             _ => false,

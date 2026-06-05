@@ -182,6 +182,8 @@ pub enum ChannelCommand {
     UserPrompt(String),
     /// User-defined command with action "system" — display text directly
     UserSystem(String),
+    /// Unknown slash command — warn the user, don't forward to agent
+    UnknownCommand(String),
     /// Not a recognised command — pass through to agent
     NotACommand,
 }
@@ -259,9 +261,10 @@ pub async fn handle_command(
         ChannelCommand::Doctor => Some("Running health check...".to_string()),
         ChannelCommand::Evolve => Some("Checking for updates...".to_string()),
         ChannelCommand::Rtk(body) => Some(body.clone()),
-        ChannelCommand::Compact | ChannelCommand::UserPrompt(_) | ChannelCommand::NotACommand => {
-            None
-        }
+        ChannelCommand::Compact
+        | ChannelCommand::UserPrompt(_)
+        | ChannelCommand::NotACommand
+        | ChannelCommand::UnknownCommand(_) => None,
     };
 
     if let Some(response) = response_text {
@@ -351,7 +354,11 @@ pub(crate) fn match_user_command_inner(
         return ChannelCommand::UserPrompt(prompt);
     }
 
-    ChannelCommand::NotACommand
+    // 3. Unknown slash command — warn user, don't forward to agent
+    ChannelCommand::UnknownCommand(format!(
+        "⚡ Unknown command: {}. Type /help for available commands.",
+        cmd_name
+    ))
 }
 
 // ── /help ───────────────────────────────────────────────────────────────────
@@ -1066,6 +1073,7 @@ pub async fn try_execute_text_command(cmd: &ChannelCommand) -> Option<String> {
         | ChannelCommand::Rtk(body) => Some(body.clone()),
         ChannelCommand::Doctor => Some(run_doctor()),
         ChannelCommand::Evolve => Some(run_evolve().await),
+        ChannelCommand::UnknownCommand(msg) => Some(msg.to_string()),
         _ => None,
     }
 }

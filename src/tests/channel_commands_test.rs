@@ -131,6 +131,7 @@ fn variant_name(cmd: &ChannelCommand) -> &'static str {
         ChannelCommand::Doctor => "Doctor",
         ChannelCommand::Evolve => "Evolve",
         ChannelCommand::Rtk(_) => "Rtk",
+        ChannelCommand::UnknownCommand(_) => "UnknownCommand",
         ChannelCommand::NotACommand => "NotACommand",
     }
 }
@@ -167,20 +168,20 @@ fn user_command_system_action() {
 }
 
 #[test]
-fn user_command_unknown_falls_through() {
+fn user_command_unknown_returns_unknown_command() {
     let cmds = vec![make_cmd("/credits", "prompt", "Check credits")];
-    assert!(matches!(
-        match_user_command_inner("/unknown", &cmds, &[]),
-        ChannelCommand::NotACommand
-    ));
+    match match_user_command_inner("/unknown", &cmds, &[]) {
+        ChannelCommand::UnknownCommand(msg) => assert!(msg.contains("/unknown")),
+        other => panic!("expected UnknownCommand, got {:?}", variant_name(&other)),
+    }
 }
 
 #[test]
-fn user_command_empty_list() {
-    assert!(matches!(
-        match_user_command_inner("/anything", &[], &[]),
-        ChannelCommand::NotACommand
-    ));
+fn user_command_empty_list_returns_unknown_command() {
+    match match_user_command_inner("/anything", &[], &[]) {
+        ChannelCommand::UnknownCommand(msg) => assert!(msg.contains("/anything")),
+        other => panic!("expected UnknownCommand, got {:?}", variant_name(&other)),
+    }
 }
 
 #[test]
