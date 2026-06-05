@@ -4,7 +4,9 @@
 
 use super::error::{Result, ToolError};
 use super::r#trait::{Tool, ToolCapability, ToolExecutionContext, ToolResult};
-use crate::tui::plan::{PlanDocument, PlanStatus, PlanTask, TaskDep, TaskType, ToolCall as PlanToolCall};
+use crate::tui::plan::{
+    PlanDocument, PlanStatus, PlanTask, TaskDep, TaskType, ToolCall as PlanToolCall,
+};
 use async_trait::async_trait;
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
@@ -211,7 +213,10 @@ impl Tool for PlanTool {
          See `coding-plans/rust-fast.json`, `coding-plans/rust-medium.json`, `coding-plans/rust-full.json`, \
          `coding-plans/python-fast.json`, `coding-plans/python-medium.json`, `coding-plans/python-full.json`, \
          and `coding-plans/sample-minimal-plan.json`. Also see `plan-json-spec.md` for schema documentation. \
-         Minimal import format: only 6 fields required (title, description + 3 per task: title, description, task_type)."
+         Minimal import format: only 6 fields required (title, description + 3 per task: title, description, task_type). \
+         \n\nRE-TESTING AFTER BUG FIX: Plans are forward-only. A completed task stays completed. \
+         If a later task introduces a bug caught by an earlier test, add a new task (e.g., \"Re-run tests after fix\") \
+         rather than re-opening the completed one. Use `add_task` with task_type \"test\" and reference the fixed task."
     }
 
     fn input_schema(&self) -> Value {
@@ -625,7 +630,8 @@ impl Tool for PlanTool {
                         ))
                     })?;
 
-                task.dependencies.push(crate::tui::plan::TaskDep::Id(dep_task.id));
+                    task.dependencies
+                        .push(crate::tui::plan::TaskDep::Id(dep_task.id));
                 }
 
                 current_plan.add_task(task);

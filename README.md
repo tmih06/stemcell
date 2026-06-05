@@ -2047,6 +2047,36 @@ OpenCrabs includes 40+ built-in tools. The AI can use these during conversation:
 | `evolve` | Download latest release binary from GitHub and hot-restart (no Rust toolchain needed). Also runs automatically on startup and every 24h when `[agent] auto_update = true` (default), and via the `/evolve` slash command — both paths invoke the tool directly without the LLM, so they can't be dropped or refused by a provider |
 | `rebuild` | Build from source (`cargo build --release`) and hot-restart |
 
+#### Plan Tool: Structured Task Execution
+
+The `plan` tool manages multi-step workflows with dependency tracking, execution history, and automatic retry logic. Use it before any task with 3+ steps, dependencies between steps, or multi-file changes.
+
+**Bundled reference plans** are embedded in the binary and available at runtime:
+- `~/.opencrabs/profiles/<profile>/plans/coding-plans/` — Rust, Python plans (fast/medium/full variants)
+- `~/.opencrabs/profiles/<profile>/plans/plan-json-spec.md` — JSON schema documentation
+
+**Import a plan** from a bundled or local JSON file:
+```json
+{
+  "operation": "import",
+  "file_path": "~/.opencrabs/profiles/default/plans/coding-plans/rust-fast.json"
+}
+```
+
+**Minimal import format** — only 6 fields required:
+```json
+{
+  "title": "My Plan",
+  "description": "Plan description",
+  "tasks": [
+    { "title": "Task 1", "description": "What to do", "task_type": "code" },
+    { "title": "Task 2", "description": "Next step", "task_type": "test" }
+  ]
+}
+```
+
+**Forward-only re-test pattern:** Plans are forward-only. A completed task stays completed. If a later task introduces a bug caught by an earlier test, add a new task (e.g., "Re-run tests after fix") rather than re-opening the completed one. Use `add_task` with `task_type: "test"` and reference the fixed task.
+
 #### Recursive Self-Improvement (RSI) ⚠️ *Experimental*
 
 Autonomous feedback loop that tracks performance and enables the agent to improve its own brain files over time — **no human approval needed**. The agent identifies patterns, applies fixes, and logs everything to `~/.opencrabs/rsi/`.
