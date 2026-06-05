@@ -688,13 +688,60 @@ pub(super) fn render_chat(f: &mut Frame, app: &mut App, area: Rect) {
     // Show error message if present
     if let Some(ref error) = app.error_message {
         lines.push(Line::from(""));
-        lines.push(Line::from(vec![
-            Span::styled(
-                "  Error: ",
-                Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
-            ),
-            Span::styled(error.clone(), Style::default().fg(Color::Red)),
-        ]));
+        let prefix = "  Error: ";
+        let prefix_len = prefix.len();
+        let wrap_w = content_width.saturating_sub(prefix_len + 2).max(20);
+        let mut first = true;
+        for raw_line in error.lines() {
+            let mut current = String::new();
+            for word in raw_line.split_whitespace() {
+                if current.len() + word.len() + 1 > wrap_w {
+                    if first {
+                        lines.push(Line::from(vec![
+                            Span::styled(
+                                prefix,
+                                Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+                            ),
+                            Span::styled(
+                                current.clone(),
+                                Style::default().fg(Color::Red),
+                            ),
+                        ]));
+                        first = false;
+                    } else {
+                        lines.push(Line::from(Span::styled(
+                            format!("{}{}", " ".repeat(prefix_len), current),
+                            Style::default().fg(Color::Red),
+                        )));
+                    }
+                    current.clear();
+                }
+                if !current.is_empty() {
+                    current.push(' ');
+                }
+                current.push_str(word);
+            }
+            if !current.is_empty() || first {
+                if first {
+                    lines.push(Line::from(vec![
+                        Span::styled(
+                            prefix,
+                            Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+                        ),
+                        Span::styled(
+                            current.clone(),
+                            Style::default().fg(Color::Red),
+                        ),
+                    ]));
+                    first = false;
+                } else {
+                    lines.push(Line::from(Span::styled(
+                        format!("{}{}", " ".repeat(prefix_len), current),
+                        Style::default().fg(Color::Red),
+                    )));
+                }
+            }
+        }
         lines.push(Line::from(""));
     }
 
