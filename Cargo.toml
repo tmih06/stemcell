@@ -137,7 +137,7 @@ unicode-segmentation = "1.12"
 # Document Parsing
 pdf-extract = "0.10"
 pdfium-render = { version = "0.9", optional = true }
-zip = "6.0"
+zip = "8.6"
 quick-xml = "0.37"
 tiktoken-rs = "0.9.1"
 
