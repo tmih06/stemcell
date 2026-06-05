@@ -2048,8 +2048,55 @@ impl App {
                     tool_group: Some(group),
                 };
 
+                // Raw vs stripped accounting for the "eating intermediate
+                // text" diagnosis (2026-06-05). Three IntermediateText
+                // events emitted with text len=82/23/66 but only TWO
+                // rows showed in chat. Cause: `strip_llm_artifacts` was
+                // zeroing some inputs (e.g. text that was 100% HTML
+                // comments or XML tool markers), which then fell into
+                // the `has_reasoning && !has_text` branch and merged
+                // into prior thinking — silently swallowing what the
+                // model actually said.
+                let raw_text_trimmed_len = text.trim().chars().count();
+                let raw_text_was_nonempty = raw_text_trimmed_len > 0;
                 let text_clean = crate::utils::sanitize::strip_llm_artifacts(&text);
-                let has_text = !text_clean.trim().is_empty();
+                let stripped_len = text_clean.trim().chars().count();
+                let stripped_to_empty = raw_text_was_nonempty && stripped_len == 0;
+
+                if stripped_to_empty {
+                    // Loud trace so the next repro nails which marker
+                    // is over-stripping. Quote the raw text (cap so a
+                    // pathological 10 KB block doesn't flood the log)
+                    // for offline analysis.
+                    let preview: String = text.chars().take(500).collect();
+                    tracing::warn!(
+                        "[IntermediateText] strip_llm_artifacts ate ALL {} chars of intermediate text — \
+                         falling back to RAW text so the message isn't lost. \
+                         Raw preview (up to 500 chars): {:?}",
+                        raw_text_trimmed_len,
+                        preview
+                    );
+                } else if raw_text_was_nonempty && stripped_len < raw_text_trimmed_len {
+                    tracing::debug!(
+                        "[IntermediateText] strip_llm_artifacts trimmed {} → {} chars",
+                        raw_text_trimmed_len,
+                        stripped_len
+                    );
+                }
+
+                // Pick the text to actually display: stripped when it
+                // kept ANY content, raw when the strip zeroed it out.
+                // Raw fallback preserves the visible intermediate so it
+                // doesn't get silently rolled into reasoning — markdown
+                // rendering hides HTML comments naturally; CODE_EDIT_BLOCK
+                // fences render as code blocks (still ugly but visible
+                // beats vanished).
+                let display_text = if stripped_to_empty {
+                    text.clone()
+                } else {
+                    text_clean.clone()
+                };
+                let has_text = !display_text.trim().is_empty();
                 let has_reasoning = reasoning_details
                     .as_ref()
                     .is_some_and(|r| !r.trim().is_empty());
@@ -2079,7 +2126,7 @@ impl App {
                         state.push_message(DisplayMessage {
                             id: Uuid::new_v4(),
                             role: "assistant".to_string(),
-                            content: text_clean,
+                            content: display_text,
                             timestamp: chrono::Utc::now(),
                             token_count: None,
                             cost: None,
