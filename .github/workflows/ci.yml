@@ -313,7 +313,22 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-  # ── Stage 11: No-default-features build ─────────────────────────────────
+  # ── Stage 11: Unmaintained crates check ─────────────────────────────────
+  # Checks for crates that are marked as unmaintained in the advisories DB.
+  unmaintained:
+    name: Unmaintained Crates
+    needs: [lint]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check for unmaintained crates
+        uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          command: check advisories
+
+  # ── Stage 12: No-default-features build ─────────────────────────────────
   # Catches conditional compilation bugs when features are disabled.
   # NOTE: Currently soft-fail because the codebase has missing cfg guards
   # for channel modules (telegram, discord, slack, whatsapp). Fixing this
@@ -346,7 +361,7 @@ jobs:
   ci-gate:
     name: CI Required Gate
     if: always()
-    needs: [lint, build, test, audit, coverage, msrv, doc, deny, typos, secrets, build-no-default]
+    needs: [lint, build, test, audit, coverage, msrv, doc, deny, typos, secrets, unmaintained, build-no-default]
     runs-on: ubuntu-latest
     steps:
       - name: Check results
