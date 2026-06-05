@@ -895,10 +895,7 @@ pub(super) fn render_status_bar(f: &mut Frame, app: &App, area: Rect) {
         .unwrap_or_default();
 
     let session_text = format!(" {}", session_name);
-    let provider_model_text = format!(
-        "  ·  {} / {}{}  ·  ",
-        provider_str, model_str, profile_chip
-    );
+    let provider_model_text = format!("  ·  {} / {}{}  ·  ", provider_str, model_str, profile_chip);
     let sep_text = "  ·  ";
 
     // --- Approval policy (centre-left) ---
@@ -919,10 +916,7 @@ pub(super) fn render_status_bar(f: &mut Frame, app: &App, area: Rect) {
             provider_model_text,
             Style::default().fg(Color::Rgb(90, 110, 150)),
         ),
-        Span::styled(
-            short_dir,
-            Style::default().fg(Color::Rgb(90, 110, 150)),
-        ),
+        Span::styled(short_dir, Style::default().fg(Color::Rgb(90, 110, 150))),
     ];
     if let Some(ref branch) = git_branch {
         spans.push(Span::styled(
