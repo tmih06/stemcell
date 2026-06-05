@@ -524,6 +524,9 @@ pub fn available_module_ids() -> Vec<String> {
 ///
 /// This is the single entry point for tool registration, replacing the
 /// duplicated registration code that was previously in ui.rs and commands.rs.
+///
+/// Special values in `disabled`:
+/// - `"all"` — disables all modules (chatbot mode, no tools available)
 pub fn register_enabled_tools(
     config: &Config,
     pool: &Pool,
@@ -537,6 +540,9 @@ pub fn register_enabled_tools(
         .iter()
         .map(|s| s.to_lowercase())
         .collect();
+
+    // Chatbot mode: disable all modules
+    let disable_all = disabled.contains("all");
 
     let subagent_manager = Arc::new(SubAgentManager::new());
     let team_manager = Arc::new(TeamManager::new());
@@ -554,7 +560,7 @@ pub fn register_enabled_tools(
     let mut skipped_count = 0usize;
 
     for module in all_modules() {
-        if disabled.contains(module.id()) {
+        if disable_all || disabled.contains(module.id()) {
             tracing::info!(
                 "Skipping disabled tool module: {} ({})",
                 module.id(),

@@ -320,9 +320,12 @@ profile_id = ""
 #   meta                 — Tool management and RSI proposals (tool_manage, rsi_proposals)
 #   dynamic              — User-defined tools from tools.toml
 #
+# Special value: "all" — disables ALL modules (chatbot mode, no tools)
+#
 # Example: disable browser, RSI, and channel integrations to save tokens
 [tools]
 # disabled = ["browser", "rsi", "channel_integrations"]
+# disabled = ["all"]  # Chatbot mode — no tools, pure conversation
 
 [image.generation]
 enabled = false
