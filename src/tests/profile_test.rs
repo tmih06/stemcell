@@ -1548,7 +1548,8 @@ fn create_profile_does_not_overwrite_existing_brain_files() {
 fn create_profile_brain_files_are_non_trivial_size() {
     // Sanity check that the templates pull in actual content (not the
     // empty placeholders that would happen if include_str! ever pointed
-    // at the wrong path). TOOLS.md is the biggest template at ~40KB.
+    // at the wrong path). TOOLS.md was trimmed from ~40KB to ~2KB to
+    // remove reference bloat — it's now a lean routing index.
     let _guard = fs_lock();
     let name = "_test_seed_sizes";
     let profile_dir = base_opencrabs_dir().join("profiles").join(name);
@@ -1563,7 +1564,7 @@ fn create_profile_brain_files_are_non_trivial_size() {
         .expect("TOOLS.md exists")
         .len();
     assert!(
-        tools_bytes >= 10_000,
+        tools_bytes >= 1_000,
         "TOOLS.md seeded at only {tools_bytes} bytes — template path is probably wrong",
     );
 
