@@ -242,6 +242,22 @@ impl App {
         // Persist as last active session so startup restores it
         Self::save_last_session_id(session_id);
 
+        // Capture the OLD session's provider BEFORE the switch, so we can
+        // use it as the "current provider" for the new session if it has
+        // no saved provider. Without this, the else branch below calls
+        // `provider_name_for_session(session.id)` which looks up the NEW
+        // session's provider (not yet in HashMap), falls back to global
+        // default (from pane 1), and contaminates the new session with
+        // the wrong provider. 2026-06-05 user report: multi-pane mode
+        // shows pane 1's provider + pane 2's model in footer because
+        // the provider lookup fell back to global instead of using the
+        // provider that was active before the pane switch.
+        let old_provider_info = old_session_id.map(|old_sid| {
+            let prov = self.agent_service.provider_name_for_session(old_sid);
+            let model = self.agent_service.provider_model_for_session(old_sid);
+            (prov, model)
+        });
+
         // Populate the session's provider entry in the agent service so
         // future turns for this session use the right provider. Crucially
         // we do NOT call `swap_provider` (the GLOBAL default) — another
@@ -322,10 +338,39 @@ impl App {
                 }
             }
         } else {
-            // Legacy session with no saved provider — stamp current provider onto it
+            // Legacy session with no saved provider — stamp the provider
+            // that was active BEFORE the switch (from the old pane) onto
+            // this session. This ensures the new session gets its own
+            // entry in session_providers HashMap with the correct
+            // provider, rather than falling back to global default
+            // (which belongs to whichever pane was loaded first).
             if let Some(ref mut s) = self.current_session {
-                s.provider_name = Some(self.agent_service.provider_name_for_session(session.id));
-                s.model = Some(self.agent_service.provider_model_for_session(session.id));
+                if let Some((prov, model)) = old_provider_info {
+                    s.provider_name = Some(prov.clone());
+                    s.model = Some(model.clone());
+                    // Populate the session's provider entry in HashMap
+                    // so future lookups for this session return the
+                    // correct provider, not the global default.
+                    if let Some(cached) = self.provider_cache.get(&prov).cloned() {
+                        self.agent_service
+                            .swap_provider_for_session(session.id, cached);
+                    } else if let Ok(config) = crate::config::Config::load()
+                        && let Ok(new_provider) =
+                            crate::brain::provider::create_provider_by_name(&config, &prov).await
+                    {
+                        self.provider_cache
+                            .insert(prov.clone(), new_provider.clone());
+                        self.agent_service
+                            .swap_provider_for_session(session.id, new_provider);
+                    }
+                    self.agent_service.set_session_model(session.id, model);
+                } else {
+                    // No old session (first load) — use global default
+                    s.provider_name =
+                        Some(self.agent_service.provider_name_for_session(session.id));
+                    s.model =
+                        Some(self.agent_service.provider_model_for_session(session.id));
+                }
             }
         }
 
