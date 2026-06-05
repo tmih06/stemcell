@@ -131,7 +131,7 @@ fn tasks_with_linear_deps() {
     let t1 = PlanTask::new(1, "First".to_string(), "".to_string(), TaskType::Create);
     let t1_id = t1.id;
     let mut t2 = PlanTask::new(2, "Second".to_string(), "".to_string(), TaskType::Create);
-    t2.dependencies.push(t1_id);
+    t2.dependencies.push(TaskDep::Id(t1_id));
     plan.add_task(t1);
     plan.add_task(t2);
 

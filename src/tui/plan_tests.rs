@@ -236,8 +236,8 @@ mod tests {
         let task2_id = task2.id;
 
         let mut task3 = create_test_task(3, "Task 3");
-        task3.dependencies.push(task1_id);
-        task3.dependencies.push(task2_id);
+        task3.dependencies.push(TaskDep::Id(task1_id));
+        task3.dependencies.push(TaskDep::Id(task2_id));
 
         plan.add_task(task1);
         plan.add_task(task2);
@@ -262,11 +262,11 @@ mod tests {
 
         let mut task2 = create_test_task(2, "Task 2");
         let task2_id = task2.id;
-        task2.dependencies.push(task1_id);
+        task2.dependencies.push(TaskDep::Id(task1_id));
 
         // Create circular dependency: Task 1 depends on Task 2
         let mut task1_modified = task1;
-        task1_modified.dependencies.push(task2_id);
+        task1_modified.dependencies.push(TaskDep::Id(task2_id));
 
         plan.add_task(task1_modified);
         plan.add_task(task2);
@@ -284,7 +284,7 @@ mod tests {
         let task1_id = task1.id;
 
         let mut task2 = create_test_task(2, "Task 2");
-        task2.dependencies.push(task1_id);
+        task2.dependencies.push(TaskDep::Id(task1_id));
 
         plan.add_task(task1);
         plan.add_task(task2);
@@ -298,7 +298,7 @@ mod tests {
         let mut plan = create_test_plan(Uuid::new_v4());
 
         let mut task1 = create_test_task(1, "Task 1");
-        task1.dependencies.push(Uuid::new_v4()); // Non-existent task
+        task1.dependencies.push(TaskDep::Id(Uuid::new_v4())); // Non-existent task
 
         plan.add_task(task1);
 
@@ -316,10 +316,10 @@ mod tests {
 
         let mut task2 = create_test_task(2, "Task 2");
         let task2_id = task2.id;
-        task2.dependencies.push(task1_id);
+        task2.dependencies.push(TaskDep::Id(task1_id));
 
         let mut task1_modified = task1;
-        task1_modified.dependencies.push(task2_id);
+        task1_modified.dependencies.push(TaskDep::Id(task2_id));
 
         plan.add_task(task1_modified);
         plan.add_task(task2);
@@ -489,20 +489,20 @@ mod tests {
         let task1_id = task1.id;
 
         let mut task2 = create_test_task(2, "Task 2");
-        task2.dependencies.push(task1_id);
+        task2.dependencies.push(TaskDep::Id(task1_id));
         let task2_id = task2.id;
 
         let mut task3 = create_test_task(3, "Task 3");
-        task3.dependencies.push(task1_id);
+        task3.dependencies.push(TaskDep::Id(task1_id));
         let task3_id = task3.id;
 
         let mut task4 = create_test_task(4, "Task 4");
-        task4.dependencies.push(task2_id);
-        task4.dependencies.push(task3_id);
+        task4.dependencies.push(TaskDep::Id(task2_id));
+        task4.dependencies.push(TaskDep::Id(task3_id));
         let task4_id = task4.id;
 
         let mut task5 = create_test_task(5, "Task 5");
-        task5.dependencies.push(task4_id);
+        task5.dependencies.push(TaskDep::Id(task4_id));
 
         plan.add_task(task1);
         plan.add_task(task2);

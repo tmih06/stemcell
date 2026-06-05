@@ -5,7 +5,7 @@
 use crate::db::Pool;
 use crate::db::database::interact_err;
 use crate::db::models::{Plan, PlanTask};
-use crate::tui::plan::{PlanDocument, PlanStatus, TaskStatus, TaskType};
+use crate::tui::plan::{PlanDocument, PlanStatus, TaskDep, TaskStatus, TaskType};
 use anyhow::{Context, Result};
 use rusqlite::params;
 use uuid::Uuid;
@@ -281,7 +281,7 @@ impl PlanRepository {
 
     /// Convert database task to domain task
     fn task_from_db(&self, db_task: PlanTask) -> Result<crate::tui::plan::PlanTask> {
-        let dependencies: Vec<Uuid> = serde_json::from_str(&db_task.dependencies)
+        let dependencies: Vec<TaskDep> = serde_json::from_str(&db_task.dependencies)
             .context("Failed to parse dependencies JSON")?;
         let acceptance_criteria: Vec<String> =
             serde_json::from_str(&db_task.acceptance_criteria)
@@ -537,7 +537,7 @@ mod tests {
             title: "Task 2".to_string(),
             description: "Second task".to_string(),
             task_type: TaskType::Edit,
-            dependencies: vec![task1.id],
+            dependencies: vec![TaskDep::Id(task1.id)],
             complexity: 5,
             acceptance_criteria: vec![],
             status: TaskStatus::Pending,
@@ -875,7 +875,7 @@ mod tests {
 
         // Task 2 should depend on Task 1
         assert_eq!(found.tasks[1].dependencies.len(), 1);
-        assert_eq!(found.tasks[1].dependencies[0], task1_id);
+        assert_eq!(found.tasks[1].dependencies[0], TaskDep::Id(task1_id));
     }
 
     #[tokio::test]
@@ -978,12 +978,12 @@ mod tests {
         let task_ids: Vec<Uuid> = (0..5).map(|_| Uuid::new_v4()).collect();
 
         for (i, &task_id) in task_ids.iter().enumerate() {
-            let dependencies = match i {
-                0 => vec![],                         // No dependencies
-                1 => vec![task_ids[0]],              // Depends on task 0
-                2 => vec![task_ids[0]],              // Depends on task 0
-                3 => vec![task_ids[1], task_ids[2]], // Depends on tasks 1 and 2
-                4 => vec![task_ids[3]],              // Depends on task 3
+            let dependencies: Vec<TaskDep> = match i {
+                0 => vec![],                                    // No dependencies
+                1 => vec![TaskDep::Id(task_ids[0])],            // Depends on task 0
+                2 => vec![TaskDep::Id(task_ids[0])],            // Depends on task 0
+                3 => vec![TaskDep::Id(task_ids[1]), TaskDep::Id(task_ids[2])], // Depends on tasks 1 and 2
+                4 => vec![TaskDep::Id(task_ids[3])],            // Depends on task 3
                 _ => vec![],
             };
 

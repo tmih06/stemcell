@@ -2,18 +2,172 @@
 //!
 //! Core data structures for plan mode, which enables structured task decomposition
 //! and controlled execution for complex development tasks.
+//!
+//! ## Minimal Import Format
+//!
+//! Only 6 fields required: `title`, `description`, `tasks[]` with `title`, `description`, `task_type`.
+//!
+//! All other fields are auto-generated on import. See `~/.opencrabs/profiles/<profile>/plans/plan-json-spec.md`
+//! for full schema documentation and `~/.opencrabs/profiles/<profile>/plans/coding-plans/` for reference examples.
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+/// Task dependency: either a 1-based index into the task list, or a direct UUID reference.
+/// This allows both integer indices (easier for LLMs to write) and UUIDs (for explicit references).
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(from = "TaskDepDef", into = "TaskDepDef")]
+pub enum TaskDep {
+    /// 1-based index into the task list. Resolved to Uuid during import.
+    Index(usize),
+    /// Direct UUID reference to a task.
+    Id(Uuid),
+}
+
+impl TaskDep {
+    /// Convert to UUID, using the provided order-to-UUID mapping if this is an index.
+    pub fn to_uuid(&self, order_to_id: &std::collections::HashMap<usize, Uuid>) -> Option<Uuid> {
+        match self {
+            TaskDep::Id(uuid) => Some(*uuid),
+            TaskDep::Index(idx) => order_to_id.get(idx).copied(),
+        }
+    }
+
+    /// Check if this is a UUID (already resolved)
+    pub fn is_uuid(&self) -> bool {
+        matches!(self, TaskDep::Id(_))
+    }
+
+    /// Get the UUID value if this is a UUID
+    pub fn as_uuid(&self) -> Option<Uuid> {
+        match self {
+            TaskDep::Id(uuid) => Some(*uuid),
+            TaskDep::Index(_) => None,
+        }
+    }
+}
+
+/// Serialization format for TaskDep - serializes as just the UUID (index is resolved before serialization)
+#[derive(Serialize, Deserialize)]
+#[serde(untagged)]
+enum TaskDepDef {
+    Uuid(Uuid),
+    Index(usize),
+}
+
+impl From<TaskDepDef> for TaskDep {
+    fn from(def: TaskDepDef) -> Self {
+        match def {
+            TaskDepDef::Uuid(uuid) => TaskDep::Id(uuid),
+            TaskDepDef::Index(idx) => TaskDep::Index(idx),
+        }
+    }
+}
+
+impl From<TaskDep> for TaskDepDef {
+    fn from(dep: TaskDep) -> Self {
+        match dep {
+            TaskDep::Id(uuid) => TaskDepDef::Uuid(uuid),
+            TaskDep::Index(idx) => TaskDepDef::Index(idx),
+        }
+    }
+}
+
+/// Custom deserializer for task dependencies - accepts both integer indices (1-based) and UUID strings.
+/// Returns Vec<TaskDep> so we preserve the index value for later resolution.
+pub fn deserialize_task_deps<'de, D>(deserializer: D) -> Result<Vec<TaskDep>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    struct TaskDepVisitor;
+
+    impl<'de> serde::de::Visitor<'de> for TaskDepVisitor {
+        type Value = Vec<TaskDep>;
+
+        fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+            formatter.write_str("an array of task indices (1-based integers) or UUID strings")
+        }
+
+        fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
+        where
+            A: serde::de::SeqAccess<'de>,
+        {
+            let mut deps = Vec::new();
+            while let Some(val) = seq.next_element::<serde_json::Value>()? {
+                match val {
+                    serde_json::Value::Number(n) => {
+                        if let Some(i) = n.as_i64() {
+                            if i < 1 {
+                                return Err(serde::de::Error::custom(
+                                    "task indices start at 1",
+                                ));
+                            }
+                            deps.push(TaskDep::Index(i as usize));
+                        } else {
+                            return Err(serde::de::Error::custom(
+                                "task index must be a positive integer",
+                            ));
+                        }
+                    }
+                    serde_json::Value::String(s) => {
+                        match Uuid::parse_str(&s) {
+                            Ok(uuid) => deps.push(TaskDep::Id(uuid)),
+                            Err(_) => {
+                                return Err(serde::de::Error::custom(format!(
+                                    "invalid UUID: {}",
+                                    s
+                                )));
+                            }
+                        }
+                    }
+                    _ => {
+                        return Err(serde::de::Error::custom(
+                            "task dependency must be an integer index or UUID string",
+                        ));
+                    }
+                }
+            }
+            Ok(deps)
+        }
+    }
+
+    deserializer.deserialize_seq(TaskDepVisitor)
+}
+
+/// Custom deserializer for task type - case-insensitive
+pub fn deserialize_task_type<'de, D>(deserializer: D) -> Result<TaskType, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let s = String::deserialize(deserializer)?;
+    match s.to_lowercase().as_str() {
+        "research" => Ok(TaskType::Research),
+        "edit" => Ok(TaskType::Edit),
+        "create" => Ok(TaskType::Create),
+        "delete" => Ok(TaskType::Delete),
+        "test" => Ok(TaskType::Test),
+        "refactor" => Ok(TaskType::Refactor),
+        "documentation" => Ok(TaskType::Documentation),
+        "configuration" => Ok(TaskType::Configuration),
+        "build" => Ok(TaskType::Build),
+        other => Ok(TaskType::Other(other.to_string())),
+    }
+}
+
+// Serde default helpers for auto-generated fields
+fn default_uuid() -> Uuid { Uuid::new_v4() }
+fn default_now() -> DateTime<Utc> { Utc::now() }
+
 /// Plan document containing tasks and metadata
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PlanDocument {
     /// Unique plan ID
+    #[serde(default = "default_uuid")]
     pub id: Uuid,
 
     /// Session this plan belongs to
+    #[serde(default = "default_uuid")]
     pub session_id: Uuid,
 
     /// Plan title/goal
@@ -26,27 +180,35 @@ pub struct PlanDocument {
     pub tasks: Vec<PlanTask>,
 
     /// Context and assumptions
+    #[serde(default)]
     pub context: String,
 
     /// Identified risks and unknowns
+    #[serde(default)]
     pub risks: Vec<String>,
 
     /// Testing strategy and approach
+    #[serde(default)]
     pub test_strategy: String,
 
     /// Technical stack (frameworks, libraries, tools)
+    #[serde(default)]
     pub technical_stack: Vec<String>,
 
     /// Plan status
+    #[serde(default)]
     pub status: PlanStatus,
 
     /// When the plan was created
+    #[serde(default = "default_now")]
     pub created_at: DateTime<Utc>,
 
     /// When the plan was last updated
+    #[serde(default = "default_now")]
     pub updated_at: DateTime<Utc>,
 
     /// When the plan was approved (if applicable)
+    #[serde(default)]
     pub approved_at: Option<DateTime<Utc>>,
 }
 
@@ -76,6 +238,41 @@ impl PlanDocument {
         self.updated_at = Utc::now();
     }
 
+    /// Resolve integer index dependencies to UUIDs.
+    /// Integer indices (1-based) in dependencies are converted to the UUID of the task at that order.
+    /// Note: This requires dependencies to use UUIDs, not integer indices.
+    /// Call this after deserialization but before validation.
+    pub fn resolve_index_deps(&mut self) {
+        use std::collections::HashMap;
+        
+        // First pass: build order -> id mapping
+        // Use 1-based indexing for tasks
+        let mut order_to_id: HashMap<usize, Uuid> = HashMap::new();
+        for (idx, task) in self.tasks.iter().enumerate() {
+            let order = if task.order > 0 { task.order } else { idx + 1 };
+            order_to_id.insert(order, task.id);
+        }
+        
+        // Second pass: resolve any index dependencies to UUIDs
+        for task in &mut self.tasks {
+            let resolved: Vec<TaskDep> = task.dependencies.iter().map(|dep| {
+                match dep {
+                    TaskDep::Index(idx) => {
+                        // Look up the UUID for this order
+                        if let Some(uuid) = order_to_id.get(idx) {
+                            TaskDep::Id(*uuid)
+                        } else {
+                            // Invalid index - keep as-is (will fail validation)
+                            TaskDep::Index(*idx)
+                        }
+                    }
+                    TaskDep::Id(_) => dep.clone(),
+                }
+            }).collect();
+            task.dependencies = resolved;
+        }
+    }
+
     /// Get tasks in dependency order using topological sort
     /// Returns None if there are circular dependencies
     pub fn tasks_in_order(&self) -> Option<Vec<&PlanTask>> {
@@ -85,13 +282,14 @@ impl PlanDocument {
         let mut in_degree: HashMap<Uuid, usize> = HashMap::new();
         let mut dependents: HashMap<Uuid, Vec<Uuid>> = HashMap::new();
 
-        // Initialize in-degree for all tasks
+        // Initialize in-degree for all tasks (count only UUID dependencies, skip indices)
         for task in &self.tasks {
-            in_degree.insert(task.id, task.dependencies.len());
+            let uuid_deps: Vec<Uuid> = task.dependencies.iter().filter_map(|d| d.as_uuid()).collect();
+            in_degree.insert(task.id, uuid_deps.len());
 
             // Build reverse dependency map
-            for &dep_id in &task.dependencies {
-                dependents.entry(dep_id).or_default().push(task.id);
+            for dep_id in &uuid_deps {
+                dependents.entry(*dep_id).or_default().push(task.id);
             }
         }
 
@@ -205,8 +403,8 @@ impl PlanDocument {
 
         // Check for invalid task references
         for task in &self.tasks {
-            for &dep_id in &task.dependencies {
-                if !task_ids.contains(&dep_id) {
+            for dep in &task.dependencies {
+                if dep.as_uuid().is_some_and(|id| !task_ids.contains(&id)) {
                     return Err(format!(
                         "❌ Invalid Dependency\n\n\
                          Task '{}' (#{}) depends on a task that doesn't exist.\n\n\
@@ -257,7 +455,7 @@ impl PlanDocument {
                 && task
                     .dependencies
                     .iter()
-                    .all(|dep| completed_ids.contains(dep))
+                                        .all(|dep| dep.as_uuid().is_some_and(|id| completed_ids.contains(&id)))
         })
     }
 
@@ -276,7 +474,7 @@ impl PlanDocument {
                 && task
                     .dependencies
                     .iter()
-                    .all(|dep| completed_ids.contains(dep))
+                                        .all(|dep| dep.as_uuid().is_some_and(|id| completed_ids.contains(&id)))
         })
     }
 
@@ -293,8 +491,9 @@ impl PlanDocument {
 
     /// Check if all dependencies for a task are satisfied
     pub fn dependencies_satisfied(&self, task: &PlanTask) -> bool {
-        task.dependencies.iter().all(|dep_id| {
-            self.get_task(dep_id)
+        task.dependencies.iter().all(|dep| {
+            dep.as_uuid()
+                .and_then(|id| self.get_task(&id))
                 .map(|dep| matches!(dep.status, TaskStatus::Completed | TaskStatus::Skipped))
                 .unwrap_or(false)
         })
@@ -423,9 +622,10 @@ pub struct ExecutionSummary {
 }
 
 /// Status of a plan
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub enum PlanStatus {
     /// Plan is being drafted
+    #[default]
     Draft,
     /// Plan is ready for review
     PendingApproval,
@@ -459,9 +659,11 @@ impl std::fmt::Display for PlanStatus {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PlanTask {
     /// Unique task ID
+    #[serde(default = "default_uuid")]
     pub id: Uuid,
 
     /// Task number/order
+    #[serde(default)]
     pub order: usize,
 
     /// Task title/summary
@@ -471,24 +673,31 @@ pub struct PlanTask {
     pub description: String,
 
     /// Task type (for categorization)
+    #[serde(deserialize_with = "deserialize_task_type")]
     pub task_type: TaskType,
 
-    /// Dependencies (task IDs that must complete first)
-    pub dependencies: Vec<Uuid>,
+    /// Dependencies (task IDs or 1-based indices; indices resolved to UUIDs on import)
+    #[serde(default, deserialize_with = "deserialize_task_deps")]
+    pub dependencies: Vec<TaskDep>,
 
     /// Estimated complexity (1-5)
+    #[serde(default)]
     pub complexity: u8,
 
     /// Acceptance criteria for task completion
+    #[serde(default)]
     pub acceptance_criteria: Vec<String>,
 
     /// Task status
+    #[serde(default)]
     pub status: TaskStatus,
 
     /// Execution notes/results
+    #[serde(default)]
     pub notes: Option<String>,
 
     /// When task was completed
+    #[serde(default)]
     pub completed_at: Option<DateTime<Utc>>,
 
     /// Execution history (for plan-and-execute pattern)
@@ -747,9 +956,10 @@ impl std::fmt::Display for TaskType {
 }
 
 /// Status of individual tasks
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub enum TaskStatus {
     /// Not started
+    #[default]
     Pending,
     /// Currently being worked on
     InProgress,

@@ -10,7 +10,7 @@ use opencrabs::db::models::Session;
 use opencrabs::db::repository::session::SessionRepository;
 use opencrabs::db::Database;
 use opencrabs::services::{PlanService, ServiceContext};
-use opencrabs::tui::plan::{PlanDocument, PlanStatus, PlanTask, TaskStatus, TaskType};
+use opencrabs::tui::plan::{PlanDocument, PlanStatus, PlanTask, TaskDep, TaskStatus, TaskType};
 use tempfile::TempDir;
 use uuid::Uuid;
 
@@ -85,7 +85,7 @@ fn create_multi_task_plan(session_id: Uuid) -> PlanDocument {
         title: "Implementation phase".to_string(),
         description: "Implement the feature".to_string(),
         task_type: TaskType::Create,
-        dependencies: vec![task1_id], // Depends on research
+        dependencies: vec![TaskDep::Id(task1_id)], // Depends on research
         complexity: 5,
         acceptance_criteria: vec![],
         status: TaskStatus::Pending,
@@ -104,7 +104,7 @@ fn create_multi_task_plan(session_id: Uuid) -> PlanDocument {
         title: "Testing phase".to_string(),
         description: "Write and run tests".to_string(),
         task_type: TaskType::Test,
-        dependencies: vec![task2_id], // Depends on implementation
+        dependencies: vec![TaskDep::Id(task2_id)], // Depends on implementation
         complexity: 4,
         acceptance_criteria: vec![],
         status: TaskStatus::Pending,

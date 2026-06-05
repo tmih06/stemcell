@@ -1,0 +1,161 @@
+{
+  "title": "Python Full Path",
+  "description": "Large change (> 100 lines, cross-file) or complex refactor. Full process with plan gate, Qwen3.7 subagent review, both Sourcery passes. Stops at PR — user handles CI, review, merge.",
+  "tasks": [
+    {
+      "order": 1,
+      "title": "Context Read",
+      "description": "Read relevant code, understand the problem space. Check logs, related files, existing tests. Research APIs/constraints if feature work.",
+      "task_type": "Research",
+      "complexity": 3,
+      "acceptance_criteria": [
+        "problem fully understood",
+        "all affected files identified",
+        "test strategy clear",
+        "architecture decisions documented"
+      ]
+    },
+    {
+      "order": 2,
+      "title": "⏸ GATE: Approve Plan",
+      "description": "Human gate. Present the implementation plan to the user. Wait for explicit approval before proceeding.",
+      "task_type": "Research",
+      "complexity": 1,
+      "dependencies": [
+        1
+      ],
+      "acceptance_criteria": [
+        "user approves the plan"
+      ]
+    },
+    {
+      "order": 3,
+      "title": "TDD: Write Failing Tests",
+      "description": "Write regression/behaviour tests that capture the expected change. Every new code path should have a test.",
+      "task_type": "Test",
+      "complexity": 3,
+      "dependencies": [
+        2
+      ],
+      "acceptance_criteria": [
+        "tests capture all expected behaviours",
+        "tests fail before implementation",
+        "edge cases covered"
+      ]
+    },
+    {
+      "order": 4,
+      "title": "Implement",
+      "description": "Write the actual code change. Keep it focused on the issue — no scope creep.",
+      "task_type": "Edit",
+      "complexity": 3,
+      "dependencies": [
+        3
+      ],
+      "acceptance_criteria": [
+        "all tests pass",
+        "implementation is minimal and correct",
+        "no unrelated changes"
+      ]
+    },
+    {
+      "order": 5,
+      "title": "ruff + pytest",
+      "description": "Run linter and test suite. Fix any issues before proceeding to review.",
+      "task_type": "Test",
+      "complexity": 1,
+      "dependencies": [
+        4
+      ],
+      "acceptance_criteria": [
+        "ruff exits 0",
+        "all tests green"
+      ]
+    },
+    {
+      "order": 6,
+      "title": "Qwen3.7 Code Review",
+      "description": "Spawn a Qwen3.7 subagent to review the diff. Prompt: 'Review the PR diff critically. Find bugs, quality issues, edge cases, regressions. Be harsh.'",
+      "task_type": "Research",
+      "complexity": 2,
+      "dependencies": [
+        5
+      ],
+      "acceptance_criteria": [
+        "Qwen3.7 review complete",
+        "findings documented"
+      ]
+    },
+    {
+      "order": 7,
+      "title": "Fix Review Issues",
+      "description": "Address all findings from Qwen3.7 review. Fix bugs, edge cases, quality issues.",
+      "task_type": "Edit",
+      "complexity": 2,
+      "dependencies": [
+        6
+      ],
+      "acceptance_criteria": [
+        "all legitimate findings addressed",
+        "no new bugs introduced"
+      ]
+    },
+    {
+      "order": 8,
+      "title": "Re-run checks",
+      "description": "Run ruff + pytest again after fixing review issues.",
+      "task_type": "Test",
+      "complexity": 1,
+      "dependencies": [
+        7
+      ],
+      "acceptance_criteria": [
+        "ruff exits 0",
+        "all tests green"
+      ]
+    },
+    {
+      "order": 9,
+      "title": "Self-Review",
+      "description": "Read through the entire diff line by line. Check logic errors, all callers updated, edge cases, message correctness, test coverage, consistency.",
+      "task_type": "Research",
+      "complexity": 2,
+      "dependencies": [
+        8
+      ],
+      "acceptance_criteria": [
+        "no logic errors",
+        "all callers updated",
+        "edge cases handled",
+        "messages correct",
+        "test coverage complete"
+      ]
+    },
+    {
+      "order": 10,
+      "title": "Sourcery CLI",
+      "description": "Run `sourcery review <files>` locally. Different ruleset from GH App.",
+      "task_type": "Test",
+      "complexity": 1,
+      "dependencies": [
+        9
+      ],
+      "acceptance_criteria": [
+        "Sourcery CLI passes or findings addressed"
+      ]
+    },
+    {
+      "order": 11,
+      "title": "Sourcery GH App",
+      "description": "Comment @sourcery-ai review on the PR. Address findings.",
+      "task_type": "Test",
+      "complexity": 1,
+      "dependencies": [
+        10
+      ],
+      "acceptance_criteria": [
+        "Sourcery GH App findings reviewed and addressed"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,34 @@
+{
+  "title": "Sample: Minimal Plan (Import-Ready Format)",
+  "description": "This is the MINIMAL format the plan tool accepts. Only 6 fields are required. UUIDs, timestamps, and most fields are auto-generated on import. Use this as a template when composing plan JSON for import.",
+  "tasks": [
+    {
+      "title": "Research task",
+      "description": "Investigate and understand the problem space",
+      "task_type": "research",
+      "complexity": 2
+    },
+    {
+      "title": "Implementation task",
+      "description": "Build the actual solution",
+      "task_type": "create",
+      "complexity": 3
+    },
+    {
+      "title": "Test task",
+      "description": "Verify the solution works correctly",
+      "task_type": "test",
+      "acceptance_criteria": [
+        "Tests pass",
+        "Edge cases handled"
+      ],
+      "complexity": 2
+    },
+    {
+      "title": "Documentation task",
+      "description": "Document the changes for future maintainers",
+      "task_type": "documentation",
+      "complexity": 1
+    }
+  ]
+}

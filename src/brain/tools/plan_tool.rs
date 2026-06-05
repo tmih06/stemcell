@@ -4,7 +4,7 @@
 
 use super::error::{Result, ToolError};
 use super::r#trait::{Tool, ToolCapability, ToolExecutionContext, ToolResult};
-use crate::tui::plan::{PlanDocument, PlanStatus, PlanTask, TaskType, ToolCall as PlanToolCall};
+use crate::tui::plan::{PlanDocument, PlanStatus, PlanTask, TaskDep, TaskType, ToolCall as PlanToolCall};
 use async_trait::async_trait;
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
@@ -205,7 +205,13 @@ impl Tool for PlanTool {
          (d) you need to retry steps independently if some fail, \
          (e) the user is going to step away while you work. \
          Skip planning only for trivial single-tool answers (one read, one search, one edit). \
-         The plan stays visible across compactions, so it doubles as memory for long sessions."
+         The plan stays visible across compactions, so it doubles as memory for long sessions. \
+         \n\nBUNDLED REFERENCE PLANS: Source at `src/docs/reference/plans/` (embedded in binary). \
+         Runtime path: `~/.opencrabs/profiles/<profile>/plans/` (e.g., `~/.opencrabs/profiles/ops/plans/`). \
+         See `coding-plans/rust-fast.json`, `coding-plans/rust-medium.json`, `coding-plans/rust-full.json`, \
+         `coding-plans/python-fast.json`, `coding-plans/python-medium.json`, `coding-plans/python-full.json`, \
+         and `coding-plans/sample-minimal-plan.json`. Also see `plan-json-spec.md` for schema documentation. \
+         Minimal import format: only 6 fields required (title, description + 3 per task: title, description, task_type)."
     }
 
     fn input_schema(&self) -> Value {
@@ -495,16 +501,21 @@ impl Tool for PlanTool {
                 imported.updated_at = chrono::Utc::now();
                 imported.approved_at = None;
 
+                // Resolve integer index dependencies to UUIDs before any validation
+                imported.resolve_index_deps();
+
                 // Validate no orphan dependencies before remapping — a dep
                 // pointing at a UUID not in the imported task set is a
                 // malformed plan and must be rejected explicitly rather
                 // than silently dropped.
                 for task in &imported.tasks {
                     for dep in &task.dependencies {
-                        if !old_to_new.contains_key(dep) {
+                        if let Some(dep_id) = dep.as_uuid()
+                            && !old_to_new.contains_key(&dep_id)
+                        {
                             return Err(ToolError::InvalidInput(format!(
                                 "Task '{}' depends on unknown task id {}",
-                                task.title, dep
+                                task.title, dep_id
                             )));
                         }
                     }
@@ -525,7 +536,11 @@ impl Tool for PlanTool {
                     task.dependencies = task
                         .dependencies
                         .iter()
-                        .filter_map(|old_dep_id| old_to_new.get(old_dep_id).copied())
+                        .filter_map(|dep| {
+                            dep.as_uuid()
+                                .and_then(|old_id| old_to_new.get(&old_id).copied())
+                                .map(TaskDep::Id)
+                        })
                         .collect();
                 }
 
@@ -610,7 +625,7 @@ impl Tool for PlanTool {
                         ))
                     })?;
 
-                    task.dependencies.push(dep_task.id);
+                task.dependencies.push(crate::tui::plan::TaskDep::Id(dep_task.id));
                 }
 
                 current_plan.add_task(task);
