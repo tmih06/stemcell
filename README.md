@@ -282,6 +282,8 @@ Run multiple isolated OpenCrabs instances from the same installation. Each profi
 
 **Default profile:** `~/.opencrabs/` — works exactly as before. No migration needed. Users who never touch profiles see zero difference.
 
+**TUI footer:** when you launch with `-p <name>` (or `OPENCRABS_PROFILE` set), the bottom status bar adds a `profile: <name>` chip so multi-profile users can tell at a glance which instance a given pane is bound to. Without `-p`, no chip is shown — the agent is using the base `~/.opencrabs/` directory and there is no real profile by that name to label.
+
 **Named profiles** live at `~/.opencrabs/profiles/<name>/` with full isolation:
 ```
 ~/.opencrabs/

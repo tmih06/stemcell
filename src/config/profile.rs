@@ -9,6 +9,16 @@
 //! 1. `set_active_profile()` (called from CLI `-p` flag)
 //! 2. `OPENCRABS_PROFILE` environment variable
 //! 3. Falls back to "default"
+//!
+//! ## TUI footer display
+//!
+//! The status bar in `src/tui/render/input.rs::render_status_bar` shows
+//! a `profile: <name>` chip ONLY when `active_profile()` returns
+//! `Some(name)` (issue #167). When it returns `None` (no `-p`, no env)
+//! the chip is omitted entirely — there is no real profile by that name
+//! on disk, so the footer would otherwise have to invent a `default`
+//! label that doesn't exist anywhere. Named profiles always show up;
+//! the base directory stays unannotated.
 
 use std::collections::HashMap;
 use std::fs;

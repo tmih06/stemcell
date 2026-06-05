@@ -877,9 +877,21 @@ pub(super) fn render_status_bar(f: &mut Frame, app: &App, area: Rect) {
         short_dir
     };
 
+    // Active profile chip. Shown only when the user explicitly picked a
+    // profile (via `-p <name>` or the `OPENCRABS_PROFILE` env var). When
+    // `active_profile()` returns `None` the agent is using the base
+    // `~/.opencrabs/` directory — there is no real profile by that name
+    // on disk, so we OMIT the chip rather than invent a "default" label
+    // that doesn't exist anywhere. Closes issue #167.
+    let profile_chip = crate::config::profile::active_profile()
+        .map(|name| format!("  ·  profile: {name}"))
+        .unwrap_or_default();
+
     let session_text = format!(" {}", session_name);
-    let provider_model_dir_text =
-        format!("  ·  {} / {}  ·  {}", provider_str, model_str, display_dir);
+    let provider_model_dir_text = format!(
+        "  ·  {} / {}{}  ·  {}",
+        provider_str, model_str, profile_chip, display_dir
+    );
     let sep_text = "  ·  ";
 
     // --- Approval policy (centre-left) ---
