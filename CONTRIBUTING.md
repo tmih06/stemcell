@@ -80,16 +80,84 @@ PRs are welcome for:
 git clone https://github.com/YOUR_USERNAME/opencrabs.git
 cd opencrabs
 
-# Build with all features
-cargo clippy --all-features
+# Iterate locally
+cargo clippy --all-features         # USE THIS — never `cargo check` or `cargo build`
+cargo test --all-features            # run the suite (incl. your new tests)
+cargo fmt --all                      # auto-format before committing
 
-# Run the exact CI checks (you MUST pass all three before submitting a PR)
+# Run the EXACT CI checks (you MUST pass all three before submitting a PR)
 cargo fmt --all -- --check
 cargo clippy --lib --bins --tests --all-features -- -D warnings
 cargo test --all-features --verbose
 ```
 
 **All three commands must pass.** PRs that fail CI will not be reviewed.
+
+`cargo clippy` is the lint pass we trust — `cargo check` only type-checks and misses the lint rules CI enforces. Iterate with clippy locally so you don't burn a CI run discovering a `-D warnings` failure.
+
+### Running the App While You Iterate
+
+**Use `cargo run`. Do NOT `cargo build --release` for normal development.**
+
+```bash
+cargo run --all-features                 # default debug build, fastest iteration
+cargo run --all-features -- /sessions    # pass CLI flags after `--`
+cargo run --all-features -- -p hermes    # named profile
+```
+
+`cargo run` compiles a debug build and launches the TUI directly. Debug builds compile ~5x faster than release, and the extra instrumentation (full backtraces, debug assertions) makes any regression you introduce surface immediately. The debug binary is what you want when chasing a bug — release optimizations strip frames that make panics impossible to read.
+
+**Brain files just work.** `cargo run` resolves `~/.opencrabs/` (or `~/.opencrabs/profiles/<name>/` with `-p`) the same way the installed binary does. Your existing config, brain files, sessions, and memory are all picked up — no copy step, no env var override needed.
+
+#### When You Actually Want a Release Build
+
+Reach for `cargo build --release` only when:
+
+- You want to **test the optimized binary** (perf-sensitive feature work, startup time benchmarks, etc.).
+- You want to **replace your installed binary with the latest from `main`** so the long-running daemon / channels keep running the new code. The flow:
+  ```bash
+  git pull origin main
+  cargo build --release --all-features
+  # macOS / Linux: replace ~/.cargo/bin/opencrabs (or wherever your install lives)
+  cp target/release/opencrabs ~/.cargo/bin/opencrabs
+  ```
+  The release binary reads the same `~/.opencrabs/` as `cargo run`, so your brain files, sessions, and config carry over seamlessly.
+
+For everything else — bug hunting, feature work, test-driven development — stay on `cargo run`. Release builds are a deployment step, not a dev loop.
+
+### Where Tests Live
+
+**Every test goes under `src/tests/` as a dedicated `*_test.rs` file**, registered in `src/tests/mod.rs`. No inline `#[cfg(test)] mod tests { ... }` blocks at the bottom of source files — they are explicitly forbidden by project policy because they hide behind the source file in IDE outlines and grow unbounded.
+
+To add a new test file:
+
+```bash
+# 1. Create the test file
+$EDITOR src/tests/my_feature_test.rs
+
+# 2. Register it in src/tests/mod.rs (alphabetical-ish neighbourhood)
+echo "pub mod my_feature_test;" >> src/tests/mod.rs   # or insert manually
+
+# 3. If the test needs internal helpers from the module under test,
+#    bump those helpers from `fn` / `pub(super)` to `pub(crate)` so the
+#    test file can reach them without weakening the public API.
+
+# 4. Verify
+cargo test --all-features my_feature_test
+```
+
+If you find an existing inline `#[cfg(test)] mod tests` while working on a file, move it into `src/tests/` as part of your change. Leaving the violation in place will fail review.
+
+### Commit Discipline — Atomic Commits
+
+**One logical change per commit.** A commit should land a single bug fix, a single feature, or a single refactor — not a mixed bag.
+
+- **Don't bundle** `cargo fmt` drift with feature work. Run fmt in its own commit (`chore: cargo fmt`).
+- **Don't bundle** rename / move / restructure with logic changes. The reviewer cannot tell what's mechanical and what's behavioural.
+- **Split test additions from production fixes only if the test would compile against the un-fixed code.** Otherwise commit them together so the test demonstrates the fix.
+- **Commit message body explains the WHY**, not the diff. The diff already shows what changed; the message should answer "why was that wrong?" and "what would break if we reverted this?".
+- **Add `[skip ci]` to chore / docs / non-functional commits** so CI doesn't churn on whitespace and README edits. Never add `[skip ci]` to a release commit — it skips the release workflow too.
+- **Never add `Co-Authored-By` lines** to commit messages. Project policy.
 
 ### Project Structure
 
