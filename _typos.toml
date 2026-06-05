@@ -9,3 +9,40 @@ extend-exclude = [
 # Project-specific terms that aren't typos
 opencrabs = "opencrabs"
 crabrace = "crabrace"
+
+# Rust TUI library name
+ratatui = "ratatui"
+Ratatui = "Ratatui"
+
+# HashiCorp abbreviation
+Hashi = "Hashi"
+
+# Phone number abbreviation (WhatsApp store)
+pn = "pn"
+Pn = "Pn"
+
+# French words (phantom language translations)
+maintenant = "maintenant"
+mis = "mis"
+authentification = "authentification"
+espace = "espace"
+
+# Portuguese words
+erro = "erro"
+atual = "atual"
+
+# Valid English word variants
+unparseable = "unparseable"
+
+# Abbreviations and partial words used in code/tests
+REPET = "REPET"
+ba = "ba"
+BA = "BA"
+opps = "opps"
+ful = "ful"
+secur = "secur"
+
+# Test data (intentional partial/misspelled words for input testing)
+hel = "hel"
+helo = "helo"
+Syste = "Syste"
