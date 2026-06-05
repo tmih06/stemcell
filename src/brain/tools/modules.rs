@@ -86,7 +86,8 @@ impl ToolModule for FileOpsModule {
     }
     fn register(&self, ctx: &ModuleContext) {
         use super::{
-            bash::BashTool, edit::EditTool, glob::GlobTool, grep::GrepTool, hashline::HashlineEditTool, ls::LsTool, read::ReadTool, write::WriteTool,
+            bash::BashTool, edit::EditTool, glob::GlobTool, grep::GrepTool,
+            hashline::HashlineEditTool, ls::LsTool, read::ReadTool, write::WriteTool,
         };
         ctx.registry.register(Arc::new(ReadTool));
         ctx.registry.register(Arc::new(WriteTool));
@@ -115,7 +116,9 @@ impl ToolModule for SearchModule {
     }
     fn register(&self, ctx: &ModuleContext) {
         use super::{
-            brave_search::BraveSearchTool, exa_search::ExaSearchTool, memory_search::MemorySearchTool, session_search::SessionSearchTool, web_search::WebSearchTool,
+            brave_search::BraveSearchTool, exa_search::ExaSearchTool,
+            memory_search::MemorySearchTool, session_search::SessionSearchTool,
+            web_search::WebSearchTool,
         };
 
         ctx.registry.register(Arc::new(WebSearchTool));
@@ -181,7 +184,9 @@ impl ToolModule for WorkflowModule {
     }
     fn register(&self, ctx: &ModuleContext) {
         use super::{
-            code_exec::CodeExecTool, config_tool::ConfigTool, context::ContextTool, doc_parser::DocParserTool, follow_up_question::FollowUpQuestionTool, http::HttpClientTool, notebook::NotebookEditTool, plan_tool::PlanTool, task::TaskTool,
+            code_exec::CodeExecTool, config_tool::ConfigTool, context::ContextTool,
+            doc_parser::DocParserTool, follow_up_question::FollowUpQuestionTool,
+            http::HttpClientTool, notebook::NotebookEditTool, plan_tool::PlanTool, task::TaskTool,
         };
         ctx.registry.register(Arc::new(TaskTool));
         ctx.registry.register(Arc::new(ContextTool));
@@ -218,22 +223,20 @@ impl ToolModule for MultiAgentModule {
     }
     fn register(&self, ctx: &ModuleContext) {
         use super::subagent::{
-            CloseAgentTool, ResumeAgentTool, SendInputTool, SpawnAgentTool, TeamBroadcastTool, TeamCreateTool, TeamDeleteTool, WaitAgentTool,
+            CloseAgentTool, ResumeAgentTool, SendInputTool, SpawnAgentTool, TeamBroadcastTool,
+            TeamCreateTool, TeamDeleteTool, WaitAgentTool,
         };
 
         ctx.registry.register(Arc::new(SpawnAgentTool::new(
             ctx.subagent_manager.clone(),
             ctx.registry.clone(),
         )));
-        ctx.registry.register(Arc::new(WaitAgentTool::new(
-            ctx.subagent_manager.clone(),
-        )));
-        ctx.registry.register(Arc::new(SendInputTool::new(
-            ctx.subagent_manager.clone(),
-        )));
-        ctx.registry.register(Arc::new(CloseAgentTool::new(
-            ctx.subagent_manager.clone(),
-        )));
+        ctx.registry
+            .register(Arc::new(WaitAgentTool::new(ctx.subagent_manager.clone())));
+        ctx.registry
+            .register(Arc::new(SendInputTool::new(ctx.subagent_manager.clone())));
+        ctx.registry
+            .register(Arc::new(CloseAgentTool::new(ctx.subagent_manager.clone())));
         ctx.registry.register(Arc::new(ResumeAgentTool::new(
             ctx.subagent_manager.clone(),
             ctx.registry.clone(),
@@ -270,7 +273,8 @@ impl ToolModule for RsiModule {
     }
     fn register(&self, ctx: &ModuleContext) {
         use super::{
-            feedback_analyze::FeedbackAnalyzeTool, feedback_record::FeedbackRecordTool, self_improve::SelfImproveTool,
+            feedback_analyze::FeedbackAnalyzeTool, feedback_record::FeedbackRecordTool,
+            self_improve::SelfImproveTool,
         };
         ctx.registry.register(Arc::new(FeedbackRecordTool));
         ctx.registry.register(Arc::new(FeedbackAnalyzeTool));
@@ -293,7 +297,8 @@ impl ToolModule for ImageModule {
     }
     fn register(&self, ctx: &ModuleContext) {
         use super::{
-            analyze_image::AnalyzeImageTool, analyze_video::AnalyzeVideoTool, generate_image::GenerateImageTool, provider_vision::ProviderVisionTool,
+            analyze_image::AnalyzeImageTool, analyze_video::AnalyzeVideoTool,
+            generate_image::GenerateImageTool, provider_vision::ProviderVisionTool,
         };
 
         // Image generation
@@ -307,7 +312,9 @@ impl ToolModule for ImageModule {
             crate::brain::provider::factory::active_provider_vision(&ctx.config)
         {
             ctx.registry.register(Arc::new(ProviderVisionTool::new(
-                api_key, base_url, vision_model,
+                api_key,
+                base_url,
+                vision_model,
             )));
             tracing::info!("Registered analyze_image tool (provider vision model)");
         } else if ctx.config.image.vision.enabled
@@ -350,7 +357,9 @@ impl ToolModule for BrainModule {
     }
     fn register(&self, ctx: &ModuleContext) {
         use super::{
-            a2a_send::A2aSendTool, load_brain_file::LoadBrainFileTool, rename_session::RenameSessionTool, slash_command::SlashCommandTool, write_opencrabs_file::WriteOpenCrabsFileTool,
+            a2a_send::A2aSendTool, load_brain_file::LoadBrainFileTool,
+            rename_session::RenameSessionTool, slash_command::SlashCommandTool,
+            write_opencrabs_file::WriteOpenCrabsFileTool,
         };
 
         ctx.registry.register(Arc::new(SlashCommandTool));
@@ -389,7 +398,9 @@ impl ToolModule for ChannelIntegrationsModule {
         // This module serves as a config toggle point — when the
         // "channel_integrations" module is disabled, the channel subsystem
         // can check this and skip tool registration.
-        tracing::debug!("Channel integrations module loaded (tools registered by channel subsystem)");
+        tracing::debug!(
+            "Channel integrations module loaded (tools registered by channel subsystem)"
+        );
     }
 }
 
@@ -409,14 +420,17 @@ impl ToolModule for BrowserModule {
     #[cfg(feature = "browser")]
     fn register(&self, ctx: &ModuleContext) {
         use super::browser::{
-            BrowserClickTool, BrowserCloseTool, BrowserContentTool, BrowserEvalTool, BrowserFindTool, BrowserManager, BrowserNavigateTool, BrowserScreenshotTool, BrowserTypeTool, BrowserWaitTool,
+            BrowserClickTool, BrowserCloseTool, BrowserContentTool, BrowserEvalTool,
+            BrowserFindTool, BrowserManager, BrowserNavigateTool, BrowserScreenshotTool,
+            BrowserTypeTool, BrowserWaitTool,
         };
 
         let browser_manager = Arc::new(BrowserManager::new());
         ctx.registry
             .register(Arc::new(BrowserNavigateTool::new(browser_manager.clone())));
-        ctx.registry
-            .register(Arc::new(BrowserScreenshotTool::new(browser_manager.clone())));
+        ctx.registry.register(Arc::new(BrowserScreenshotTool::new(
+            browser_manager.clone(),
+        )));
         ctx.registry
             .register(Arc::new(BrowserClickTool::new(browser_manager.clone())));
         ctx.registry
@@ -486,8 +500,7 @@ impl ToolModule for DynamicModule {
     fn register(&self, ctx: &ModuleContext) {
         let tools_toml_path = super::dynamic::DynamicToolLoader::default_path()
             .unwrap_or_else(|| std::path::PathBuf::from("tools.toml"));
-        let count =
-            super::dynamic::DynamicToolLoader::load(&tools_toml_path, &ctx.registry);
+        let count = super::dynamic::DynamicToolLoader::load(&tools_toml_path, &ctx.registry);
         if count > 0 {
             tracing::info!("Loaded {count} dynamic tool(s) from tools.toml");
         }

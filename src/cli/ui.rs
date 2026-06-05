@@ -25,12 +25,7 @@ async fn cmd_chat_inner(
     force_onboard: bool,
     headless: bool,
 ) -> Result<()> {
-    use crate::{
-        brain::agent::AgentService,
-        db::Database,
-        services::ServiceContext,
-        tui,
-    };
+    use crate::{brain::agent::AgentService, db::Database, services::ServiceContext, tui};
 
     // Initialize database
     tracing::info!("Connecting to database: {}", config.database.path.display());
