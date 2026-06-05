@@ -1,0 +1,11 @@
+[files]
+extend-exclude = [
+    "Cargo.lock",
+    "CHANGELOG.md",
+    "*.toml.example",
+]
+
+[default.extend-words]
+# Project-specific terms that aren't typos
+opencrabs = "opencrabs"
+crabrace = "crabrace"
