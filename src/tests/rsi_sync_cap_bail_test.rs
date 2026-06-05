@@ -171,7 +171,8 @@ fn top_new_sections_helper_caps_at_n_largest() {
 
     // Big = 6 body lines, Medium = 4 body lines, Small = 1 body line.
     // Distinct counts so the ranking is unambiguous (no tie-break race).
-    let new_sections = "\n## Big\nb1\nb2\nb3\nb4\nb5\nb6\n\n## Small\nsmall body\n\n## Medium\nm1\nm2\nm3\nm4\n";
+    let new_sections =
+        "\n## Big\nb1\nb2\nb3\nb4\nb5\nb6\n\n## Small\nsmall body\n\n## Medium\nm1\nm2\nm3\nm4\n";
     let top = top_new_sections_by_size_for_test(new_sections, 2);
     assert_eq!(
         top.len(),

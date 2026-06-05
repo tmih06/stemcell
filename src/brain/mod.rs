@@ -8,6 +8,7 @@ pub mod commands;
 pub mod dedup_scan;
 pub mod filter;
 pub mod mission_control;
+pub mod plans;
 pub mod prompt_builder;
 pub mod provider;
 pub mod rsi;
@@ -20,7 +21,6 @@ pub mod self_update;
 pub mod skills;
 pub mod tokenizer;
 pub mod tools;
-pub mod plans;
 
 // Brain re-exports
 pub use commands::{CommandLoader, UserCommand};

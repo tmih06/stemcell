@@ -224,12 +224,10 @@ fn is_table_separator(trimmed: &str) -> bool {
         return false;
     }
     let inner = &trimmed[1..trimmed.len() - 1];
-    inner
-        .split('|')
-        .all(|cell| {
-            let c = cell.trim();
-            !c.is_empty() && c.chars().all(|ch| matches!(ch, '-' | ':' | ' '))
-        })
+    inner.split('|').all(|cell| {
+        let c = cell.trim();
+        !c.is_empty() && c.chars().all(|ch| matches!(ch, '-' | ':' | ' '))
+    })
 }
 
 fn is_html_comment_only(trimmed: &str) -> bool {

@@ -60,7 +60,10 @@ fn pinned_model_in_active_catalogue_passes_through_untouched() {
         &supported,
     );
     assert_eq!(chosen, "Qwen-Ambassador/Qwen3.7-Max");
-    assert!(leaked.is_none(), "in-catalogue pin must not be flagged as a leak");
+    assert!(
+        leaked.is_none(),
+        "in-catalogue pin must not be flagged as a leak"
+    );
 }
 
 #[test]
@@ -88,15 +91,9 @@ fn substitution_uses_active_provider_default_not_the_pin() {
     // "picks the first supported model" would still pass the basic
     // substitute-on-miss test but break the user's intent (the active
     // provider may have a curated default that isn't supported[0]).
-    let supported = vec![
-        "list-first-model".to_string(),
-        "active-default".to_string(),
-    ];
-    let (chosen, leaked) = guard_cross_provider_model_leak(
-        "stale-pin".to_string(),
-        "active-default",
-        &supported,
-    );
+    let supported = vec!["list-first-model".to_string(), "active-default".to_string()];
+    let (chosen, leaked) =
+        guard_cross_provider_model_leak("stale-pin".to_string(), "active-default", &supported);
     assert_eq!(chosen, "active-default");
     assert_eq!(leaked.as_deref(), Some("stale-pin"));
 }

@@ -99,9 +99,7 @@ where
                     serde_json::Value::Number(n) => {
                         if let Some(i) = n.as_i64() {
                             if i < 1 {
-                                return Err(serde::de::Error::custom(
-                                    "task indices start at 1",
-                                ));
+                                return Err(serde::de::Error::custom("task indices start at 1"));
                             }
                             deps.push(TaskDep::Index(i as usize));
                         } else {
@@ -110,17 +108,12 @@ where
                             ));
                         }
                     }
-                    serde_json::Value::String(s) => {
-                        match Uuid::parse_str(&s) {
-                            Ok(uuid) => deps.push(TaskDep::Id(uuid)),
-                            Err(_) => {
-                                return Err(serde::de::Error::custom(format!(
-                                    "invalid UUID: {}",
-                                    s
-                                )));
-                            }
+                    serde_json::Value::String(s) => match Uuid::parse_str(&s) {
+                        Ok(uuid) => deps.push(TaskDep::Id(uuid)),
+                        Err(_) => {
+                            return Err(serde::de::Error::custom(format!("invalid UUID: {}", s)));
                         }
-                    }
+                    },
                     _ => {
                         return Err(serde::de::Error::custom(
                             "task dependency must be an integer index or UUID string",
@@ -156,8 +149,12 @@ where
 }
 
 // Serde default helpers for auto-generated fields
-fn default_uuid() -> Uuid { Uuid::new_v4() }
-fn default_now() -> DateTime<Utc> { Utc::now() }
+fn default_uuid() -> Uuid {
+    Uuid::new_v4()
+}
+fn default_now() -> DateTime<Utc> {
+    Utc::now()
+}
 
 /// Plan document containing tasks and metadata
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -244,7 +241,7 @@ impl PlanDocument {
     /// Call this after deserialization but before validation.
     pub fn resolve_index_deps(&mut self) {
         use std::collections::HashMap;
-        
+
         // First pass: build order -> id mapping
         // Use 1-based indexing for tasks
         let mut order_to_id: HashMap<usize, Uuid> = HashMap::new();
@@ -252,23 +249,27 @@ impl PlanDocument {
             let order = if task.order > 0 { task.order } else { idx + 1 };
             order_to_id.insert(order, task.id);
         }
-        
+
         // Second pass: resolve any index dependencies to UUIDs
         for task in &mut self.tasks {
-            let resolved: Vec<TaskDep> = task.dependencies.iter().map(|dep| {
-                match dep {
-                    TaskDep::Index(idx) => {
-                        // Look up the UUID for this order
-                        if let Some(uuid) = order_to_id.get(idx) {
-                            TaskDep::Id(*uuid)
-                        } else {
-                            // Invalid index - keep as-is (will fail validation)
-                            TaskDep::Index(*idx)
+            let resolved: Vec<TaskDep> = task
+                .dependencies
+                .iter()
+                .map(|dep| {
+                    match dep {
+                        TaskDep::Index(idx) => {
+                            // Look up the UUID for this order
+                            if let Some(uuid) = order_to_id.get(idx) {
+                                TaskDep::Id(*uuid)
+                            } else {
+                                // Invalid index - keep as-is (will fail validation)
+                                TaskDep::Index(*idx)
+                            }
                         }
+                        TaskDep::Id(_) => dep.clone(),
                     }
-                    TaskDep::Id(_) => dep.clone(),
-                }
-            }).collect();
+                })
+                .collect();
             task.dependencies = resolved;
         }
     }
@@ -284,7 +285,11 @@ impl PlanDocument {
 
         // Initialize in-degree for all tasks (count only UUID dependencies, skip indices)
         for task in &self.tasks {
-            let uuid_deps: Vec<Uuid> = task.dependencies.iter().filter_map(|d| d.as_uuid()).collect();
+            let uuid_deps: Vec<Uuid> = task
+                .dependencies
+                .iter()
+                .filter_map(|d| d.as_uuid())
+                .collect();
             in_degree.insert(task.id, uuid_deps.len());
 
             // Build reverse dependency map
@@ -455,7 +460,7 @@ impl PlanDocument {
                 && task
                     .dependencies
                     .iter()
-                                        .all(|dep| dep.as_uuid().is_some_and(|id| completed_ids.contains(&id)))
+                    .all(|dep| dep.as_uuid().is_some_and(|id| completed_ids.contains(&id)))
         })
     }
 
@@ -474,7 +479,7 @@ impl PlanDocument {
                 && task
                     .dependencies
                     .iter()
-                                        .all(|dep| dep.as_uuid().is_some_and(|id| completed_ids.contains(&id)))
+                    .all(|dep| dep.as_uuid().is_some_and(|id| completed_ids.contains(&id)))
         })
     }
 

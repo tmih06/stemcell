@@ -1814,11 +1814,7 @@ impl App {
             .current_session
             .as_ref()
             .map(|s| s.id)
-            .or_else(|| {
-                self.pane_manager
-                    .focused_pane()
-                    .and_then(|p| p.session_id)
-            });
+            .or_else(|| self.pane_manager.focused_pane().and_then(|p| p.session_id));
         if let Some(session_id) = target_session_id {
             // Update in-memory copy if it's the same session (keeps footer
             // and any subsequent reads in this turn aligned).

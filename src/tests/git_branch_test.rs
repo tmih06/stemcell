@@ -12,7 +12,10 @@ use crate::utils::git_branch::parse_head;
 
 #[test]
 fn parses_standard_branch_ref() {
-    assert_eq!(parse_head("ref: refs/heads/main\n").as_deref(), Some("main"));
+    assert_eq!(
+        parse_head("ref: refs/heads/main\n").as_deref(),
+        Some("main")
+    );
     assert_eq!(
         parse_head("ref: refs/heads/feat/new-thing\n").as_deref(),
         Some("feat/new-thing"),
@@ -44,10 +47,7 @@ fn non_branch_ref_returns_last_path_component() {
     // Hand-curated edge case: `ref: refs/tags/v1.0` (some tooling
     // checks out tags directly). Fall back to the last segment so the
     // footer shows `v1.0` rather than the full ref path.
-    assert_eq!(
-        parse_head("ref: refs/tags/v1.0\n").as_deref(),
-        Some("v1.0")
-    );
+    assert_eq!(parse_head("ref: refs/tags/v1.0\n").as_deref(), Some("v1.0"));
     assert_eq!(
         parse_head("ref: refs/remotes/origin/main\n").as_deref(),
         Some("main")

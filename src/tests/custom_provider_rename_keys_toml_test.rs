@@ -129,10 +129,7 @@ fn remove_secret_section_missing_file_is_ok() {
 #[cfg(unix)]
 #[test]
 fn remove_secret_section_missing_section_is_ok() {
-    let temp = write_temp_home(
-        "",
-        "[providers.custom.other]\napi_key = \"key\"\n",
-    );
+    let temp = write_temp_home("", "[providers.custom.other]\napi_key = \"key\"\n");
     let _guard = HomeGuard::new(temp.path());
 
     Config::remove_secret_section("providers.custom.does-not-exist")

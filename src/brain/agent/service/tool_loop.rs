@@ -333,16 +333,13 @@ impl AgentService {
         // iterations in the same turn rebuild requests with the primary
         // model name pointed at the fallback provider → 400 unknown model.
         let session_provider = self.provider_for_session(session_id);
-        let resolved_model = model.or_else(|| session.model.clone()).unwrap_or_else(|| {
-            session_provider.default_model().to_string()
-        });
+        let resolved_model = model
+            .or_else(|| session.model.clone())
+            .unwrap_or_else(|| session_provider.default_model().to_string());
         let provider_default = session_provider.default_model().to_string();
         let supported = session_provider.supported_models();
-        let (mut model_name, leaked) = guard_cross_provider_model_leak(
-            resolved_model,
-            &provider_default,
-            &supported,
-        );
+        let (mut model_name, leaked) =
+            guard_cross_provider_model_leak(resolved_model, &provider_default, &supported);
         if let Some(stale) = leaked {
             tracing::warn!(
                 "Stale model pin '{}' for session {} is not in active provider '{}' catalogue ({} entries) — \

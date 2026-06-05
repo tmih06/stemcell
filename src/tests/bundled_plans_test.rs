@@ -5,13 +5,27 @@ use crate::tui::plan::{PlanDocument, PlanStatus, TaskDep, TaskStatus};
 fn embedded_content(rel_path: &str) -> &'static str {
     match rel_path {
         "plan-json-spec.md" => include_str!("../docs/reference/plans/plan-json-spec.md"),
-        "coding-plans/python-fast.json" => include_str!("../docs/reference/plans/coding-plans/python-fast.json"),
-        "coding-plans/python-medium.json" => include_str!("../docs/reference/plans/coding-plans/python-medium.json"),
-        "coding-plans/python-full.json" => include_str!("../docs/reference/plans/coding-plans/python-full.json"),
-        "coding-plans/rust-fast.json" => include_str!("../docs/reference/plans/coding-plans/rust-fast.json"),
-        "coding-plans/rust-medium.json" => include_str!("../docs/reference/plans/coding-plans/rust-medium.json"),
-        "coding-plans/rust-full.json" => include_str!("../docs/reference/plans/coding-plans/rust-full.json"),
-        "coding-plans/sample-minimal-plan.json" => include_str!("../docs/reference/plans/coding-plans/sample-minimal-plan.json"),
+        "coding-plans/python-fast.json" => {
+            include_str!("../docs/reference/plans/coding-plans/python-fast.json")
+        }
+        "coding-plans/python-medium.json" => {
+            include_str!("../docs/reference/plans/coding-plans/python-medium.json")
+        }
+        "coding-plans/python-full.json" => {
+            include_str!("../docs/reference/plans/coding-plans/python-full.json")
+        }
+        "coding-plans/rust-fast.json" => {
+            include_str!("../docs/reference/plans/coding-plans/rust-fast.json")
+        }
+        "coding-plans/rust-medium.json" => {
+            include_str!("../docs/reference/plans/coding-plans/rust-medium.json")
+        }
+        "coding-plans/rust-full.json" => {
+            include_str!("../docs/reference/plans/coding-plans/rust-full.json")
+        }
+        "coding-plans/sample-minimal-plan.json" => {
+            include_str!("../docs/reference/plans/coding-plans/sample-minimal-plan.json")
+        }
         _ => panic!("unknown bundled file: {}", rel_path),
     }
 }
@@ -43,27 +57,39 @@ fn test_embedded_content_unknown_file() {
 #[test]
 fn test_minimal_plan_deserializes() {
     let content = embedded_content("coding-plans/sample-minimal-plan.json");
-    let plan: PlanDocument = serde_json::from_str(content)
-        .expect("sample-minimal-plan.json must deserialize");
+    let plan: PlanDocument =
+        serde_json::from_str(content).expect("sample-minimal-plan.json must deserialize");
     assert_eq!(plan.title, "Sample: Minimal Plan (Import-Ready Format)");
     assert_eq!(plan.tasks.len(), 4);
     assert!(!plan.id.is_nil(), "id should be auto-generated UUID");
-    assert!(!plan.session_id.is_nil(), "session_id should be auto-generated");
-    assert!(plan.tasks.iter().all(|t| !t.id.is_nil()), "task ids should be auto-generated");
+    assert!(
+        !plan.session_id.is_nil(),
+        "session_id should be auto-generated"
+    );
+    assert!(
+        plan.tasks.iter().all(|t| !t.id.is_nil()),
+        "task ids should be auto-generated"
+    );
 }
 
 #[test]
 fn test_numeric_dependencies_deserialize() {
     let content = embedded_content("coding-plans/python-fast.json");
-    let plan: PlanDocument = serde_json::from_str(content)
-        .expect("python-fast.json must deserialize");
+    let plan: PlanDocument =
+        serde_json::from_str(content).expect("python-fast.json must deserialize");
     assert_eq!(plan.title, "Python Fast Path");
     assert_eq!(plan.tasks.len(), 3);
     assert!(plan.tasks[0].dependencies.is_empty());
     assert_eq!(plan.tasks[1].dependencies.len(), 1);
-    assert!(!plan.tasks[1].dependencies[0].is_uuid(), "should be Index, not UUID");
+    assert!(
+        !plan.tasks[1].dependencies[0].is_uuid(),
+        "should be Index, not UUID"
+    );
     assert_eq!(plan.tasks[2].dependencies.len(), 1);
-    assert!(!plan.tasks[2].dependencies[0].is_uuid(), "should be Index, not UUID");
+    assert!(
+        !plan.tasks[2].dependencies[0].is_uuid(),
+        "should be Index, not UUID"
+    );
 }
 
 #[test]
@@ -94,7 +120,10 @@ fn test_all_bundled_plans_deserialize() {
         let plan: PlanDocument = serde_json::from_str(content)
             .unwrap_or_else(|e| panic!("{name}.json failed to deserialize: {e}"));
         assert!(!plan.title.is_empty(), "{name}: title must not be empty");
-        assert!(!plan.tasks.is_empty(), "{name}: must have at least one task");
+        assert!(
+            !plan.tasks.is_empty(),
+            "{name}: must have at least one task"
+        );
     }
 }
 
@@ -107,8 +136,7 @@ fn test_minimal_format_with_no_optional_fields() {
             {"title": "Fix it", "description": "Do the thing", "task_type": "edit"}
         ]
     }"#;
-    let plan: PlanDocument = serde_json::from_str(json)
-        .expect("minimal format must deserialize");
+    let plan: PlanDocument = serde_json::from_str(json).expect("minimal format must deserialize");
     assert_eq!(plan.title, "Quick Fix");
     assert_eq!(plan.tasks.len(), 1);
     assert_eq!(plan.tasks[0].order, 0, "order defaults to 0 when omitted");
@@ -150,7 +178,10 @@ fn test_task_dep_deserialize_numeric() {
     let json = r#"[1, 2, 3]"#;
     let deps: Vec<TaskDep> = serde_json::from_str(json).unwrap();
     assert_eq!(deps.len(), 3);
-    assert!(deps.iter().all(|d| !d.is_uuid()), "numeric deps should deserialize as Index");
+    assert!(
+        deps.iter().all(|d| !d.is_uuid()),
+        "numeric deps should deserialize as Index"
+    );
 }
 
 #[test]
@@ -180,7 +211,10 @@ fn test_plan_document_default_values() {
     let json = r#"{"title": "Test", "description": "Test plan", "tasks": []}"#;
     let plan: PlanDocument = serde_json::from_str(json).unwrap();
     assert!(!plan.id.is_nil(), "id should be auto-generated");
-    assert!(!plan.session_id.is_nil(), "session_id should be auto-generated");
+    assert!(
+        !plan.session_id.is_nil(),
+        "session_id should be auto-generated"
+    );
     assert_eq!(plan.status, PlanStatus::Draft);
     assert_eq!(plan.context, "");
     assert!(plan.risks.is_empty());
@@ -190,7 +224,8 @@ fn test_plan_document_default_values() {
 #[test]
 fn test_resolve_index_deps_mixed_format() {
     let uuid = uuid::Uuid::new_v4();
-    let json = format!(r#"{{
+    let json = format!(
+        r#"{{
         "title": "Mixed Deps",
         "description": "test",
         "tasks": [
@@ -198,13 +233,24 @@ fn test_resolve_index_deps_mixed_format() {
             {{"title": "B", "description": "", "task_type": "build", "order": 2, "dependencies": [1]}},
             {{"title": "C", "description": "", "task_type": "test", "dependencies": ["{}"]}}
         ]
-    }}"#, uuid);
+    }}"#,
+        uuid
+    );
     let mut plan: PlanDocument = serde_json::from_str(&json).unwrap();
     plan.resolve_index_deps();
 
-    assert!(plan.tasks[1].dependencies[0].is_uuid(), "numeric dep 1 should resolve to task A's UUID");
-    assert_eq!(plan.tasks[1].dependencies[0].as_uuid(), Some(plan.tasks[0].id));
-    assert!(plan.tasks[2].dependencies[0].is_uuid(), "UUID dep should remain UUID");
+    assert!(
+        plan.tasks[1].dependencies[0].is_uuid(),
+        "numeric dep 1 should resolve to task A's UUID"
+    );
+    assert_eq!(
+        plan.tasks[1].dependencies[0].as_uuid(),
+        Some(plan.tasks[0].id)
+    );
+    assert!(
+        plan.tasks[2].dependencies[0].is_uuid(),
+        "UUID dep should remain UUID"
+    );
     assert_eq!(plan.tasks[2].dependencies[0].as_uuid(), Some(uuid));
 }
 
@@ -223,19 +269,29 @@ fn test_task_dep_to_uuid() {
     assert_eq!(idx_dep.to_uuid(&order_map), Some(uuid));
 
     let missing_idx = TaskDep::Index(99);
-    assert_eq!(missing_idx.to_uuid(&order_map), None, "missing index should return None");
+    assert_eq!(
+        missing_idx.to_uuid(&order_map),
+        None,
+        "missing index should return None"
+    );
 }
 
 #[test]
 fn test_plans_dir_path() {
     let dir = plans::plans_dir();
-    assert!(dir.to_string_lossy().contains("plans"), "plans_dir should point to a 'plans' subdirectory");
+    assert!(
+        dir.to_string_lossy().contains("plans"),
+        "plans_dir should point to a 'plans' subdirectory"
+    );
 }
 
 #[test]
 fn test_coding_plan_path_returns_json() {
     let path = files::coding_plan_path("python-fast");
-    assert!(path.to_string_lossy().ends_with(".json"), "coding_plan_path should return .json file");
+    assert!(
+        path.to_string_lossy().ends_with(".json"),
+        "coding_plan_path should return .json file"
+    );
 }
 
 #[test]

@@ -429,9 +429,7 @@ fn log_cap_bail_to_improvements(report: &CapBailReport) {
     if let Some(parent) = improvements_path.parent()
         && let Err(e) = std::fs::create_dir_all(parent)
     {
-        tracing::warn!(
-            "RSI sync cap-bail: failed to create rsi dir for improvements log: {e}"
-        );
+        tracing::warn!("RSI sync cap-bail: failed to create rsi dir for improvements log: {e}");
         return;
     }
     let top_list = if report.top_new_sections.is_empty() {
@@ -469,15 +467,11 @@ fn log_cap_bail_to_improvements(report: &CapBailReport) {
     {
         Ok(mut f) => {
             if let Err(e) = f.write_all(entry.as_bytes()) {
-                tracing::warn!(
-                    "RSI sync cap-bail: failed to append entry to improvements.md: {e}"
-                );
+                tracing::warn!("RSI sync cap-bail: failed to append entry to improvements.md: {e}");
             }
         }
         Err(e) => {
-            tracing::warn!(
-                "RSI sync cap-bail: failed to open improvements.md for append: {e}"
-            );
+            tracing::warn!("RSI sync cap-bail: failed to open improvements.md for append: {e}");
         }
     }
 }

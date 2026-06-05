@@ -7,8 +7,8 @@
 //! to the configured fallback. The fix extracts the wrap logic into
 //! `wrap_with_fallback_chain` and calls it from both paths.
 
-use crate::brain::provider::factory::wrap_with_fallback_chain;
 use crate::brain::provider::Provider;
+use crate::brain::provider::factory::wrap_with_fallback_chain;
 use crate::config::{Config, FallbackProviderConfig};
 use std::sync::Arc;
 
@@ -18,7 +18,9 @@ async fn rsi_wrap_returns_raw_when_no_fallback_configured() {
     config.providers.fallback = None;
 
     let primary: Arc<dyn Provider> = Arc::new(crate::tests::agent_service_mocks::MockProvider);
-    let result = wrap_with_fallback_chain(&config, primary.clone()).await.unwrap();
+    let result = wrap_with_fallback_chain(&config, primary.clone())
+        .await
+        .unwrap();
 
     assert!(
         !result.is_fallback_chain(),
@@ -36,7 +38,9 @@ async fn rsi_wrap_returns_raw_when_fallback_disabled() {
     });
 
     let primary: Arc<dyn Provider> = Arc::new(crate::tests::agent_service_mocks::MockProvider);
-    let result = wrap_with_fallback_chain(&config, primary.clone()).await.unwrap();
+    let result = wrap_with_fallback_chain(&config, primary.clone())
+        .await
+        .unwrap();
 
     assert!(
         !result.is_fallback_chain(),
@@ -76,7 +80,9 @@ async fn rsi_wrap_actually_wraps_when_valid_fallback_configured() {
     });
 
     let primary: Arc<dyn Provider> = Arc::new(crate::tests::agent_service_mocks::MockProvider);
-    let result = wrap_with_fallback_chain(&config, primary.clone()).await.unwrap();
+    let result = wrap_with_fallback_chain(&config, primary.clone())
+        .await
+        .unwrap();
 
     assert!(
         result.is_fallback_chain(),
@@ -101,7 +107,9 @@ async fn rsi_wrap_skips_fallback_with_same_name_as_primary() {
     });
 
     let primary: Arc<dyn Provider> = Arc::new(crate::tests::agent_service_mocks::MockProvider);
-    let result = wrap_with_fallback_chain(&config, primary.clone()).await.unwrap();
+    let result = wrap_with_fallback_chain(&config, primary.clone())
+        .await
+        .unwrap();
 
     assert!(
         !result.is_fallback_chain(),

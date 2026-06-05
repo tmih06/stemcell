@@ -3127,8 +3127,7 @@ impl Config {
         // removed the config section but the old keys.toml section
         // survived, and the next /models open re-materialised the
         // ghost via merge_provider_keys.
-        let config_names: std::collections::HashSet<String> =
-            raw_config_custom_provider_names();
+        let config_names: std::collections::HashSet<String> = raw_config_custom_provider_names();
 
         let remove: Vec<String> = custom_table
             .iter()

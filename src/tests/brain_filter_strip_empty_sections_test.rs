@@ -5,7 +5,7 @@
 //! without adding signal. The filter scrubs them at READ time, leaving
 //! disk authoritative.
 
-use crate::brain::filter::{strip_empty_sections, StripResult};
+use crate::brain::filter::{StripResult, strip_empty_sections};
 
 #[test]
 fn empty_stub_is_stripped() {
@@ -45,7 +45,11 @@ fn tbd_marker_keeps_section_alive() {
 
 #[test]
 fn todo_wip_placeholder_all_keep_section_alive() {
-    for marker in ["TODO: write this", "WIP work in progress", "placeholder line"] {
+    for marker in [
+        "TODO: write this",
+        "WIP work in progress",
+        "placeholder line",
+    ] {
         let input = format!("## Marked\n{}\n", marker);
         let res = strip_empty_sections(&input);
         assert_eq!(

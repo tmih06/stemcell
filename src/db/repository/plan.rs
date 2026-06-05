@@ -979,11 +979,11 @@ mod tests {
 
         for (i, &task_id) in task_ids.iter().enumerate() {
             let dependencies: Vec<TaskDep> = match i {
-                0 => vec![],                                    // No dependencies
-                1 => vec![TaskDep::Id(task_ids[0])],            // Depends on task 0
-                2 => vec![TaskDep::Id(task_ids[0])],            // Depends on task 0
+                0 => vec![],                                                   // No dependencies
+                1 => vec![TaskDep::Id(task_ids[0])],                           // Depends on task 0
+                2 => vec![TaskDep::Id(task_ids[0])],                           // Depends on task 0
                 3 => vec![TaskDep::Id(task_ids[1]), TaskDep::Id(task_ids[2])], // Depends on tasks 1 and 2
-                4 => vec![TaskDep::Id(task_ids[3])],            // Depends on task 3
+                4 => vec![TaskDep::Id(task_ids[3])],                           // Depends on task 3
                 _ => vec![],
             };
 

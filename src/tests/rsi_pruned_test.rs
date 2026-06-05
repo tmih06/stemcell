@@ -285,8 +285,7 @@ fn filter_pruned_sections_skips_moved_source_headers() {
             dest: "AGENTS.md".to_string(),
         }],
     );
-    let new_sections =
-        "\n## Identity\nidentity body that the user moved to AGENTS\n\n## Stays\nthis one is new and must come through\n";
+    let new_sections = "\n## Identity\nidentity body that the user moved to AGENTS\n\n## Stays\nthis one is new and must come through\n";
     let filtered = filter_pruned_sections(new_sections, &state, "SOUL.md");
     assert!(
         !filtered.contains("## Identity"),
