@@ -1985,9 +1985,16 @@ impl App {
                 // This prevents duplicate retries from accumulating during
                 // network issues — matches Claude Code's "message goes back
                 // to input" behaviour.
-                let prev_is_duplicate = self.messages.last().is_some_and(|last| {
-                    last.role == "user" && last.content == display_content
-                }) && !self.messages.iter().rev().skip(1).any(|m| m.role == "assistant");
+                let prev_is_duplicate = self
+                    .messages
+                    .last()
+                    .is_some_and(|last| last.role == "user" && last.content == display_content)
+                    && !self
+                        .messages
+                        .iter()
+                        .rev()
+                        .skip(1)
+                        .any(|m| m.role == "assistant");
                 if prev_is_duplicate {
                     self.messages.pop();
                 }

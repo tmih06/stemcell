@@ -35,7 +35,6 @@ pub mod browser_profile_wait_test;
 pub mod browser_screenshot_surface_test;
 pub mod browser_session_test;
 pub mod browser_stealth_test;
-pub mod tools_md_regression_test;
 pub mod bundled_plans_test;
 pub mod candle_whisper_test;
 pub mod channel_search_test;
@@ -62,6 +61,7 @@ pub mod intermediate_text_strip_guard_test;
 pub mod new_session_pane_binding_test;
 pub mod rsi_pruned_test;
 pub mod rsi_sync_cap_bail_test;
+pub mod tools_md_regression_test;
 // Unix-only: drives Config::load via a temp HOME override. On Windows
 // `dirs::home_dir()` uses the Win32 `SHGetKnownFolderPath` API rather
 // than env vars, so the HomeGuard has no effect and Config::load

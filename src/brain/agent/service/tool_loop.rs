@@ -2179,7 +2179,8 @@ impl AgentService {
                                 session_id,
                                 ProgressEvent::SelfHealingAlert {
                                     message: "No fallback provider available. \
-                                         Configure one with /onboard:provider".to_string(),
+                                         Configure one with /onboard:provider"
+                                        .to_string(),
                                 },
                             );
                         }
@@ -2219,16 +2220,12 @@ impl AgentService {
                             fb_req = fb_req.with_system(system.clone());
                         }
                         if self.tool_registry.count() > 0 {
-                            fb_req =
-                                fb_req.with_tools(self.tool_registry.get_tool_definitions());
+                            fb_req = fb_req.with_tools(self.tool_registry.get_tool_definitions());
                         }
 
                         // Swap provider for this session so stream_complete
                         // uses the fallback
-                        self.swap_provider_for_session(
-                            session_id,
-                            (*fallback).clone(),
-                        );
+                        self.swap_provider_for_session(session_id, (*fallback).clone());
 
                         match self
                             .stream_complete(
@@ -2251,11 +2248,7 @@ impl AgentService {
                             .await
                         {
                             Ok(resp) => {
-                                tracing::info!(
-                                    "Fallback '{}/{}' succeeded",
-                                    fb_name,
-                                    fb_model
-                                );
+                                tracing::info!("Fallback '{}/{}' succeeded", fb_name, fb_model);
                                 succeeded = Some(resp);
                                 break;
                             }

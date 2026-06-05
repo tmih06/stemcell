@@ -11,8 +11,7 @@ use std::fs;
 const TEMPLATE_PATH: &str = "src/docs/reference/templates/TOOLS.md";
 
 fn load_template() -> String {
-    fs::read_to_string(TEMPLATE_PATH)
-        .unwrap_or_else(|_| panic!("Failed to read {TEMPLATE_PATH}"))
+    fs::read_to_string(TEMPLATE_PATH).unwrap_or_else(|_| panic!("Failed to read {TEMPLATE_PATH}"))
 }
 
 /// TOOLS.md must stay under 100 lines.
@@ -149,11 +148,7 @@ fn test_no_provider_config_guides() {
     let content = load_template();
     let lower = content.to_lowercase();
 
-    let config_patterns = [
-        "base_url",
-        "default_model",
-        "[provider]",
-    ];
+    let config_patterns = ["base_url", "default_model", "[provider]"];
 
     for pattern in &config_patterns {
         assert!(
@@ -162,6 +157,124 @@ fn test_no_provider_config_guides() {
              Provider config lives in config.toml and onboarding."
         );
     }
+}
+
+/// Cross-reference TOOLS.md against the live BRAIN_PREAMBLE in prompt_builder.rs.
+/// Extracts the actual preamble from source code and checks for significant phrase overlap.
+/// This catches duplication in BOTH directions: preamble→TOOLS.md and TOOLS.md→preamble.
+#[test]
+fn test_no_brain_preamble_overlap() {
+    let tools = load_template();
+
+    // Read the actual BRAIN_PREAMBLE from source.
+    let prompt_builder = fs::read_to_string("src/brain/prompt_builder.rs")
+        .expect("Failed to read prompt_builder.rs");
+
+    // Extract the BRAIN_PREAMBLE constant value from the source.
+    let preamble = extract_const_string(&prompt_builder, "BRAIN_PREAMBLE")
+        .unwrap_or_else(|| panic!("Could not find BRAIN_PREAMBLE constant in prompt_builder.rs"));
+
+    // Extract 4+ word phrases from the preamble and check if they appear in TOOLS.md.
+    // We skip short phrases (common words) and focus on meaningful sequences.
+    let preamble_words: Vec<&str> = preamble.split_whitespace().collect();
+    let mut overlaps = Vec::new();
+
+    for window in preamble_words.windows(5) {
+        let phrase = window.join(" ").to_lowercase();
+        // Skip phrases that are just common words / formatting
+        if phrase.contains('|') || phrase.contains("```") || phrase.contains("///") {
+            continue;
+        }
+        // Only check phrases with at least 3 alphanumeric words
+        let alpha_count = window
+            .iter()
+            .filter(|w| w.chars().any(|c| c.is_alphanumeric()))
+            .count();
+        if alpha_count < 3 {
+            continue;
+        }
+        if tools.to_lowercase().contains(&phrase) {
+            overlaps.push(phrase);
+        }
+    }
+
+    // Deduplicate and report
+    overlaps.sort();
+    overlaps.dedup();
+
+    // Allow up to 3 accidental overlaps (common phrases like "use the", "for more details")
+    // but flag systematic duplication
+    assert!(
+        overlaps.len() <= 3,
+        "TOOLS.md and BRAIN_PREAMBLE have {} overlapping 5-word phrases (max 3 allowed). \
+         This indicates content duplication between the system prompt and TOOLS.md. \
+         Overlapping phrases:\n  - {}\n\n\
+         Either remove from TOOLS.md (preamble already covers it) or remove from \
+         BRAIN_PREAMBLE (TOOLS.md is the authoritative source).",
+        overlaps.len(),
+        overlaps.join("\n  - ")
+    );
+}
+
+/// Extract a Rust string constant value from source code.
+/// Looks for `const NAME: &str = "...";` or `const NAME: &str = r#"..."#;`
+fn extract_const_string(source: &str, const_name: &str) -> Option<String> {
+    let needle = format!("const {const_name}:");
+    let start = source.find(&needle)?;
+    let after = &source[start..];
+
+    // Find the first `=` after the const declaration
+    let eq_pos = after.find('=')?;
+    let after_eq = &after[eq_pos + 1..];
+
+    // Check for raw string literal r#"..."#
+    if let Some(raw_start) = after_eq.find("r#\"") {
+        let content_start = raw_start + 3;
+        let rest = &after_eq[content_start..];
+        let end = rest.find("\"#")?;
+        return Some(rest[..end].to_string());
+    }
+
+    // Check for regular string literal "..."
+    if let Some(quote_start) = after_eq.find('"') {
+        let rest = &after_eq[quote_start + 1..];
+        // Handle escaped quotes by accumulating
+        let mut result = String::new();
+        let mut chars = rest.chars().peekable();
+        while let Some(c) = chars.next() {
+            if c == '\\' {
+                if let Some(&next) = chars.peek() {
+                    match next {
+                        '"' => {
+                            result.push('"');
+                            chars.next();
+                        }
+                        'n' => {
+                            result.push('\n');
+                            chars.next();
+                        }
+                        't' => {
+                            result.push('\t');
+                            chars.next();
+                        }
+                        '\\' => {
+                            result.push('\\');
+                            chars.next();
+                        }
+                        _ => {
+                            result.push(c);
+                        }
+                    }
+                }
+            } else if c == '"' {
+                return Some(result);
+            } else {
+                result.push(c);
+            }
+        }
+    }
+
+    None
 }
 
 /// TOOLS.md must not contain system commands (macOS/Win/Linux).

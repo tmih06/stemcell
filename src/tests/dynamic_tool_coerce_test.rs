@@ -273,12 +273,10 @@ fn shell_executor_params_file_contains_json_arrays() {
     let ctx = ToolExecutionContext::new(uuid::Uuid::new_v4());
     let rt = tokio::runtime::Runtime::new().unwrap();
     let result = rt
-        .block_on(
-            tool.execute(
-                json!({ "files": ["https://example.com/a.jpg", "https://example.com/b.jpg"] }),
-                &ctx,
-            ),
-        )
+        .block_on(tool.execute(
+            json!({ "files": ["https://example.com/a.jpg", "https://example.com/b.jpg"] }),
+            &ctx,
+        ))
         .expect("execute");
     assert!(result.success, "err: {:?}", result.error);
     assert!(

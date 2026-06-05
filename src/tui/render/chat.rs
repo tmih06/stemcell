@@ -702,10 +702,7 @@ pub(super) fn render_chat(f: &mut Frame, app: &mut App, area: Rect) {
                                 prefix,
                                 Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
                             ),
-                            Span::styled(
-                                current.clone(),
-                                Style::default().fg(Color::Red),
-                            ),
+                            Span::styled(current.clone(), Style::default().fg(Color::Red)),
                         ]));
                         first = false;
                     } else {
@@ -728,10 +725,7 @@ pub(super) fn render_chat(f: &mut Frame, app: &mut App, area: Rect) {
                             prefix,
                             Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
                         ),
-                        Span::styled(
-                            current.clone(),
-                            Style::default().fg(Color::Red),
-                        ),
+                        Span::styled(current.clone(), Style::default().fg(Color::Red)),
                     ]));
                     first = false;
                 } else {

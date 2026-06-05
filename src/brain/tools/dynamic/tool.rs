@@ -361,8 +361,13 @@ impl DynamicTool {
             }
         };
         let params_path = params_file.path().to_string_lossy().to_string();
-        if let Err(e) = std::fs::write(&params_path, serde_json::to_string(params).unwrap_or_default()) {
-            return Ok(ToolResult::error(format!("Failed to write params JSON: {e}")));
+        if let Err(e) = std::fs::write(
+            &params_path,
+            serde_json::to_string(params).unwrap_or_default(),
+        ) {
+            return Ok(ToolResult::error(format!(
+                "Failed to write params JSON: {e}"
+            )));
         }
 
         // Shell-escape string parameter values so single quotes in
