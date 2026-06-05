@@ -10,39 +10,41 @@ extend-exclude = [
 opencrabs = "opencrabs"
 crabrace = "crabrace"
 
-# Rust TUI library name
-ratatui = "ratatui"
+# Library names
 Ratatui = "Ratatui"
+ratatui = "ratatui"
 
 # HashiCorp abbreviation
 Hashi = "Hashi"
 
 # Phone number abbreviation (WhatsApp store)
-pn = "pn"
 Pn = "Pn"
+pn = "pn"
 
-# French words (phantom language translations)
-maintenant = "maintenant"
-mis = "mis"
-authentification = "authentification"
-espace = "espace"
-
-# Portuguese words
-erro = "erro"
-atual = "atual"
-
-# Valid English word variants
-unparseable = "unparseable"
-
-# Abbreviations and partial words used in code/tests
+# Mermaid diagram labels
 REPET = "REPET"
-ba = "ba"
 BA = "BA"
-opps = "opps"
+ba = "ba"
+
+# Code abbreviations and test data
 ful = "ful"
 secur = "secur"
-
-# Test data (intentional partial/misspelled words for input testing)
 hel = "hel"
 helo = "helo"
 Syste = "Syste"
+opps = "opps"
+
+# Valid English variant
+unparseable = "unparseable"
+
+# French words in translation files
+authentification = "authentification"
+espace = "espace"
+maintenant = "maintenant"
+
+# Portuguese words in translation files
+erro = "erro"
+atual = "atual"
+
+# Spanish/other abbreviations in code
+mis = "mis"
