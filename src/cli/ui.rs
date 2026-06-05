@@ -26,22 +26,7 @@ async fn cmd_chat_inner(
     headless: bool,
 ) -> Result<()> {
     use crate::{
-        brain::{
-            agent::AgentService,
-            tools::{
-                analyze_image::AnalyzeImageTool, analyze_video::AnalyzeVideoTool, bash::BashTool,
-                brave_search::BraveSearchTool, code_exec::CodeExecTool, config_tool::ConfigTool,
-                context::ContextTool, doc_parser::DocParserTool, edit::EditTool,
-                exa_search::ExaSearchTool, follow_up_question::FollowUpQuestionTool,
-                generate_image::GenerateImageTool, glob::GlobTool, grep::GrepTool,
-                http::HttpClientTool, load_brain_file::LoadBrainFileTool, ls::LsTool,
-                memory_search::MemorySearchTool, notebook::NotebookEditTool, plan_tool::PlanTool,
-                provider_vision::ProviderVisionTool, read::ReadTool, registry::ToolRegistry,
-                rename_session::RenameSessionTool, session_search::SessionSearchTool,
-                slash_command::SlashCommandTool, task::TaskTool, web_search::WebSearchTool,
-                write::WriteTool, write_opencrabs_file::WriteOpenCrabsFileTool,
-            },
-        },
+        brain::agent::AgentService,
         db::Database,
         services::ServiceContext,
         tui,
@@ -84,184 +69,14 @@ async fn cmd_chat_inner(
         }
     };
 
-    // Create tool registry (Arc-wrapped early so SpawnAgentTool can reference it)
-    tracing::debug!("Setting up tool registry");
-    let tool_registry = Arc::new(ToolRegistry::new());
-    // Phase 1: Essential file operations
-    tool_registry.register(Arc::new(ReadTool));
-    tool_registry.register(Arc::new(WriteTool));
-    tool_registry.register(Arc::new(EditTool));
-    tool_registry.register(Arc::new(crate::brain::tools::hashline::HashlineEditTool));
-    tool_registry.register(Arc::new(BashTool));
-    tool_registry.register(Arc::new(LsTool));
-    tool_registry.register(Arc::new(GlobTool));
-    tool_registry.register(Arc::new(GrepTool));
-    // Phase 2: Advanced features
-    tool_registry.register(Arc::new(WebSearchTool));
-    tool_registry.register(Arc::new(CodeExecTool));
-    tool_registry.register(Arc::new(NotebookEditTool));
-    tool_registry.register(Arc::new(DocParserTool));
-    // Phase 3: Workflow & integration
-    tool_registry.register(Arc::new(TaskTool));
-    tool_registry.register(Arc::new(ContextTool));
-    tool_registry.register(Arc::new(HttpClientTool));
-    tool_registry.register(Arc::new(PlanTool));
-    // Memory search (built-in FTS5, always available)
-    tool_registry.register(Arc::new(MemorySearchTool));
-    // On-demand brain file loader — agent fetches USER.md, MEMORY.md etc. only when needed
-    tool_registry.register(Arc::new(LoadBrainFileTool));
-    // OpenCrabs file writer — agent can edit/append/overwrite any file in ~/.opencrabs/
-    tool_registry.register(Arc::new(WriteOpenCrabsFileTool));
-    // Session search — hybrid QMD search across all session message history
-    tool_registry.register(Arc::new(SessionSearchTool::new(db.pool().clone())));
-    // Channel search — search passively captured channel messages (Telegram groups, etc.)
-    use crate::brain::tools::channel_search::ChannelSearchTool;
-    tool_registry.register(Arc::new(ChannelSearchTool::new(
-        crate::db::ChannelMessageRepository::new(db.pool().clone()),
-    )));
-    // Cron job management — agent can create/list/delete/enable/disable scheduled jobs
-    use crate::brain::tools::cron_manage::CronManageTool;
-    tool_registry.register(Arc::new(CronManageTool::new(
-        crate::db::CronJobRepository::new(db.pool().clone()),
-    )));
-    // A2A send — agent can communicate with remote A2A agents
-    use crate::brain::tools::a2a_send::A2aSendTool;
-    tool_registry.register(Arc::new(A2aSendTool::new()));
-    // Config management (read/write config.toml, commands.toml)
-    tool_registry.register(Arc::new(ConfigTool));
-    // Slash command invocation (agent can call any slash command)
-    tool_registry.register(Arc::new(SlashCommandTool));
-    // Session rename — agent can update the current session's title
-    tool_registry.register(Arc::new(RenameSessionTool));
-    // Follow-up question — agent asks the user a multi-choice question
-    // mid-task and blocks until they click an option button.
-    tool_registry.register(Arc::new(FollowUpQuestionTool));
-    // EXA search: always available (free via MCP), uses direct API if key is set
-    let exa_key = config
-        .providers
-        .web_search
-        .as_ref()
-        .and_then(|ws| ws.exa.as_ref())
-        .and_then(|p| p.api_key.clone())
-        .filter(|k| !k.is_empty());
-    let exa_mode = if exa_key.is_some() {
-        "direct API"
-    } else {
-        "MCP (free)"
-    };
-    tool_registry.register(Arc::new(ExaSearchTool::new(exa_key)));
-    tracing::info!("Registered EXA search tool (mode: {})", exa_mode);
-    // Brave search: requires enabled = true in config.toml AND API key in keys.toml
-    if let Some(brave_cfg) = config
-        .providers
-        .web_search
-        .as_ref()
-        .and_then(|ws| ws.brave.as_ref())
-        && brave_cfg.enabled
-        && let Some(brave_key) = brave_cfg.api_key.clone()
-    {
-        tool_registry.register(Arc::new(BraveSearchTool::new(brave_key)));
-        tracing::info!("Registered Brave search tool");
-    }
-
-    // Image generation tool — picks the wire backend based on the active
-    // provider's `generation_model` override (Gemini if URL hits the
-    // Google host, OpenAI `/v1/images/generations` otherwise), or falls
-    // back to the global `image.generation` Gemini config.
-    if let Some(tool) = GenerateImageTool::from_config(config) {
-        tool_registry.register(Arc::new(tool));
-        tracing::info!("Registered generate_image tool");
-    }
-    // Image vision tool — provider.vision_model takes priority over image.vision (Gemini)
-    if let Some((api_key, base_url, vision_model)) =
-        crate::brain::provider::factory::active_provider_vision(config)
-    {
-        tool_registry.register(Arc::new(ProviderVisionTool::new(
-            api_key,
-            base_url,
-            vision_model,
-        )));
-        tracing::info!("Registered analyze_image tool (provider vision model)");
-    } else if config.image.vision.enabled
-        && let Some(ref key) = config.image.vision.api_key
-    {
-        tool_registry.register(Arc::new(AnalyzeImageTool::new(
-            key.clone(),
-            config.image.vision.model.clone(),
-        )));
-        tracing::info!("Registered analyze_image tool (Gemini)");
-    }
-
-    // Video vision tool — Gemini-native multimodal video understanding.
-    // Phase 1 only registers when image.vision is configured with Gemini;
-    // Phase 2 will add a frame-extraction fallback for non-Gemini providers
-    // (ffmpeg → N frames at 1 fps → analyze_image per frame).
-    if config.image.vision.enabled
-        && let Some(ref key) = config.image.vision.api_key
-        && !key.is_empty()
-    {
-        tool_registry.register(Arc::new(AnalyzeVideoTool::new(
-            key.clone(),
-            config.image.vision.model.clone(),
-        )));
-        tracing::info!("Registered analyze_video tool (Gemini)");
-    }
-
-    // Phase 5: Multi-agent orchestration
-    let subagent_manager = Arc::new(crate::brain::tools::subagent::SubAgentManager::new());
-    tool_registry.register(Arc::new(
-        crate::brain::tools::subagent::SpawnAgentTool::new(
-            subagent_manager.clone(),
-            tool_registry.clone(),
-        ),
-    ));
-    tool_registry.register(Arc::new(crate::brain::tools::subagent::WaitAgentTool::new(
-        subagent_manager.clone(),
-    )));
-    tool_registry.register(Arc::new(crate::brain::tools::subagent::SendInputTool::new(
-        subagent_manager.clone(),
-    )));
-    tool_registry.register(Arc::new(
-        crate::brain::tools::subagent::CloseAgentTool::new(subagent_manager.clone()),
-    ));
-    tool_registry.register(Arc::new(
-        crate::brain::tools::subagent::ResumeAgentTool::new(
-            subagent_manager.clone(),
-            tool_registry.clone(),
-        ),
-    ));
-
-    // Phase 6: Team orchestration
-    let team_manager = Arc::new(crate::brain::tools::subagent::TeamManager::new());
-    tool_registry.register(Arc::new(
-        crate::brain::tools::subagent::TeamCreateTool::new(
-            subagent_manager.clone(),
-            team_manager.clone(),
-            tool_registry.clone(),
-        ),
-    ));
-    tool_registry.register(Arc::new(
-        crate::brain::tools::subagent::TeamDeleteTool::new(
-            subagent_manager.clone(),
-            team_manager.clone(),
-        ),
-    ));
-    tool_registry.register(Arc::new(
-        crate::brain::tools::subagent::TeamBroadcastTool::new(
-            subagent_manager.clone(),
-            team_manager.clone(),
-        ),
-    ));
-    tracing::info!("Registered 8 sub-agent + team orchestration tools");
-
-    // Recursive Self-Improvement tools
-    use crate::brain::tools::feedback_analyze::FeedbackAnalyzeTool;
-    use crate::brain::tools::feedback_record::FeedbackRecordTool;
-    use crate::brain::tools::self_improve::SelfImproveTool;
-    tool_registry.register(Arc::new(FeedbackRecordTool));
-    tool_registry.register(Arc::new(FeedbackAnalyzeTool));
-    tool_registry.register(Arc::new(SelfImproveTool));
-    tracing::info!("Registered 3 recursive self-improvement tools");
+    // Create tool registry via the modular tool system.
+    // Modules can be disabled in config.toml [tools] to reduce token bloat.
+    tracing::debug!("Setting up tool registry via module system");
+    let shared_tool_registry = crate::brain::tools::modules::register_enabled_tools(
+        config,
+        &db.pool(),
+        crate::brain::tools::modules::RegistrationMode::Full,
+    );
 
     // Auto-detect VPS/cloud and disable vector embeddings if needed.
     crate::config::MemoryConfig::auto_apply_vps_defaults();
@@ -622,12 +437,12 @@ async fn cmd_chat_inner(
         });
 
     // Register rebuild tool (needs the progress callback for restart signaling)
-    tool_registry.register(Arc::new(crate::brain::tools::rebuild::RebuildTool::new(
+    shared_tool_registry.register(Arc::new(crate::brain::tools::rebuild::RebuildTool::new(
         Some(progress_callback.clone()),
     )));
 
     // Register evolve tool (binary self-update from GitHub releases)
-    tool_registry.register(Arc::new(crate::brain::tools::evolve::EvolveTool::new(
+    shared_tool_registry.register(Arc::new(crate::brain::tools::evolve::EvolveTool::new(
         Some(progress_callback.clone()),
     )));
 
@@ -653,7 +468,7 @@ async fn cmd_chat_inner(
 
     // Register Telegram connect tool (agent-callable bot setup)
     #[cfg(feature = "telegram")]
-    tool_registry.register(Arc::new(
+    shared_tool_registry.register(Arc::new(
         crate::brain::tools::telegram_connect::TelegramConnectTool::new(
             channel_factory.clone(),
             telegram_state.clone(),
@@ -662,13 +477,13 @@ async fn cmd_chat_inner(
 
     // Register Telegram send tool (proactive messaging)
     #[cfg(feature = "telegram")]
-    tool_registry.register(Arc::new(
+    shared_tool_registry.register(Arc::new(
         crate::brain::tools::telegram_send::TelegramSendTool::new(telegram_state.clone()),
     ));
 
     // Register WhatsApp connect tool (agent-callable QR pairing)
     #[cfg(feature = "whatsapp")]
-    tool_registry.register(Arc::new(
+    shared_tool_registry.register(Arc::new(
         crate::brain::tools::whatsapp_connect::WhatsAppConnectTool::new(
             Some(progress_callback.clone()),
             whatsapp_state.clone(),
@@ -677,7 +492,7 @@ async fn cmd_chat_inner(
 
     // Register WhatsApp send tool (proactive messaging)
     #[cfg(feature = "whatsapp")]
-    tool_registry.register(Arc::new(
+    shared_tool_registry.register(Arc::new(
         crate::brain::tools::whatsapp_send::WhatsAppSendTool::new(
             whatsapp_state.clone(),
             channel_factory.config_rx(),
@@ -690,7 +505,7 @@ async fn cmd_chat_inner(
 
     // Register Discord connect tool (agent-callable bot setup)
     #[cfg(feature = "discord")]
-    tool_registry.register(Arc::new(
+    shared_tool_registry.register(Arc::new(
         crate::brain::tools::discord_connect::DiscordConnectTool::new(
             channel_factory.clone(),
             discord_state.clone(),
@@ -699,7 +514,7 @@ async fn cmd_chat_inner(
 
     // Register Discord send tool (proactive messaging)
     #[cfg(feature = "discord")]
-    tool_registry.register(Arc::new(
+    shared_tool_registry.register(Arc::new(
         crate::brain::tools::discord_send::DiscordSendTool::new(discord_state.clone()),
     ));
 
@@ -709,7 +524,7 @@ async fn cmd_chat_inner(
 
     // Register Slack connect tool (agent-callable bot setup)
     #[cfg(feature = "slack")]
-    tool_registry.register(Arc::new(
+    shared_tool_registry.register(Arc::new(
         crate::brain::tools::slack_connect::SlackConnectTool::new(
             channel_factory.clone(),
             slack_state.clone(),
@@ -718,7 +533,7 @@ async fn cmd_chat_inner(
 
     // Register Slack send tool (proactive messaging)
     #[cfg(feature = "slack")]
-    tool_registry.register(Arc::new(
+    shared_tool_registry.register(Arc::new(
         crate::brain::tools::slack_send::SlackSendTool::new(slack_state.clone()),
     ));
 
@@ -728,7 +543,7 @@ async fn cmd_chat_inner(
 
     // Register Trello connect tool (agent-callable board setup)
     #[cfg(feature = "trello")]
-    tool_registry.register(Arc::new(
+    shared_tool_registry.register(Arc::new(
         crate::brain::tools::trello_connect::TrelloConnectTool::new(
             channel_factory.clone(),
             trello_state.clone(),
@@ -737,7 +552,7 @@ async fn cmd_chat_inner(
 
     // Register Trello send tool (proactive card operations)
     #[cfg(feature = "trello")]
-    tool_registry.register(Arc::new(
+    shared_tool_registry.register(Arc::new(
         crate::brain::tools::trello_send::TrelloSendTool::new(trello_state.clone()),
     ));
 
@@ -868,72 +683,6 @@ async fn cmd_chat_inner(
 
     // Create agent service with approval callback, progress callback, and message queue
     tracing::debug!("Creating agent service with approval, progress, and message queue callbacks");
-    let shared_tool_registry = tool_registry;
-
-    // Load dynamic tools from ~/.opencrabs/tools.toml
-    let tools_toml_path = crate::brain::tools::dynamic::DynamicToolLoader::default_path()
-        .unwrap_or_else(|| std::path::PathBuf::from("tools.toml"));
-    let dynamic_count = crate::brain::tools::dynamic::DynamicToolLoader::load(
-        &tools_toml_path,
-        &shared_tool_registry,
-    );
-    if dynamic_count > 0 {
-        tracing::info!("Loaded {dynamic_count} dynamic tool(s) from tools.toml");
-    }
-
-    // Register tool_manage — agent can add/remove/reload dynamic tools at runtime
-    shared_tool_registry.register(Arc::new(
-        crate::brain::tools::tool_manage::ToolManageTool::new(
-            shared_tool_registry.clone(),
-            tools_toml_path.clone(),
-        ),
-    ));
-
-    // rsi_proposals — agent-facing list/apply/reject for tools/commands
-    // proposed by the autonomous RSI loop. Apply paths reuse tool_manage's
-    // DynamicToolLoader and CommandLoader, so installation is byte-equivalent
-    // to a manual tool_manage add / config_manager add_command.
-    shared_tool_registry.register(Arc::new(
-        crate::brain::tools::rsi_proposals::RsiProposalsTool::new(
-            shared_tool_registry.clone(),
-            tools_toml_path,
-            crate::config::opencrabs_home(),
-        ),
-    ));
-
-    // Browser automation tools (headless Chrome via CDP)
-    #[cfg(feature = "browser")]
-    {
-        let browser_manager = Arc::new(crate::brain::tools::browser::BrowserManager::new());
-        shared_tool_registry.register(Arc::new(
-            crate::brain::tools::browser::BrowserNavigateTool::new(browser_manager.clone()),
-        ));
-        shared_tool_registry.register(Arc::new(
-            crate::brain::tools::browser::BrowserScreenshotTool::new(browser_manager.clone()),
-        ));
-        shared_tool_registry.register(Arc::new(
-            crate::brain::tools::browser::BrowserClickTool::new(browser_manager.clone()),
-        ));
-        shared_tool_registry.register(Arc::new(
-            crate::brain::tools::browser::BrowserTypeTool::new(browser_manager.clone()),
-        ));
-        shared_tool_registry.register(Arc::new(
-            crate::brain::tools::browser::BrowserEvalTool::new(browser_manager.clone()),
-        ));
-        shared_tool_registry.register(Arc::new(
-            crate::brain::tools::browser::BrowserContentTool::new(browser_manager.clone()),
-        ));
-        shared_tool_registry.register(Arc::new(
-            crate::brain::tools::browser::BrowserWaitTool::new(browser_manager.clone()),
-        ));
-        shared_tool_registry.register(Arc::new(
-            crate::brain::tools::browser::BrowserFindTool::new(browser_manager.clone()),
-        ));
-        shared_tool_registry.register(Arc::new(
-            crate::brain::tools::browser::BrowserCloseTool::new(browser_manager),
-        ));
-        tracing::info!("Browser automation tools registered (9 tools)");
-    }
 
     // Now that the registry is Arc'd, give it to the channel factory
     channel_factory.set_tool_registry(shared_tool_registry.clone());

@@ -299,6 +299,31 @@ profile_id = ""
 # before each update (or to /evolve manually).
 # auto_update = true
 
+# ========================================
+# Tool Modules
+# ========================================
+# Disable tool modules to reduce token bloat sent to the LLM.
+# Each module groups related tools that can be enabled/disabled as a unit.
+# Disabled modules skip registration entirely — their tools never appear
+# in the LLM tool list, saving context window space.
+#
+# Available modules:
+#   file_ops             — Core file I/O, shell, code navigation (read, write, edit, bash, ls, glob, grep)
+#   search               — Web search, memory search, session search (web_search, exa, brave, memory, session, channel)
+#   workflow             — Task management, planning, HTTP, code exec (task, plan, context, config, cron, notebook, doc_parser, http, code_exec, follow_up)
+#   multi_agent          — Sub-agent spawning and team management (spawn, wait, send_input, close, resume, team_*)
+#   rsi                  — Recursive self-improvement (feedback_record, feedback_analyze, self_improve)
+#   image                — Image generation and vision (generate_image, analyze_image, analyze_video)
+#   brain                — Brain file I/O, session management, A2A (load_brain_file, write_opencrabs_file, rename_session, slash_command, a2a_send)
+#   channel_integrations — Messaging platform connectors (telegram, discord, slack, whatsapp, trello)
+#   browser              — Headless Chrome automation (navigate, click, type, screenshot, etc.)
+#   meta                 — Tool management and RSI proposals (tool_manage, rsi_proposals)
+#   dynamic              — User-defined tools from tools.toml
+#
+# Example: disable browser, RSI, and channel integrations to save tokens
+[tools]
+# disabled = ["browser", "rsi", "channel_integrations"]
+
 [image.generation]
 enabled = false
 model = "gemini-3.1-flash-image-preview"   # Gemini image-gen model ("Nano Banana")

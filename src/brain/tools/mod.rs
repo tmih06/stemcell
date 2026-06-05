@@ -64,6 +64,9 @@ pub mod subagent;
 pub mod dynamic;
 pub mod tool_manage;
 
+// Modular tool architecture — groups tools into disableable modules
+pub mod modules;
+
 // Browser automation — headless Chrome via CDP
 #[cfg(feature = "browser")]
 pub mod browser;
