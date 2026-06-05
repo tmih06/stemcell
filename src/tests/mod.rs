@@ -158,6 +158,7 @@ pub mod voice_voicebox_test;
 //pub mod streaming_test;
 pub mod merge_provider_keys_test;
 pub mod mission_control_activity_service_test;
+pub mod mission_control_dedup_detail_test;
 pub mod mission_control_inbox_service_test;
 pub mod mission_control_input_test;
 pub mod mission_control_layout_test;

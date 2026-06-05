@@ -7,6 +7,21 @@
 
 use chrono::{DateTime, Utc};
 
+/// Optional rich detail for an inbox item, used by the detail popup
+/// to render type-specific content beyond the generic summary line.
+#[derive(Debug, Clone)]
+pub enum McInboxDetail {
+    /// Brain-file dedup proposal — carries the actual duplicate text,
+    /// rationale, what it duplicates, and any stub-risk warnings so
+    /// the user can make an informed apply/reject decision.
+    BrainDedup {
+        duplicate_text: String,
+        rationale: String,
+        duplicate_of: String,
+        warnings: Vec<String>,
+    },
+}
+
 /// One actionable item in the inbox panel — typically an RSI proposal.
 #[derive(Debug, Clone)]
 pub struct McInboxItem {
@@ -25,6 +40,9 @@ pub struct McInboxItem {
     pub source: String,
     /// When this item entered the inbox.
     pub created_at: DateTime<Utc>,
+    /// Optional rich detail for the popup — type-specific content
+    /// beyond the one-line summary (e.g. dedup text, rationale).
+    pub detail: Option<McInboxDetail>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
