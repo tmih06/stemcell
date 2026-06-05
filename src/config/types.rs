@@ -670,7 +670,7 @@ impl Default for AgentConfig {
 /// [tools]
 /// disabled = ["browser", "rsi", "channel_integrations"]
 /// ```
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ToolsConfig {
     /// Module IDs to disable. Disabled modules skip registration entirely,
     /// so their tools never appear in the LLM tool list.
@@ -682,15 +682,6 @@ pub struct ToolsConfig {
     /// this list is usually empty.
     #[serde(default)]
     pub enabled: Vec<String>,
-}
-
-impl Default for ToolsConfig {
-    fn default() -> Self {
-        Self {
-            disabled: Vec::new(),
-            enabled: Vec::new(),
-        }
-    }
 }
 
 /// Cron job default settings.

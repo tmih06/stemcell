@@ -69,7 +69,7 @@ async fn cmd_chat_inner(
     tracing::debug!("Setting up tool registry via module system");
     let shared_tool_registry = crate::brain::tools::modules::register_enabled_tools(
         config,
-        &db.pool(),
+        db.pool(),
         crate::brain::tools::modules::RegistrationMode::Full,
     );
 

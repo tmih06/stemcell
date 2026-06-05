@@ -677,7 +677,7 @@ pub(crate) async fn cmd_run(
     // Create tool registry via the modular tool system
     let tool_registry = crate::brain::tools::modules::register_enabled_tools(
         config,
-        &db.pool(),
+        db.pool(),
         crate::brain::tools::modules::RegistrationMode::Minimal,
     );
 
@@ -932,7 +932,7 @@ pub(crate) async fn cmd_agent_interactive(
     // Create tool registry via the modular tool system
     let tool_registry = crate::brain::tools::modules::register_enabled_tools(
         config,
-        &db.pool(),
+        db.pool(),
         crate::brain::tools::modules::RegistrationMode::Minimal,
     );
 
