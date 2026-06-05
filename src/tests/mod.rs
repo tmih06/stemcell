@@ -27,6 +27,7 @@ pub mod new_session_pane_binding_test;
 pub mod brain_filter_strip_empty_sections_test;
 pub mod rsi_sync_cap_bail_test;
 pub mod rsi_pruned_test;
+pub mod git_branch_test;
 pub mod browser_default_linux_test;
 pub mod browser_default_test;
 pub mod browser_default_windows_test;

@@ -867,7 +867,7 @@ pub(super) fn render_status_bar(f: &mut Frame, app: &App, area: Rect) {
     } else {
         raw_dir.to_string()
     };
-    let display_dir = if short_dir.len() > 40 {
+    let short_dir = if short_dir.len() > 40 {
         let mut start = short_dir.len().saturating_sub(37);
         while start > 0 && !short_dir.is_char_boundary(start) {
             start -= 1;
@@ -875,6 +875,16 @@ pub(super) fn render_status_bar(f: &mut Frame, app: &App, area: Rect) {
         format!("...{}", &short_dir[start..])
     } else {
         short_dir
+    };
+    // Git branch suffix: when the working directory sits inside a git
+    // repo, append `(branch)` to the dir display. Read per render via
+    // `utils::git_branch::current_branch` so a `git checkout` in
+    // another terminal shows up on the very next frame — no cache, no
+    // manual refresh. The HEAD file is ~30 bytes and stays in the OS
+    // page cache, so the read cost is sub-millisecond.
+    let display_dir = match crate::utils::git_branch::current_branch(&app.working_directory) {
+        Some(branch) => format!("{short_dir} ({branch})"),
+        None => short_dir,
     };
 
     // Active profile chip. Shown only when the user explicitly picked a
