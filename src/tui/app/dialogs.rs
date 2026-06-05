@@ -1448,6 +1448,23 @@ impl App {
             {
                 tracing::warn!("Failed to migrate api_key on rename: {}", e);
             }
+            // Remove the OLD keys.toml section. Without this, the rename
+            // ports the api_key to the new section but leaves the old
+            // section behind in keys.toml — and `merge_provider_keys`
+            // on next `Config::load()` resurrects the old name as a
+            // phantom entry (it creates a minimal config entry for any
+            // keys.toml provider that lacks a config counterpart). The
+            // user then sees BOTH names in /models even though config.toml
+            // only has one. 2026-06-05: `modelscope-qwen` → `modelscope`
+            // rename surfaced this exact path.
+            if let Err(e) = crate::config::Config::remove_secret_section(&old_section) {
+                tracing::warn!(
+                    "Failed to remove old keys.toml section '{}' on rename: {} \
+                     (next load may resurrect the old name as a phantom entry via merge_provider_keys)",
+                    old_section,
+                    e
+                );
+            }
         }
 
         // Enable the chosen provider on disk. User reported 2026-04-19

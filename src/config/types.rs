@@ -1641,6 +1641,33 @@ pub fn keys_path() -> PathBuf {
     opencrabs_home().join("keys.toml")
 }
 
+/// Read the RAW set of custom provider names from config.toml — no merge,
+/// no keys.toml fallback. Used by `cleanup_keys_custom_providers` to break
+/// the circular dependency where `Config::load()` (the loader) re-creates
+/// missing config entries from keys.toml itself, which then made the
+/// "orphan in keys.toml" check pass and skip removal.
+///
+/// Returns an empty set on any read / parse failure — the cleanup path
+/// treats "can't read config" as "nothing in config", which means it
+/// won't remove anything destructively from keys.toml.
+pub(crate) fn raw_config_custom_provider_names() -> std::collections::HashSet<String> {
+    use toml_edit::DocumentMut;
+    let path = Config::system_config_path().unwrap_or_else(|| opencrabs_home().join("config.toml"));
+    let Ok(content) = std::fs::read_to_string(&path) else {
+        return std::collections::HashSet::new();
+    };
+    let Ok(doc) = content.parse::<DocumentMut>() else {
+        return std::collections::HashSet::new();
+    };
+    doc.as_table()
+        .get("providers")
+        .and_then(|t| t.as_table())
+        .and_then(|t| t.get("custom"))
+        .and_then(|t| t.as_table())
+        .map(|t| t.iter().map(|(k, _)| k.to_string()).collect())
+        .unwrap_or_default()
+}
+
 /// Save API keys to keys.toml using merge (preserves existing keys).
 /// Only writes non-empty api_key values; never deletes other providers' keys.
 pub fn save_keys(keys: &ProviderConfigs) -> Result<()> {
@@ -2939,6 +2966,52 @@ impl Config {
         Ok(())
     }
 
+    /// Remove a dotted section from keys.toml. Mirror of `remove_section`
+    /// but targets the secrets file. Used by the custom-provider rename
+    /// path so the old `[providers.custom.<old>]` entry doesn't survive
+    /// in keys.toml and get re-materialised on next load via
+    /// `merge_provider_keys`'s "create minimal entry from keys.toml"
+    /// fallback. Returns Ok(()) when the file or section doesn't exist
+    /// — same shape as `remove_section` so callers can fire-and-forget
+    /// with a single `.is_err()` check for the actual write failure.
+    pub fn remove_secret_section(section: &str) -> Result<()> {
+        use toml_edit::DocumentMut;
+
+        let _guard = CONFIG_FILE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+
+        let path = opencrabs_home().join("keys.toml");
+        if !path.exists() {
+            return Ok(());
+        }
+
+        let mut doc: DocumentMut = fs::read_to_string(&path)?.parse()?;
+
+        let parts: Vec<&str> = section.split('.').collect();
+        if parts.is_empty() {
+            return Ok(());
+        }
+
+        let parent_parts = &parts[..parts.len() - 1];
+        let leaf = parts[parts.len() - 1];
+
+        let mut current = doc.as_table_mut();
+        for part in parent_parts {
+            match current.get_mut(part) {
+                Some(v) if v.is_table() => {
+                    current = v.as_table_mut().unwrap();
+                }
+                _ => return Ok(()),
+            }
+        }
+
+        if current.remove(leaf).is_some() {
+            tracing::info!("Removed keys.toml section [{section}]");
+            Self::backup_config(&path, 7);
+            fs::write(&path, doc.to_string())?;
+        }
+        Ok(())
+    }
+
     /// Remove a dotted section from config.toml.
     /// e.g. `remove_section("providers.custom.default")` removes `[providers.custom.default]`.
     pub fn remove_section(section: &str) -> Result<()> {
@@ -2983,6 +3056,10 @@ impl Config {
 
     /// Clean up custom provider entries that have no base_url and no default_model.
     /// These are ghost entries created when disabling all providers on save.
+    ///
+    /// Calls `cleanup_keys_custom_providers` at the end so a keys.toml entry
+    /// left behind by a rename / delete (whose corresponding config entry no
+    /// longer exists) gets pruned in the same pass.
     pub fn cleanup_empty_custom_providers() {
         // Clean config.toml
         if let Ok(config) = Self::load()
@@ -3007,7 +3084,12 @@ impl Config {
     }
 
     /// Remove ghost custom provider entries from keys.toml.
-    fn cleanup_keys_custom_providers() {
+    ///
+    /// Uses `raw_config_custom_provider_names()` (NOT `Self::load()`) to
+    /// determine "what's in config.toml" — going through the loader's
+    /// merge step would feed keys.toml back into itself and turn the
+    /// orphan check into a no-op. See the inline note below.
+    pub(crate) fn cleanup_keys_custom_providers() {
         use toml_edit::DocumentMut;
 
         let keys_file = keys_path();
@@ -3033,11 +3115,20 @@ impl Config {
             None => return,
         };
 
-        // Collect keys to remove: empty names or entries with no config counterpart
-        let config_names: std::collections::HashSet<String> = Self::load()
-            .ok()
-            .and_then(|c| c.providers.custom.map(|m| m.keys().cloned().collect()))
-            .unwrap_or_default();
+        // Collect keys to remove: empty names or entries with no config
+        // counterpart. CRITICAL: read config.toml RAW here — going
+        // through `Self::load()` would invoke `merge_provider_keys`,
+        // which RE-CREATES entries in config.providers.custom from
+        // keys.toml itself (see line ~1878 "creating minimal entry").
+        // That feedback loop made cleanup a no-op for orphans: a key
+        // in keys.toml without a config entry was always rescued by
+        // the merge, then "found" in config_names, then skipped. The
+        // 2026-06-05 modelscope-qwen rename surfaced this — renaming
+        // removed the config section but the old keys.toml section
+        // survived, and the next /models open re-materialised the
+        // ghost via merge_provider_keys.
+        let config_names: std::collections::HashSet<String> =
+            raw_config_custom_provider_names();
 
         let remove: Vec<String> = custom_table
             .iter()
