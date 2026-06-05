@@ -177,6 +177,15 @@ pub(super) fn render_sessions(f: &mut Frame, app: &App, area: Rect) {
                     format!(" {}", short),
                     Style::default().fg(Color::Rgb(100, 140, 180)),
                 ));
+                // Git branch badge (cyan)
+                if let Some(branch) =
+                    crate::utils::git_branch::current_branch(std::path::Path::new(wd))
+                {
+                    spans.push(Span::styled(
+                        format!(" ({branch})"),
+                        Style::default().fg(Color::Cyan),
+                    ));
+                }
             }
 
             // History size badge

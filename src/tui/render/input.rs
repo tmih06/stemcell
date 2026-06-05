@@ -877,15 +877,12 @@ pub(super) fn render_status_bar(f: &mut Frame, app: &App, area: Rect) {
         short_dir
     };
     // Git branch suffix: when the working directory sits inside a git
-    // repo, append `(branch)` to the dir display. Read per render via
-    // `utils::git_branch::current_branch` so a `git checkout` in
-    // another terminal shows up on the very next frame — no cache, no
-    // manual refresh. The HEAD file is ~30 bytes and stays in the OS
-    // page cache, so the read cost is sub-millisecond.
-    let display_dir = match crate::utils::git_branch::current_branch(&app.working_directory) {
-        Some(branch) => format!("{short_dir} ({branch})"),
-        None => short_dir,
-    };
+    // repo, render `(branch)` as a separate cyan span after the dir.
+    // Read per render via `utils::git_branch::current_branch` so a
+    // `git checkout` in another terminal shows up on the very next
+    // frame — no cache, no manual refresh. The HEAD file is ~30 bytes
+    // and stays in the OS page cache, so the read cost is sub-millisecond.
+    let git_branch = crate::utils::git_branch::current_branch(&app.working_directory);
 
     // Active profile chip. Shown only when the user explicitly picked a
     // profile (via `-p <name>` or the `OPENCRABS_PROFILE` env var). When
@@ -898,9 +895,9 @@ pub(super) fn render_status_bar(f: &mut Frame, app: &App, area: Rect) {
         .unwrap_or_default();
 
     let session_text = format!(" {}", session_name);
-    let provider_model_dir_text = format!(
-        "  ·  {} / {}{}  ·  {}",
-        provider_str, model_str, profile_chip, display_dir
+    let provider_model_text = format!(
+        "  ·  {} / {}{}  ·  ",
+        provider_str, model_str, profile_chip
     );
     let sep_text = "  ·  ";
 
@@ -919,10 +916,20 @@ pub(super) fn render_status_bar(f: &mut Frame, app: &App, area: Rect) {
             Style::default().fg(orange).add_modifier(Modifier::BOLD),
         ),
         Span::styled(
-            provider_model_dir_text,
+            provider_model_text,
+            Style::default().fg(Color::Rgb(90, 110, 150)),
+        ),
+        Span::styled(
+            short_dir,
             Style::default().fg(Color::Rgb(90, 110, 150)),
         ),
     ];
+    if let Some(ref branch) = git_branch {
+        spans.push(Span::styled(
+            format!(" ({branch})"),
+            Style::default().fg(Color::Cyan),
+        ));
+    }
 
     // Tokens/sec footer field.
     //   - Live: output_tokens / active_streaming_window_secs (the
