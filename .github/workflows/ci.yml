@@ -271,11 +271,12 @@ jobs:
           RUSTDOCFLAGS: -D warnings
         run: cargo doc --all-features --no-deps --document-private-items
 
-  # ── Stage 8: Cargo deny (license + advisory compliance) ─────────────────
-  # Checks license compliance, duplicate dependencies, and source allowlists.
+  # ── First wave: Independent checks (no Rust build needed) ───────────────
+  # These run in parallel with lint — no compilation required.
+
+  # Cargo deny (license + advisory compliance)
   deny:
     name: Cargo Deny
-    needs: [lint]
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -286,8 +287,7 @@ jobs:
         with:
           command: check advisories licenses sources
 
-  # ── Stage 9: Typo check ─────────────────────────────────────────────────
-  # Scans source code and documentation for common typos.
+  # Typo check
   typos:
     name: Typo Check
     runs-on: ubuntu-latest
@@ -298,8 +298,7 @@ jobs:
       - name: Check for typos
         uses: crate-ci/typos@master
 
-  # ── Stage 10: Secret leak detection ─────────────────────────────────────
-  # Scans for accidentally committed secrets, API keys, or tokens.
+  # Secret leak detection
   secrets:
     name: Secret Scan
     runs-on: ubuntu-latest
