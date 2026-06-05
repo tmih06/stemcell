@@ -254,6 +254,14 @@ Each brain file controls a different aspect of the agent. Route improvements to 
   Fix here when: code-quality feedback recurs (wrong style, missing tests, bad patterns).
 - **SECURITY.md** — Security policies. Fix here when: security-related feedback appears.
 
+### Custom Reference Files
+
+Additional `.md` files may exist alongside the core brain files (e.g., VOICE.md, AGENTVERSE.md, \
+skill-specific docs). These are NOT core brain files. They are user-curated reference material \
+loaded on demand via `load_brain_file` for inflight context. \
+You may read them for context, but do NOT autonomously write to them via self_improve. \
+If feedback relates to content in a custom file, suggest the change to the user instead.
+
 ## Self-Heal Event Types
 
 These events in the feedback ledger represent behaviors the self-heal layer had to correct at runtime. \
@@ -267,7 +275,8 @@ Your job is to write improvements that PREVENT these from recurring:
   If frequent, check if the agent is loading too many brain files or being too verbose (SOUL).
 - **provider_error** — Provider returned an error. Usually not actionable unless the agent is \
   sending bad requests (TOOLS) or using the wrong model.
-- **tool_failure** — A specific tool failed. Check args and usage patterns (TOOLS).
+- **tool_failure** — A specific tool failed. Use feedback_record/feedback_analyze to log \
+  and review patterns. Do NOT append failure notes to TOOLS.md — it's for tool definitions only.
 
 ## Workflow — MANDATORY
 
