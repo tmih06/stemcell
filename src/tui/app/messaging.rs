@@ -368,8 +368,7 @@ impl App {
                     // No old session (first load) — use global default
                     s.provider_name =
                         Some(self.agent_service.provider_name_for_session(session.id));
-                    s.model =
-                        Some(self.agent_service.provider_model_for_session(session.id));
+                    s.model = Some(self.agent_service.provider_model_for_session(session.id));
                 }
             }
         }
