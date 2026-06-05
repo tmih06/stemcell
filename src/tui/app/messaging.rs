@@ -1978,6 +1978,20 @@ impl App {
             let is_system_trigger = content.starts_with("[SYSTEM:");
             if !is_system_trigger {
                 let display_content = Self::humanize_image_markers(&content);
+
+                // Dedup: if the tail of the conversation is an unpaired user
+                // message with identical content (previous request failed with
+                // no assistant response), remove the stale one before pushing.
+                // This prevents duplicate retries from accumulating during
+                // network issues — matches Claude Code's "message goes back
+                // to input" behaviour.
+                let prev_is_duplicate = self.messages.last().is_some_and(|last| {
+                    last.role == "user" && last.content == display_content
+                }) && !self.messages.iter().rev().skip(1).any(|m| m.role == "assistant");
+                if prev_is_duplicate {
+                    self.messages.pop();
+                }
+
                 let user_msg = DisplayMessage {
                     id: Uuid::new_v4(),
                     role: "user".to_string(),
