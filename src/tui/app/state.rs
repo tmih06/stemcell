@@ -2141,57 +2141,35 @@ impl App {
                         // DisplayMessage.id is TUI-local and intentionally does NOT
                         // match any DB row, so writing here would silently no-op.
                     } else if has_reasoning {
-                        // Reasoning-only iteration: prefer MERGING with
-                        // the immediately preceding thinking-only
-                        // assistant message — consecutive
-                        // `<think>…</think>` iterations without any
-                        // tools or text between them are really one
-                        // logical thinking phase. Merge criteria: last
-                        // message is an assistant row with empty
-                        // content, non-empty details, no tool_group.
-                        //
-                        // For background sessions, "last message" means
-                        // the last pending_messages entry — the cached
-                        // snapshot is read-only here. If pending is
-                        // empty, fall through to push a fresh entry;
-                        // the DB-reload on focus switch will pick up
-                        // the authoritative shape.
+                        // Reasoning-only iteration: push a SEPARATE
+                        // thinking row per LLM iteration. The previous
+                        // implementation merged consecutive thinking-
+                        // only events into one giant `details` blob —
+                        // logs from 2026-06-05 showed six consecutive
+                        // reasoning-only IntermediateText events
+                        // (len=0 visible text) fusing into a single
+                        // unreadable wall of thought. Each reasoning
+                        // pass is its own logical step (the model
+                        // explicitly decided to think more before
+                        // emitting a tool call or text), so render
+                        // them as discrete `▸ Thinking` rows the user
+                        // can expand individually. Tool group flush
+                        // still happens AFTER the thinking row so
+                        // order stays: think → tools → next.
                         let reasoning_text = reasoning_details.unwrap_or_default();
-                        let merged = state
-                            .last_message_mut()
-                            .filter(|m| {
-                                m.role == "assistant"
-                                    && m.content.trim().is_empty()
-                                    && m.tool_group.is_none()
-                                    && m.details.as_deref().is_some_and(|d| !d.trim().is_empty())
-                            })
-                            .map(|prev| {
-                                let mut combined = prev.details.take().unwrap_or_default();
-                                if !combined.ends_with("\n\n") {
-                                    combined.push_str("\n\n");
-                                }
-                                combined.push_str(&reasoning_text);
-                                prev.details = Some(combined);
-                                prev.timestamp = chrono::Utc::now();
-                            })
-                            .is_some();
-                        if !merged {
-                            // CLI step boundary with reasoning only — push thinking msg
-                            // BEFORE the tool group so order is: think → tools → next.
-                            state.push_message(DisplayMessage {
-                                id: Uuid::new_v4(),
-                                role: "assistant".to_string(),
-                                content: String::new(),
-                                timestamp: chrono::Utc::now(),
-                                token_count: None,
-                                cost: None,
-                                approval: None,
-                                approve_menu: None,
-                                details: Some(reasoning_text),
-                                expanded: false,
-                                tool_group: None,
-                            });
-                        }
+                        state.push_message(DisplayMessage {
+                            id: Uuid::new_v4(),
+                            role: "assistant".to_string(),
+                            content: String::new(),
+                            timestamp: chrono::Utc::now(),
+                            token_count: None,
+                            cost: None,
+                            approval: None,
+                            approve_menu: None,
+                            details: Some(reasoning_text),
+                            expanded: false,
+                            tool_group: None,
+                        });
                         if let Some(group) = state.take_active_tool_group() {
                             state.push_message(make_tool_group(group));
                         }
