@@ -1,0 +1,50 @@
+[files]
+extend-exclude = [
+    "Cargo.lock",
+    "CHANGELOG.md",
+    "*.toml.example",
+]
+
+[default.extend-words]
+# Project-specific terms that aren't typos
+opencrabs = "opencrabs"
+crabrace = "crabrace"
+
+# Library names
+Ratatui = "Ratatui"
+ratatui = "ratatui"
+
+# HashiCorp abbreviation
+Hashi = "Hashi"
+
+# Phone number abbreviation (WhatsApp store)
+Pn = "Pn"
+pn = "pn"
+
+# Mermaid diagram labels
+REPET = "REPET"
+BA = "BA"
+ba = "ba"
+
+# Code abbreviations and test data
+ful = "ful"
+secur = "secur"
+hel = "hel"
+helo = "helo"
+Syste = "Syste"
+opps = "opps"
+
+# Valid English variant
+unparseable = "unparseable"
+
+# French words in translation files
+authentification = "authentification"
+espace = "espace"
+maintenant = "maintenant"
+
+# Portuguese words in translation files
+erro = "erro"
+atual = "atual"
+
+# Spanish/other abbreviations in code
+mis = "mis"

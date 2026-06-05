@@ -2,8 +2,8 @@ name: CI
 
 on:
   push:
-    tags:
-      - 'v*'
+    branches:
+      - '**'
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -44,9 +44,6 @@ jobs:
         run: sudo apt-get update -qq && sudo apt-get install -y libasound2-dev
 
       - name: Check formatting
-        # Soft-fail: legacy un-formatted code blocks shouldn't block PRs
-        # yet. Promote to hard-fail once a fmt sweep lands on main.
-        continue-on-error: true
         run: cargo fmt --all -- --check
 
       - name: Clippy
@@ -182,14 +179,10 @@ jobs:
         #     0.13.x.
         run: cargo audit --ignore RUSTSEC-2024-0437
 
-  # ── Stage 5: Coverage (gated on lint, runs only on main pushes) ──────────
-  # Coverage runs only on main to save PR wall-clock — tarpaulin is the
-  # slowest job (~12 min). PRs still get full test coverage via the
-  # `test` job above; this job just publishes the report.
+  # ── Stage 5: Coverage (gated on lint) ────────────────────────────────────
   coverage:
     name: Code Coverage
     needs: [lint]
-    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -224,14 +217,134 @@ jobs:
         with:
           file: ./cobertura.xml
 
+  # ── Stage 6: MSRV verification ──────────────────────────────────────────
+  # Verify the declared minimum supported Rust version (1.91) compiles.
+  msrv:
+    name: MSRV Check
+    needs: [lint]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust (MSRV 1.91)
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.91"
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      - name: Install ALSA dev
+        run: sudo apt-get update -qq && sudo apt-get install -y libasound2-dev
+
+      - name: Build with MSRV
+        run: cargo build --locked --all-features
+
+  # ── Stage 7: Documentation check ────────────────────────────────────────
+  # Verify rustdoc builds without warnings or broken links.
+  doc:
+    name: Cargo Doc
+    needs: [lint]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust (from rust-toolchain.toml)
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: stable
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      - name: Install ALSA dev
+        run: sudo apt-get update -qq && sudo apt-get install -y libasound2-dev
+
+      - name: Build documentation
+        run: cargo doc --all-features --no-deps --document-private-items
+
+  # ── First wave: Independent checks (no Rust build needed) ───────────────
+  # These run in parallel with lint — no compilation required.
+
+  # Cargo deny (license + advisory compliance)
+  deny:
+    name: Cargo Deny
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cargo deny check
+        uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          command: check advisories licenses sources
+
+  # Typo check
+  typos:
+    name: Typo Check
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check for typos
+        uses: crate-ci/typos@master
+
+  # Secret leak detection
+  secrets:
+    name: Secret Scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Gitleaks scan
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # ── Stage 11: No-default-features build ─────────────────────────────────
+  # Catches conditional compilation bugs when features are disabled.
+  # NOTE: Currently soft-fail because the codebase has missing cfg guards
+  # for channel modules (telegram, discord, slack, whatsapp). Fixing this
+  # requires adding proper #[cfg(feature = "...")] guards throughout.
+  build-no-default:
+    name: Build (no-default-features)
+    needs: [lint]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust (from rust-toolchain.toml)
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: stable
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      - name: Build with no default features
+        continue-on-error: true
+        run: cargo build --locked --no-default-features
+
   # ── Required gate ────────────────────────────────────────────────────────
   # Single status check for branch protection. Internal job structure
   # can change without touching branch protection settings.
-  # Coverage is intentionally excluded — it's main-only.
   ci-gate:
     name: CI Required Gate
     if: always()
-    needs: [lint, build, test, audit]
+    needs: [lint, build, test, audit, coverage, msrv, doc, deny, typos, secrets, build-no-default]
     runs-on: ubuntu-latest
     steps:
       - name: Check results
