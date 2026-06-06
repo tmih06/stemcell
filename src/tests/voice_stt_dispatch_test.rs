@@ -24,7 +24,7 @@ async fn dispatch_api_mode_requires_api_key() {
     // Falls through to local STT which fails on invalid audio bytes
     let err = result.unwrap_err().to_string();
     assert!(
-        err.contains("No STT provider")
+        err.contains("All STT providers failed")
             || err.contains("Local STT")
             || err.contains("probe audio")
             || err.contains("decode"),
@@ -68,7 +68,7 @@ async fn dispatch_api_mode_with_provider_no_key_fails() {
     // Provider has no API key, falls through to local STT path
     let err = result.unwrap_err().to_string();
     assert!(
-        err.contains("No STT provider")
+        err.contains("All STT providers failed")
             || err.contains("Local STT")
             || err.contains("probe audio")
             || err.contains("decode"),
