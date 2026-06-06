@@ -618,7 +618,9 @@ pub(crate) fn compiled_features() -> Vec<&'static str> {
     if cfg!(feature = "profiling") {
         out.push("profiling");
     }
-    // Tool module features
+    // Coarse `tools-*` alias features (compatibility shims that group
+    // per-tool features together; listed so the agent can see which
+    // category groupings are active).
     if cfg!(feature = "tools-file-ops") {
         out.push("tools-file-ops");
     }
@@ -651,6 +653,211 @@ pub(crate) fn compiled_features() -> Vec<&'static str> {
     }
     if cfg!(feature = "tools-dynamic") {
         out.push("tools-dynamic");
+    }
+    // Per-tool features — one entry per `tool-*` cargo feature.
+    if cfg!(feature = "tool-read") {
+        out.push("tool-read");
+    }
+    if cfg!(feature = "tool-write") {
+        out.push("tool-write");
+    }
+    if cfg!(feature = "tool-edit") {
+        out.push("tool-edit");
+    }
+    if cfg!(feature = "tool-hashline-edit") {
+        out.push("tool-hashline-edit");
+    }
+    if cfg!(feature = "tool-bash") {
+        out.push("tool-bash");
+    }
+    if cfg!(feature = "tool-ls") {
+        out.push("tool-ls");
+    }
+    if cfg!(feature = "tool-glob") {
+        out.push("tool-glob");
+    }
+    if cfg!(feature = "tool-grep") {
+        out.push("tool-grep");
+    }
+    if cfg!(feature = "tool-web-search") {
+        out.push("tool-web-search");
+    }
+    if cfg!(feature = "tool-memory-search") {
+        out.push("tool-memory-search");
+    }
+    if cfg!(feature = "tool-session-search") {
+        out.push("tool-session-search");
+    }
+    if cfg!(feature = "tool-channel-search") {
+        out.push("tool-channel-search");
+    }
+    if cfg!(feature = "tool-exa-search") {
+        out.push("tool-exa-search");
+    }
+    if cfg!(feature = "tool-brave-search") {
+        out.push("tool-brave-search");
+    }
+    if cfg!(feature = "tool-task-manager") {
+        out.push("tool-task-manager");
+    }
+    if cfg!(feature = "tool-session-context") {
+        out.push("tool-session-context");
+    }
+    if cfg!(feature = "tool-http-request") {
+        out.push("tool-http-request");
+    }
+    if cfg!(feature = "tool-plan") {
+        out.push("tool-plan");
+    }
+    if cfg!(feature = "tool-execute-code") {
+        out.push("tool-execute-code");
+    }
+    if cfg!(feature = "tool-notebook-edit") {
+        out.push("tool-notebook-edit");
+    }
+    if cfg!(feature = "tool-parse-document") {
+        out.push("tool-parse-document");
+    }
+    if cfg!(feature = "tool-config-manager") {
+        out.push("tool-config-manager");
+    }
+    if cfg!(feature = "tool-follow-up-question") {
+        out.push("tool-follow-up-question");
+    }
+    if cfg!(feature = "tool-cron-manage") {
+        out.push("tool-cron-manage");
+    }
+    if cfg!(feature = "tool-spawn-agent") {
+        out.push("tool-spawn-agent");
+    }
+    if cfg!(feature = "tool-wait-agent") {
+        out.push("tool-wait-agent");
+    }
+    if cfg!(feature = "tool-send-input") {
+        out.push("tool-send-input");
+    }
+    if cfg!(feature = "tool-close-agent") {
+        out.push("tool-close-agent");
+    }
+    if cfg!(feature = "tool-resume-agent") {
+        out.push("tool-resume-agent");
+    }
+    if cfg!(feature = "tool-team-create") {
+        out.push("tool-team-create");
+    }
+    if cfg!(feature = "tool-team-delete") {
+        out.push("tool-team-delete");
+    }
+    if cfg!(feature = "tool-team-broadcast") {
+        out.push("tool-team-broadcast");
+    }
+    if cfg!(feature = "tool-feedback-record") {
+        out.push("tool-feedback-record");
+    }
+    if cfg!(feature = "tool-feedback-analyze") {
+        out.push("tool-feedback-analyze");
+    }
+    if cfg!(feature = "tool-self-improve") {
+        out.push("tool-self-improve");
+    }
+    if cfg!(feature = "tool-rsi-propose") {
+        out.push("tool-rsi-propose");
+    }
+    if cfg!(feature = "tool-generate-image") {
+        out.push("tool-generate-image");
+    }
+    if cfg!(feature = "tool-analyze-image") {
+        out.push("tool-analyze-image");
+    }
+    if cfg!(feature = "tool-analyze-video") {
+        out.push("tool-analyze-video");
+    }
+    if cfg!(feature = "tool-slash-command") {
+        out.push("tool-slash-command");
+    }
+    if cfg!(feature = "tool-rename-session") {
+        out.push("tool-rename-session");
+    }
+    if cfg!(feature = "tool-load-brain-file") {
+        out.push("tool-load-brain-file");
+    }
+    if cfg!(feature = "tool-write-opencrabs-file") {
+        out.push("tool-write-opencrabs-file");
+    }
+    if cfg!(feature = "tool-a2a-send") {
+        out.push("tool-a2a-send");
+    }
+    if cfg!(feature = "tool-telegram-connect") {
+        out.push("tool-telegram-connect");
+    }
+    if cfg!(feature = "tool-telegram-send") {
+        out.push("tool-telegram-send");
+    }
+    if cfg!(feature = "tool-whatsapp-connect") {
+        out.push("tool-whatsapp-connect");
+    }
+    if cfg!(feature = "tool-whatsapp-send") {
+        out.push("tool-whatsapp-send");
+    }
+    if cfg!(feature = "tool-discord-connect") {
+        out.push("tool-discord-connect");
+    }
+    if cfg!(feature = "tool-discord-send") {
+        out.push("tool-discord-send");
+    }
+    if cfg!(feature = "tool-slack-connect") {
+        out.push("tool-slack-connect");
+    }
+    if cfg!(feature = "tool-slack-send") {
+        out.push("tool-slack-send");
+    }
+    if cfg!(feature = "tool-trello-connect") {
+        out.push("tool-trello-connect");
+    }
+    if cfg!(feature = "tool-trello-send") {
+        out.push("tool-trello-send");
+    }
+    if cfg!(feature = "tool-browser-navigate") {
+        out.push("tool-browser-navigate");
+    }
+    if cfg!(feature = "tool-browser-screenshot") {
+        out.push("tool-browser-screenshot");
+    }
+    if cfg!(feature = "tool-browser-click") {
+        out.push("tool-browser-click");
+    }
+    if cfg!(feature = "tool-browser-type") {
+        out.push("tool-browser-type");
+    }
+    if cfg!(feature = "tool-browser-eval") {
+        out.push("tool-browser-eval");
+    }
+    if cfg!(feature = "tool-browser-content") {
+        out.push("tool-browser-content");
+    }
+    if cfg!(feature = "tool-browser-wait") {
+        out.push("tool-browser-wait");
+    }
+    if cfg!(feature = "tool-browser-find") {
+        out.push("tool-browser-find");
+    }
+    if cfg!(feature = "tool-browser-close") {
+        out.push("tool-browser-close");
+    }
+    if cfg!(feature = "tool-rebuild") {
+        out.push("tool-rebuild");
+    }
+    if cfg!(feature = "tool-evolve") {
+        out.push("tool-evolve");
+    }
+    if cfg!(feature = "tool-tool-manage") {
+        out.push("tool-tool-manage");
+    }
+    if cfg!(feature = "tool-rsi-proposals") {
+        out.push("tool-rsi-proposals");
+    }
+    if cfg!(feature = "tool-dynamic-runtime") {
+        out.push("tool-dynamic-runtime");
     }
     out
 }
@@ -749,7 +956,7 @@ mod tests {
             provider: Some("anthropic".to_string()),
             working_directory: Some("/home/user/project".to_string()),
         };
-        let prompt = loader.build_system_brain(Some(&info), None);
+        let prompt = loader.build_system_brain(Some(&info), None, None);
 
         assert!(prompt.contains("claude-sonnet-4-20250514"));
         assert!(prompt.contains("anthropic"));

@@ -1,8 +1,12 @@
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::PathBuf;
 
-const TOOL_TOGGLES: &[(&str, &str)] = &[
+/// Maps every recognised toggle key to the single cargo feature it
+/// enables. Keep in sync with `TOGGLE_TO_FEATURE` in
+/// `src/scripts/tool_features.py`.
+const TOGGLE_TO_FEATURE: &[(&str, &str)] = &[
+    // tools
     ("read_file", "tool-read"),
     ("write_file", "tool-write"),
     ("edit_file", "tool-edit"),
@@ -71,11 +75,49 @@ const TOOL_TOGGLES: &[(&str, &str)] = &[
     ("tool_manage", "tool-tool-manage"),
     ("rsi_proposals", "tool-rsi-proposals"),
     ("dynamic_runtime", "tool-dynamic-runtime"),
+    // channels
+    ("telegram", "telegram"),
+    ("whatsapp", "whatsapp"),
+    ("discord", "discord"),
+    ("slack", "slack"),
+    ("trello", "trello"),
+    // capabilities
+    ("local-stt", "local-stt"),
+    ("local-tts", "local-tts"),
+    ("browser", "browser"),
+    ("pdfium", "pdfium"),
+    ("rtk", "rtk"),
+];
+
+/// Coarse `tools-*` alias features that legacy
+/// `#[cfg(feature = "tools-rsi")]`-style gates in the source depend
+/// on. Each alias is auto-enabled when any of its sub-tools is on, so
+/// those gates keep working even though the user-facing toggle is the
+/// per-tool one. Keep in sync with `ALIAS_SUB_TOOLS` in
+/// `src/scripts/tool_features.py`.
+const ALIAS_SUB_TOOLS: &[(&str, &[&str])] = &[
+    (
+        "tools-rsi",
+        &[
+            "tool-feedback-record",
+            "tool-feedback-analyze",
+            "tool-self-improve",
+            "tool-rsi-propose",
+        ],
+    ),
+    (
+        "tools-dynamic",
+        &[
+            "tool-tool-manage",
+            "tool-rsi-proposals",
+            "tool-dynamic-runtime",
+        ],
+    ),
 ];
 
 fn main() {
-    println!("cargo:rerun-if-changed=Cargo.toml");
-    validate_tool_toggles();
+    println!("cargo:rerun-if-changed=build_toggles.toml");
+    validate_build_toggles();
 
     // Embed icon and metadata into Windows executables
     #[cfg(target_os = "windows")]
@@ -88,45 +130,63 @@ fn main() {
     }
 }
 
-fn validate_tool_toggles() {
-    let manifest_path =
-        PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR missing"))
-            .join("Cargo.toml");
-    let manifest = fs::read_to_string(&manifest_path)
-        .unwrap_or_else(|e| panic!("failed to read {}: {e}", manifest_path.display()));
-    let cargo: toml::Value = manifest
+fn toggle_path() -> PathBuf {
+    PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR missing"))
+        .join("build_toggles.toml")
+}
+
+fn load_toggle_values(path: &PathBuf) -> BTreeMap<String, bool> {
+    let raw = fs::read_to_string(path)
+        .unwrap_or_else(|e| panic!("failed to read {}: {e}", path.display()));
+    let parsed: toml::Value = raw
         .parse()
-        .unwrap_or_else(|e| panic!("failed to parse {}: {e}", manifest_path.display()));
+        .unwrap_or_else(|e| panic!("failed to parse {}: {e}", path.display()));
 
-    let toggles = cargo
-        .get("package")
-        .and_then(|v| v.get("metadata"))
-        .and_then(|v| v.get("tool_toggles"))
-        .and_then(|v| v.as_table())
-        .unwrap_or_else(|| panic!("Cargo.toml missing [package.metadata.tool_toggles]"));
+    let table = parsed
+        .as_table()
+        .unwrap_or_else(|| panic!("{}: top level must be a TOML table", path.display()));
 
-    let expected_keys: BTreeSet<&str> = TOOL_TOGGLES.iter().map(|(key, _)| *key).collect();
-    let actual_keys: BTreeSet<&str> = toggles.keys().map(|k| k.as_str()).collect();
+    let mut flat: BTreeMap<String, bool> = BTreeMap::new();
+    for (section, entries) in table {
+        let entries = entries.as_table().unwrap_or_else(|| {
+            panic!(
+                "{}: [{}] must be a table of booleans",
+                path.display(),
+                section
+            )
+        });
+        for (key, value) in entries {
+            let value = value.as_bool().unwrap_or_else(|| {
+                panic!(
+                    "{}: [{}.{}] must be a boolean",
+                    path.display(),
+                    section,
+                    key
+                )
+            });
+            flat.insert(key.clone(), value);
+        }
+    }
+    flat
+}
+
+fn validate_build_toggles() {
+    let path = toggle_path();
+    let actual = load_toggle_values(&path);
+
+    let expected_keys: BTreeSet<&str> = TOGGLE_TO_FEATURE.iter().map(|(k, _)| *k).collect();
+    let actual_keys: BTreeSet<&str> = actual.keys().map(String::as_str).collect();
 
     let missing: Vec<&str> = expected_keys.difference(&actual_keys).copied().collect();
     let extra: Vec<&str> = actual_keys.difference(&expected_keys).copied().collect();
-    let invalid: Vec<&str> = TOOL_TOGGLES
-        .iter()
-        .filter_map(|(key, _)| {
-            toggles
-                .get(*key)
-                .filter(|v| v.as_bool().is_none())
-                .map(|_| *key)
-        })
-        .collect();
-
-    if !missing.is_empty() || !extra.is_empty() || !invalid.is_empty() {
+    if !missing.is_empty() || !extra.is_empty() {
         panic!(
-            "invalid [package.metadata.tool_toggles]: missing={missing:?} extra={extra:?} non_bool={invalid:?}"
+            "invalid build_toggles.toml: missing={missing:?} extra={extra:?}. \
+             Add missing keys to the appropriate section, or remove unknown ones."
         );
     }
 
-    if let Ok(expected_csv) = std::env::var("OPENCRABS_EXPECTED_TOOL_FEATURES") {
+    if let Ok(expected_csv) = std::env::var("OPENCRABS_EXPECTED_FEATURES") {
         let expected: BTreeSet<String> = expected_csv
             .split(',')
             .map(str::trim)
@@ -134,7 +194,7 @@ fn validate_tool_toggles() {
             .map(ToOwned::to_owned)
             .collect();
 
-        let active: BTreeSet<String> = TOOL_TOGGLES
+        let mut active: BTreeSet<String> = TOGGLE_TO_FEATURE
             .iter()
             .map(|(_, feature)| *feature)
             .filter(|feature| {
@@ -142,35 +202,27 @@ fn validate_tool_toggles() {
                 std::env::var_os(env_key).is_some()
             })
             .map(str::to_string)
-            .chain(
-                std::iter::once("rtk".to_string())
-                    .filter(|_| std::env::var_os("CARGO_FEATURE_RTK").is_some()),
-            )
             .collect();
 
-        let expected_toolish: BTreeSet<String> = expected
-            .into_iter()
-            .filter(|feature| feature == "rtk" || feature.starts_with("tool-"))
-            .collect();
+        // Mirror the resolver's auto-alias behaviour so the cross-check
+        // accounts for `tools-rsi` / `tools-dynamic` being implicitly
+        // enabled when one of their sub-tools is on.
+        for (alias, sub_tools) in ALIAS_SUB_TOOLS {
+            let env_key = format!("CARGO_FEATURE_{}", alias.replace('-', "_").to_uppercase());
+            if std::env::var_os(env_key).is_some() {
+                active.insert((*alias).to_string());
+            } else if sub_tools.iter().any(|st| active.contains(*st)) {
+                // Alias wasn't passed to Cargo but the source compiled
+                // it anyway — treat it as active for the cross-check.
+                active.insert((*alias).to_string());
+            }
+        }
 
-        if active != expected_toolish {
+        if active != expected {
             panic!(
-                "tool feature mismatch: active={active:?} expected={expected_toolish:?}. \
-                 Use the Makefile build/run targets so Cargo features match [package.metadata.tool_toggles]."
+                "feature mismatch: active={active:?} expected={expected:?}. \
+                 Use the Makefile build/run targets so Cargo features match build_toggles.toml."
             );
         }
     }
-
-    let _toggle_values: HashMap<&str, bool> = TOOL_TOGGLES
-        .iter()
-        .map(|(key, _)| {
-            (
-                *key,
-                toggles
-                    .get(*key)
-                    .and_then(|v| v.as_bool())
-                    .expect("validated boolean toggle missing"),
-            )
-        })
-        .collect();
 }

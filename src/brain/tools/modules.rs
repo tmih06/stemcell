@@ -281,15 +281,13 @@ impl ToolModule for SearchModule {
                 .web_search
                 .as_ref()
                 .and_then(|ws| ws.brave.as_ref())
+                && brave_cfg.enabled
+                && let Some(brave_key) = brave_cfg.api_key.clone()
             {
-                if brave_cfg.enabled {
-                    if let Some(brave_key) = brave_cfg.api_key.clone() {
-                        ctx.register(Arc::new(super::brave_search::BraveSearchTool::new(
-                            brave_key,
-                        )));
-                        tracing::info!("Registered Brave search tool");
-                    }
-                }
+                ctx.register(Arc::new(super::brave_search::BraveSearchTool::new(
+                    brave_key,
+                )));
+                tracing::info!("Registered Brave search tool");
             }
         }
 

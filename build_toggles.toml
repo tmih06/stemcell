@@ -1,0 +1,101 @@
+# build_toggles.toml — what to include in the default `make build` /
+# `make build-release`.
+#
+# Each key maps 1:1 to a Cargo feature. The resolved set is passed to
+# `cargo build --no-default-features --features <set>`. To disable
+# something, flip its value to `false`. To add a new toggle, append
+# it under the appropriate section AND register it in the matching
+# list in:
+#   - src/scripts/tool_features.py  (TOGGLE_TO_FEATURE)
+#   - build.rs                       (TOGGLE_TO_FEATURE)
+
+## == Tools ==
+## Per-tool modules. One key per `tool-*` cargo feature.
+[tools]
+read_file = true
+write_file = true
+edit_file = true
+hashline_edit = true
+bash = true
+ls = true
+glob = true
+grep = true
+web_search = true
+memory_search = true
+session_search = true
+channel_search = true
+exa_search = true
+brave_search = true
+task_manager = true
+session_context = true
+http_request = true
+plan = true
+execute_code = true
+notebook_edit = true
+parse_document = true
+config_manager = true
+follow_up_question = true
+cron_manage = true
+spawn_agent = true
+wait_agent = true
+send_input = true
+close_agent = true
+resume_agent = true
+team_create = true
+team_delete = true
+team_broadcast = true
+feedback_record = true
+feedback_analyze = true
+self_improve = true
+rsi_propose = true
+generate_image = true
+analyze_image = true
+analyze_video = true
+slash_command = true
+rename_session = true
+load_brain_file = true
+write_opencrabs_file = true
+a2a_send = true
+telegram_connect = true
+telegram_send = true
+whatsapp_connect = true
+whatsapp_send = true
+discord_connect = true
+discord_send = true
+slack_connect = true
+slack_send = true
+trello_connect = true
+trello_send = true
+browser_navigate = true
+browser_screenshot = true
+browser_click = true
+browser_type = true
+browser_eval = true
+browser_content = true
+browser_wait = true
+browser_find = true
+browser_close = true
+rebuild = true
+evolve = true
+tool_manage = true
+rsi_proposals = true
+dynamic_runtime = true
+
+## == Channels ==
+## Messaging platforms. Enabling these pulls in heavyweight client
+## dependencies (teloxide, serenity, slack-morphism, whatsapp-rust, …).
+[channels]
+telegram = true
+whatsapp = true
+discord = true
+slack = true
+trello = true
+
+## == Capabilities ==
+## Optional subsystems and integrations.
+[capabilities]
+local-stt = true
+local-tts = true
+browser = true
+pdfium = true
+rtk = true
