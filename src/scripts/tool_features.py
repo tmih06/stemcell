@@ -1,10 +1,13 @@
 #!/usr/bin/env python3
 """Resolve build_toggles.toml into a Cargo `--features` list.
 
-The toggle file groups keys into sections (currently `[tools]`,
-`[channels]`, `[capabilities]`) so adding a new feature category is
-just: add a section to the file + add an entry to TOGGLE_TO_FEATURE
-below.
+The toggle file groups keys into packs ([file], [search], [rsi], …)
+so each toggle is coarse enough that enabling it makes sense on its
+own — there's no `spawn_agent` without `wait_agent` here. Each pack
+key maps to one or more Cargo features. Some packs imply others
+(e.g. `file-write` implies `file-read`). Legacy `#[cfg(feature =
+"tools-rsi")]`-style gates in the source are kept happy by
+auto-including the matching alias features.
 
 Usage:
     python3 tool_features.py [path/to/build_toggles.toml]
@@ -24,90 +27,134 @@ except ImportError:  # pragma: no cover
     sys.exit(1)
 
 
-# Maps every recognised toggle key to the single cargo feature it
-# enables. Keep in sync with `TOGGLE_TO_FEATURE` in build.rs.
-TOGGLE_TO_FEATURE: dict[str, str] = {
-    # tools
-    "read_file": "tool-read",
-    "write_file": "tool-write",
-    "edit_file": "tool-edit",
-    "hashline_edit": "tool-hashline-edit",
-    "bash": "tool-bash",
-    "ls": "tool-ls",
-    "glob": "tool-glob",
-    "grep": "tool-grep",
-    "web_search": "tool-web-search",
-    "memory_search": "tool-memory-search",
-    "session_search": "tool-session-search",
-    "channel_search": "tool-channel-search",
-    "exa_search": "tool-exa-search",
-    "brave_search": "tool-brave-search",
-    "task_manager": "tool-task-manager",
-    "session_context": "tool-session-context",
-    "http_request": "tool-http-request",
-    "plan": "tool-plan",
-    "execute_code": "tool-execute-code",
-    "notebook_edit": "tool-notebook-edit",
-    "parse_document": "tool-parse-document",
-    "config_manager": "tool-config-manager",
-    "follow_up_question": "tool-follow-up-question",
-    "cron_manage": "tool-cron-manage",
-    "spawn_agent": "tool-spawn-agent",
-    "wait_agent": "tool-wait-agent",
-    "send_input": "tool-send-input",
-    "close_agent": "tool-close-agent",
-    "resume_agent": "tool-resume-agent",
-    "team_create": "tool-team-create",
-    "team_delete": "tool-team-delete",
-    "team_broadcast": "tool-team-broadcast",
-    "feedback_record": "tool-feedback-record",
-    "feedback_analyze": "tool-feedback-analyze",
-    "self_improve": "tool-self-improve",
-    "rsi_propose": "tool-rsi-propose",
-    "generate_image": "tool-generate-image",
-    "analyze_image": "tool-analyze-image",
-    "analyze_video": "tool-analyze-video",
-    "slash_command": "tool-slash-command",
-    "rename_session": "tool-rename-session",
-    "load_brain_file": "tool-load-brain-file",
-    "write_opencrabs_file": "tool-write-opencrabs-file",
-    "a2a_send": "tool-a2a-send",
-    "telegram_connect": "tool-telegram-connect",
-    "telegram_send": "tool-telegram-send",
-    "whatsapp_connect": "tool-whatsapp-connect",
-    "whatsapp_send": "tool-whatsapp-send",
-    "discord_connect": "tool-discord-connect",
-    "discord_send": "tool-discord-send",
-    "slack_connect": "tool-slack-connect",
-    "slack_send": "tool-slack-send",
-    "trello_connect": "tool-trello-connect",
-    "trello_send": "tool-trello-send",
-    "browser_navigate": "tool-browser-navigate",
-    "browser_screenshot": "tool-browser-screenshot",
-    "browser_click": "tool-browser-click",
-    "browser_type": "tool-browser-type",
-    "browser_eval": "tool-browser-eval",
-    "browser_content": "tool-browser-content",
-    "browser_wait": "tool-browser-wait",
-    "browser_find": "tool-browser-find",
-    "browser_close": "tool-browser-close",
-    "rebuild": "tool-rebuild",
-    "evolve": "tool-evolve",
-    "tool_manage": "tool-tool-manage",
-    "rsi_proposals": "tool-rsi-proposals",
-    "dynamic_runtime": "tool-dynamic-runtime",
-    # channels
-    "telegram": "telegram",
-    "whatsapp": "whatsapp",
-    "discord": "discord",
-    "slack": "slack",
-    "trello": "trello",
+# Each pack toggle maps to the cargo features it enables. Keep in
+# sync with `TOGGLE_TO_FEATURES` in build.rs.
+TOGGLE_TO_FEATURES: dict[str, tuple[str, ...]] = {
     # capabilities
-    "local-stt": "local-stt",
-    "local-tts": "local-tts",
-    "browser": "browser",
-    "pdfium": "pdfium",
-    "rtk": "rtk",
+    "local-stt": ("local-stt",),
+    "local-tts": ("local-tts",),
+    "browser": (
+        "browser",
+        "tool-browser-navigate",
+        "tool-browser-screenshot",
+        "tool-browser-click",
+        "tool-browser-type",
+        "tool-browser-eval",
+        "tool-browser-content",
+        "tool-browser-wait",
+        "tool-browser-find",
+        "tool-browser-close",
+    ),
+    "pdfium": ("pdfium",),
+    "rtk": ("rtk",),
+    "profiling": ("profiling",),
+    # channels — each enables the client + the two integration tools
+    "telegram": (
+        "telegram",
+        "tool-telegram-connect",
+        "tool-telegram-send",
+    ),
+    "whatsapp": (
+        "whatsapp",
+        "tool-whatsapp-connect",
+        "tool-whatsapp-send",
+    ),
+    "discord": (
+        "discord",
+        "tool-discord-connect",
+        "tool-discord-send",
+    ),
+    "slack": (
+        "slack",
+        "tool-slack-connect",
+        "tool-slack-send",
+    ),
+    "trello": (
+        "trello",
+        "tool-trello-connect",
+        "tool-trello-send",
+    ),
+    # file tier
+    "file-read": ("tool-read", "tool-ls", "tool-glob", "tool-grep"),
+    "file-write": ("tool-write", "tool-edit", "tool-hashline-edit"),
+    # bash tier
+    "bash": ("tool-bash",),
+    # search
+    "external-search": (
+        "tool-web-search",
+        "tool-exa-search",
+        "tool-brave-search",
+        "tool-memory-search",
+        "tool-session-search",
+        "tool-channel-search",
+    ),
+    # workflow
+    "workflow": (
+        "tool-task-manager",
+        "tool-session-context",
+        "tool-plan",
+        "tool-http-request",
+        "tool-execute-code",
+        "tool-notebook-edit",
+        "tool-parse-document",
+        "tool-config-manager",
+        "tool-follow-up-question",
+        "tool-cron-manage",
+    ),
+    # multi-agent
+    "multi-agent": (
+        "tool-spawn-agent",
+        "tool-wait-agent",
+        "tool-send-input",
+        "tool-close-agent",
+        "tool-resume-agent",
+        "tool-team-create",
+        "tool-team-delete",
+        "tool-team-broadcast",
+    ),
+    # rsi
+    "rsi": (
+        "tool-feedback-record",
+        "tool-feedback-analyze",
+        "tool-self-improve",
+        "tool-rsi-propose",
+        "tool-rsi-proposals",
+        "tool-tool-manage",
+        "tool-rebuild",
+        "tool-evolve",
+        "tool-dynamic-runtime",
+    ),
+    # image
+    "image": (
+        "tool-generate-image",
+        "tool-analyze-image",
+        "tool-analyze-video",
+    ),
+    # brain
+    "brain": (
+        "tool-slash-command",
+        "tool-rename-session",
+        "tool-load-brain-file",
+        "tool-write-opencrabs-file",
+        "tool-a2a-send",
+    ),
+}
+
+# Implication rules: enabling `key` also enables `other_key` first
+# (recursively). Use for packs that don't make sense without a
+# prerequisite.
+IMPLIES: dict[str, tuple[str, ...]] = {
+    "file-write": ("file-read",),
+}
+
+# Legacy `tools-*` alias features that source code's
+# `#[cfg(feature = "...")]` gates depend on. Each alias is
+# auto-enabled when ANY of the listed pack keys is on, so existing
+# gates keep working even though the user-facing toggle is the
+# coarser pack. Keep in sync with `ALIAS_FROM_PACKS` in build.rs.
+ALIAS_FROM_PACKS: dict[str, tuple[str, ...]] = {
+    "tools-rsi": ("rsi",),
+    "tools-dynamic": ("rsi",),
 }
 
 
@@ -135,7 +182,7 @@ def load_toggles(path: Path) -> dict[str, bool]:
                 fail(f"{path}: [{section}] {key!r} must be a boolean, got {type(value).__name__}")
             flat[key] = value
 
-    expected = set(TOGGLE_TO_FEATURE)
+    expected = set(TOGGLE_TO_FEATURES)
     actual = set(flat)
 
     missing = sorted(expected - actual)
@@ -148,55 +195,55 @@ def load_toggles(path: Path) -> dict[str, bool]:
         )
     if extra:
         errors.append(
-            f"{path}: unknown toggle keys (remove or register in TOGGLE_TO_FEATURE): "
+            f"{path}: unknown toggle keys (remove or register in TOGGLE_TO_FEATURES): "
             + ", ".join(extra)
         )
     if errors:
         fail(" | ".join(errors))
 
-    # Preserve canonical order so the output is stable for caching.
-    return {key: flat[key] for key in TOGGLE_TO_FEATURE}
+    return {key: flat[key] for key in TOGGLE_TO_FEATURES}
 
 
-# Coarse `tools-*` alias features that source code's `#[cfg(feature = …)]`
-# gates depend on. Each alias is auto-enabled when any of its sub-tools is
-# on, so existing cfg gates (e.g. `#[cfg(feature = "tools-rsi")]`) keep
-# working even though the user-facing toggle is the per-tool one.
-ALIAS_SUB_TOOLS: dict[str, tuple[str, ...]] = {
-    "tools-rsi": (
-        "tool-feedback-record",
-        "tool-feedback-analyze",
-        "tool-self-improve",
-        "tool-rsi-propose",
-    ),
-    "tools-dynamic": (
-        "tool-tool-manage",
-        "tool-rsi-proposals",
-        "tool-dynamic-runtime",
-    ),
-}
+def expand_implies(enabled: set[str]) -> set[str]:
+    """Apply IMPLIES transitively: if X implies Y, enabling X
+    enables Y too. Loop until no new keys are added (handles
+    chains like A → B → C)."""
+    changed = True
+    while changed:
+        changed = False
+        for key, deps in IMPLIES.items():
+            if key in enabled:
+                for dep in deps:
+                    if dep not in enabled:
+                        enabled.add(dep)
+                        changed = True
+    return enabled
 
 
 def resolve_features(toggles: dict[str, bool]) -> list[str]:
+    enabled = {key for key, on in toggles.items() if on}
+    enabled = expand_implies(enabled)
+
     seen: set[str] = set()
     out: list[str] = []
-    for key, enabled in toggles.items():
-        if not enabled:
-            continue
-        feature = TOGGLE_TO_FEATURE[key]
-        if feature in seen:
-            continue
-        seen.add(feature)
-        out.append(feature)
-    # Auto-enable coarse `tools-*` alias features when any of their
-    # sub-tools is on, so legacy `#[cfg(feature = "tools-rsi")]`-style
-    # gates in the source still resolve.
-    for alias, sub_tools in ALIAS_SUB_TOOLS.items():
+    for key in enabled:
+        for feature in TOGGLE_TO_FEATURES[key]:
+            if feature in seen:
+                continue
+            seen.add(feature)
+            out.append(feature)
+
+    # Auto-enable coarse `tools-*` alias features when any of the
+    # packs that contribute to them is on, so legacy
+    # `#[cfg(feature = "tools-rsi")]`-style gates in the source
+    # still resolve.
+    for alias, required_packs in ALIAS_FROM_PACKS.items():
         if alias in seen:
             continue
-        if any(st in seen for st in sub_tools):
+        if any(p in enabled for p in required_packs):
             seen.add(alias)
             out.append(alias)
+
     return out
 
 

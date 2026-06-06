@@ -1,89 +1,30 @@
 # build_toggles.toml — what to include in the default `make build` /
 # `make build-release`.
 #
-# Each key maps 1:1 to a Cargo feature. The resolved set is passed to
-# `cargo build --no-default-features --features <set>`. To disable
-# something, flip its value to `false`. To add a new toggle, append
-# it under the appropriate section AND register it in the matching
-# list in:
-#   - src/scripts/tool_features.py  (TOGGLE_TO_FEATURE)
-#   - build.rs                       (TOGGLE_TO_FEATURE)
+# Each key maps to one or more cargo features. The resolved set is
+# passed to `cargo build --no-default-features --features <set>`.
+# To disable something, flip its value to `false`. To add a new
+# toggle, append it to the appropriate section AND register it in
+# the matching map in:
+#   - src/scripts/tool_features.py  (TOGGLE_TO_FEATURES / IMPLIES)
+#   - build.rs                       (TOGGLE_TO_FEATURES / IMPLIES)
 
-## == Tools ==
-## Per-tool modules. One key per `tool-*` cargo feature.
-[tools]
-read_file = true
-write_file = true
-edit_file = true
-hashline_edit = true
-bash = true
-ls = true
-glob = true
-grep = true
-web_search = true
-memory_search = true
-session_search = true
-channel_search = true
-exa_search = true
-brave_search = true
-task_manager = true
-session_context = true
-http_request = true
-plan = true
-execute_code = true
-notebook_edit = true
-parse_document = true
-config_manager = true
-follow_up_question = true
-cron_manage = true
-spawn_agent = true
-wait_agent = true
-send_input = true
-close_agent = true
-resume_agent = true
-team_create = true
-team_delete = true
-team_broadcast = true
-feedback_record = true
-feedback_analyze = true
-self_improve = true
-rsi_propose = true
-generate_image = true
-analyze_image = true
-analyze_video = true
-slash_command = true
-rename_session = true
-load_brain_file = true
-write_opencrabs_file = true
-a2a_send = true
-telegram_connect = true
-telegram_send = true
-whatsapp_connect = true
-whatsapp_send = true
-discord_connect = true
-discord_send = true
-slack_connect = true
-slack_send = true
-trello_connect = true
-trello_send = true
-browser_navigate = true
-browser_screenshot = true
-browser_click = true
-browser_type = true
-browser_eval = true
-browser_content = true
-browser_wait = true
-browser_find = true
-browser_close = true
-rebuild = true
-evolve = true
-tool_manage = true
-rsi_proposals = true
-dynamic_runtime = true
+## == Capabilities ==
+## Optional subsystems and integrations. None of these are
+## dependencies of the other packs.
+[capabilities]
+local-stt = false
+local-tts = false
+browser = true
+pdfium = false
+rtk = true
+profiling = false
 
 ## == Channels ==
-## Messaging platforms. Enabling these pulls in heavyweight client
-## dependencies (teloxide, serenity, slack-morphism, whatsapp-rust, …).
+## Each channel pulls in the matching client dependency. The
+## channel-integration tools (telegram_connect / telegram_send,
+## etc.) come along automatically — there's no point enabling
+## the channel without them.
 [channels]
 telegram = true
 whatsapp = true
@@ -91,11 +32,54 @@ discord = true
 slack = true
 trello = true
 
-## == Capabilities ==
-## Optional subsystems and integrations.
-[capabilities]
-local-stt = true
-local-tts = true
-browser = true
-pdfium = true
-rtk = true
+## == File I/O ==
+## Two escalating tiers — enable only what you need:
+##   file-read   : read files + list/glob/grep the filesystem
+##   file-write  : adds create + edit (implies file-read)
+[file]
+file-read = true
+file-write = true
+
+## == Bash ==
+## Shell command execution. Independent of the file tier — the
+## agent can have bash without write access, or write without
+## shell, depending on what you want it to do.
+[bash]
+bash = true
+
+## == Search ==
+## Web + memory + session + channel history.
+[search]
+external-search = true
+
+## == Workflow ==
+## Task management, planning, HTTP, code execution, document
+## parsing, notebook editing, cron, config mgmt.
+[workflow]
+workflow = true
+
+## == Multi-agent ==
+## Sub-agent spawning and team management. The four agent
+## lifecycle tools (spawn / wait / close / resume) and the three
+## team tools (create / delete / broadcast) only make sense as a
+## pack — partial enables leave the agent unable to actually use
+## the agents it spawns.
+[multi-agent]
+multi-agent = true
+
+## == RSI ==
+## Recursive self-improvement: feedback ledger + analysis +
+## self-improve + proposals + tool management. The whole loop
+## is interdependent.
+[rsi]
+rsi = true
+
+## == Image ==
+## Image generation + vision analysis.
+[image]
+image = true
+
+## == Brain ==
+## Slash commands, session rename, brain file I/O, A2A.
+[brain]
+brain = true
