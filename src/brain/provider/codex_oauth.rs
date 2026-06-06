@@ -626,7 +626,7 @@ impl Provider for CodexOAuthProvider {
                 .await
                 .map_err(|e| ProviderError::Internal(format!("Token refresh failed: {}", e)))?;
         }
-        self.inner.complete(request).await
+        <OpenAIProvider as Clone>::clone(&self.inner).build().complete(request).await
     }
 
     async fn stream(&self, request: LLMRequest) -> Result<ProviderStream> {
@@ -637,7 +637,7 @@ impl Provider for CodexOAuthProvider {
                 .await
                 .map_err(|e| ProviderError::Internal(format!("Token refresh failed: {}", e)))?;
         }
-        self.inner.stream(request).await
+        <OpenAIProvider as Clone>::clone(&self.inner).build().stream(request).await
     }
 
     fn name(&self) -> &str {
