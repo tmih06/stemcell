@@ -101,6 +101,21 @@ pub(crate) fn message_has_visible_details(message: &DisplayMessage) -> bool {
         .is_some_and(|details| !details.trim().is_empty())
 }
 
+/// Choose the next global Ctrl+O state from the newest expandable item.
+///
+/// Ctrl+O is a global toggle, not a per-message action: one keypress should
+/// either expand everything or collapse everything. Because the chat view has
+/// no focused "current block", we infer the intended direction from the most
+/// recent expandable item the user can see:
+///
+/// - active in-flight tool group, if any
+/// - newest persisted tool group in the transcript
+/// - newest message with visible details (thinking / reasoning)
+///
+/// If the newest expandable item is already expanded, Ctrl+O collapses all of
+/// them. If it's collapsed, Ctrl+O expands all of them. With nothing
+/// expandable on screen, default to `true` so the first future toggle is an
+/// expansion rather than a no-op.
 pub(crate) fn ctrl_o_toggle_target(
     messages: &[DisplayMessage],
     active_tool_group: Option<&ToolCallGroup>,
@@ -998,22 +1013,18 @@ impl App {
                 }
                 return Ok(());
             } else if event.code == KeyCode::Char('o') && event.modifiers == KeyModifiers::CONTROL {
-                // Allow Ctrl+O during approval so user can collapse tool groups to see the approval
-                let target = if let Some(ref group) = self.active_tool_group {
-                    !group.expanded
-                } else if let Some(msg) =
-                    self.messages.iter().rev().find(|m| m.tool_group.is_some())
-                {
-                    !msg.tool_group.as_ref().expect("checked").expanded
-                } else {
-                    true
-                };
+                // Allow Ctrl+O during approval so the user can collapse earlier
+                // tool/reasoning details and reveal the approval prompt.
+                let target = ctrl_o_toggle_target(&self.messages, self.active_tool_group.as_ref());
                 if let Some(ref mut group) = self.active_tool_group {
                     group.expanded = target;
                 }
                 for msg in self.messages.iter_mut() {
                     if let Some(ref mut group) = msg.tool_group {
                         group.expanded = target;
+                    }
+                    if message_has_visible_details(msg) {
+                        msg.expanded = target;
                     }
                 }
                 return Ok(());
@@ -1497,7 +1508,9 @@ impl App {
                 self.error_message_shown_at = Some(std::time::Instant::now());
             }
         } else if event.code == KeyCode::Char('o') && event.modifiers == KeyModifiers::CONTROL {
-            // Ctrl+O — toggle expand/collapse using the latest expandable item
+            // Ctrl+O is a global expand/collapse toggle. With no focused block
+            // in the transcript, use the newest expandable item to decide
+            // whether this press means "expand all" or "collapse all".
             let target = ctrl_o_toggle_target(&self.messages, self.active_tool_group.as_ref());
             if let Some(ref mut group) = self.active_tool_group {
                 group.expanded = target;
