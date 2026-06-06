@@ -232,7 +232,9 @@ mod tests {
         assert!(is_nonstream_response(
             r#"{"object":"chat.completion","id":"x"}"#
         ));
-        assert!(!is_nonstream_response(r#"data: {"object":"chat.completion"}"#));
+        assert!(!is_nonstream_response(
+            r#"data: {"object":"chat.completion"}"#
+        ));
         assert!(!is_nonstream_response("not json"));
         assert!(!is_nonstream_response(
             r#"{"object":"chat.completion.chunk"}"#

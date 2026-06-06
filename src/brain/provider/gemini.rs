@@ -23,7 +23,9 @@ pub fn sanitize_schema_for_gemini(schema: Value) -> Value {
             }
             Value::Object(new_map)
         }
-        Value::Array(arr) => Value::Array(arr.into_iter().map(sanitize_schema_for_gemini).collect()),
+        Value::Array(arr) => {
+            Value::Array(arr.into_iter().map(sanitize_schema_for_gemini).collect())
+        }
         other => other,
     }
 }

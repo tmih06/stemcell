@@ -207,16 +207,16 @@ impl OpenAIProvider {
         });
 
         let context_window_fn: Option<Arc<dyn Fn(&str) -> Option<u32> + Send + Sync>> =
-            configured_cw.map(|cw| -> Arc<dyn Fn(&str) -> Option<u32> + Send + Sync> { Arc::new(move |_model| Some(cw)) });
+            configured_cw.map(|cw| -> Arc<dyn Fn(&str) -> Option<u32> + Send + Sync> {
+                Arc::new(move |_model| Some(cw))
+            });
 
         let calculate_cost_fn: Option<Arc<dyn Fn(&str, u32, u32) -> f64 + Send + Sync>> =
-            Some(Arc::new(
-                move |model, input_tokens, output_tokens| {
-                    crate::usage::pricing::PricingConfig::load()
-                        .map(|cfg| cfg.calculate_cost(model, input_tokens, output_tokens))
-                        .unwrap_or(0.0)
-                },
-            ));
+            Some(Arc::new(move |model, input_tokens, output_tokens| {
+                crate::usage::pricing::PricingConfig::load()
+                    .map(|cfg| cfg.calculate_cost(model, input_tokens, output_tokens))
+                    .unwrap_or(0.0)
+            }));
 
         crate::brain::provider::rig_adapter::RigAdapter {
             name: self.name,
@@ -237,7 +237,10 @@ impl OpenAIProvider {
     /// rig-core primary path does NOT go through this — `RigAdapter`
     /// builds its own `CompletionRequest`. This method exists only for
     /// the test surface.
-    pub fn to_openai_request(&self, request: crate::brain::provider::types::LLMRequest) -> OpenAIRequest {
+    pub fn to_openai_request(
+        &self,
+        request: crate::brain::provider::types::LLMRequest,
+    ) -> OpenAIRequest {
         use crate::brain::provider::types::{ContentBlock, ImageSource, Role};
 
         let mut messages = Vec::new();
@@ -794,15 +797,13 @@ pub fn extract_text_tool_calls(text: &str) -> (Vec<(String, serde_json::Value)>,
     let has_claude_style = KNOWN_TOOL_NAMES
         .iter()
         .any(|t| text.contains(&format!("<{}>", t)));
-    let has_bare_array_signal =
-        text.contains("\"id\":\"call_") || text.contains("\"id\": \"call_");
+    let has_bare_array_signal = text.contains("\"id\":\"call_") || text.contains("\"id\": \"call_");
     let has_dict_by_id_signal =
         text.contains("\"call_") && (text.contains("\"name\"") || text.contains("\"function\""));
     let has_bare_command_args = text.contains("{\"command\":")
         || text.contains("{ \"command\":")
         || text.contains("{\"command\" :");
-    let has_invoke_signal =
-        text.contains("<invoke name=") || text.contains("invoke name=\"");
+    let has_invoke_signal = text.contains("<invoke name=") || text.contains("invoke name=\"");
     let has_bare_name_args = super::bare_tool_call_extractor::has_bare_name_args_signal(text);
     if !text.contains("<tool_call>")
         && !text.contains("<function=")
@@ -1540,9 +1541,7 @@ fn widen_strip_to_known_wrappers(text: &str, strip_ranges: &mut Vec<(usize, usiz
 /// recover just `name` + `arguments` by scanning for the bare tokens
 /// `"name" "value"` and `"arguments" { ... }`. Returns `None` when the
 /// envelope doesn't have the expected structure.
-fn parse_malformed_singular_envelope(
-    body: &str,
-) -> Option<(String, serde_json::Value)> {
+fn parse_malformed_singular_envelope(body: &str) -> Option<(String, serde_json::Value)> {
     // Find `"name" "<value>"` — value is a quoted string, no colon needed.
     let name_re = find_quoted_pair(body, "name")?;
     // Find `"arguments" { ... }` — value is a balanced JSON-ish object.
@@ -1640,10 +1639,7 @@ fn recover_primitive_string_object(s: &str) -> Option<serde_json::Value> {
             let val_start = i + 1;
             let val_end_rel = inner[val_start..].find('"')?;
             let val = &inner[val_start..val_start + val_end_rel];
-            map.insert(
-                key.to_string(),
-                serde_json::Value::String(val.to_string()),
-            );
+            map.insert(key.to_string(), serde_json::Value::String(val.to_string()));
             i = val_start + val_end_rel + 1;
         } else if bytes[i] == b'{' {
             // Nested object — recurse
@@ -1657,8 +1653,7 @@ fn recover_primitive_string_object(s: &str) -> Option<serde_json::Value> {
         } else {
             // Try to read a primitive (number, bool, null)
             let start = i;
-            while i < bytes.len()
-                && !((bytes[i] as char).is_ascii_whitespace() || bytes[i] == b',')
+            while i < bytes.len() && !((bytes[i] as char).is_ascii_whitespace() || bytes[i] == b',')
             {
                 i += 1;
             }

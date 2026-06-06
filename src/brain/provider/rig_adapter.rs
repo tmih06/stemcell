@@ -5,14 +5,12 @@ use async_trait::async_trait;
 use futures::StreamExt;
 use rig_core::OneOrMany;
 use rig_core::client::CompletionClient;
-use rig_core::completion::request::ToolDefinition;
-use rig_core::completion::{
-    CompletionModel, CompletionRequest,
-};
 use rig_core::completion::message::{
     AssistantContent, DocumentSourceKind, Image, ImageMediaType, Message as RigMessage, Reasoning,
     Text, ToolCall, ToolFunction, ToolResult, ToolResultContent, UserContent,
 };
+use rig_core::completion::request::ToolDefinition;
+use rig_core::completion::{CompletionModel, CompletionRequest};
 use std::sync::Arc;
 
 pub struct RigAdapter<C> {
@@ -79,18 +77,20 @@ fn build_rig_message(msg: &Message) -> Option<RigMessage> {
                 .content
                 .iter()
                 .filter_map(|c| match c {
-                    ContentBlock::Text { text } => {
-                        Some(UserContent::Text(Text::new(text.clone())))
-                    }
+                    ContentBlock::Text { text } => Some(UserContent::Text(Text::new(text.clone()))),
                     ContentBlock::Image { source } => {
                         Some(UserContent::Image(image_from_source(source)))
                     }
                     ContentBlock::ToolResult {
-                        tool_use_id, content, ..
+                        tool_use_id,
+                        content,
+                        ..
                     } => Some(UserContent::ToolResult(ToolResult {
                         id: tool_use_id.clone(),
                         call_id: None,
-                        content: OneOrMany::one(ToolResultContent::Text(Text::new(content.clone()))),
+                        content: OneOrMany::one(ToolResultContent::Text(Text::new(
+                            content.clone(),
+                        ))),
                     })),
                     _ => None,
                 })
@@ -98,7 +98,9 @@ fn build_rig_message(msg: &Message) -> Option<RigMessage> {
             if blocks.is_empty() {
                 None
             } else {
-                OneOrMany::many(blocks).ok().map(|content| RigMessage::User { content })
+                OneOrMany::many(blocks)
+                    .ok()
+                    .map(|content| RigMessage::User { content })
             }
         }
         Role::Assistant => {
@@ -116,12 +118,9 @@ fn build_rig_message(msg: &Message) -> Option<RigMessage> {
                         &thinking,
                         signature.clone(),
                     ))),
-                    ContentBlock::ToolUse { id, name, input } => Some(
-                        AssistantContent::ToolCall(ToolCall::new(id.clone(), ToolFunction::new(
-                            name.clone(),
-                            input.clone(),
-                        ))),
-                    ),
+                    ContentBlock::ToolUse { id, name, input } => Some(AssistantContent::ToolCall(
+                        ToolCall::new(id.clone(), ToolFunction::new(name.clone(), input.clone())),
+                    )),
                     ContentBlock::Image { source } => {
                         Some(AssistantContent::Image(image_from_source(source)))
                     }
@@ -133,10 +132,7 @@ fn build_rig_message(msg: &Message) -> Option<RigMessage> {
             } else {
                 OneOrMany::many(blocks)
                     .ok()
-                    .map(|content| RigMessage::Assistant {
-                        id: None,
-                        content,
-                    })
+                    .map(|content| RigMessage::Assistant { id: None, content })
             }
         }
     }
@@ -360,9 +356,7 @@ where
                         }
                         events.push(Ok(StreamEvent::ContentBlockDelta {
                             index: 0,
-                            delta: ContentDelta::ReasoningDelta {
-                                text: reasoning,
-                            },
+                            delta: ContentDelta::ReasoningDelta { text: reasoning },
                         }));
                         events
                     }
