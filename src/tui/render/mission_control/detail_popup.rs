@@ -9,7 +9,8 @@
 
 use super::theme;
 use crate::brain::mission_control::{
-    McActivity, McInboxItem, McInboxKind, McScheduleItem, McScheduleKind, inbox_service,
+    McActivity, McInboxDetail, McInboxItem, McInboxKind, McScheduleItem, McScheduleKind,
+    inbox_service,
 };
 use crate::tui::app::App;
 use crate::tui::app::mission_control::McPanel;
@@ -83,6 +84,39 @@ fn render_inbox_item(item: &McInboxItem) -> Vec<Line<'static>> {
     for s in wrap_paragraph(&item.summary) {
         lines.push(body_line(s));
     }
+
+    // Render type-specific detail sections when available.
+    if let Some(detail) = &item.detail {
+        match detail {
+            McInboxDetail::BrainDedup {
+                duplicate_text,
+                rationale,
+                duplicate_of,
+                warnings,
+            } => {
+                lines.extend([blank(), section_heading("Rationale")]);
+                for s in wrap_paragraph(rationale) {
+                    lines.push(body_line(s));
+                }
+                lines.extend([
+                    blank(),
+                    section_heading("Duplicates"),
+                    kv("Of", duplicate_of),
+                ]);
+                lines.extend([blank(), section_heading("Duplicate text (to be removed)")]);
+                for s in wrap_paragraph(duplicate_text) {
+                    lines.push(body_line(s));
+                }
+                if !warnings.is_empty() {
+                    lines.extend([blank(), section_heading("Warnings")]);
+                    for w in warnings {
+                        lines.push(body_line(format!("⚠ {w}")));
+                    }
+                }
+            }
+        }
+    }
+
     lines.extend([
         blank(),
         section_heading("Apply / reject"),

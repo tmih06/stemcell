@@ -2145,7 +2145,135 @@ impl AgentService {
                         }
                     }
                 }
-                Err(e) => return Err(AgentError::Provider(e)),
+                Err(e) => {
+                    // Any non-5xx provider error (405, 404, 400, etc.) —
+                    // walk the entire fallback chain before giving up.
+                    let err_msg = e.to_string();
+                    let active_name = self.provider_name_for_session(session_id);
+                    tracing::warn!(
+                        "Provider error from {}: {} — walking fallback chain",
+                        active_name,
+                        err_msg
+                    );
+                    self.record_provider_feedback(
+                        session_id,
+                        "provider_error",
+                        &format!("{}/{}", active_name, model_name),
+                        Some(&err_msg),
+                    );
+
+                    let fallback_candidates: Vec<_> = self
+                        .fallback_providers
+                        .iter()
+                        .filter(|p| p.name() != active_name)
+                        .collect();
+
+                    if fallback_candidates.is_empty() {
+                        tracing::warn!(
+                            "No fallback providers configured for {} error — \
+                             user should configure a fallback chain",
+                            active_name
+                        );
+                        if let Some(ref cb) = progress_callback {
+                            cb(
+                                session_id,
+                                ProgressEvent::SelfHealingAlert {
+                                    message: "No fallback provider available. \
+                                         Configure one with /onboard:provider"
+                                        .to_string(),
+                                },
+                            );
+                        }
+                        return Err(AgentError::Provider(e));
+                    }
+
+                    let mut last_err = e;
+                    let mut succeeded = None;
+
+                    for fallback in &fallback_candidates {
+                        let fb_name = fallback.name().to_string();
+                        let fb_model = fallback.default_model().to_string();
+                        tracing::info!(
+                            "Fallback trying '{}/{}' for provider error",
+                            fb_name,
+                            fb_model
+                        );
+                        if let Some(ref cb) = progress_callback {
+                            cb(
+                                session_id,
+                                ProgressEvent::SelfHealingAlert {
+                                    message: format!(
+                                        "Trying fallback '{}/{}'...",
+                                        fb_name, fb_model
+                                    ),
+                                },
+                            );
+                        }
+
+                        let mut fb_req =
+                            LLMRequest::new(fb_model.clone(), context.messages.clone())
+                                .with_max_tokens(self.max_tokens);
+                        fb_req.working_directory =
+                            Some(self.get_working_directory().to_string_lossy().to_string());
+                        fb_req.session_id = Some(session_id);
+                        if let Some(system) = &context.system_brain {
+                            fb_req = fb_req.with_system(system.clone());
+                        }
+                        if self.tool_registry.count() > 0 {
+                            fb_req = fb_req.with_tools(self.tool_registry.get_tool_definitions());
+                        }
+
+                        // Swap provider for this session so stream_complete
+                        // uses the fallback
+                        self.swap_provider_for_session(session_id, (*fallback).clone());
+
+                        match self
+                            .stream_complete(
+                                session_id,
+                                fb_req,
+                                cancel_token.as_ref(),
+                                progress_callback.as_ref(),
+                                if is_cli_provider {
+                                    self.message_queue_callback.as_ref()
+                                } else {
+                                    None
+                                },
+                                if is_cli_provider {
+                                    Some(&queued_buf)
+                                } else {
+                                    None
+                                },
+                                false,
+                            )
+                            .await
+                        {
+                            Ok(resp) => {
+                                tracing::info!("Fallback '{}/{}' succeeded", fb_name, fb_model);
+                                succeeded = Some(resp);
+                                break;
+                            }
+                            Err(fb_err) => {
+                                tracing::warn!(
+                                    "Fallback '{}/{}' also failed: {}",
+                                    fb_name,
+                                    fb_model,
+                                    fb_err
+                                );
+                                last_err = fb_err;
+                            }
+                        }
+                    }
+
+                    if let Some(resp) = succeeded {
+                        resp
+                    } else {
+                        tracing::error!(
+                            "All {} fallback providers exhausted",
+                            fallback_candidates.len()
+                        );
+                        return Err(AgentError::Provider(last_err));
+                    }
+                }
             };
 
             // Surface any sticky-fallback swap that the FallbackProvider

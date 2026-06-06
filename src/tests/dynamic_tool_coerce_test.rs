@@ -223,3 +223,66 @@ fn coerce_empty_object_treated_as_empty() {
     // Omit on empty object should succeed (key dropped from params).
     assert!(result.success);
 }
+
+// ── Issue #171: OPENCRABS_PARAMS env var ──────────────────────────────
+
+#[test]
+fn shell_executor_sets_opencrabs_params_env_var() {
+    let def = shell_def(
+        "cat $OPENCRABS_PARAMS",
+        vec![ParamDef {
+            name: "msg".into(),
+            param_type: "string".into(),
+            description: String::new(),
+            required: true,
+            default: None,
+            coerce_empty_to: CoerceAction::Keep,
+            coerce_null_to: CoerceAction::Keep,
+        }],
+    );
+    let tool = DynamicTool::new(def);
+    let ctx = ToolExecutionContext::new(uuid::Uuid::new_v4());
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    let result = rt
+        .block_on(tool.execute(json!({ "msg": "hello\nworld" }), &ctx))
+        .expect("execute");
+    assert!(result.success, "err: {:?}", result.error);
+    // The env var path should point to a JSON file containing the params
+    assert!(
+        result.output.contains(r#""msg":"hello\nworld""#),
+        "params JSON should be readable from env var path. output: {}",
+        result.output
+    );
+}
+
+#[test]
+fn shell_executor_params_file_contains_json_arrays() {
+    let def = shell_def(
+        "cat $OPENCRABS_PARAMS",
+        vec![ParamDef {
+            name: "files".into(),
+            param_type: "array".into(),
+            description: String::new(),
+            required: true,
+            default: None,
+            coerce_empty_to: CoerceAction::Keep,
+            coerce_null_to: CoerceAction::Keep,
+        }],
+    );
+    let tool = DynamicTool::new(def);
+    let ctx = ToolExecutionContext::new(uuid::Uuid::new_v4());
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    let result = rt
+        .block_on(tool.execute(
+            json!({ "files": ["https://example.com/a.jpg", "https://example.com/b.jpg"] }),
+            &ctx,
+        ))
+        .expect("execute");
+    assert!(result.success, "err: {:?}", result.error);
+    assert!(
+        result.output.contains("https://example.com/a.jpg")
+            && result.output.contains("https://example.com/b.jpg"),
+        "JSON array should be preserved in params file. output: {}",
+        result.output
+    );
+}

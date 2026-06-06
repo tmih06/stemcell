@@ -344,6 +344,32 @@ impl DynamicTool {
         params: &Value,
         context: &ToolExecutionContext,
     ) -> Result<ToolResult> {
+        // Write all parameters to a temporary JSON file and expose the
+        // path via OPENCRABS_PARAMS environment variable. This lets tool
+        // commands read structured data (JSON arrays, multiline strings,
+        // nested objects) without shell quoting or heredoc fragility.
+        //
+        // Backward compatibility: if the command template contains
+        // {{param}} placeholders, we still expand them (with shell
+        // escaping) so existing tools.toml entries continue to work.
+        let params_file = match tempfile::NamedTempFile::new() {
+            Ok(f) => f,
+            Err(e) => {
+                return Ok(ToolResult::error(format!(
+                    "Failed to create params temp file: {e}"
+                )));
+            }
+        };
+        let params_path = params_file.path().to_string_lossy().to_string();
+        if let Err(e) = std::fs::write(
+            &params_path,
+            serde_json::to_string(params).unwrap_or_default(),
+        ) {
+            return Ok(ToolResult::error(format!(
+                "Failed to write params JSON: {e}"
+            )));
+        }
+
         // Shell-escape string parameter values so single quotes in
         // values don't break single-quoted shell arguments like
         // `--string 'message={{message}}'`.
@@ -361,10 +387,16 @@ impl DynamicTool {
         let output = tokio::process::Command::new("sh")
             .arg("-c")
             .arg(&cmd)
+            .env("OPENCRABS_PARAMS", &params_path)
             .current_dir(context.working_dir())
             .stdin(std::process::Stdio::null())
             .output()
             .await;
+
+        // Clean up the params file after execution (NamedTempFile drops
+        // automatically but we can be explicit).
+        drop(params_file);
+
         match output {
             Ok(out) => {
                 let stdout = String::from_utf8_lossy(&out.stdout).to_string();

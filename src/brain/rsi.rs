@@ -239,16 +239,11 @@ Each brain file controls a different aspect of the agent. Route improvements to 
 - **SOUL.md** — How the model BEHAVES: response style, reasoning patterns, personality. \
   Fix here when: phantom_tool_call events (model narrates instead of acting), gaslighting \
   preambles, verbose/repetitive responses, wrong tone.
-- **TOOLS.md** — How TOOLS are used: argument formats, common pitfalls, usage patterns. \
-  Fix here when: tool_failure events show the same tool failing with similar args, or the \
-  model consistently misuses a tool parameter. **Write the DERIVED RULE, never the raw failure log.** \
-  A section header that reads `### Bash Exit Code 127 — Command Not Found` describing the cause and \
-  the fix is a rule. A section header that reads `### Bash Exit Code 127 — Recurring (6 failures since \
-  2026-05-17)` with a body of timestamps and session IDs is a log — that does not belong in TOOLS.md. \
-  If you want to record that a rule is load-bearing, use a single inline counter like `Violations: 6` \
-  inside the rule body — do NOT enumerate the individual incidents, do NOT include session IDs, do \
-  NOT put dates or `(N failures: ...)` in the section header. The brain file is for the agent to read \
-  before acting, not for archaeology.
+- **TOOLS.md** — Tool DEFINITIONS: parameter formats, executor types, usage docs. \
+  This is a reference file, NOT a dumping ground for failure logs or error notes. \
+  Tool failure patterns are tracked by the feedback system (feedback_record, feedback_analyze). \
+  Do NOT append error handling guidance, failure counts, or incident logs here. \
+  Only edit TOOLS.md when a tool's actual definition or usage docs need updating.
 - **USER.md** — How to interact with THIS USER: preferences, corrections, frustrations. \
   Fix here when: user_correction events show a repeated preference the agent keeps violating.
 - **MEMORY.md** — Persistent KNOWLEDGE: facts, context, project state, integrations. \
@@ -258,6 +253,14 @@ Each brain file controls a different aspect of the agent. Route improvements to 
 - **CODE.md** — Coding standards and patterns. \
   Fix here when: code-quality feedback recurs (wrong style, missing tests, bad patterns).
 - **SECURITY.md** — Security policies. Fix here when: security-related feedback appears.
+
+### Custom Reference Files
+
+Additional `.md` files may exist alongside the core brain files (e.g., VOICE.md, AGENTVERSE.md, \
+skill-specific docs). These are NOT core brain files. They are user-curated reference material \
+loaded on demand via `load_brain_file` for inflight context. \
+You may read them for context, but do NOT autonomously write to them via self_improve. \
+If feedback relates to content in a custom file, suggest the change to the user instead.
 
 ## Self-Heal Event Types
 
@@ -272,7 +275,8 @@ Your job is to write improvements that PREVENT these from recurring:
   If frequent, check if the agent is loading too many brain files or being too verbose (SOUL).
 - **provider_error** — Provider returned an error. Usually not actionable unless the agent is \
   sending bad requests (TOOLS) or using the wrong model.
-- **tool_failure** — A specific tool failed. Check args and usage patterns (TOOLS).
+- **tool_failure** — A specific tool failed. Use feedback_record/feedback_analyze to log \
+  and review patterns. Do NOT append failure notes to TOOLS.md — it's for tool definitions only.
 
 ## Workflow — MANDATORY
 
@@ -612,9 +616,21 @@ pub fn spawn_rsi_engine(
                 .stats_by_dimension_since("tool_", Some(&window_since))
                 .await
             {
+                // Sentinel dimensions that fire as "failures" by design
+                // (self-heal detectors, regression probes). Excluding them
+                // prevents noise like "phantom_intent_loop has 100% failure".
+                const SENTINEL_DIMENSIONS: &[&str] = &[
+                    "phantom_intent_loop",
+                    "phantom_tool_call",
+                    "self_improve_exact_match_fail",
+                    "sticky_fallback_regression",
+                    "thinking_persistence_qwen36",
+                    "", // empty tool name (internal bookkeeping)
+                ];
                 for s in stats
                     .iter()
                     .filter(|s| s.total_events >= 5 && s.success_rate < 0.8)
+                    .filter(|s| !SENTINEL_DIMENSIONS.contains(&s.dimension.as_str()))
                 {
                     // Suppress the alert when the source repo has a
                     // commit since the window opened whose subject
@@ -644,7 +660,8 @@ pub fn spawn_rsi_engine(
                     // Pull recent failures for this tool to give agent context
                     let mut detail = format!(
                         "Tool '{}' has {:.0}% failure rate ({} failures out of {}). \
-                         Consider adding error handling guidance to TOOLS.md.",
+                         Review failure patterns via feedback_analyze and record \
+                         derived rules with feedback_record.",
                         s.dimension,
                         (1.0 - s.success_rate) * 100.0,
                         s.failures,

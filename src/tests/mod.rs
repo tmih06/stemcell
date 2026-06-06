@@ -61,6 +61,7 @@ pub mod intermediate_text_strip_guard_test;
 pub mod new_session_pane_binding_test;
 pub mod rsi_pruned_test;
 pub mod rsi_sync_cap_bail_test;
+pub mod tools_md_regression_test;
 // Unix-only: drives Config::load via a temp HOME override. On Windows
 // `dirs::home_dir()` uses the Win32 `SHGetKnownFolderPath` API rather
 // than env vars, so the HomeGuard has no effect and Config::load
@@ -158,6 +159,7 @@ pub mod voice_voicebox_test;
 //pub mod streaming_test;
 pub mod merge_provider_keys_test;
 pub mod mission_control_activity_service_test;
+pub mod mission_control_dedup_detail_test;
 pub mod mission_control_inbox_service_test;
 pub mod mission_control_input_test;
 pub mod mission_control_layout_test;
