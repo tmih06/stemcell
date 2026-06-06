@@ -14,12 +14,12 @@
 //! directive, so the strip pass doesn't silently become the
 //! only line of defence.
 
-use crate::brain::prompt_builder::BRAIN_PREAMBLE;
+use crate::brain::prompt_builder::BRAIN_PREAMBLE_CORE;
 
 #[test]
 fn forbids_cursor_style_code_edit_block_format() {
     assert!(
-        BRAIN_PREAMBLE.contains("CODE_EDIT_BLOCK"),
+        BRAIN_PREAMBLE_CORE.contains("CODE_EDIT_BLOCK"),
         "preamble must explicitly name the Cursor-style CODE_EDIT_BLOCK \
          marker so the model recognises and avoids it"
     );
@@ -28,7 +28,7 @@ fn forbids_cursor_style_code_edit_block_format() {
 #[test]
 fn forbids_aider_style_search_replace_markers() {
     assert!(
-        BRAIN_PREAMBLE.contains("SEARCH") && BRAIN_PREAMBLE.contains("REPLACE"),
+        BRAIN_PREAMBLE_CORE.contains("SEARCH") && BRAIN_PREAMBLE_CORE.contains("REPLACE"),
         "preamble must call out Aider-style <<<<<<< SEARCH / >>>>>>> REPLACE \
          markers — same failure mode as CODE_EDIT_BLOCK"
     );
@@ -37,7 +37,7 @@ fn forbids_aider_style_search_replace_markers() {
 #[test]
 fn points_agent_at_edit_file_tool_as_the_real_path() {
     assert!(
-        BRAIN_PREAMBLE.contains("edit_file"),
+        BRAIN_PREAMBLE_CORE.contains("edit_file"),
         "after forbidding inline formats, preamble must point the agent \
          at the actual `edit_file` tool — otherwise the model has nowhere to go"
     );
@@ -49,7 +49,7 @@ fn warns_about_file_content_leak() {
     // not just "don't do it" but "doing it leaks file contents to
     // the channel". Models follow rules better when they understand
     // the consequence.
-    let lower = BRAIN_PREAMBLE.to_lowercase();
+    let lower = BRAIN_PREAMBLE_CORE.to_lowercase();
     assert!(
         lower.contains("leak") || lower.contains("expose"),
         "preamble must explain the failure mode (file contents leak to \
@@ -65,7 +65,7 @@ fn lists_concrete_forbidden_patterns() {
     // anchors that make the rule actionable.
     let count = ["CODE_EDIT_BLOCK", "SEARCH", "REPLACE", "diff"]
         .iter()
-        .filter(|p| BRAIN_PREAMBLE.contains(*p))
+        .filter(|p| BRAIN_PREAMBLE_CORE.contains(*p))
         .count();
     assert!(
         count >= 3,

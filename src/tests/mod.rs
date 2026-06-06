@@ -52,6 +52,7 @@ pub mod config_watcher_test;
 pub mod context_window_test;
 pub mod cron_test;
 pub mod cross_provider_model_leak_guard_test;
+pub mod ctrl_o_toggle_test;
 pub mod custom_model_paste_test;
 pub mod custom_provider_cache_autoenable_test;
 pub mod custom_provider_rename_keys_toml_test;

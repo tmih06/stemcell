@@ -451,7 +451,7 @@ impl App {
         DisplayMessage {
             id: Uuid::new_v4(),
             role: "history_marker".to_string(),
-            content: format!("↑ {} older messages hidden · Ctrl+O to load more", count),
+            content: format!("↑ {} older messages hidden · PgUp to load more", count),
             timestamp: chrono::Utc::now(),
             token_count: None,
             cost: None,
@@ -464,7 +464,8 @@ impl App {
     }
 
     /// Load an older batch of messages (up to 100k tokens) from the DB and prepend
-    /// them to the current display list.  Called by Ctrl+O when hidden_older_messages > 0.
+    /// them to the current display list. Called by PageUp when hidden
+    /// messages exist and the display token budget allows it.
     pub(crate) async fn load_more_history(&mut self) -> Result<()> {
         tracing::debug!(
             "[SCROLL] load_more_history called: hidden={}, display_tokens={}",
@@ -2462,6 +2463,7 @@ impl App {
 /// Run the evolve tool directly (no LLM involvement) and pipe progress
 /// events into TUI system messages. Used by `/evolve`, the UpdatePrompt
 /// dialog, and the auto-update path on startup.
+#[cfg(feature = "tool-evolve")]
 pub(crate) async fn run_evolve_directly(
     session_id: Uuid,
     sender: tokio::sync::mpsc::UnboundedSender<TuiEvent>,
@@ -2522,4 +2524,16 @@ pub(crate) async fn run_evolve_directly(
             });
         }
     }
+}
+
+#[cfg(not(feature = "tool-evolve"))]
+pub(crate) async fn run_evolve_directly(
+    session_id: Uuid,
+    sender: tokio::sync::mpsc::UnboundedSender<TuiEvent>,
+) {
+    let _ = sender.send(TuiEvent::SystemMessage {
+        session_id,
+        text: "Evolve is unavailable in this build. Rebuild with `--features tools-meta`."
+            .to_string(),
+    });
 }

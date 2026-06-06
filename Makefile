@@ -4,6 +4,8 @@ MAKEFLAGS += --no-print-directory
 
 CARGO ?= cargo
 BIN ?= opencrabs
+PYTHON ?= python3
+TOOL_FEATURES_SCRIPT ?= $(PYTHON) src/scripts/tool_features.py build_toggles.toml
 MSRV ?= 1.91
 AUDIT_IGNORE ?= RUSTSEC-2024-0437
 COVERAGE_FEATURES ?= telegram,whatsapp,discord,slack,trello
@@ -32,8 +34,10 @@ setup: ## Install system prerequisites via the repo bootstrap script
 ## == Development ==
 
 .PHONY: build
-build: ## Build the default developer binary
-	$(CARGO) build --locked
+build: ## Build the default developer binary (from build_toggles.toml)
+	@FEATURES="$$( $(TOOL_FEATURES_SCRIPT) )"; \
+	OPENCRABS_EXPECTED_FEATURES="$$FEATURES" \
+	$(CARGO) build --locked --no-default-features --features "$$FEATURES"
 
 .PHONY: build-ci
 build-ci: ## Build all features with the repo's CI profile
@@ -41,11 +45,36 @@ build-ci: ## Build all features with the repo's CI profile
 
 .PHONY: build-release
 build-release: ## Build the release binary
-	$(CARGO) build --locked --release
+	@FEATURES="$$( $(TOOL_FEATURES_SCRIPT) )"; \
+	OPENCRABS_EXPECTED_FEATURES="$$FEATURES" \
+	$(CARGO) build --locked --release --no-default-features --features "$$FEATURES"
 
 .PHONY: build-no-default
 build-no-default: ## Build with no default features
 	$(CARGO) build --locked --no-default-features
+
+## == Build Profiles ==
+## Use build-profiles.toml or ./build.sh for custom configurations
+
+.PHONY: build-minimal
+build-minimal: ## Build core tools only, no channels
+	./build.sh minimal
+
+.PHONY: build-chatbot
+build-chatbot: ## Build with no tools (pure chatbot mode)
+	./build.sh chatbot
+
+.PHONY: build-telegram
+build-telegram: ## Build core tools with Telegram channel
+	./build.sh telegram-agent
+
+.PHONY: build-headless
+build-headless: ## Build full tools, no channels (for API/A2A)
+	./build.sh headless-agent
+
+.PHONY: build-profiles
+build-profiles: ## List available build profiles
+	./build.sh --list
 
 .PHONY: check
 check: ## Fast type-check across all targets and features
@@ -53,10 +82,13 @@ check: ## Fast type-check across all targets and features
 
 .PHONY: run
 run: ## Run the TUI or pass ARGS='...'
-	@if [[ -n "$(strip $(ARGS))" ]]; then \
-	  $(CARGO) run --bin $(BIN) -- $(ARGS); \
+	@FEATURES="$$( $(TOOL_FEATURES_SCRIPT) )"; \
+	if [[ -n "$(strip $(ARGS))" ]]; then \
+	  OPENCRABS_EXPECTED_FEATURES="$$FEATURES" \
+	  $(CARGO) run --bin $(BIN) --no-default-features --features "$$FEATURES" -- $(ARGS); \
 	else \
-	  $(CARGO) run --bin $(BIN); \
+	  OPENCRABS_EXPECTED_FEATURES="$$FEATURES" \
+	  $(CARGO) run --bin $(BIN) --no-default-features --features "$$FEATURES"; \
 	fi
 
 .PHONY: run-release
@@ -69,7 +101,9 @@ run-release: build-release ## Run the release binary or pass ARGS='...'
 
 .PHONY: install
 install: ## cargo install the current repo from source
-	$(CARGO) install --path . --locked --force
+	@FEATURES="$$( $(TOOL_FEATURES_SCRIPT) )"; \
+	OPENCRABS_EXPECTED_FEATURES="$$FEATURES" \
+	$(CARGO) install --path . --locked --force --no-default-features --features "$$FEATURES"
 
 .PHONY: clean
 clean: ## Remove build artifacts

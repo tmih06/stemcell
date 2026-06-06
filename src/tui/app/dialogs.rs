@@ -2337,6 +2337,7 @@ impl App {
                     // Subscribe to QR/connected events from the agent bot
                     #[cfg(feature = "whatsapp")]
                     let wa_state = self.whatsapp_state.clone();
+                    #[cfg(feature = "whatsapp")]
                     let sender = self.event_sender();
                     tokio::spawn(async move {
                         #[cfg(feature = "whatsapp")]
@@ -2392,6 +2393,7 @@ impl App {
                 }
                 WizardAction::TestWhatsApp => {
                     wizard.channel_test_status = super::onboarding::ChannelTestStatus::Testing;
+                    #[cfg(feature = "whatsapp")]
                     let phone = if wizard.has_existing_whatsapp_phone() {
                         crate::config::Config::load()
                             .ok()
@@ -2403,6 +2405,7 @@ impl App {
                     #[cfg(feature = "whatsapp")]
                     let wa_state = self.whatsapp_state.clone();
                     let sender = self.event_sender();
+                    #[cfg(feature = "whatsapp")]
                     let agent = self.agent_service.clone();
                     tokio::spawn(async move {
                         #[cfg(feature = "whatsapp")]
@@ -3425,7 +3428,7 @@ async fn test_telegram_connection(
     _token: &str,
     _user_id_str: &str,
     _agent: std::sync::Arc<crate::brain::agent::AgentService>,
-) -> Result<(), String> {
+) -> Result<TelegramTestResult, String> {
     Err("Telegram feature not enabled".to_string())
 }
 

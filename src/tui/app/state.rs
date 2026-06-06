@@ -1139,6 +1139,7 @@ impl App {
         // No initial delay — if an update exists, behavior depends on
         // `agent.auto_update` (default true): silently install + restart.
         // When false, show the UpdatePrompt dialog so the user can confirm.
+        #[cfg(feature = "tool-evolve")]
         {
             let tx = self.event_sender();
             let auto_update = crate::config::Config::load()
