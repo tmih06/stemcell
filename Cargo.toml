@@ -226,8 +226,8 @@ tools-brain = []
 tools-channel-integrations = []
 # Headless Chrome automation (depends on browser feature)
 tools-browser = ["browser"]
-# Tool management and RSI proposals
-tools-meta = []
+# Tool management and RSI proposals (depends on tools-dynamic for DynamicToolDef)
+tools-meta = ["tools-dynamic"]
 # User-defined tools from tools.toml
 tools-dynamic = []
 
