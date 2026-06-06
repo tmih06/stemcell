@@ -96,6 +96,7 @@ fn ollama_bedrock_vertex_are_no_longer_silently_omitted() {
     }
 }
 
+#[cfg(feature = "tools-providers")]
 #[test]
 fn cli_providers_dont_require_api_key() {
     // claude-cli / opencode-cli / codex-cli / codex OAuth all work
@@ -128,6 +129,7 @@ fn api_providers_without_key_are_skipped() {
     );
 }
 
+#[cfg(feature = "tools-providers")]
 #[test]
 fn priority_matches_factory_create_provider_intent() {
     // CLI providers come first (free, no key), then API providers.
@@ -146,6 +148,7 @@ fn priority_matches_factory_create_provider_intent() {
     assert_eq!(display, "Claude CLI");
 }
 
+#[cfg(feature = "tools-providers")]
 #[test]
 fn resolve_and_active_agree_on_priority_for_every_combination() {
     // The two functions must walk the same iteration order. If

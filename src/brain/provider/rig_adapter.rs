@@ -23,6 +23,10 @@ pub struct RigAdapter<C> {
     pub context_window_fn: Option<Arc<dyn Fn(&str) -> Option<u32> + Send + Sync>>,
     pub calculate_cost_fn: Option<Arc<dyn Fn(&str, u32, u32) -> f64 + Send + Sync>>,
     pub base_url: Option<String>,
+    /// Optional vision-capable model. When set, `supports_vision()`
+    /// returns true so the channel side knows it can route image
+    /// attachments through this provider.
+    pub vision_model: Option<String>,
 }
 
 fn parse_image_media_type(mime: &str) -> Option<ImageMediaType> {
@@ -443,5 +447,9 @@ where
 
     fn base_url(&self) -> Option<&str> {
         self.base_url.as_deref()
+    }
+
+    fn supports_vision(&self) -> bool {
+        self.vision_model.is_some()
     }
 }

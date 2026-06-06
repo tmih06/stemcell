@@ -35,20 +35,25 @@ impl AnthropicProvider {
 
     pub fn build(self) -> crate::brain::provider::rig_adapter::RigAdapter<Client> {
         let client = self.client.clone();
+        let default_model = self
+            .custom_default_model
+            .clone()
+            .unwrap_or_else(|| "claude-sonnet-4-20250514".to_string());
 
         crate::brain::provider::rig_adapter::RigAdapter {
             name: "anthropic".into(),
-            default_model: self
-                .custom_default_model
-                .unwrap_or_else(|| "claude-sonnet-4-5".to_string()),
+            default_model,
             supported_models: vec![
-                "claude-opus-4-6".to_string(),
-                "claude-sonnet-4-5-20250929".to_string(),
+                "claude-sonnet-4-20250514".to_string(),
+                "claude-opus-4-1-20250805".to_string(),
+                "claude-3-5-haiku-20241022".to_string(),
             ],
             context_window_fn: Some(Arc::new(|_m| Some(200_000))),
             calculate_cost_fn: None,
             base_url: None,
             client_builder: Arc::new(move || client.clone()),
+            vision_model: None,
         }
     }
 }
+

@@ -618,6 +618,18 @@ pub(crate) fn compiled_features() -> Vec<&'static str> {
     if cfg!(feature = "profiling") {
         out.push("profiling");
     }
+    if cfg!(feature = "provider-claude-cli") {
+        out.push("provider-claude-cli");
+    }
+    if cfg!(feature = "provider-codex-cli") {
+        out.push("provider-codex-cli");
+    }
+    if cfg!(feature = "provider-opencode-cli") {
+        out.push("provider-opencode-cli");
+    }
+    if cfg!(feature = "tools-providers") {
+        out.push("tools-providers");
+    }
     // Coarse `tools-*` alias features (compatibility shims that group
     // per-tool features together; listed so the agent can see which
     // category groupings are active).

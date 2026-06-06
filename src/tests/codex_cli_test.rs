@@ -4,6 +4,8 @@
 //! flags) and basic resolver behaviour. We do NOT run a real `codex exec`
 //! here — that requires the user's auth + network and would make CI flaky.
 
+#![cfg(feature = "tools-providers")]
+
 use crate::brain::provider::CodexCliProvider;
 use crate::brain::provider::Provider;
 

@@ -317,7 +317,6 @@ mod fallback_runtime {
 // --- Vision model ---
 
 mod vision_model {
-    use crate::brain::provider::Provider;
     use crate::brain::provider::custom_openai_compatible::OpenAIProvider;
 
     #[test]

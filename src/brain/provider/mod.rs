@@ -19,6 +19,7 @@ pub use types::*;
 
 // Provider implementations
 pub mod anthropic;
+pub mod bare_tool_call_extractor;
 #[cfg(feature = "provider-claude-cli")]
 pub mod claude_cli;
 #[cfg(feature = "provider-codex-cli")]
@@ -30,6 +31,7 @@ pub mod factory;
 pub mod fallback;
 pub mod gemini;
 pub mod model_fetch;
+pub mod nonstream_compat;
 #[cfg(feature = "provider-opencode-cli")]
 pub mod opencode_cli;
 pub mod qwen;

@@ -8,6 +8,8 @@
 //! module, surfaced via `utils::providers::cli_supported_models`. These
 //! tests fail loudly if anyone reintroduces a parallel list.
 
+#![cfg(feature = "tools-providers")]
+
 use crate::brain::provider::{
     Provider, claude_cli::ClaudeCliProvider, opencode_cli::OpenCodeCliProvider,
 };

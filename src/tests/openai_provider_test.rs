@@ -1,4 +1,3 @@
-use crate::brain::Provider;
 use crate::brain::provider::custom_openai_compatible::{
     OpenAIProvider, is_token_field_mismatch, uses_max_completion_tokens,
 };
