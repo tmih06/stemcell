@@ -64,15 +64,6 @@ async fn cmd_chat_inner(
         }
     };
 
-    // Create tool registry via the modular tool system.
-    // Modules can be disabled in config.toml [tools] to reduce token bloat.
-    tracing::debug!("Setting up tool registry via module system");
-    let shared_tool_registry = crate::brain::tools::modules::register_enabled_tools(
-        config,
-        db.pool(),
-        crate::brain::tools::modules::RegistrationMode::Full,
-    );
-
     // Auto-detect VPS/cloud and disable vector embeddings if needed.
     crate::config::MemoryConfig::auto_apply_vps_defaults();
 
@@ -149,15 +140,9 @@ async fn cmd_chat_inner(
         .collect();
     let commands_section = CommandLoader::commands_section(&builtin_commands, &user_commands);
 
-    let mut system_brain =
-        brain_loader.build_core_brain(Some(&runtime_info), Some(&commands_section));
-
     // Inject performance history from feedback ledger (zero-setup, auto for all users)
-    if let Some(digest) =
-        crate::brain::prompt_builder::build_feedback_digest(db.pool().clone()).await
-    {
-        system_brain.push_str(&digest);
-    }
+    let feedback_digest =
+        crate::brain::prompt_builder::build_feedback_digest(db.pool().clone()).await;
 
     // Propagate persisted auto-always approval policy to the agent service so
     // the tool loop bypasses approval entirely. Without this, the TUI silently
@@ -167,11 +152,11 @@ async fn cmd_chat_inner(
     // echoes back telling the user to enable auto-approve.
     let auto_approve_tools = config.agent.approval_policy.as_str() == "auto-always";
 
-    // Create agent service with dynamic system brain
-    let agent_service = Arc::new(
+    // Create a provisional agent service so the TUI can bootstrap its event
+    // channels before we assemble the final runtime-aware tool registry.
+    let bootstrap_agent_service = Arc::new(
         AgentService::new(provider.clone(), service_context.clone(), config)
             .await
-            .with_system_brain(system_brain.clone())
             .with_working_directory(working_directory.clone())
             .with_auto_approve_tools(auto_approve_tools),
     );
@@ -180,10 +165,22 @@ async fn cmd_chat_inner(
     #[cfg(feature = "whatsapp")]
     let whatsapp_state = Arc::new(crate::channels::whatsapp::WhatsAppState::new());
 
+    #[cfg(feature = "telegram")]
+    let telegram_state = Arc::new(crate::channels::telegram::TelegramState::new());
+
+    #[cfg(feature = "discord")]
+    let discord_state = Arc::new(crate::channels::discord::DiscordState::new());
+
+    #[cfg(feature = "slack")]
+    let slack_state = Arc::new(crate::channels::slack::SlackState::new());
+
+    #[cfg(feature = "trello")]
+    let trello_state = Arc::new(crate::channels::trello::TrelloState::new());
+
     // Create TUI app first (so we can get the event sender)
     tracing::debug!("Creating TUI app");
     let mut app = tui::App::new(
-        agent_service,
+        bootstrap_agent_service,
         service_context.clone(),
         #[cfg(feature = "whatsapp")]
         whatsapp_state.clone(),
@@ -430,17 +427,6 @@ async fn cmd_chat_inner(
                 Some(joined)
             })
         });
-
-    // Register rebuild tool (needs the progress callback for restart signaling)
-    shared_tool_registry.register(Arc::new(crate::brain::tools::rebuild::RebuildTool::new(
-        Some(progress_callback.clone()),
-    )));
-
-    // Register evolve tool (binary self-update from GitHub releases)
-    shared_tool_registry.register(Arc::new(crate::brain::tools::evolve::EvolveTool::new(
-        Some(progress_callback.clone()),
-    )));
-
     // Create config watch channel — single source of truth for all hot-reloadable config.
     // All channel agents receive a Receiver and read the latest config per-message.
     let (config_tx, config_rx) = tokio::sync::watch::channel(config.clone());
@@ -450,106 +436,46 @@ async fn cmd_chat_inner(
     let channel_factory = Arc::new(crate::channels::ChannelFactory::new(
         provider.clone(),
         service_context.clone(),
-        system_brain.clone(),
+        String::new(),
         working_directory.clone(),
         brain_path.clone(),
         app.shared_session_id(),
         config_rx,
     ));
 
-    // Shared Telegram state for proactive messaging
-    #[cfg(feature = "telegram")]
-    let telegram_state = Arc::new(crate::channels::telegram::TelegramState::new());
+    // Create the final tool registry only after runtime-only dependencies
+    // (TUI callbacks, channel factory, channel state) exist. This keeps the
+    // prompt-visible tool list and the live tool registry identical.
+    tracing::debug!("Setting up tool registry via module system");
+    let shared_tool_registry = crate::brain::tools::modules::register_enabled_tools_with_runtime(
+        config,
+        db.pool(),
+        crate::brain::tools::modules::RegistrationMode::Full,
+        crate::brain::tools::modules::RuntimeToolContext {
+            progress_callback: Some(progress_callback.clone()),
+            channel_factory: Some(channel_factory.clone()),
+            #[cfg(feature = "telegram")]
+            telegram_state: Some(telegram_state.clone()),
+            #[cfg(feature = "whatsapp")]
+            whatsapp_state: Some(whatsapp_state.clone()),
+            #[cfg(feature = "discord")]
+            discord_state: Some(discord_state.clone()),
+            #[cfg(feature = "slack")]
+            slack_state: Some(slack_state.clone()),
+            #[cfg(feature = "trello")]
+            trello_state: Some(trello_state.clone()),
+        },
+    );
 
-    // Register Telegram connect tool (agent-callable bot setup)
-    #[cfg(feature = "telegram")]
-    shared_tool_registry.register(Arc::new(
-        crate::brain::tools::telegram_connect::TelegramConnectTool::new(
-            channel_factory.clone(),
-            telegram_state.clone(),
-        ),
-    ));
-
-    // Register Telegram send tool (proactive messaging)
-    #[cfg(feature = "telegram")]
-    shared_tool_registry.register(Arc::new(
-        crate::brain::tools::telegram_send::TelegramSendTool::new(telegram_state.clone()),
-    ));
-
-    // Register WhatsApp connect tool (agent-callable QR pairing)
-    #[cfg(feature = "whatsapp")]
-    shared_tool_registry.register(Arc::new(
-        crate::brain::tools::whatsapp_connect::WhatsAppConnectTool::new(
-            Some(progress_callback.clone()),
-            whatsapp_state.clone(),
-        ),
-    ));
-
-    // Register WhatsApp send tool (proactive messaging)
-    #[cfg(feature = "whatsapp")]
-    shared_tool_registry.register(Arc::new(
-        crate::brain::tools::whatsapp_send::WhatsAppSendTool::new(
-            whatsapp_state.clone(),
-            channel_factory.config_rx(),
-        ),
-    ));
-
-    // Shared Discord state for proactive messaging
-    #[cfg(feature = "discord")]
-    let discord_state = Arc::new(crate::channels::discord::DiscordState::new());
-
-    // Register Discord connect tool (agent-callable bot setup)
-    #[cfg(feature = "discord")]
-    shared_tool_registry.register(Arc::new(
-        crate::brain::tools::discord_connect::DiscordConnectTool::new(
-            channel_factory.clone(),
-            discord_state.clone(),
-        ),
-    ));
-
-    // Register Discord send tool (proactive messaging)
-    #[cfg(feature = "discord")]
-    shared_tool_registry.register(Arc::new(
-        crate::brain::tools::discord_send::DiscordSendTool::new(discord_state.clone()),
-    ));
-
-    // Shared Slack state for proactive messaging
-    #[cfg(feature = "slack")]
-    let slack_state = Arc::new(crate::channels::slack::SlackState::new());
-
-    // Register Slack connect tool (agent-callable bot setup)
-    #[cfg(feature = "slack")]
-    shared_tool_registry.register(Arc::new(
-        crate::brain::tools::slack_connect::SlackConnectTool::new(
-            channel_factory.clone(),
-            slack_state.clone(),
-        ),
-    ));
-
-    // Register Slack send tool (proactive messaging)
-    #[cfg(feature = "slack")]
-    shared_tool_registry.register(Arc::new(
-        crate::brain::tools::slack_send::SlackSendTool::new(slack_state.clone()),
-    ));
-
-    // Shared Trello state for proactive card operations
-    #[cfg(feature = "trello")]
-    let trello_state = Arc::new(crate::channels::trello::TrelloState::new());
-
-    // Register Trello connect tool (agent-callable board setup)
-    #[cfg(feature = "trello")]
-    shared_tool_registry.register(Arc::new(
-        crate::brain::tools::trello_connect::TrelloConnectTool::new(
-            channel_factory.clone(),
-            trello_state.clone(),
-        ),
-    ));
-
-    // Register Trello send tool (proactive card operations)
-    #[cfg(feature = "trello")]
-    shared_tool_registry.register(Arc::new(
-        crate::brain::tools::trello_send::TrelloSendTool::new(trello_state.clone()),
-    ));
+    let mut system_brain = brain_loader.build_core_brain(
+        Some(&runtime_info),
+        Some(&commands_section),
+        Some(&shared_tool_registry.list_tools()),
+    );
+    if let Some(digest) = &feedback_digest {
+        system_brain.push_str(digest);
+    }
+    channel_factory.set_shared_brain(system_brain.clone());
 
     // Create sudo password callback that sends requests to TUI
     let sudo_sender = app.event_sender();
@@ -697,6 +623,7 @@ async fn cmd_chat_inner(
             .with_sudo_callback(Some(sudo_callback))
             .with_ssh_callback(Some(ssh_callback))
             .with_working_directory(working_directory.clone())
+            .with_auto_approve_tools(auto_approve_tools)
             .with_brain_path(brain_path)
             .with_session_updated_tx(session_updated_tx),
     );
@@ -757,9 +684,13 @@ async fn cmd_chat_inner(
 
                         // TUI: wire cancel token and send response via TuiEvent
                         // Non-TUI: send response back to the originating channel
+                        #[cfg(feature = "telegram")]
                         let tg = telegram_state.clone();
+                        #[cfg(feature = "discord")]
                         let dc = discord_state.clone();
+                        #[cfg(feature = "whatsapp")]
                         let wa = whatsapp_state.clone();
+                        #[cfg(feature = "slack")]
                         let sk = slack_state.clone();
                         let token = tokio_util::sync::CancellationToken::new();
                         if channel == "tui" {
@@ -777,6 +708,7 @@ async fn cmd_chat_inner(
                         // Telegram: use full streaming pipeline (typing, tool msgs, edit loop).
                         // The bot may not be authenticated yet at startup, so we spawn a
                         // task that waits for it before calling resume_session.
+                        #[cfg(feature = "telegram")]
                         if channel == "telegram"
                             && let Some(ref cid) = channel_chat_id
                             && let Ok(chat_id) = cid.parse::<i64>()
@@ -872,6 +804,7 @@ async fn cmd_chat_inner(
                                                 },
                                             );
                                         }
+                                        #[cfg(feature = "discord")]
                                         "discord" => {
                                             if let Some(ref cid) = channel_chat_id
                                                 && let Ok(ch_id) = cid.parse::<u64>()
@@ -896,6 +829,7 @@ async fn cmd_chat_inner(
                                                 let _ = client.send_message(jid, msg).await;
                                             }
                                         }
+                                        #[cfg(feature = "slack")]
                                         "slack" => {
                                             if let Some(ref cid) = channel_chat_id
                                                 && let (Some(token_val), Some(client)) =

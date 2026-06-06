@@ -165,6 +165,9 @@ tokio-test = "0.4"
 tower = { version = "0.5", features = ["util"] }
 mockito = "1.7"
 
+[build-dependencies]
+toml = "0.8"
+
 # Platform-specific dependencies
 [target.'cfg(unix)'.dependencies]
 # Profiling (Unix-only - not supported on Windows)
@@ -178,14 +181,7 @@ rwhisper = { version = "0.4", optional = true, features = ["metal", "accelerate"
 winresource = "0.1"
 
 [features]
-default = [
-    "telegram", "whatsapp", "discord", "slack", "trello",
-    "local-stt", "local-tts", "browser", "rtk",
-    # Tool modules — all enabled by default for full functionality
-    "tools-file-ops", "tools-search", "tools-workflow", "tools-multi-agent",
-    "tools-rsi", "tools-image", "tools-brain", "tools-channel-integrations",
-    "tools-browser", "tools-meta", "tools-dynamic",
-]
+default = ["rtk"]
 # Profiling feature enables pprof on Unix only (no-op on Windows)
 profiling = []
 # RTK (Rust Token Killer) integration - filters bash command outputs to save 60-90% tokens
@@ -203,35 +199,232 @@ pdfium = ["dep:pdfium-render"]
 # ========================================
 # Tool Module Features (compile-time)
 # ========================================
-# Disable tool modules at compile time to reduce binary size and token bloat.
-# When a feature is disabled, the module's code is not compiled into the binary.
-# Combine with runtime [tools] disabled = [...] in config.toml for full control.
-#
-# Example: cargo build --no-default-features --features "telegram,tools-file-ops,tools-search"
-# This builds a minimal binary with only Telegram and file/search tools.
+# The `tools-*` features are compatibility aliases that expand into individual
+# `tool-*` features. Build automation should prefer the per-tool features so a
+# manifest toggle can pack exactly one tool at a time.
 
 # Core file I/O, shell execution, and code navigation
-tools-file-ops = []
+tools-file-ops = ["tool-bash", "tool-edit", "tool-glob", "tool-grep", "tool-hashline-edit", "tool-ls", "tool-read", "tool-write"]
+tool-bash = []
+tool-edit = []
+tool-glob = []
+tool-grep = []
+tool-hashline-edit = []
+tool-ls = []
+tool-read = []
+tool-write = []
+
 # Web search, memory search, session search
-tools-search = []
+tools-search = ["tool-web-search", "tool-memory-search", "tool-session-search", "tool-channel-search", "tool-exa-search", "tool-brave-search"]
+tool-web-search = []
+tool-memory-search = []
+tool-session-search = []
+tool-channel-search = []
+tool-exa-search = []
+tool-brave-search = []
+
 # Task management, planning, HTTP, code execution, document parsing
-tools-workflow = []
+tools-workflow = [
+    "tool-task-manager",
+    "tool-session-context",
+    "tool-http-request",
+    "tool-plan",
+    "tool-execute-code",
+    "tool-notebook-edit",
+    "tool-parse-document",
+    "tool-config-manager",
+    "tool-follow-up-question",
+    "tool-cron-manage",
+]
+tool-task-manager = []
+tool-session-context = []
+tool-http-request = []
+tool-plan = []
+tool-execute-code = []
+tool-notebook-edit = []
+tool-parse-document = []
+tool-config-manager = []
+tool-follow-up-question = []
+tool-cron-manage = []
+
 # Sub-agent spawning and team management
-tools-multi-agent = []
+tools-multi-agent = [
+    "tool-spawn-agent",
+    "tool-wait-agent",
+    "tool-send-input",
+    "tool-close-agent",
+    "tool-resume-agent",
+    "tool-team-create",
+    "tool-team-delete",
+    "tool-team-broadcast",
+]
+tool-spawn-agent = []
+tool-wait-agent = []
+tool-send-input = []
+tool-close-agent = []
+tool-resume-agent = []
+tool-team-create = []
+tool-team-delete = []
+tool-team-broadcast = []
+
 # Recursive self-improvement (feedback recording, analysis, self-improve)
-tools-rsi = []
+tools-rsi = [
+    "tool-feedback-record",
+    "tool-feedback-analyze",
+    "tool-self-improve",
+    "tool-rsi-propose",
+]
+tool-feedback-record = []
+tool-feedback-analyze = []
+tool-self-improve = []
+tool-rsi-propose = []
+
 # Image generation and vision analysis
-tools-image = []
+tools-image = ["tool-generate-image", "tool-analyze-image", "tool-analyze-video"]
+tool-generate-image = []
+tool-analyze-image = []
+tool-analyze-video = []
+
 # Brain file I/O, session management, A2A communication
-tools-brain = []
+tools-brain = [
+    "tool-slash-command",
+    "tool-rename-session",
+    "tool-load-brain-file",
+    "tool-write-opencrabs-file",
+    "tool-a2a-send",
+]
+tool-slash-command = []
+tool-rename-session = []
+tool-load-brain-file = []
+tool-write-opencrabs-file = []
+tool-a2a-send = []
+
 # Messaging platform connectors (depends on telegram/discord/slack/whatsapp/trello features)
-tools-channel-integrations = []
+tools-channel-integrations = [
+    "tool-telegram-connect",
+    "tool-telegram-send",
+    "tool-whatsapp-connect",
+    "tool-whatsapp-send",
+    "tool-discord-connect",
+    "tool-discord-send",
+    "tool-slack-connect",
+    "tool-slack-send",
+    "tool-trello-connect",
+    "tool-trello-send",
+]
+tool-telegram-connect = ["telegram"]
+tool-telegram-send = ["telegram"]
+tool-whatsapp-connect = ["whatsapp"]
+tool-whatsapp-send = ["whatsapp"]
+tool-discord-connect = ["discord"]
+tool-discord-send = ["discord"]
+tool-slack-connect = ["slack"]
+tool-slack-send = ["slack"]
+tool-trello-connect = ["trello"]
+tool-trello-send = ["trello"]
+
 # Headless Chrome automation (depends on browser feature)
-tools-browser = ["browser"]
-# Tool management and RSI proposals (depends on tools-dynamic for DynamicToolDef)
-tools-meta = ["tools-dynamic"]
+tools-browser = [
+    "tool-browser-navigate",
+    "tool-browser-screenshot",
+    "tool-browser-click",
+    "tool-browser-type",
+    "tool-browser-eval",
+    "tool-browser-content",
+    "tool-browser-wait",
+    "tool-browser-find",
+    "tool-browser-close",
+]
+tool-browser-navigate = ["browser"]
+tool-browser-screenshot = ["browser"]
+tool-browser-click = ["browser"]
+tool-browser-type = ["browser"]
+tool-browser-eval = ["browser"]
+tool-browser-content = ["browser"]
+tool-browser-wait = ["browser"]
+tool-browser-find = ["browser"]
+tool-browser-close = ["browser"]
+
+# Tool management and evolution helpers
+tools-meta = ["tool-rebuild", "tool-evolve", "tool-tool-manage", "tool-rsi-proposals"]
+tool-rebuild = []
+tool-evolve = []
+tool-tool-manage = ["tools-dynamic"]
+tool-rsi-proposals = ["tools-dynamic"]
+
 # User-defined tools from tools.toml
 tools-dynamic = []
+tool-dynamic-runtime = ["tools-dynamic"]
+
+[package.metadata.tool_toggles]
+read_file = true
+write_file = false
+edit_file = false
+hashline_edit = false
+bash = false
+ls = true
+glob = true
+grep = true
+web_search = false
+memory_search = false
+session_search = false
+channel_search = false
+exa_search = false
+brave_search = false
+task_manager = false
+session_context = false
+http_request = false
+plan = false
+execute_code = false
+notebook_edit = false
+parse_document = false
+config_manager = false
+follow_up_question = false
+cron_manage = false
+spawn_agent = false
+wait_agent = false
+send_input = false
+close_agent = false
+resume_agent = false
+team_create = false
+team_delete = false
+team_broadcast = false
+feedback_record = false
+feedback_analyze = false
+self_improve = false
+rsi_propose = false
+generate_image = false
+analyze_image = false
+analyze_video = false
+slash_command = false
+rename_session = false
+load_brain_file = false
+write_opencrabs_file = false
+a2a_send = false
+telegram_connect = false
+telegram_send = false
+whatsapp_connect = false
+whatsapp_send = false
+discord_connect = false
+discord_send = false
+slack_connect = false
+slack_send = false
+trello_connect = false
+trello_send = false
+browser_navigate = false
+browser_screenshot = false
+browser_click = false
+browser_type = false
+browser_eval = false
+browser_content = false
+browser_wait = false
+browser_find = false
+browser_close = false
+rebuild = false
+evolve = false
+tool_manage = false
+rsi_proposals = false
+dynamic_runtime = false
 
 [profile.dev]
 opt-level = 0

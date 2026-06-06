@@ -2463,6 +2463,7 @@ impl App {
 /// Run the evolve tool directly (no LLM involvement) and pipe progress
 /// events into TUI system messages. Used by `/evolve`, the UpdatePrompt
 /// dialog, and the auto-update path on startup.
+#[cfg(feature = "tool-evolve")]
 pub(crate) async fn run_evolve_directly(
     session_id: Uuid,
     sender: tokio::sync::mpsc::UnboundedSender<TuiEvent>,
@@ -2523,4 +2524,16 @@ pub(crate) async fn run_evolve_directly(
             });
         }
     }
+}
+
+#[cfg(not(feature = "tool-evolve"))]
+pub(crate) async fn run_evolve_directly(
+    session_id: Uuid,
+    sender: tokio::sync::mpsc::UnboundedSender<TuiEvent>,
+) {
+    let _ = sender.send(TuiEvent::SystemMessage {
+        session_id,
+        text: "Evolve is unavailable in this build. Rebuild with `--features tools-meta`."
+            .to_string(),
+    });
 }

@@ -32,8 +32,37 @@ use std::collections::HashSet;
 use std::sync::Arc;
 
 use super::registry::ToolRegistry;
-#[cfg(feature = "tools-multi-agent")]
+#[cfg(any(
+    feature = "tool-spawn-agent",
+    feature = "tool-wait-agent",
+    feature = "tool-send-input",
+    feature = "tool-close-agent",
+    feature = "tool-resume-agent",
+    feature = "tool-team-create",
+    feature = "tool-team-delete",
+    feature = "tool-team-broadcast"
+))]
 use super::subagent::{SubAgentManager, TeamManager};
+
+/// Runtime-only dependencies some tool modules need at registration time.
+///
+/// These are optional so non-interactive modes can still use the same module
+/// registrar without fabricating TUI/channel state they do not have.
+#[derive(Clone, Default)]
+pub struct RuntimeToolContext {
+    pub progress_callback: Option<crate::brain::agent::ProgressCallback>,
+    pub channel_factory: Option<Arc<crate::channels::ChannelFactory>>,
+    #[cfg(feature = "telegram")]
+    pub telegram_state: Option<Arc<crate::channels::telegram::TelegramState>>,
+    #[cfg(feature = "whatsapp")]
+    pub whatsapp_state: Option<Arc<crate::channels::whatsapp::WhatsAppState>>,
+    #[cfg(feature = "discord")]
+    pub discord_state: Option<Arc<crate::channels::discord::DiscordState>>,
+    #[cfg(feature = "slack")]
+    pub slack_state: Option<Arc<crate::channels::slack::SlackState>>,
+    #[cfg(feature = "trello")]
+    pub trello_state: Option<Arc<crate::channels::trello::TrelloState>>,
+}
 
 /// Registration mode controls which tools are available.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -51,10 +80,53 @@ pub struct ModuleContext {
     pub config: Config,
     pub pool: Pool,
     pub mode: RegistrationMode,
-    #[cfg(feature = "tools-multi-agent")]
+    pub runtime: RuntimeToolContext,
+    #[cfg(any(
+        feature = "tool-spawn-agent",
+        feature = "tool-wait-agent",
+        feature = "tool-send-input",
+        feature = "tool-close-agent",
+        feature = "tool-resume-agent",
+        feature = "tool-team-create",
+        feature = "tool-team-delete",
+        feature = "tool-team-broadcast"
+    ))]
     pub subagent_manager: Arc<SubAgentManager>,
-    #[cfg(feature = "tools-multi-agent")]
+    #[cfg(any(
+        feature = "tool-spawn-agent",
+        feature = "tool-wait-agent",
+        feature = "tool-send-input",
+        feature = "tool-close-agent",
+        feature = "tool-resume-agent",
+        feature = "tool-team-create",
+        feature = "tool-team-delete",
+        feature = "tool-team-broadcast"
+    ))]
     pub team_manager: Arc<TeamManager>,
+}
+
+impl ModuleContext {
+    /// Registers a tool into the registry, but skips it if the tool's name
+    /// is listed in the `tools.disabled` config array. This allows granular
+    /// tool-by-tool toggling instead of just module-level toggling.
+    pub fn register(&self, tool: Arc<dyn super::r#trait::Tool>) {
+        let name = tool.name();
+
+        let disabled: HashSet<String> = self
+            .config
+            .tools
+            .disabled
+            .iter()
+            .map(|s| s.to_lowercase())
+            .collect();
+
+        if disabled.contains("all") || disabled.contains(&name.to_lowercase()) {
+            tracing::info!("Skipping disabled individual tool: {}", name);
+            return;
+        }
+
+        self.registry.register(tool);
+    }
 }
 
 /// A tool module is a logical grouping of related tools that can be
@@ -84,10 +156,30 @@ pub trait ToolModule: Send + Sync {
 // ---------------------------------------------------------------------------
 
 /// File operations: read, write, edit, hashline_edit, bash, ls, glob, grep
-#[cfg(feature = "tools-file-ops")]
+#[cfg(any(
+    feature = "tool-read",
+    feature = "tool-write",
+    feature = "tool-edit",
+    feature = "tool-hashline-edit",
+    feature = "tool-bash",
+    feature = "tool-ls",
+    feature = "tool-glob",
+    feature = "tool-grep",
+    feature = "tools-file-ops"
+))]
 struct FileOpsModule;
 
-#[cfg(feature = "tools-file-ops")]
+#[cfg(any(
+    feature = "tool-read",
+    feature = "tool-write",
+    feature = "tool-edit",
+    feature = "tool-hashline-edit",
+    feature = "tool-bash",
+    feature = "tool-ls",
+    feature = "tool-glob",
+    feature = "tool-grep",
+    feature = "tools-file-ops"
+))]
 impl ToolModule for FileOpsModule {
     fn id(&self) -> &str {
         "file_ops"
@@ -99,27 +191,47 @@ impl ToolModule for FileOpsModule {
         "Core file I/O, shell execution, and code navigation tools"
     }
     fn register(&self, ctx: &ModuleContext) {
-        use super::{
-            bash::BashTool, edit::EditTool, glob::GlobTool, grep::GrepTool,
-            hashline::HashlineEditTool, ls::LsTool, read::ReadTool, write::WriteTool,
-        };
-        ctx.registry.register(Arc::new(ReadTool));
-        ctx.registry.register(Arc::new(WriteTool));
-        ctx.registry.register(Arc::new(EditTool));
-        ctx.registry.register(Arc::new(HashlineEditTool));
-        ctx.registry.register(Arc::new(BashTool));
-        ctx.registry.register(Arc::new(LsTool));
-        ctx.registry.register(Arc::new(GlobTool));
-        ctx.registry.register(Arc::new(GrepTool));
+        #[cfg(feature = "tool-read")]
+        ctx.register(Arc::new(super::read::ReadTool));
+        #[cfg(feature = "tool-write")]
+        ctx.register(Arc::new(super::write::WriteTool));
+        #[cfg(feature = "tool-edit")]
+        ctx.register(Arc::new(super::edit::EditTool));
+        #[cfg(feature = "tool-hashline-edit")]
+        ctx.register(Arc::new(super::hashline::HashlineEditTool));
+        #[cfg(feature = "tool-bash")]
+        ctx.register(Arc::new(super::bash::BashTool));
+        #[cfg(feature = "tool-ls")]
+        ctx.register(Arc::new(super::ls::LsTool));
+        #[cfg(feature = "tool-glob")]
+        ctx.register(Arc::new(super::glob::GlobTool));
+        #[cfg(feature = "tool-grep")]
+        ctx.register(Arc::new(super::grep::GrepTool));
     }
 }
 
 /// Search & memory: web_search, exa_search, brave_search, memory_search,
 /// session_search, channel_search
-#[cfg(feature = "tools-search")]
+#[cfg(any(
+    feature = "tool-web-search",
+    feature = "tool-memory-search",
+    feature = "tool-session-search",
+    feature = "tool-channel-search",
+    feature = "tool-exa-search",
+    feature = "tool-brave-search",
+    feature = "tools-search"
+))]
 struct SearchModule;
 
-#[cfg(feature = "tools-search")]
+#[cfg(any(
+    feature = "tool-web-search",
+    feature = "tool-memory-search",
+    feature = "tool-session-search",
+    feature = "tool-channel-search",
+    feature = "tool-exa-search",
+    feature = "tool-brave-search",
+    feature = "tools-search"
+))]
 impl ToolModule for SearchModule {
     fn id(&self) -> &str {
         "search"
@@ -131,53 +243,59 @@ impl ToolModule for SearchModule {
         "Web search, semantic memory search, and session history search"
     }
     fn register(&self, ctx: &ModuleContext) {
-        use super::{
-            brave_search::BraveSearchTool, exa_search::ExaSearchTool,
-            memory_search::MemorySearchTool, session_search::SessionSearchTool,
-            web_search::WebSearchTool,
-        };
+        #[cfg(feature = "tool-web-search")]
+        ctx.register(Arc::new(super::web_search::WebSearchTool));
 
-        ctx.registry.register(Arc::new(WebSearchTool));
-        ctx.registry.register(Arc::new(MemorySearchTool));
-        ctx.registry
-            .register(Arc::new(SessionSearchTool::new(ctx.pool.clone())));
+        #[cfg(feature = "tool-memory-search")]
+        ctx.register(Arc::new(super::memory_search::MemorySearchTool));
 
-        // EXA search: always available (free via MCP), uses direct API if key is set
-        let exa_key = ctx
-            .config
-            .providers
-            .web_search
-            .as_ref()
-            .and_then(|ws| ws.exa.as_ref())
-            .and_then(|p| p.api_key.clone())
-            .filter(|k| !k.is_empty());
-        let exa_mode = if exa_key.is_some() {
-            "direct API"
-        } else {
-            "MCP (free)"
-        };
-        ctx.registry.register(Arc::new(ExaSearchTool::new(exa_key)));
-        tracing::info!("Registered EXA search tool (mode: {})", exa_mode);
+        #[cfg(feature = "tool-session-search")]
+        ctx.register(Arc::new(super::session_search::SessionSearchTool::new(
+            ctx.pool.clone(),
+        )));
 
-        // Brave search: requires enabled = true in config.toml AND API key
-        if let Some(brave_cfg) = ctx
-            .config
-            .providers
-            .web_search
-            .as_ref()
-            .and_then(|ws| ws.brave.as_ref())
-            && brave_cfg.enabled
-            && let Some(brave_key) = brave_cfg.api_key.clone()
+        #[cfg(feature = "tool-exa-search")]
         {
-            ctx.registry
-                .register(Arc::new(BraveSearchTool::new(brave_key)));
-            tracing::info!("Registered Brave search tool");
+            let exa_key = ctx
+                .config
+                .providers
+                .web_search
+                .as_ref()
+                .and_then(|ws| ws.exa.as_ref())
+                .and_then(|p| p.api_key.clone())
+                .filter(|k| !k.is_empty());
+            let exa_mode = if exa_key.is_some() {
+                "direct API"
+            } else {
+                "MCP (free)"
+            };
+            ctx.register(Arc::new(super::exa_search::ExaSearchTool::new(exa_key)));
+            tracing::info!("Registered EXA search tool (mode: {})", exa_mode);
         }
 
-        // Channel search — only in Full mode
+        #[cfg(feature = "tool-brave-search")]
+        {
+            if let Some(brave_cfg) = ctx
+                .config
+                .providers
+                .web_search
+                .as_ref()
+                .and_then(|ws| ws.brave.as_ref())
+            {
+                if brave_cfg.enabled {
+                    if let Some(brave_key) = brave_cfg.api_key.clone() {
+                        ctx.register(Arc::new(super::brave_search::BraveSearchTool::new(
+                            brave_key,
+                        )));
+                        tracing::info!("Registered Brave search tool");
+                    }
+                }
+            }
+        }
+
+        #[cfg(feature = "tool-channel-search")]
         if ctx.mode == RegistrationMode::Full {
-            use super::channel_search::ChannelSearchTool;
-            ctx.registry.register(Arc::new(ChannelSearchTool::new(
+            ctx.register(Arc::new(super::channel_search::ChannelSearchTool::new(
                 crate::db::ChannelMessageRepository::new(ctx.pool.clone()),
             )));
         }
@@ -186,10 +304,32 @@ impl ToolModule for SearchModule {
 
 /// Workflow & integration: task, plan, context, config, cron, notebook,
 /// doc_parser, http, code_exec, follow_up_question
-#[cfg(feature = "tools-workflow")]
+#[cfg(any(
+    feature = "tool-task-manager",
+    feature = "tool-session-context",
+    feature = "tool-http-request",
+    feature = "tool-plan",
+    feature = "tool-execute-code",
+    feature = "tool-notebook-edit",
+    feature = "tool-parse-document",
+    feature = "tool-config-manager",
+    feature = "tool-follow-up-question",
+    feature = "tool-cron-manage"
+))]
 struct WorkflowModule;
 
-#[cfg(feature = "tools-workflow")]
+#[cfg(any(
+    feature = "tool-task-manager",
+    feature = "tool-session-context",
+    feature = "tool-http-request",
+    feature = "tool-plan",
+    feature = "tool-execute-code",
+    feature = "tool-notebook-edit",
+    feature = "tool-parse-document",
+    feature = "tool-config-manager",
+    feature = "tool-follow-up-question",
+    feature = "tool-cron-manage"
+))]
 impl ToolModule for WorkflowModule {
     fn id(&self) -> &str {
         "workflow"
@@ -206,20 +346,30 @@ impl ToolModule for WorkflowModule {
             doc_parser::DocParserTool, follow_up_question::FollowUpQuestionTool,
             http::HttpClientTool, notebook::NotebookEditTool, plan_tool::PlanTool, task::TaskTool,
         };
-        ctx.registry.register(Arc::new(TaskTool));
-        ctx.registry.register(Arc::new(ContextTool));
-        ctx.registry.register(Arc::new(HttpClientTool));
-        ctx.registry.register(Arc::new(PlanTool));
-        ctx.registry.register(Arc::new(CodeExecTool));
-        ctx.registry.register(Arc::new(NotebookEditTool));
-        ctx.registry.register(Arc::new(DocParserTool));
-        ctx.registry.register(Arc::new(ConfigTool));
-        ctx.registry.register(Arc::new(FollowUpQuestionTool));
+        #[cfg(feature = "tool-task-manager")]
+        ctx.register(Arc::new(TaskTool));
+        #[cfg(feature = "tool-session-context")]
+        ctx.register(Arc::new(ContextTool));
+        #[cfg(feature = "tool-http-request")]
+        ctx.register(Arc::new(HttpClientTool));
+        #[cfg(feature = "tool-plan")]
+        ctx.register(Arc::new(PlanTool));
+        #[cfg(feature = "tool-execute-code")]
+        ctx.register(Arc::new(CodeExecTool));
+        #[cfg(feature = "tool-notebook-edit")]
+        ctx.register(Arc::new(NotebookEditTool));
+        #[cfg(feature = "tool-parse-document")]
+        ctx.register(Arc::new(DocParserTool));
+        #[cfg(feature = "tool-config-manager")]
+        ctx.register(Arc::new(ConfigTool));
+        #[cfg(feature = "tool-follow-up-question")]
+        ctx.register(Arc::new(FollowUpQuestionTool));
 
         // Cron job management — Full mode only
+        #[cfg(feature = "tool-cron-manage")]
         if ctx.mode == RegistrationMode::Full {
             use super::cron_manage::CronManageTool;
-            ctx.registry.register(Arc::new(CronManageTool::new(
+            ctx.register(Arc::new(CronManageTool::new(
                 crate::db::CronJobRepository::new(ctx.pool.clone()),
             )));
         }
@@ -227,10 +377,28 @@ impl ToolModule for WorkflowModule {
 }
 
 /// Multi-agent orchestration: spawn, wait, send_input, close, resume + team tools
-#[cfg(feature = "tools-multi-agent")]
+#[cfg(any(
+    feature = "tool-spawn-agent",
+    feature = "tool-wait-agent",
+    feature = "tool-send-input",
+    feature = "tool-close-agent",
+    feature = "tool-resume-agent",
+    feature = "tool-team-create",
+    feature = "tool-team-delete",
+    feature = "tool-team-broadcast"
+))]
 struct MultiAgentModule;
 
-#[cfg(feature = "tools-multi-agent")]
+#[cfg(any(
+    feature = "tool-spawn-agent",
+    feature = "tool-wait-agent",
+    feature = "tool-send-input",
+    feature = "tool-close-agent",
+    feature = "tool-resume-agent",
+    feature = "tool-team-create",
+    feature = "tool-team-delete",
+    feature = "tool-team-broadcast"
+))]
 impl ToolModule for MultiAgentModule {
     fn id(&self) -> &str {
         "multi_agent"
@@ -247,31 +415,36 @@ impl ToolModule for MultiAgentModule {
             TeamCreateTool, TeamDeleteTool, WaitAgentTool,
         };
 
-        ctx.registry.register(Arc::new(SpawnAgentTool::new(
+        #[cfg(feature = "tool-spawn-agent")]
+        ctx.register(Arc::new(SpawnAgentTool::new(
             ctx.subagent_manager.clone(),
             ctx.registry.clone(),
         )));
-        ctx.registry
-            .register(Arc::new(WaitAgentTool::new(ctx.subagent_manager.clone())));
-        ctx.registry
-            .register(Arc::new(SendInputTool::new(ctx.subagent_manager.clone())));
-        ctx.registry
-            .register(Arc::new(CloseAgentTool::new(ctx.subagent_manager.clone())));
-        ctx.registry.register(Arc::new(ResumeAgentTool::new(
+        #[cfg(feature = "tool-wait-agent")]
+        ctx.register(Arc::new(WaitAgentTool::new(ctx.subagent_manager.clone())));
+        #[cfg(feature = "tool-send-input")]
+        ctx.register(Arc::new(SendInputTool::new(ctx.subagent_manager.clone())));
+        #[cfg(feature = "tool-close-agent")]
+        ctx.register(Arc::new(CloseAgentTool::new(ctx.subagent_manager.clone())));
+        #[cfg(feature = "tool-resume-agent")]
+        ctx.register(Arc::new(ResumeAgentTool::new(
             ctx.subagent_manager.clone(),
             ctx.registry.clone(),
         )));
 
-        ctx.registry.register(Arc::new(TeamCreateTool::new(
+        #[cfg(feature = "tool-team-create")]
+        ctx.register(Arc::new(TeamCreateTool::new(
             ctx.subagent_manager.clone(),
             ctx.team_manager.clone(),
             ctx.registry.clone(),
         )));
-        ctx.registry.register(Arc::new(TeamDeleteTool::new(
+        #[cfg(feature = "tool-team-delete")]
+        ctx.register(Arc::new(TeamDeleteTool::new(
             ctx.subagent_manager.clone(),
             ctx.team_manager.clone(),
         )));
-        ctx.registry.register(Arc::new(TeamBroadcastTool::new(
+        #[cfg(feature = "tool-team-broadcast")]
+        ctx.register(Arc::new(TeamBroadcastTool::new(
             ctx.subagent_manager.clone(),
             ctx.team_manager.clone(),
         )));
@@ -279,10 +452,20 @@ impl ToolModule for MultiAgentModule {
 }
 
 /// RSI (Recursive Self-Improvement): feedback_record, feedback_analyze, self_improve
-#[cfg(feature = "tools-rsi")]
+#[cfg(any(
+    feature = "tool-feedback-record",
+    feature = "tool-feedback-analyze",
+    feature = "tool-self-improve",
+    feature = "tool-rsi-propose"
+))]
 struct RsiModule;
 
-#[cfg(feature = "tools-rsi")]
+#[cfg(any(
+    feature = "tool-feedback-record",
+    feature = "tool-feedback-analyze",
+    feature = "tool-self-improve",
+    feature = "tool-rsi-propose"
+))]
 impl ToolModule for RsiModule {
     fn id(&self) -> &str {
         "rsi"
@@ -296,19 +479,32 @@ impl ToolModule for RsiModule {
     fn register(&self, ctx: &ModuleContext) {
         use super::{
             feedback_analyze::FeedbackAnalyzeTool, feedback_record::FeedbackRecordTool,
-            self_improve::SelfImproveTool,
+            rsi_propose::RsiProposeTool, self_improve::SelfImproveTool,
         };
-        ctx.registry.register(Arc::new(FeedbackRecordTool));
-        ctx.registry.register(Arc::new(FeedbackAnalyzeTool));
-        ctx.registry.register(Arc::new(SelfImproveTool));
+        #[cfg(feature = "tool-feedback-record")]
+        ctx.register(Arc::new(FeedbackRecordTool));
+        #[cfg(feature = "tool-feedback-analyze")]
+        ctx.register(Arc::new(FeedbackAnalyzeTool));
+        #[cfg(feature = "tool-self-improve")]
+        ctx.register(Arc::new(SelfImproveTool));
+        #[cfg(feature = "tool-rsi-propose")]
+        ctx.register(Arc::new(RsiProposeTool));
     }
 }
 
 /// Image & vision: generate_image, analyze_image, provider_vision, analyze_video
-#[cfg(feature = "tools-image")]
+#[cfg(any(
+    feature = "tool-generate-image",
+    feature = "tool-analyze-image",
+    feature = "tool-analyze-video"
+))]
 struct ImageModule;
 
-#[cfg(feature = "tools-image")]
+#[cfg(any(
+    feature = "tool-generate-image",
+    feature = "tool-analyze-image",
+    feature = "tool-analyze-video"
+))]
 impl ToolModule for ImageModule {
     fn id(&self) -> &str {
         "image"
@@ -326,16 +522,18 @@ impl ToolModule for ImageModule {
         };
 
         // Image generation
+        #[cfg(feature = "tool-generate-image")]
         if let Some(tool) = GenerateImageTool::from_config(&ctx.config) {
-            ctx.registry.register(Arc::new(tool));
+            ctx.register(Arc::new(tool));
             tracing::info!("Registered generate_image tool");
         }
 
         // Vision: provider.vision_model takes priority over image.vision (Gemini)
+        #[cfg(feature = "tool-analyze-image")]
         if let Some((api_key, base_url, vision_model)) =
             crate::brain::provider::factory::active_provider_vision(&ctx.config)
         {
-            ctx.registry.register(Arc::new(ProviderVisionTool::new(
+            ctx.register(Arc::new(ProviderVisionTool::new(
                 api_key,
                 base_url,
                 vision_model,
@@ -344,7 +542,7 @@ impl ToolModule for ImageModule {
         } else if ctx.config.image.vision.enabled
             && let Some(ref key) = ctx.config.image.vision.api_key
         {
-            ctx.registry.register(Arc::new(AnalyzeImageTool::new(
+            ctx.register(Arc::new(AnalyzeImageTool::new(
                 key.clone(),
                 ctx.config.image.vision.model.clone(),
             )));
@@ -352,11 +550,12 @@ impl ToolModule for ImageModule {
         }
 
         // Video vision — Gemini-native multimodal video understanding
+        #[cfg(feature = "tool-analyze-video")]
         if ctx.config.image.vision.enabled
             && let Some(ref key) = ctx.config.image.vision.api_key
             && !key.is_empty()
         {
-            ctx.registry.register(Arc::new(AnalyzeVideoTool::new(
+            ctx.register(Arc::new(AnalyzeVideoTool::new(
                 key.clone(),
                 ctx.config.image.vision.model.clone(),
             )));
@@ -367,10 +566,22 @@ impl ToolModule for ImageModule {
 
 /// Brain & session management: load_brain_file, write_opencrabs_file,
 /// rename_session, slash_command, a2a_send
-#[cfg(feature = "tools-brain")]
+#[cfg(any(
+    feature = "tool-slash-command",
+    feature = "tool-rename-session",
+    feature = "tool-load-brain-file",
+    feature = "tool-write-opencrabs-file",
+    feature = "tool-a2a-send"
+))]
 struct BrainModule;
 
-#[cfg(feature = "tools-brain")]
+#[cfg(any(
+    feature = "tool-slash-command",
+    feature = "tool-rename-session",
+    feature = "tool-load-brain-file",
+    feature = "tool-write-opencrabs-file",
+    feature = "tool-a2a-send"
+))]
 impl ToolModule for BrainModule {
     fn id(&self) -> &str {
         "brain"
@@ -388,28 +599,51 @@ impl ToolModule for BrainModule {
             write_opencrabs_file::WriteOpenCrabsFileTool,
         };
 
-        ctx.registry.register(Arc::new(SlashCommandTool));
-        ctx.registry.register(Arc::new(RenameSessionTool));
+        #[cfg(feature = "tool-slash-command")]
+        ctx.register(Arc::new(SlashCommandTool));
+        #[cfg(feature = "tool-rename-session")]
+        ctx.register(Arc::new(RenameSessionTool));
 
         // Full mode only: brain file loader, opencrabs file writer, A2A
         if ctx.mode == RegistrationMode::Full {
-            ctx.registry.register(Arc::new(LoadBrainFileTool));
-            ctx.registry.register(Arc::new(WriteOpenCrabsFileTool));
-            ctx.registry.register(Arc::new(A2aSendTool::new()));
+            #[cfg(feature = "tool-load-brain-file")]
+            ctx.register(Arc::new(LoadBrainFileTool));
+            #[cfg(feature = "tool-write-opencrabs-file")]
+            ctx.register(Arc::new(WriteOpenCrabsFileTool));
+            #[cfg(feature = "tool-a2a-send")]
+            ctx.register(Arc::new(A2aSendTool::new()));
         }
     }
 }
 
 /// Channel integrations: discord, slack, telegram, trello, whatsapp
 /// (feature-gated)
-///
-/// Note: Channel connect/send tools are registered by the channel subsystem
-/// when channels connect, not during startup tool registration. This module
-/// exists as a documentation entry and potential future toggle point.
-#[cfg(feature = "tools-channel-integrations")]
+#[cfg(any(
+    feature = "tool-telegram-connect",
+    feature = "tool-telegram-send",
+    feature = "tool-whatsapp-connect",
+    feature = "tool-whatsapp-send",
+    feature = "tool-discord-connect",
+    feature = "tool-discord-send",
+    feature = "tool-slack-connect",
+    feature = "tool-slack-send",
+    feature = "tool-trello-connect",
+    feature = "tool-trello-send"
+))]
 struct ChannelIntegrationsModule;
 
-#[cfg(feature = "tools-channel-integrations")]
+#[cfg(any(
+    feature = "tool-telegram-connect",
+    feature = "tool-telegram-send",
+    feature = "tool-whatsapp-connect",
+    feature = "tool-whatsapp-send",
+    feature = "tool-discord-connect",
+    feature = "tool-discord-send",
+    feature = "tool-slack-connect",
+    feature = "tool-slack-send",
+    feature = "tool-trello-connect",
+    feature = "tool-trello-send"
+))]
 impl ToolModule for ChannelIntegrationsModule {
     fn id(&self) -> &str {
         "channel_integrations"
@@ -420,23 +654,102 @@ impl ToolModule for ChannelIntegrationsModule {
     fn description(&self) -> &str {
         "Messaging platform connectors (Telegram, Discord, Slack, WhatsApp, Trello)"
     }
-    fn register(&self, _ctx: &ModuleContext) {
-        // Channel tools are registered by the channel subsystem itself
-        // when channels connect (e.g., telegram handler, discord handler).
-        // This module serves as a config toggle point — when the
-        // "channel_integrations" module is disabled, the channel subsystem
-        // can check this and skip tool registration.
-        tracing::debug!(
-            "Channel integrations module loaded (tools registered by channel subsystem)"
-        );
+    fn register(&self, ctx: &ModuleContext) {
+        if ctx.mode != RegistrationMode::Full {
+            tracing::debug!("Channel integrations skipped outside full registration mode");
+            return;
+        }
+
+        let Some(channel_factory) = ctx.runtime.channel_factory.clone() else {
+            tracing::debug!("Channel integrations skipped (channel factory unavailable)");
+            return;
+        };
+
+        #[cfg(any(feature = "tool-telegram-connect", feature = "tool-telegram-send"))]
+        if let Some(state) = ctx.runtime.telegram_state.clone() {
+            #[cfg(feature = "tool-telegram-connect")]
+            ctx.register(Arc::new(super::telegram_connect::TelegramConnectTool::new(
+                channel_factory.clone(),
+                state.clone(),
+            )));
+            #[cfg(feature = "tool-telegram-send")]
+            ctx.register(Arc::new(super::telegram_send::TelegramSendTool::new(state)));
+        }
+
+        #[cfg(any(feature = "tool-whatsapp-connect", feature = "tool-whatsapp-send"))]
+        if let Some(state) = ctx.runtime.whatsapp_state.clone() {
+            #[cfg(feature = "tool-whatsapp-connect")]
+            ctx.register(Arc::new(super::whatsapp_connect::WhatsAppConnectTool::new(
+                ctx.runtime.progress_callback.clone(),
+                state.clone(),
+            )));
+            #[cfg(feature = "tool-whatsapp-send")]
+            ctx.register(Arc::new(super::whatsapp_send::WhatsAppSendTool::new(
+                state,
+                channel_factory.config_rx(),
+            )));
+        }
+
+        #[cfg(any(feature = "tool-discord-connect", feature = "tool-discord-send"))]
+        if let Some(state) = ctx.runtime.discord_state.clone() {
+            #[cfg(feature = "tool-discord-connect")]
+            ctx.register(Arc::new(super::discord_connect::DiscordConnectTool::new(
+                channel_factory.clone(),
+                state.clone(),
+            )));
+            #[cfg(feature = "tool-discord-send")]
+            ctx.register(Arc::new(super::discord_send::DiscordSendTool::new(state)));
+        }
+
+        #[cfg(any(feature = "tool-slack-connect", feature = "tool-slack-send"))]
+        if let Some(state) = ctx.runtime.slack_state.clone() {
+            #[cfg(feature = "tool-slack-connect")]
+            ctx.register(Arc::new(super::slack_connect::SlackConnectTool::new(
+                channel_factory.clone(),
+                state.clone(),
+            )));
+            #[cfg(feature = "tool-slack-send")]
+            ctx.register(Arc::new(super::slack_send::SlackSendTool::new(state)));
+        }
+
+        #[cfg(any(feature = "tool-trello-connect", feature = "tool-trello-send"))]
+        if let Some(state) = ctx.runtime.trello_state.clone() {
+            #[cfg(feature = "tool-trello-connect")]
+            ctx.register(Arc::new(super::trello_connect::TrelloConnectTool::new(
+                channel_factory.clone(),
+                state.clone(),
+            )));
+            #[cfg(feature = "tool-trello-send")]
+            ctx.register(Arc::new(super::trello_send::TrelloSendTool::new(state)));
+        }
     }
 }
 
 /// Browser automation tools (feature-gated)
-#[cfg(feature = "tools-browser")]
+#[cfg(any(
+    feature = "tool-browser-navigate",
+    feature = "tool-browser-screenshot",
+    feature = "tool-browser-click",
+    feature = "tool-browser-type",
+    feature = "tool-browser-eval",
+    feature = "tool-browser-content",
+    feature = "tool-browser-wait",
+    feature = "tool-browser-find",
+    feature = "tool-browser-close"
+))]
 struct BrowserModule;
 
-#[cfg(feature = "tools-browser")]
+#[cfg(any(
+    feature = "tool-browser-navigate",
+    feature = "tool-browser-screenshot",
+    feature = "tool-browser-click",
+    feature = "tool-browser-type",
+    feature = "tool-browser-eval",
+    feature = "tool-browser-content",
+    feature = "tool-browser-wait",
+    feature = "tool-browser-find",
+    feature = "tool-browser-close"
+))]
 impl ToolModule for BrowserModule {
     fn id(&self) -> &str {
         "browser"
@@ -456,25 +769,26 @@ impl ToolModule for BrowserModule {
         };
 
         let browser_manager = Arc::new(BrowserManager::new());
-        ctx.registry
-            .register(Arc::new(BrowserNavigateTool::new(browser_manager.clone())));
-        ctx.registry.register(Arc::new(BrowserScreenshotTool::new(
+        #[cfg(feature = "tool-browser-navigate")]
+        ctx.register(Arc::new(BrowserNavigateTool::new(browser_manager.clone())));
+        #[cfg(feature = "tool-browser-screenshot")]
+        ctx.register(Arc::new(BrowserScreenshotTool::new(
             browser_manager.clone(),
         )));
-        ctx.registry
-            .register(Arc::new(BrowserClickTool::new(browser_manager.clone())));
-        ctx.registry
-            .register(Arc::new(BrowserTypeTool::new(browser_manager.clone())));
-        ctx.registry
-            .register(Arc::new(BrowserEvalTool::new(browser_manager.clone())));
-        ctx.registry
-            .register(Arc::new(BrowserContentTool::new(browser_manager.clone())));
-        ctx.registry
-            .register(Arc::new(BrowserWaitTool::new(browser_manager.clone())));
-        ctx.registry
-            .register(Arc::new(BrowserFindTool::new(browser_manager.clone())));
-        ctx.registry
-            .register(Arc::new(BrowserCloseTool::new(browser_manager)));
+        #[cfg(feature = "tool-browser-click")]
+        ctx.register(Arc::new(BrowserClickTool::new(browser_manager.clone())));
+        #[cfg(feature = "tool-browser-type")]
+        ctx.register(Arc::new(BrowserTypeTool::new(browser_manager.clone())));
+        #[cfg(feature = "tool-browser-eval")]
+        ctx.register(Arc::new(BrowserEvalTool::new(browser_manager.clone())));
+        #[cfg(feature = "tool-browser-content")]
+        ctx.register(Arc::new(BrowserContentTool::new(browser_manager.clone())));
+        #[cfg(feature = "tool-browser-wait")]
+        ctx.register(Arc::new(BrowserWaitTool::new(browser_manager.clone())));
+        #[cfg(feature = "tool-browser-find")]
+        ctx.register(Arc::new(BrowserFindTool::new(browser_manager.clone())));
+        #[cfg(feature = "tool-browser-close")]
+        ctx.register(Arc::new(BrowserCloseTool::new(browser_manager)));
     }
     #[cfg(not(feature = "browser"))]
     fn register(&self, _ctx: &ModuleContext) {
@@ -483,10 +797,20 @@ impl ToolModule for BrowserModule {
 }
 
 /// Meta tools: tool_manage, rsi_proposals
-#[cfg(feature = "tools-meta")]
+#[cfg(any(
+    feature = "tool-rebuild",
+    feature = "tool-evolve",
+    feature = "tool-tool-manage",
+    feature = "tool-rsi-proposals"
+))]
 struct MetaModule;
 
-#[cfg(feature = "tools-meta")]
+#[cfg(any(
+    feature = "tool-rebuild",
+    feature = "tool-evolve",
+    feature = "tool-tool-manage",
+    feature = "tool-rsi-proposals"
+))]
 impl ToolModule for MetaModule {
     fn id(&self) -> &str {
         "meta"
@@ -503,12 +827,27 @@ impl ToolModule for MetaModule {
         let tools_toml_path = super::dynamic::DynamicToolLoader::default_path()
             .unwrap_or_else(|| std::path::PathBuf::from("tools.toml"));
 
-        ctx.registry.register(Arc::new(ToolManageTool::new(
+        if ctx.mode == RegistrationMode::Full {
+            #[cfg(feature = "tool-evolve")]
+            ctx.register(Arc::new(super::evolve::EvolveTool::new(
+                ctx.runtime.progress_callback.clone(),
+            )));
+            #[cfg(feature = "tool-rebuild")]
+            if ctx.runtime.progress_callback.is_some() {
+                ctx.register(Arc::new(super::rebuild::RebuildTool::new(
+                    ctx.runtime.progress_callback.clone(),
+                )));
+            }
+        }
+
+        #[cfg(feature = "tool-tool-manage")]
+        ctx.register(Arc::new(ToolManageTool::new(
             ctx.registry.clone(),
             tools_toml_path.clone(),
         )));
 
-        ctx.registry.register(Arc::new(RsiProposalsTool::new(
+        #[cfg(feature = "tool-rsi-proposals")]
+        ctx.register(Arc::new(RsiProposalsTool::new(
             ctx.registry.clone(),
             tools_toml_path,
             crate::config::opencrabs_home(),
@@ -552,25 +891,104 @@ impl ToolModule for DynamicModule {
 #[allow(clippy::vec_init_then_push)]
 pub fn all_modules() -> Vec<Box<dyn ToolModule>> {
     let mut modules: Vec<Box<dyn ToolModule>> = Vec::new();
-    #[cfg(feature = "tools-file-ops")]
+    #[cfg(any(
+        feature = "tool-read",
+        feature = "tool-write",
+        feature = "tool-edit",
+        feature = "tool-hashline-edit",
+        feature = "tool-bash",
+        feature = "tool-ls",
+        feature = "tool-glob",
+        feature = "tool-grep",
+        feature = "tools-file-ops"
+    ))]
     modules.push(Box::new(FileOpsModule));
-    #[cfg(feature = "tools-search")]
+    #[cfg(any(
+        feature = "tool-web-search",
+        feature = "tool-memory-search",
+        feature = "tool-session-search",
+        feature = "tool-channel-search",
+        feature = "tool-exa-search",
+        feature = "tool-brave-search",
+        feature = "tools-search"
+    ))]
     modules.push(Box::new(SearchModule));
-    #[cfg(feature = "tools-workflow")]
+    #[cfg(any(
+        feature = "tool-task-manager",
+        feature = "tool-session-context",
+        feature = "tool-http-request",
+        feature = "tool-plan",
+        feature = "tool-execute-code",
+        feature = "tool-notebook-edit",
+        feature = "tool-parse-document",
+        feature = "tool-config-manager",
+        feature = "tool-follow-up-question",
+        feature = "tool-cron-manage"
+    ))]
     modules.push(Box::new(WorkflowModule));
-    #[cfg(feature = "tools-multi-agent")]
+    #[cfg(any(
+        feature = "tool-spawn-agent",
+        feature = "tool-wait-agent",
+        feature = "tool-send-input",
+        feature = "tool-close-agent",
+        feature = "tool-resume-agent",
+        feature = "tool-team-create",
+        feature = "tool-team-delete",
+        feature = "tool-team-broadcast"
+    ))]
     modules.push(Box::new(MultiAgentModule));
-    #[cfg(feature = "tools-rsi")]
+    #[cfg(any(
+        feature = "tool-feedback-record",
+        feature = "tool-feedback-analyze",
+        feature = "tool-self-improve",
+        feature = "tool-rsi-propose"
+    ))]
     modules.push(Box::new(RsiModule));
-    #[cfg(feature = "tools-image")]
+    #[cfg(any(
+        feature = "tool-generate-image",
+        feature = "tool-analyze-image",
+        feature = "tool-analyze-video"
+    ))]
     modules.push(Box::new(ImageModule));
-    #[cfg(feature = "tools-brain")]
+    #[cfg(any(
+        feature = "tool-slash-command",
+        feature = "tool-rename-session",
+        feature = "tool-load-brain-file",
+        feature = "tool-write-opencrabs-file",
+        feature = "tool-a2a-send"
+    ))]
     modules.push(Box::new(BrainModule));
-    #[cfg(feature = "tools-channel-integrations")]
+    #[cfg(any(
+        feature = "tool-telegram-connect",
+        feature = "tool-telegram-send",
+        feature = "tool-whatsapp-connect",
+        feature = "tool-whatsapp-send",
+        feature = "tool-discord-connect",
+        feature = "tool-discord-send",
+        feature = "tool-slack-connect",
+        feature = "tool-slack-send",
+        feature = "tool-trello-connect",
+        feature = "tool-trello-send"
+    ))]
     modules.push(Box::new(ChannelIntegrationsModule));
-    #[cfg(feature = "tools-browser")]
+    #[cfg(any(
+        feature = "tool-browser-navigate",
+        feature = "tool-browser-screenshot",
+        feature = "tool-browser-click",
+        feature = "tool-browser-type",
+        feature = "tool-browser-eval",
+        feature = "tool-browser-content",
+        feature = "tool-browser-wait",
+        feature = "tool-browser-find",
+        feature = "tool-browser-close"
+    ))]
     modules.push(Box::new(BrowserModule));
-    #[cfg(feature = "tools-meta")]
+    #[cfg(any(
+        feature = "tool-rebuild",
+        feature = "tool-evolve",
+        feature = "tool-tool-manage",
+        feature = "tool-rsi-proposals"
+    ))]
     modules.push(Box::new(MetaModule));
     #[cfg(feature = "tools-dynamic")]
     modules.push(Box::new(DynamicModule));
@@ -594,6 +1012,17 @@ pub fn register_enabled_tools(
     pool: &Pool,
     mode: RegistrationMode,
 ) -> Arc<ToolRegistry> {
+    register_enabled_tools_with_runtime(config, pool, mode, RuntimeToolContext::default())
+}
+
+/// Register all enabled tools into the registry based on config plus any
+/// runtime-only dependencies needed by certain modules.
+pub fn register_enabled_tools_with_runtime(
+    config: &Config,
+    pool: &Pool,
+    mode: RegistrationMode,
+    runtime: RuntimeToolContext,
+) -> Arc<ToolRegistry> {
     let registry = Arc::new(ToolRegistry::new());
 
     let disabled: HashSet<String> = config
@@ -606,9 +1035,27 @@ pub fn register_enabled_tools(
     // Chatbot mode: disable all modules
     let disable_all = disabled.contains("all");
 
-    #[cfg(feature = "tools-multi-agent")]
+    #[cfg(any(
+        feature = "tool-spawn-agent",
+        feature = "tool-wait-agent",
+        feature = "tool-send-input",
+        feature = "tool-close-agent",
+        feature = "tool-resume-agent",
+        feature = "tool-team-create",
+        feature = "tool-team-delete",
+        feature = "tool-team-broadcast"
+    ))]
     let subagent_manager = Arc::new(SubAgentManager::new());
-    #[cfg(feature = "tools-multi-agent")]
+    #[cfg(any(
+        feature = "tool-spawn-agent",
+        feature = "tool-wait-agent",
+        feature = "tool-send-input",
+        feature = "tool-close-agent",
+        feature = "tool-resume-agent",
+        feature = "tool-team-create",
+        feature = "tool-team-delete",
+        feature = "tool-team-broadcast"
+    ))]
     let team_manager = Arc::new(TeamManager::new());
 
     let ctx = ModuleContext {
@@ -616,9 +1063,28 @@ pub fn register_enabled_tools(
         config: config.clone(),
         pool: pool.clone(),
         mode,
-        #[cfg(feature = "tools-multi-agent")]
+        runtime,
+        #[cfg(any(
+            feature = "tool-spawn-agent",
+            feature = "tool-wait-agent",
+            feature = "tool-send-input",
+            feature = "tool-close-agent",
+            feature = "tool-resume-agent",
+            feature = "tool-team-create",
+            feature = "tool-team-delete",
+            feature = "tool-team-broadcast"
+        ))]
         subagent_manager,
-        #[cfg(feature = "tools-multi-agent")]
+        #[cfg(any(
+            feature = "tool-spawn-agent",
+            feature = "tool-wait-agent",
+            feature = "tool-send-input",
+            feature = "tool-close-agent",
+            feature = "tool-resume-agent",
+            feature = "tool-team-create",
+            feature = "tool-team-delete",
+            feature = "tool-team-broadcast"
+        ))]
         team_manager,
     };
 

@@ -9,7 +9,7 @@ use crate::brain::tools::ToolRegistry;
 use crate::config::{Config, VoiceConfig};
 use crate::services::ServiceContext;
 use std::path::PathBuf;
-use std::sync::{Arc, OnceLock};
+use std::sync::{Arc, OnceLock, RwLock};
 use tokio::sync::Mutex;
 use uuid::Uuid;
 
@@ -23,7 +23,7 @@ use uuid::Uuid;
 pub struct ChannelFactory {
     provider: Arc<dyn Provider>,
     service_context: ServiceContext,
-    shared_brain: String,
+    shared_brain: Arc<RwLock<String>>,
     tool_registry: OnceLock<Arc<ToolRegistry>>,
     working_directory: PathBuf,
     brain_path: PathBuf,
@@ -47,7 +47,7 @@ impl ChannelFactory {
         Self {
             provider,
             service_context,
-            shared_brain,
+            shared_brain: Arc::new(RwLock::new(shared_brain)),
             tool_registry: OnceLock::new(),
             working_directory,
             brain_path,
@@ -70,6 +70,14 @@ impl ChannelFactory {
         let _ = self.tool_registry.set(registry);
     }
 
+    /// Update the shared system brain used by channel agents.
+    pub fn set_shared_brain(&self, shared_brain: String) {
+        *self
+            .shared_brain
+            .write()
+            .expect("channel factory shared_brain lock poisoned") = shared_brain;
+    }
+
     /// Create a new AgentService configured for channel use.
     ///
     /// Channels that implement their own approval flow (WhatsApp, Telegram, Discord, Slack)
@@ -81,7 +89,12 @@ impl ChannelFactory {
         let mut builder =
             AgentService::new(self.provider.clone(), self.service_context.clone(), &config)
                 .await
-                .with_system_brain(self.shared_brain.clone())
+                .with_system_brain(
+                    self.shared_brain
+                        .read()
+                        .expect("channel factory shared_brain lock poisoned")
+                        .clone(),
+                )
                 .with_working_directory(self.working_directory.clone())
                 .with_brain_path(self.brain_path.clone());
 

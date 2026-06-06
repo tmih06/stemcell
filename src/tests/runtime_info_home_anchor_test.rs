@@ -82,7 +82,7 @@ fn core_brain_renders_home_anchor_when_wd_present() {
     // sometimes via the agent service) regresses.
     let (_dir, loader) = loader();
     let info = runtime_info_with_collapsed_wd();
-    let prompt = loader.build_core_brain(Some(&info), None);
+    let prompt = loader.build_core_brain(Some(&info), None, None);
 
     assert!(prompt.contains("Working directory: ~/srv/rs/opencrabs"));
     let home = dirs::home_dir().expect("home dir");
@@ -119,7 +119,7 @@ fn no_anchor_when_runtime_info_absent() {
     // When the caller passes None for runtime_info we shouldn't render
     // the section at all (let alone the anchor).
     let (_dir, loader) = loader();
-    let prompt = loader.build_system_brain(None, None);
+    let prompt = loader.build_system_brain(None, None, None);
 
     assert!(!prompt.contains("--- Runtime Info ---"));
     assert!(!prompt.contains("Home: "));

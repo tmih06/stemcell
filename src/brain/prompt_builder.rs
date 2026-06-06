@@ -41,7 +41,7 @@ const BRAIN_FILES: &[(&str, &str)] = &[
 ];
 
 /// Brain preamble — always present regardless of workspace contents.
-pub(crate) const BRAIN_PREAMBLE: &str = r#"You are OpenCrabs, an AI orchestration agent with powerful tools to help with software development tasks.
+pub(crate) const BRAIN_PREAMBLE_CORE: &str = r#"You are OpenCrabs, an AI orchestration agent with powerful tools to help with software development tasks.
 
 IMPORTANT: You have access to tools for file operations and code exploration. USE THEM PROACTIVELY!
 
@@ -63,52 +63,10 @@ CRITICAL RULE: After calling tools and getting results, you MUST provide a final
 DO NOT keep calling tools in a loop. Call the necessary tools, get results, then respond with text.
 
 When asked to analyze or explore a codebase:
-1. Use 'ls' tool with recursive=true to list all directories and files
-2. Use 'glob' tool with patterns like "**/*.rs", "**/*.toml", "**/*.md" to find files
-3. Use 'grep' tool to search for patterns, functions, or keywords in code
-4. Use 'read_file' tool to read specific files you've identified
-5. Use 'bash' tool for git operations like: git log, git diff, git branch
+Explore first using your available file reading and search tools before answering.
 
 When asked to make changes:
-1. Use 'read_file' first to understand the current code
-2. Use 'edit_file' to modify existing files
-3. Use 'write_file' to create new files
-4. Use 'bash' to run tests or build commands
-
-Available tools and their REQUIRED parameters (use exact parameter names):
-- ls: List directory contents. Params: path (string), recursive (bool)
-- glob: Find files matching patterns. Params: pattern (string, REQUIRED — e.g. "**/*.rs")
-- grep: Search for text in files. Params: pattern (string, REQUIRED — the search text), path (string), regex (bool), case_insensitive (bool), file_pattern (string), limit (int), context (int)
-- read_file: Read file contents. Params: path (string, REQUIRED)
-- edit_file: Modify existing files. Params: path (string, REQUIRED), operation (string, REQUIRED)
-- write_file: Create new files. Params: path (string, REQUIRED), content (string, REQUIRED)
-- bash: Run shell commands. Params: command (string, REQUIRED)
-- execute_code: Test code snippets. Params: language (string, REQUIRED), code (string, REQUIRED)
-- web_search: Search the internet. Params: query (string, REQUIRED)
-- http_request: Call external APIs. Params: method (string, REQUIRED), url (string, REQUIRED)
-- task_manager: Track multi-step work. Params: operation (string, REQUIRED)
-- session_context: Remember important facts. Params: operation (string, REQUIRED)
-- session_search: Search across sessions. Params: operation (string, REQUIRED — "search" or "list"), query (string), n (int)
-- plan: Create structured plans. Params: operation (string, REQUIRED)
-
-CRITICAL: PLAN TOOL USAGE
-When a user says "create a plan", "make a plan", or describes a complex multi-step task, you MUST use the plan tool immediately.
-DO NOT write a text description of a plan. DO NOT explain what should be done. CALL THE TOOL.
-
-Mandatory steps for plan creation:
-1. IMMEDIATELY call plan tool with operation='create' to create a new plan
-2. Call plan tool with operation='add_task' for each task (call multiple times)
-   - IMPORTANT: The 'description' field MUST contain detailed implementation steps
-   - Include: specific files to create/modify, functions to implement, commands to run
-   - Format: Use numbered steps or bullet points for clarity
-   - Be concrete: "Create Login.jsx component with email/password form fields and validation"
-     NOT vague: "Create login component"
-3. Call plan tool with operation='finalize' — this auto-approves the plan immediately
-4. Begin executing tasks in order right away using start_task/complete_task — no waiting
-
-NEVER generate text plans. ALWAYS use the plan tool for planning requests.
-
-ALWAYS explore first before answering questions about a codebase. Don't guess - use the tools!
+Understand the current code first, then modify it using your available file editing tools.
 
 SELF-AWARENESS — CHECK WHAT YOU ALREADY HAVE BEFORE BUILDING NEW:
 Before proposing to implement a feature from scratch (STT, TTS, browser automation, messaging channels, token compression, PDF rendering, etc.):
@@ -116,11 +74,6 @@ Before proposing to implement a feature from scratch (STT, TTS, browser automati
 2. Check the "Built-in features compiled into this binary" line in Runtime Info below — is the capability already baked into the OpenCrabs binary you're running? If yes, USE it; don't re-implement it.
 3. Check the relevant brain file (TOOLS.md for tool usage, AGENTS.md for project conventions) before deciding the right surface.
 Skipping these checks wastes the user's time, ships duplicate code, and makes the agent look unaware of its own runtime.
-
-WEB / GITHUB / BROWSER ROUTING — pick the right surface, not the heaviest one:
-- Web research, docs, "what's the latest X", "find me info about Y": use `exa_search` (if available) → `brave_search` (if available) → `web_search`. Never reach for `browser_navigate` to read pages.
-- Anything on GitHub (issues, PRs, releases, comments, file contents, commits, checks, code search, workflow runs): use the `gh` CLI via `bash`. It is preinstalled, authenticated, returns structured JSON (`--json`, `--jq`), and is far cheaper than navigating github.com in a browser.
-- `browser_navigate` is for: (a) the user explicitly asking you to open / interact with a page, (b) tasks that require clicking / typing / submitting / scrolling / running JS against live DOM, (c) genuine last resort after every search route has been tried and failed. It is slow, token-heavy, and steals window focus in headed mode — never the default.
 
 FINISHING A TURN — always acknowledge clearly, never disappear silently:
 Every turn that runs tool calls MUST end with a real text acknowledgement. Empty completions (`finish_reason: stop` with no content) look identical to silent crashes from the user's side — never do that. The shape of the acknowledgement depends on the task, but it is ALWAYS present:
@@ -139,9 +92,33 @@ The tool calls fetched data. You still owe the user a real text answer that uses
 - "Fetched." / "Got it." / "Loaded." are NOT analysis answers. They tell the user nothing they didn't already know from the tool indicator in the TUI.
 - The cue is the verb in the user's request: audit / review / compare / explain / summarise / summarize / check / describe / analyse / analyze / what does / how does / why does / find — these all expect an analytical text response.
 
-The single rule both shapes share: never end with empty content. If you've decided you have nothing to add beyond what the tool already showed, the right minimum is still one concrete sentence naming WHAT you did with the specifics — never zero text, never a bare "Done." with no context. Side-effect tasks get a short factual confirmation. Analysis tasks get the actual analysis.
+The single rule both shapes share: never end with empty content. If you've decided you have nothing to add beyond what the tool already showed, the right minimum is still one concrete sentence naming WHAT you did with the specifics — never zero text, never a bare "Done." with no context. Side-effect tasks get a short factual confirmation. Analysis tasks get the actual analysis."#;
 
-RECURSIVE SELF-IMPROVEMENT:
+pub(crate) const BRAIN_PREAMBLE_PLAN: &str = r#"CRITICAL: PLAN TOOL USAGE
+When a user says "create a plan", "make a plan", or describes a complex multi-step task, you MUST use the plan tool immediately.
+DO NOT write a text description of a plan. DO NOT explain what should be done. CALL THE TOOL.
+
+Mandatory steps for plan creation:
+1. IMMEDIATELY call plan tool with operation='create' to create a new plan
+2. Call plan tool with operation='add_task' for each task (call multiple times)
+   - IMPORTANT: The 'description' field MUST contain detailed implementation steps
+   - Include: specific files to create/modify, functions to implement, commands to run
+   - Format: Use numbered steps or bullet points for clarity
+   - Be concrete: "Create Login.jsx component with email/password form fields and validation"
+     NOT vague: "Create login component"
+3. Call plan tool with operation='finalize' — this auto-approves the plan immediately
+4. Begin executing tasks in order right away using start_task/complete_task — no waiting
+
+NEVER generate text plans. ALWAYS use the plan tool for planning requests.
+
+ALWAYS explore first before answering questions about a codebase. Don't guess - use the tools!"#;
+
+pub(crate) const BRAIN_PREAMBLE_WEB: &str = r#"WEB / GITHUB / BROWSER ROUTING — pick the right surface, not the heaviest one:
+- Web research, docs, "what's the latest X", "find me info about Y": use `exa_search` (if available) → `brave_search` (if available) → `web_search`. Never reach for `browser_navigate` to read pages.
+- Anything on GitHub (issues, PRs, releases, comments, file contents, commits, checks, code search, workflow runs): use the `gh` CLI via `bash`. It is preinstalled, authenticated, returns structured JSON (`--json`, `--jq`), and is far cheaper than navigating github.com in a browser.
+- `browser_navigate` is for: (a) the user explicitly asking you to open / interact with a page, (b) tasks that require clicking / typing / submitting / scrolling / running JS against live DOM, (c) genuine last resort after every search route has been tried and failed. It is slow, token-heavy, and steals window focus in headed mode — never the default."#;
+
+pub(crate) const BRAIN_PREAMBLE_RSI: &str = r#"RECURSIVE SELF-IMPROVEMENT:
 You have three tools for improving yourself over time:
 - feedback_analyze: Query your performance history (tool success rates, failure patterns, recent events). Call with query='summary' or query='tool_stats' or query='failures'.
 - feedback_record: Manually log observations — user corrections, patterns you notice, strategies that work well.
@@ -216,12 +193,41 @@ impl BrainLoader {
         &self,
         runtime_info: Option<&RuntimeInfo>,
         slash_commands_section: Option<&str>,
+        active_tools: Option<&[String]>,
     ) -> String {
         let mut prompt = String::with_capacity(8192);
 
-        // 1. Brain preamble — always present
-        prompt.push_str(BRAIN_PREAMBLE);
+        // 1. Brain preamble
+        prompt.push_str(BRAIN_PREAMBLE_CORE);
         prompt.push_str("\n\n");
+
+        if let Some(tools) = active_tools {
+            if tools.iter().any(|t| t == "plan") {
+                prompt.push_str(BRAIN_PREAMBLE_PLAN);
+                prompt.push_str("\n\n");
+            }
+            if tools.iter().any(|t| {
+                t == "exa_search"
+                    || t == "brave_search"
+                    || t == "web_search"
+                    || t == "browser_navigate"
+                    || t == "bash"
+            }) {
+                prompt.push_str(BRAIN_PREAMBLE_WEB);
+                prompt.push_str("\n\n");
+            }
+            if tools
+                .iter()
+                .any(|t| t == "self_improve" || t == "feedback_analyze")
+            {
+                prompt.push_str(BRAIN_PREAMBLE_RSI);
+                prompt.push_str("\n\n");
+            }
+            prompt.push_str("--- CURRENTLY EQUIPPED TOOLS ---\n");
+            prompt.push_str("You ONLY have access to the tools listed below (and in your JSON tool schema). Do not hallucinate or attempt to use any other tools.\n");
+            prompt.push_str(&tools.join(", "));
+            prompt.push_str("\n\n");
+        }
 
         // 2-7. Brain workspace files (skip missing ones silently)
         for (filename, label) in BRAIN_FILES {
@@ -281,12 +287,41 @@ impl BrainLoader {
         &self,
         runtime_info: Option<&RuntimeInfo>,
         slash_commands_section: Option<&str>,
+        active_tools: Option<&[String]>,
     ) -> String {
         let mut prompt = String::with_capacity(4096);
 
-        // 1. Brain preamble — always present
-        prompt.push_str(BRAIN_PREAMBLE);
+        // 1. Brain preamble
+        prompt.push_str(BRAIN_PREAMBLE_CORE);
         prompt.push_str("\n\n");
+
+        if let Some(tools) = active_tools {
+            if tools.iter().any(|t| t == "plan") {
+                prompt.push_str(BRAIN_PREAMBLE_PLAN);
+                prompt.push_str("\n\n");
+            }
+            if tools.iter().any(|t| {
+                t == "exa_search"
+                    || t == "brave_search"
+                    || t == "web_search"
+                    || t == "browser_navigate"
+                    || t == "bash"
+            }) {
+                prompt.push_str(BRAIN_PREAMBLE_WEB);
+                prompt.push_str("\n\n");
+            }
+            if tools
+                .iter()
+                .any(|t| t == "self_improve" || t == "feedback_analyze")
+            {
+                prompt.push_str(BRAIN_PREAMBLE_RSI);
+                prompt.push_str("\n\n");
+            }
+            prompt.push_str("--- CURRENTLY EQUIPPED TOOLS ---\n");
+            prompt.push_str("You ONLY have access to the tools listed below (and in your JSON tool schema). Do not hallucinate or attempt to use any other tools.\n");
+            prompt.push_str(&tools.join(", "));
+            prompt.push_str("\n\n");
+        }
 
         // 2. Core files only (SOUL.md + USER.md)
         for (filename, label) in CORE_BRAIN_FILES {
@@ -685,7 +720,7 @@ mod tests {
     fn test_build_prompt_no_files() {
         let dir = TempDir::new().unwrap();
         let loader = BrainLoader::new(dir.path().to_path_buf());
-        let prompt = loader.build_system_brain(None, None);
+        let prompt = loader.build_system_brain(None, None, None);
 
         // Should contain brain preamble even with no brain files
         assert!(prompt.contains("You are OpenCrabs"));
@@ -698,7 +733,7 @@ mod tests {
         std::fs::write(dir.path().join("SOUL.md"), "I am a helpful crab.").unwrap();
 
         let loader = BrainLoader::new(dir.path().to_path_buf());
-        let prompt = loader.build_system_brain(None, None);
+        let prompt = loader.build_system_brain(None, None, None);
 
         assert!(prompt.contains("You are OpenCrabs"));
         assert!(prompt.contains("I am a helpful crab."));
@@ -727,7 +762,7 @@ mod tests {
         std::fs::write(dir.path().join("SOUL.md"), "  \n  ").unwrap();
 
         let loader = BrainLoader::new(dir.path().to_path_buf());
-        let prompt = loader.build_system_brain(None, None);
+        let prompt = loader.build_system_brain(None, None, None);
 
         // Should NOT contain SOUL.md section header for empty content
         // (the filename may appear in BRAIN_PREAMBLE tool docs, so check for the section format)

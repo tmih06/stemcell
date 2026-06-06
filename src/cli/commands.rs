@@ -694,7 +694,11 @@ pub(crate) async fn cmd_run(
             &std::env::current_dir().unwrap_or_default(),
         )),
     };
-    let mut system_brain = brain_loader.build_system_brain(Some(&runtime_info), None);
+    let mut system_brain = brain_loader.build_system_brain(
+        Some(&runtime_info),
+        None,
+        Some(&tool_registry.list_tools()),
+    );
     if let Some(digest) =
         crate::brain::prompt_builder::build_feedback_digest(db.pool().clone()).await
     {
@@ -945,7 +949,11 @@ pub(crate) async fn cmd_agent_interactive(
             &std::env::current_dir().unwrap_or_default(),
         )),
     };
-    let mut system_brain = brain_loader.build_system_brain(Some(&runtime_info), None);
+    let mut system_brain = brain_loader.build_system_brain(
+        Some(&runtime_info),
+        None,
+        Some(&tool_registry.list_tools()),
+    );
     if let Some(digest) =
         crate::brain::prompt_builder::build_feedback_digest(db.pool().clone()).await
     {
@@ -1768,6 +1776,14 @@ pub(crate) async fn cmd_evolve(check_only: bool) -> Result<()> {
     let current_version = crate::VERSION;
     println!("🔄 OpenCrabs v{current_version} — checking for updates...\n");
 
+    #[cfg(not(feature = "tool-evolve"))]
+    {
+        let _ = check_only;
+        println!("⚠️ Evolve is unavailable in this build. Rebuild with `--features tools-meta`.");
+        return Ok(());
+    }
+
+    #[cfg(feature = "tool-evolve")]
     if check_only {
         match crate::brain::tools::evolve::check_for_update().await {
             Some(latest) => {
@@ -1782,13 +1798,20 @@ pub(crate) async fn cmd_evolve(check_only: bool) -> Result<()> {
     }
 
     // Full evolve — instantiate the tool and execute
+    #[cfg(feature = "tool-evolve")]
     use crate::brain::tools::evolve::EvolveTool;
+    #[cfg(feature = "tool-evolve")]
     use crate::brain::tools::{Tool, ToolExecutionContext};
+    #[cfg(feature = "tool-evolve")]
     use serde_json::json;
+    #[cfg(feature = "tool-evolve")]
     use std::collections::HashMap;
 
+    #[cfg(feature = "tool-evolve")]
     let tool = EvolveTool::new(None);
+    #[cfg(feature = "tool-evolve")]
     let input = json!({"check_only": false});
+    #[cfg(feature = "tool-evolve")]
     let context = ToolExecutionContext {
         session_id: uuid::Uuid::new_v4(),
         working_directory: std::env::current_dir().unwrap_or_default(),
@@ -1802,7 +1825,9 @@ pub(crate) async fn cmd_evolve(check_only: bool) -> Result<()> {
         question_callback: None,
     };
 
+    #[cfg(feature = "tool-evolve")]
     let result = tool.execute(input, &context).await?;
+    #[cfg(feature = "tool-evolve")]
     println!("{}", result.output);
 
     Ok(())

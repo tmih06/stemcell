@@ -995,6 +995,7 @@ pub async fn switch_model(
 }
 /// Run evolve directly (no LLM needed). Returns a user-facing status message.
 /// Handles the RestartReady signal by triggering a process restart via exec().
+#[cfg(feature = "tool-evolve")]
 pub async fn run_evolve() -> String {
     use crate::brain::agent::ProgressEvent;
     use crate::brain::tools::{Tool, ToolExecutionContext, evolve::EvolveTool};
@@ -1032,6 +1033,11 @@ pub async fn run_evolve() -> String {
     result
 }
 
+#[cfg(not(feature = "tool-evolve"))]
+pub async fn run_evolve() -> String {
+    "Evolve is unavailable in this build. Rebuild with `--features tools-meta`.".to_string()
+}
+
 /// Trigger a process restart by exec-ing the current binary.
 /// This replaces the current process with a fresh instance.
 #[cfg(unix)]
@@ -1055,10 +1061,15 @@ fn trigger_restart() {
 
 /// Run doctor health check directly (no LLM needed). Returns a user-facing status message.
 pub fn run_doctor() -> String {
-    use crate::brain::tools::slash_command::SlashCommandTool;
-
-    // Reuse the slash command tool's doctor logic
-    SlashCommandTool::doctor_text()
+    #[cfg(feature = "tool-slash-command")]
+    {
+        use crate::brain::tools::slash_command::SlashCommandTool;
+        SlashCommandTool::doctor_text()
+    }
+    #[cfg(not(feature = "tool-slash-command"))]
+    {
+        "Doctor is unavailable without the tool-slash-command feature enabled.".to_string()
+    }
 }
 
 /// Try to execute a command that returns a simple text response (no platform-specific UI).
