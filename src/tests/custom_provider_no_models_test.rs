@@ -26,7 +26,9 @@ struct HomeGuard {
 
 impl HomeGuard {
     fn new(temp_home: &std::path::Path) -> Self {
-        let lock = crate::tests::ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        let lock = crate::tests::ENV_LOCK
+            .lock()
+            .unwrap_or_else(|p| p.into_inner());
         let prev_home = std::env::var_os("HOME");
         let prev_userprofile = std::env::var_os("USERPROFILE");
         // SAFETY: HOME_LOCK serializes access for the duration of `_lock`.
