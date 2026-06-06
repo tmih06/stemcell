@@ -11,6 +11,8 @@ use crate::brain::mission_control::{activity_service, inbox_service, schedule_se
 use crate::brain::tools::dynamic::DynamicToolLoader;
 #[cfg(feature = "tool-rsi-proposals")]
 use crate::brain::tools::rsi_proposals::RsiProposalsTool;
+#[cfg(feature = "tool-rsi-proposals")]
+use crate::tui::app::mission_control::McPanel;
 use crate::tui::app::App;
 use crate::tui::events::AppMode;
 
