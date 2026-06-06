@@ -168,100 +168,116 @@ async fn cmd_chat_inner(
     // provider's `generation_model` override (Gemini if URL hits the
     // Google host, OpenAI `/v1/images/generations` otherwise), or falls
     // back to the global `image.generation` Gemini config.
-    if let Some(tool) = GenerateImageTool::from_config(config) {
-        tool_registry.register(Arc::new(tool));
-        tracing::info!("Registered generate_image tool");
+    if config.features.image_generation {
+        if let Some(tool) = GenerateImageTool::from_config(config) {
+            tool_registry.register(Arc::new(tool));
+            tracing::info!("Registered generate_image tool");
+        }
+    } else {
+        tracing::info!("Image generation disabled via features.image_generation = false");
     }
     // Image vision tool — provider.vision_model takes priority over image.vision (Gemini)
-    if let Some((api_key, base_url, vision_model)) =
-        crate::brain::provider::factory::active_provider_vision(config)
-    {
-        tool_registry.register(Arc::new(ProviderVisionTool::new(
-            api_key,
-            base_url,
-            vision_model,
-        )));
-        tracing::info!("Registered analyze_image tool (provider vision model)");
-    } else if config.image.vision.enabled
-        && let Some(ref key) = config.image.vision.api_key
-    {
-        tool_registry.register(Arc::new(AnalyzeImageTool::new(
-            key.clone(),
-            config.image.vision.model.clone(),
-        )));
-        tracing::info!("Registered analyze_image tool (Gemini)");
-    }
+    if config.features.image_vision {
+        if let Some((api_key, base_url, vision_model)) =
+            crate::brain::provider::factory::active_provider_vision(config)
+        {
+            tool_registry.register(Arc::new(ProviderVisionTool::new(
+                api_key,
+                base_url,
+                vision_model,
+            )));
+            tracing::info!("Registered analyze_image tool (provider vision model)");
+        } else if config.image.vision.enabled
+            && let Some(ref key) = config.image.vision.api_key
+        {
+            tool_registry.register(Arc::new(AnalyzeImageTool::new(
+                key.clone(),
+                config.image.vision.model.clone(),
+            )));
+            tracing::info!("Registered analyze_image tool (Gemini)");
+        }
 
-    // Video vision tool — Gemini-native multimodal video understanding.
-    // Phase 1 only registers when image.vision is configured with Gemini;
-    // Phase 2 will add a frame-extraction fallback for non-Gemini providers
-    // (ffmpeg → N frames at 1 fps → analyze_image per frame).
-    if config.image.vision.enabled
-        && let Some(ref key) = config.image.vision.api_key
-        && !key.is_empty()
-    {
-        tool_registry.register(Arc::new(AnalyzeVideoTool::new(
-            key.clone(),
-            config.image.vision.model.clone(),
-        )));
-        tracing::info!("Registered analyze_video tool (Gemini)");
+        // Video vision tool — Gemini-native multimodal video understanding.
+        // Phase 1 only registers when image.vision is configured with Gemini;
+        // Phase 2 will add a frame-extraction fallback for non-Gemini providers
+        // (ffmpeg → N frames at 1 fps → analyze_image per frame).
+        if config.image.vision.enabled
+            && let Some(ref key) = config.image.vision.api_key
+            && !key.is_empty()
+        {
+            tool_registry.register(Arc::new(AnalyzeVideoTool::new(
+                key.clone(),
+                config.image.vision.model.clone(),
+            )));
+            tracing::info!("Registered analyze_video tool (Gemini)");
+        }
+    } else {
+        tracing::info!("Image and video vision disabled via features.image_vision = false");
     }
 
     // Phase 5: Multi-agent orchestration
     let subagent_manager = Arc::new(crate::brain::tools::subagent::SubAgentManager::new());
-    tool_registry.register(Arc::new(
-        crate::brain::tools::subagent::SpawnAgentTool::new(
+    if config.features.subagents {
+        tool_registry.register(Arc::new(
+            crate::brain::tools::subagent::SpawnAgentTool::new(
+                subagent_manager.clone(),
+                tool_registry.clone(),
+            ),
+        ));
+        tool_registry.register(Arc::new(crate::brain::tools::subagent::WaitAgentTool::new(
             subagent_manager.clone(),
-            tool_registry.clone(),
-        ),
-    ));
-    tool_registry.register(Arc::new(crate::brain::tools::subagent::WaitAgentTool::new(
-        subagent_manager.clone(),
-    )));
-    tool_registry.register(Arc::new(crate::brain::tools::subagent::SendInputTool::new(
-        subagent_manager.clone(),
-    )));
-    tool_registry.register(Arc::new(
-        crate::brain::tools::subagent::CloseAgentTool::new(subagent_manager.clone()),
-    ));
-    tool_registry.register(Arc::new(
-        crate::brain::tools::subagent::ResumeAgentTool::new(
+        )));
+        tool_registry.register(Arc::new(crate::brain::tools::subagent::SendInputTool::new(
             subagent_manager.clone(),
-            tool_registry.clone(),
-        ),
-    ));
+        )));
+        tool_registry.register(Arc::new(
+            crate::brain::tools::subagent::CloseAgentTool::new(subagent_manager.clone()),
+        ));
+        tool_registry.register(Arc::new(
+            crate::brain::tools::subagent::ResumeAgentTool::new(
+                subagent_manager.clone(),
+                tool_registry.clone(),
+            ),
+        ));
 
-    // Phase 6: Team orchestration
-    let team_manager = Arc::new(crate::brain::tools::subagent::TeamManager::new());
-    tool_registry.register(Arc::new(
-        crate::brain::tools::subagent::TeamCreateTool::new(
-            subagent_manager.clone(),
-            team_manager.clone(),
-            tool_registry.clone(),
-        ),
-    ));
-    tool_registry.register(Arc::new(
-        crate::brain::tools::subagent::TeamDeleteTool::new(
-            subagent_manager.clone(),
-            team_manager.clone(),
-        ),
-    ));
-    tool_registry.register(Arc::new(
-        crate::brain::tools::subagent::TeamBroadcastTool::new(
-            subagent_manager.clone(),
-            team_manager.clone(),
-        ),
-    ));
-    tracing::info!("Registered 8 sub-agent + team orchestration tools");
+        // Phase 6: Team orchestration
+        let team_manager = Arc::new(crate::brain::tools::subagent::TeamManager::new());
+        tool_registry.register(Arc::new(
+            crate::brain::tools::subagent::TeamCreateTool::new(
+                subagent_manager.clone(),
+                team_manager.clone(),
+                tool_registry.clone(),
+            ),
+        ));
+        tool_registry.register(Arc::new(
+            crate::brain::tools::subagent::TeamDeleteTool::new(
+                subagent_manager.clone(),
+                team_manager.clone(),
+            ),
+        ));
+        tool_registry.register(Arc::new(
+            crate::brain::tools::subagent::TeamBroadcastTool::new(
+                subagent_manager.clone(),
+                team_manager.clone(),
+            ),
+        ));
+        tracing::info!("Registered 8 sub-agent + team orchestration tools");
+    } else {
+        tracing::info!("Subagents and team orchestration disabled via features.subagents = false");
+    }
 
     // Recursive Self-Improvement tools
-    use crate::brain::tools::feedback_analyze::FeedbackAnalyzeTool;
-    use crate::brain::tools::feedback_record::FeedbackRecordTool;
-    use crate::brain::tools::self_improve::SelfImproveTool;
-    tool_registry.register(Arc::new(FeedbackRecordTool));
-    tool_registry.register(Arc::new(FeedbackAnalyzeTool));
-    tool_registry.register(Arc::new(SelfImproveTool));
-    tracing::info!("Registered 3 recursive self-improvement tools");
+    if config.features.rsi {
+        use crate::brain::tools::feedback_analyze::FeedbackAnalyzeTool;
+        use crate::brain::tools::feedback_record::FeedbackRecordTool;
+        use crate::brain::tools::self_improve::SelfImproveTool;
+        tool_registry.register(Arc::new(FeedbackRecordTool));
+        tool_registry.register(Arc::new(FeedbackAnalyzeTool));
+        tool_registry.register(Arc::new(SelfImproveTool));
+        tracing::info!("Registered 3 recursive self-improvement tools");
+    } else {
+        tracing::info!("RSI tools disabled via features.rsi = false");
+    }
 
     // Auto-detect VPS/cloud and disable vector embeddings if needed.
     crate::config::MemoryConfig::auto_apply_vps_defaults();
@@ -331,7 +347,11 @@ async fn cmd_chat_inner(
 
     // Spawn RSI background engine (digest + periodic analysis)
     let (rsi_tx, mut rsi_rx) = tokio::sync::mpsc::unbounded_channel();
-    crate::brain::rsi::spawn_rsi_engine(db.pool().clone(), config, rsi_tx);
+    if config.features.rsi {
+        crate::brain::rsi::spawn_rsi_engine(db.pool().clone(), config, rsi_tx);
+    } else {
+        tracing::info!("RSI engine disabled via features.rsi = false");
+    }
 
     // Get working directory
     let working_directory = std::env::current_dir().unwrap_or_default();
@@ -913,13 +933,15 @@ async fn cmd_chat_inner(
     // proposed by the autonomous RSI loop. Apply paths reuse tool_manage's
     // DynamicToolLoader and CommandLoader, so installation is byte-equivalent
     // to a manual tool_manage add / config_manager add_command.
-    shared_tool_registry.register(Arc::new(
-        crate::brain::tools::rsi_proposals::RsiProposalsTool::new(
-            shared_tool_registry.clone(),
-            tools_toml_path,
-            crate::config::opencrabs_home(),
-        ),
-    ));
+    if config.features.rsi {
+        shared_tool_registry.register(Arc::new(
+            crate::brain::tools::rsi_proposals::RsiProposalsTool::new(
+                shared_tool_registry.clone(),
+                tools_toml_path,
+                crate::config::opencrabs_home(),
+            ),
+        ));
+    }
 
     // Browser automation tools (headless Chrome via CDP)
     // Skipped when features.browser = false.

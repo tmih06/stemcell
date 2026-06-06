@@ -161,6 +161,10 @@ impl BrainConfig {
 /// | `cron` | Cron job scheduler | _(always compiled)_ |
 /// | `memory` | Memory search and embedding subsystem | _(always compiled)_ |
 /// | `rtk` | RTK output filtering (saves 60-90% LLM tokens on shell output) | `rtk` |
+/// | `image_generation` | Image generation subsystem (DALL-E, Gemini) | _(always compiled)_ |
+/// | `image_vision` | Image & video vision subsystem | _(always compiled)_ |
+/// | `subagents` | Sub-agent & team orchestration tools | _(always compiled)_ |
+/// | `rsi` | Recursive Self-Improvement background engine & tools | _(always compiled)_ |
 ///
 /// # Example
 /// ```toml
@@ -231,6 +235,32 @@ pub struct FeaturesConfig {
     /// Default: `true`.
     #[serde(default = "default_true")]
     pub rtk: bool,
+
+    /// Enable image generation tool.
+    /// When `false`, the `generate_image` tool is not registered.
+    /// Default: `true`.
+    #[serde(default = "default_true")]
+    pub image_generation: bool,
+
+    /// Enable image and video vision analysis tools.
+    /// When `false`, the vision tools (analyze_image, analyze_video) are not registered.
+    /// Default: `true`.
+    #[serde(default = "default_true")]
+    pub image_vision: bool,
+
+    /// Enable multi-agent and team orchestration tools.
+    /// When `false`, skips registering 8 subagent tools, saving massive token overhead
+    /// for straightforward use cases.
+    /// Default: `true`.
+    #[serde(default = "default_true")]
+    pub subagents: bool,
+
+    /// Enable the Recursive Self-Improvement (RSI) subsystem.
+    /// When `false`, the background RSI engine is not spawned and its 4 associated tools
+    /// are not registered.
+    /// Default: `true`.
+    #[serde(default = "default_true")]
+    pub rsi: bool,
 }
 
 fn default_true() -> bool {
@@ -248,6 +278,10 @@ impl Default for FeaturesConfig {
             cron: true,
             memory: true,
             rtk: true,
+            image_generation: true,
+            image_vision: true,
+            subagents: true,
+            rsi: true,
         }
     }
 }

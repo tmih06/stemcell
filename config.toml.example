@@ -456,10 +456,14 @@ port = 18790            # A2A gateway port
 #   browser    — browser automation via CDP (chromey)
 #                Cargo feature: browser
 #   a2a        — Agent-to-Agent HTTP gateway (second gate on top of [a2a] enabled)
-#   cron       — cron job scheduler
-#   memory     — memory/embedding subsystem (FTS5 + vector search)
-#   rtk        — RTK output filtering (60-90% token savings on shell commands)
-#                Cargo feature: rtk
+#   cron             — cron job scheduler
+#   memory           — memory/embedding subsystem (FTS5 + vector search)
+#   rtk              — RTK output filtering (60-90% token savings on shell commands)
+#                      Cargo feature: rtk
+#   image_generation — Image generation subsystem (DALL-E, Gemini)
+#   image_vision     — Image and video vision subsystem
+#   subagents        — Sub-agent & team orchestration tools
+#   rsi              — Recursive Self-Improvement background engine & tools
 #
 # Example: headless server with no browser, no channels, no local voice:
 # [features]
@@ -474,14 +478,18 @@ port = 18790            # A2A gateway port
 # cron   = false
 #
 # [features]
-# channels  = true   # default
-# local_stt = true   # default
-# local_tts = true   # default
-# browser   = true   # default
-# a2a       = true   # default
-# cron      = true   # default
-# memory    = true   # default
-# rtk       = true   # default
+# channels         = true   # default
+# local_stt        = true   # default
+# local_tts        = true   # default
+# browser          = true   # default
+# a2a              = true   # default
+# cron             = true   # default
+# memory           = true   # default
+# rtk              = true   # default
+# image_generation = true   # default
+# image_vision     = true   # default
+# subagents        = true   # default
+# rsi              = true   # default
 
 
 # ========================================
