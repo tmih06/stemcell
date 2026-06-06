@@ -15,7 +15,7 @@
 [capabilities]
 local-stt = false
 local-tts = false
-browser = true
+browser = false
 pdfium = false
 rtk = true
 profiling = false
@@ -26,11 +26,11 @@ profiling = false
 ## etc.) come along automatically — there's no point enabling
 ## the channel without them.
 [channels]
-telegram = true
-whatsapp = true
-discord = true
-slack = true
-trello = true
+telegram = false
+whatsapp = false
+discord = false
+slack = false
+trello = false
 
 ## == File I/O ==
 ## Two escalating tiers — enable only what you need:
@@ -38,25 +38,27 @@ trello = true
 ##   file-write  : adds create + edit (implies file-read)
 [file]
 file-read = true
-file-write = true
+file-write = false
 
 ## == Bash ==
 ## Shell command execution. Independent of the file tier — the
 ## agent can have bash without write access, or write without
 ## shell, depending on what you want it to do.
 [bash]
-bash = true
+bash = false
 
 ## == Search ==
-## Web + memory + session + channel history.
+## Web search needs an API key; memory-search covers the agent's
+## own history (brain memory, past sessions, channel messages).
 [search]
-external-search = true
+web-search = false
+memory-search = true
 
 ## == Workflow ==
 ## Task management, planning, HTTP, code execution, document
 ## parsing, notebook editing, cron, config mgmt.
 [workflow]
-workflow = true
+workflow = false
 
 ## == Multi-agent ==
 ## Sub-agent spawning and team management. The four agent
@@ -65,19 +67,19 @@ workflow = true
 ## pack — partial enables leave the agent unable to actually use
 ## the agents it spawns.
 [multi-agent]
-multi-agent = true
+multi-agent = false
 
 ## == RSI ==
 ## Recursive self-improvement: feedback ledger + analysis +
 ## self-improve + proposals + tool management. The whole loop
 ## is interdependent.
 [rsi]
-rsi = true
+rsi = false
 
 ## == Image ==
 ## Image generation + vision analysis.
 [image]
-image = true
+image = false
 
 ## == Brain ==
 ## Slash commands, session rename, brain file I/O, A2A.

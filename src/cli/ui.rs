@@ -879,8 +879,29 @@ async fn cmd_chat_inner(
     }
 
     // Channel manager — handles dynamic spawn/stop of channel agents on config reload
+    #[cfg(any(
+        feature = "telegram",
+        feature = "whatsapp",
+        feature = "discord",
+        feature = "slack",
+        feature = "trello"
+    ))]
     let channel_manager = Arc::new(crate::channels::ChannelManager::new(
+        #[cfg(any(
+            feature = "telegram",
+            feature = "whatsapp",
+            feature = "discord",
+            feature = "slack",
+            feature = "trello"
+        ))]
         channel_factory.clone(),
+        #[cfg(any(
+            feature = "telegram",
+            feature = "whatsapp",
+            feature = "discord",
+            feature = "slack",
+            feature = "trello"
+        ))]
         db.pool().clone(),
         #[cfg(feature = "telegram")]
         telegram_state.clone(),
@@ -895,6 +916,13 @@ async fn cmd_chat_inner(
     ));
 
     // Initial channel spawn — reconcile against current config
+    #[cfg(any(
+        feature = "telegram",
+        feature = "whatsapp",
+        feature = "discord",
+        feature = "slack",
+        feature = "trello"
+    ))]
     channel_manager.reconcile(config).await;
 
     // Spawn config hot-reload watcher — fires on any change to config.toml, keys.toml,
@@ -938,6 +966,13 @@ async fn cmd_chat_inner(
         }
 
         // Channel lifecycle — spawn/stop channels when enabled flag changes
+        #[cfg(any(
+            feature = "telegram",
+            feature = "whatsapp",
+            feature = "discord",
+            feature = "slack",
+            feature = "trello"
+        ))]
         {
             let channel_mgr = channel_manager.clone();
             callbacks.push(Arc::new(move |cfg: crate::config::Config| {

@@ -6,7 +6,9 @@
 //! agent uses, so a UI-applied proposal is byte-identical to one
 //! applied via `rsi_proposals apply <id>`.
 
-use crate::brain::mission_control::{activity_service, inbox_service, schedule_service};
+#[cfg(feature = "tool-rsi-proposals")]
+use crate::brain::mission_control::inbox_service;
+use crate::brain::mission_control::{activity_service, schedule_service};
 #[cfg(feature = "tool-rsi-proposals")]
 use crate::brain::tools::dynamic::DynamicToolLoader;
 #[cfg(feature = "tool-rsi-proposals")]
@@ -134,6 +136,7 @@ pub async fn reject_selected(app: &mut App) {
 /// previously below the just-removed one (or the new last row when
 /// the user was at the bottom). Keeps the caret close to where the
 /// user was looking.
+#[cfg(feature = "tool-rsi-proposals")]
 fn finalize_selection_after_action(app: &mut App) {
     let count = inbox_service::list().len();
     if count == 0 {

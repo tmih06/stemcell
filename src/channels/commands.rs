@@ -1040,7 +1040,7 @@ pub async fn run_evolve() -> String {
 
 /// Trigger a process restart by exec-ing the current binary.
 /// This replaces the current process with a fresh instance.
-#[cfg(unix)]
+#[cfg(all(unix, feature = "tool-evolve"))]
 fn trigger_restart() {
     use std::os::unix::process::CommandExt;
 
@@ -1054,7 +1054,7 @@ fn trigger_restart() {
     tracing::error!("exec() failed: {}", err);
 }
 
-#[cfg(not(unix))]
+#[cfg(all(not(unix), feature = "tool-evolve"))]
 fn trigger_restart() {
     tracing::warn!("Restart via exec() not supported on this platform. Manual restart required.");
 }

@@ -1830,5 +1830,6 @@ pub(crate) async fn cmd_evolve(check_only: bool) -> Result<()> {
     #[cfg(feature = "tool-evolve")]
     println!("{}", result.output);
 
+    #[cfg(feature = "tool-evolve")]
     Ok(())
 }

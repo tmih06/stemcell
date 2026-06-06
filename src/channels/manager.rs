@@ -4,18 +4,72 @@
 //! Spawns and stops channels dynamically when the config changes at runtime,
 //! so that toggling `channels.*.enabled` in config.toml takes effect without restart.
 
-use std::collections::HashMap;
-use std::sync::Arc;
-
-use tokio::task::JoinHandle;
-
+#[cfg(any(
+    feature = "telegram",
+    feature = "whatsapp",
+    feature = "discord",
+    feature = "slack",
+    feature = "trello"
+))]
 use crate::channels::ChannelFactory;
+#[cfg(any(
+    feature = "telegram",
+    feature = "whatsapp",
+    feature = "discord",
+    feature = "slack",
+    feature = "trello"
+))]
 use crate::config::Config;
+#[cfg(any(
+    feature = "telegram",
+    feature = "whatsapp",
+    feature = "discord",
+    feature = "slack",
+    feature = "trello"
+))]
+use std::collections::HashMap;
+#[cfg(any(
+    feature = "telegram",
+    feature = "whatsapp",
+    feature = "discord",
+    feature = "slack",
+    feature = "trello"
+))]
+use std::sync::Arc;
+#[cfg(any(
+    feature = "telegram",
+    feature = "whatsapp",
+    feature = "discord",
+    feature = "slack",
+    feature = "trello"
+))]
+use tokio::task::JoinHandle;
 
 /// Manages running channel agents, allowing dynamic spawn/stop on config reload.
 pub struct ChannelManager {
+    #[cfg(any(
+        feature = "telegram",
+        feature = "whatsapp",
+        feature = "discord",
+        feature = "slack",
+        feature = "trello"
+    ))]
     handles: tokio::sync::Mutex<HashMap<String, JoinHandle<()>>>,
+    #[cfg(any(
+        feature = "telegram",
+        feature = "whatsapp",
+        feature = "discord",
+        feature = "slack",
+        feature = "trello"
+    ))]
     channel_factory: Arc<ChannelFactory>,
+    #[cfg(any(
+        feature = "telegram",
+        feature = "whatsapp",
+        feature = "discord",
+        feature = "slack",
+        feature = "trello"
+    ))]
     db_pool: deadpool_sqlite::Pool,
 
     #[cfg(feature = "telegram")]
@@ -33,7 +87,21 @@ pub struct ChannelManager {
 impl ChannelManager {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
+        #[cfg(any(
+            feature = "telegram",
+            feature = "whatsapp",
+            feature = "discord",
+            feature = "slack",
+            feature = "trello"
+        ))]
         channel_factory: Arc<ChannelFactory>,
+        #[cfg(any(
+            feature = "telegram",
+            feature = "whatsapp",
+            feature = "discord",
+            feature = "slack",
+            feature = "trello"
+        ))]
         db_pool: deadpool_sqlite::Pool,
         #[cfg(feature = "telegram")] telegram_state: Arc<crate::channels::telegram::TelegramState>,
         #[cfg(feature = "whatsapp")] whatsapp_state: Arc<crate::channels::whatsapp::WhatsAppState>,
@@ -42,8 +110,29 @@ impl ChannelManager {
         #[cfg(feature = "trello")] trello_state: Arc<crate::channels::trello::TrelloState>,
     ) -> Self {
         Self {
+            #[cfg(any(
+                feature = "telegram",
+                feature = "whatsapp",
+                feature = "discord",
+                feature = "slack",
+                feature = "trello"
+            ))]
             handles: tokio::sync::Mutex::new(HashMap::new()),
+            #[cfg(any(
+                feature = "telegram",
+                feature = "whatsapp",
+                feature = "discord",
+                feature = "slack",
+                feature = "trello"
+            ))]
             channel_factory,
+            #[cfg(any(
+                feature = "telegram",
+                feature = "whatsapp",
+                feature = "discord",
+                feature = "slack",
+                feature = "trello"
+            ))]
             db_pool,
             #[cfg(feature = "telegram")]
             telegram_state,
@@ -59,6 +148,13 @@ impl ChannelManager {
     }
 
     /// Compare running channels against config and spawn/stop as needed.
+    #[cfg(any(
+        feature = "telegram",
+        feature = "whatsapp",
+        feature = "discord",
+        feature = "slack",
+        feature = "trello"
+    ))]
     pub async fn reconcile(&self, config: &Config) {
         let mut handles = self.handles.lock().await;
 

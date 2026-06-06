@@ -58,11 +58,12 @@ const TOGGLE_TO_FEATURES: &[(&str, &[&str])] = &[
     ("bash", &["tool-bash"]),
     // search
     (
-        "external-search",
+        "web-search",
+        &["tool-web-search", "tool-exa-search", "tool-brave-search"],
+    ),
+    (
+        "memory-search",
         &[
-            "tool-web-search",
-            "tool-exa-search",
-            "tool-brave-search",
             "tool-memory-search",
             "tool-session-search",
             "tool-channel-search",
