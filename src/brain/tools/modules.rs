@@ -4,18 +4,27 @@
 //! `config.toml` to reduce token bloat. Modules register their tools into a
 //! shared `ToolRegistry` during startup.
 //!
+//! # Compile-time vs Runtime disabling
+//!
+//! **Compile-time** (Cargo features): Exclude module code from the binary entirely.
+//! Reduces binary size and compile time. Use `--no-default-features` and enable
+//! only the features you need:
+//! ```sh
+//! cargo build --no-default-features --features "telegram,tools-file-ops,tools-search"
+//! ```
+//!
+//! **Runtime** (config.toml): Skip module registration at startup. The code is
+//! still in the binary but tools don't appear in the LLM tool list:
+//! ```toml
+//! [tools]
+//! disabled = ["browser", "rsi", "channel_integrations"]
+//! ```
+//!
 //! # Adding a new tool module
 //!
 //! 1. Implement the [`ToolModule`] trait for a unit struct
 //! 2. Add it to [`all_modules()`]
 //! 3. That's it — the module is now available for enable/disable in config
-//!
-//! # Disabling modules
-//!
-//! ```toml
-//! [tools]
-//! disabled = ["browser", "rsi", "channel_integrations"]
-//! ```
 
 use crate::config::Config;
 use crate::db::Pool;
@@ -23,6 +32,7 @@ use std::collections::HashSet;
 use std::sync::Arc;
 
 use super::registry::ToolRegistry;
+#[cfg(feature = "tools-multi-agent")]
 use super::subagent::{SubAgentManager, TeamManager};
 
 /// Registration mode controls which tools are available.
@@ -41,7 +51,9 @@ pub struct ModuleContext {
     pub config: Config,
     pub pool: Pool,
     pub mode: RegistrationMode,
+    #[cfg(feature = "tools-multi-agent")]
     pub subagent_manager: Arc<SubAgentManager>,
+    #[cfg(feature = "tools-multi-agent")]
     pub team_manager: Arc<TeamManager>,
 }
 
@@ -72,8 +84,10 @@ pub trait ToolModule: Send + Sync {
 // ---------------------------------------------------------------------------
 
 /// File operations: read, write, edit, hashline_edit, bash, ls, glob, grep
+#[cfg(feature = "tools-file-ops")]
 struct FileOpsModule;
 
+#[cfg(feature = "tools-file-ops")]
 impl ToolModule for FileOpsModule {
     fn id(&self) -> &str {
         "file_ops"
@@ -102,8 +116,10 @@ impl ToolModule for FileOpsModule {
 
 /// Search & memory: web_search, exa_search, brave_search, memory_search,
 /// session_search, channel_search
+#[cfg(feature = "tools-search")]
 struct SearchModule;
 
+#[cfg(feature = "tools-search")]
 impl ToolModule for SearchModule {
     fn id(&self) -> &str {
         "search"
@@ -170,8 +186,10 @@ impl ToolModule for SearchModule {
 
 /// Workflow & integration: task, plan, context, config, cron, notebook,
 /// doc_parser, http, code_exec, follow_up_question
+#[cfg(feature = "tools-workflow")]
 struct WorkflowModule;
 
+#[cfg(feature = "tools-workflow")]
 impl ToolModule for WorkflowModule {
     fn id(&self) -> &str {
         "workflow"
@@ -209,8 +227,10 @@ impl ToolModule for WorkflowModule {
 }
 
 /// Multi-agent orchestration: spawn, wait, send_input, close, resume + team tools
+#[cfg(feature = "tools-multi-agent")]
 struct MultiAgentModule;
 
+#[cfg(feature = "tools-multi-agent")]
 impl ToolModule for MultiAgentModule {
     fn id(&self) -> &str {
         "multi_agent"
@@ -259,8 +279,10 @@ impl ToolModule for MultiAgentModule {
 }
 
 /// RSI (Recursive Self-Improvement): feedback_record, feedback_analyze, self_improve
+#[cfg(feature = "tools-rsi")]
 struct RsiModule;
 
+#[cfg(feature = "tools-rsi")]
 impl ToolModule for RsiModule {
     fn id(&self) -> &str {
         "rsi"
@@ -283,8 +305,10 @@ impl ToolModule for RsiModule {
 }
 
 /// Image & vision: generate_image, analyze_image, provider_vision, analyze_video
+#[cfg(feature = "tools-image")]
 struct ImageModule;
 
+#[cfg(feature = "tools-image")]
 impl ToolModule for ImageModule {
     fn id(&self) -> &str {
         "image"
@@ -343,8 +367,10 @@ impl ToolModule for ImageModule {
 
 /// Brain & session management: load_brain_file, write_opencrabs_file,
 /// rename_session, slash_command, a2a_send
+#[cfg(feature = "tools-brain")]
 struct BrainModule;
 
+#[cfg(feature = "tools-brain")]
 impl ToolModule for BrainModule {
     fn id(&self) -> &str {
         "brain"
@@ -380,8 +406,10 @@ impl ToolModule for BrainModule {
 /// Note: Channel connect/send tools are registered by the channel subsystem
 /// when channels connect, not during startup tool registration. This module
 /// exists as a documentation entry and potential future toggle point.
+#[cfg(feature = "tools-channel-integrations")]
 struct ChannelIntegrationsModule;
 
+#[cfg(feature = "tools-channel-integrations")]
 impl ToolModule for ChannelIntegrationsModule {
     fn id(&self) -> &str {
         "channel_integrations"
@@ -405,8 +433,10 @@ impl ToolModule for ChannelIntegrationsModule {
 }
 
 /// Browser automation tools (feature-gated)
+#[cfg(feature = "tools-browser")]
 struct BrowserModule;
 
+#[cfg(feature = "tools-browser")]
 impl ToolModule for BrowserModule {
     fn id(&self) -> &str {
         "browser"
@@ -453,8 +483,10 @@ impl ToolModule for BrowserModule {
 }
 
 /// Meta tools: tool_manage, rsi_proposals
+#[cfg(feature = "tools-meta")]
 struct MetaModule;
 
+#[cfg(feature = "tools-meta")]
 impl ToolModule for MetaModule {
     fn id(&self) -> &str {
         "meta"
@@ -485,8 +517,10 @@ impl ToolModule for MetaModule {
 }
 
 /// Dynamic tools from tools.toml
+#[cfg(feature = "tools-dynamic")]
 struct DynamicModule;
 
+#[cfg(feature = "tools-dynamic")]
 impl ToolModule for DynamicModule {
     fn id(&self) -> &str {
         "dynamic"
@@ -512,20 +546,35 @@ impl ToolModule for DynamicModule {
 // ---------------------------------------------------------------------------
 
 /// Returns all available tool modules in registration order.
+///
+/// Only includes modules whose Cargo features are enabled. Modules disabled
+/// at compile time are excluded from the binary entirely.
+#[allow(clippy::vec_init_then_push)]
 pub fn all_modules() -> Vec<Box<dyn ToolModule>> {
-    vec![
-        Box::new(FileOpsModule),
-        Box::new(SearchModule),
-        Box::new(WorkflowModule),
-        Box::new(MultiAgentModule),
-        Box::new(RsiModule),
-        Box::new(ImageModule),
-        Box::new(BrainModule),
-        Box::new(ChannelIntegrationsModule),
-        Box::new(BrowserModule),
-        Box::new(MetaModule),
-        Box::new(DynamicModule),
-    ]
+    let mut modules: Vec<Box<dyn ToolModule>> = Vec::new();
+    #[cfg(feature = "tools-file-ops")]
+    modules.push(Box::new(FileOpsModule));
+    #[cfg(feature = "tools-search")]
+    modules.push(Box::new(SearchModule));
+    #[cfg(feature = "tools-workflow")]
+    modules.push(Box::new(WorkflowModule));
+    #[cfg(feature = "tools-multi-agent")]
+    modules.push(Box::new(MultiAgentModule));
+    #[cfg(feature = "tools-rsi")]
+    modules.push(Box::new(RsiModule));
+    #[cfg(feature = "tools-image")]
+    modules.push(Box::new(ImageModule));
+    #[cfg(feature = "tools-brain")]
+    modules.push(Box::new(BrainModule));
+    #[cfg(feature = "tools-channel-integrations")]
+    modules.push(Box::new(ChannelIntegrationsModule));
+    #[cfg(feature = "tools-browser")]
+    modules.push(Box::new(BrowserModule));
+    #[cfg(feature = "tools-meta")]
+    modules.push(Box::new(MetaModule));
+    #[cfg(feature = "tools-dynamic")]
+    modules.push(Box::new(DynamicModule));
+    modules
 }
 
 /// Returns the list of available module IDs for documentation/config help.
@@ -557,7 +606,9 @@ pub fn register_enabled_tools(
     // Chatbot mode: disable all modules
     let disable_all = disabled.contains("all");
 
+    #[cfg(feature = "tools-multi-agent")]
     let subagent_manager = Arc::new(SubAgentManager::new());
+    #[cfg(feature = "tools-multi-agent")]
     let team_manager = Arc::new(TeamManager::new());
 
     let ctx = ModuleContext {
@@ -565,7 +616,9 @@ pub fn register_enabled_tools(
         config: config.clone(),
         pool: pool.clone(),
         mode,
+        #[cfg(feature = "tools-multi-agent")]
         subagent_manager,
+        #[cfg(feature = "tools-multi-agent")]
         team_manager,
     };
 

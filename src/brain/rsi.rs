@@ -12,6 +12,7 @@ use crate::config::Config;
 use crate::db::repository::FeedbackLedgerRepository;
 use std::io::Write;
 use std::path::PathBuf;
+#[cfg(feature = "tools-rsi")]
 use std::sync::Arc;
 use tokio::sync::mpsc;
 
@@ -22,6 +23,7 @@ const RSI_CYCLE_INTERVAL_SECS: u64 = 3600; // 1 hour
 const RSI_MIN_ENTRIES: i64 = 50;
 
 /// Max tool iterations for the RSI agent (keep it focused).
+#[cfg(feature = "tools-rsi")]
 const RSI_MAX_TOOL_ITERATIONS: usize = 10;
 
 /// How often to run the brain-file dedup scan (in RSI cycles).
@@ -200,6 +202,7 @@ pub enum RsiNotification {
 }
 
 /// Build a minimal tool registry containing only the RSI tools.
+#[cfg(feature = "tools-rsi")]
 fn build_rsi_tool_registry() -> Arc<crate::brain::tools::ToolRegistry> {
     use crate::brain::tools::ToolRegistry;
     use crate::brain::tools::feedback_analyze::FeedbackAnalyzeTool;
@@ -218,6 +221,7 @@ fn build_rsi_tool_registry() -> Arc<crate::brain::tools::ToolRegistry> {
 }
 
 /// The system prompt for the RSI agent.
+#[cfg(feature = "tools-rsi")]
 pub(crate) const RSI_AGENT_PROMPT: &str = "\
 You are the RSI (Recursive Self-Improvement) engine for OpenCrabs. \
 Your job is to analyze system feedback and autonomously apply improvements to brain files.
@@ -351,6 +355,7 @@ Use 'update' over 'apply' when an existing instruction needs rewording, not a ne
 ///
 /// Creates a lightweight AgentService with only RSI tools, sends the improvement
 /// prompt, and returns the agent's summary of what it did.
+#[cfg(feature = "tools-rsi")]
 async fn run_rsi_agent_cycle(
     pool: crate::db::Pool,
     config: &Config,
@@ -445,10 +450,11 @@ async fn run_rsi_agent_cycle(
 /// - Emits notifications to TUI via the provided channel
 pub fn spawn_rsi_engine(
     pool: crate::db::Pool,
-    config: &Config,
+    #[allow(unused_variables)] config: &Config,
     notification_tx: mpsc::UnboundedSender<RsiNotification>,
 ) {
     let pool_clone = pool.clone();
+    #[cfg(feature = "tools-rsi")]
     let config_clone = config.clone();
     tokio::spawn(async move {
         // Delay to let the app fully start
@@ -831,6 +837,7 @@ pub fn spawn_rsi_engine(
                         description: opp.clone(),
                     });
                 }
+                #[cfg(feature = "tools-rsi")]
                 if !opportunities.is_empty() {
                     tracing::info!(
                         "RSI cycle: {} opportunities found, spawning autonomous agent",
@@ -852,6 +859,13 @@ pub fn spawn_rsi_engine(
                             });
                         }
                     }
+                }
+                #[cfg(not(feature = "tools-rsi"))]
+                if !opportunities.is_empty() {
+                    tracing::info!(
+                        "RSI cycle: {} opportunities found (autonomous agent disabled — enable tools-rsi feature)",
+                        opportunities.len()
+                    );
                 }
             }
 

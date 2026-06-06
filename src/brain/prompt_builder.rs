@@ -589,6 +589,40 @@ pub(crate) fn compiled_features() -> Vec<&'static str> {
     if cfg!(feature = "profiling") {
         out.push("profiling");
     }
+    // Tool module features
+    if cfg!(feature = "tools-file-ops") {
+        out.push("tools-file-ops");
+    }
+    if cfg!(feature = "tools-search") {
+        out.push("tools-search");
+    }
+    if cfg!(feature = "tools-workflow") {
+        out.push("tools-workflow");
+    }
+    if cfg!(feature = "tools-multi-agent") {
+        out.push("tools-multi-agent");
+    }
+    if cfg!(feature = "tools-rsi") {
+        out.push("tools-rsi");
+    }
+    if cfg!(feature = "tools-image") {
+        out.push("tools-image");
+    }
+    if cfg!(feature = "tools-brain") {
+        out.push("tools-brain");
+    }
+    if cfg!(feature = "tools-channel-integrations") {
+        out.push("tools-channel-integrations");
+    }
+    if cfg!(feature = "tools-browser") {
+        out.push("tools-browser");
+    }
+    if cfg!(feature = "tools-meta") {
+        out.push("tools-meta");
+    }
+    if cfg!(feature = "tools-dynamic") {
+        out.push("tools-dynamic");
+    }
     out
 }
 

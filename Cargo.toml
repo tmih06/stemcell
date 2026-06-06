@@ -176,7 +176,14 @@ rwhisper = { version = "0.4", optional = true, features = ["metal", "accelerate"
 winresource = "0.1"
 
 [features]
-default = ["telegram", "whatsapp", "discord", "slack", "trello", "local-stt", "local-tts", "browser", "rtk"]
+default = [
+    "telegram", "whatsapp", "discord", "slack", "trello",
+    "local-stt", "local-tts", "browser", "rtk",
+    # Tool modules — all enabled by default for full functionality
+    "tools-file-ops", "tools-search", "tools-workflow", "tools-multi-agent",
+    "tools-rsi", "tools-image", "tools-brain", "tools-channel-integrations",
+    "tools-browser", "tools-meta", "tools-dynamic",
+]
 # Profiling feature enables pprof on Unix only (no-op on Windows)
 profiling = []
 # RTK (Rust Token Killer) integration - filters bash command outputs to save 60-90% tokens
@@ -190,6 +197,39 @@ local-stt = ["rwhisper", "rodio", "hound", "rubato", "symphonia", "symphonia-ada
 local-tts = ["opusic-sys", "rubato"]
 browser = ["chromey"]
 pdfium = ["dep:pdfium-render"]
+
+# ========================================
+# Tool Module Features (compile-time)
+# ========================================
+# Disable tool modules at compile time to reduce binary size and token bloat.
+# When a feature is disabled, the module's code is not compiled into the binary.
+# Combine with runtime [tools] disabled = [...] in config.toml for full control.
+#
+# Example: cargo build --no-default-features --features "telegram,tools-file-ops,tools-search"
+# This builds a minimal binary with only Telegram and file/search tools.
+
+# Core file I/O, shell execution, and code navigation
+tools-file-ops = []
+# Web search, memory search, session search
+tools-search = []
+# Task management, planning, HTTP, code execution, document parsing
+tools-workflow = []
+# Sub-agent spawning and team management
+tools-multi-agent = []
+# Recursive self-improvement (feedback recording, analysis, self-improve)
+tools-rsi = []
+# Image generation and vision analysis
+tools-image = []
+# Brain file I/O, session management, A2A communication
+tools-brain = []
+# Messaging platform connectors (depends on telegram/discord/slack/whatsapp/trello features)
+tools-channel-integrations = []
+# Headless Chrome automation (depends on browser feature)
+tools-browser = ["browser"]
+# Tool management and RSI proposals
+tools-meta = []
+# User-defined tools from tools.toml
+tools-dynamic = []
 
 [profile.dev]
 opt-level = 0
