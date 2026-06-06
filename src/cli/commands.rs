@@ -180,7 +180,10 @@ pub(crate) async fn cmd_status(config: &crate::config::Config) -> Result<()> {
             disabled.push("rtk");
         }
         if !disabled.is_empty() {
-            println!("  Disabled:  {} (see [features] in config.toml)", disabled.join(", "));
+            println!(
+                "  Disabled:  {} (see [features] in config.toml)",
+                disabled.join(", ")
+            );
         }
     }
 

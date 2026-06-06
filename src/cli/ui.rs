@@ -1056,8 +1056,7 @@ async fn cmd_chat_inner(
         let a2a_ctx = service_context.clone();
         let a2a_config = config.a2a.clone();
         tokio::spawn(async move {
-            if let Err(e) =
-                crate::a2a::server::start_server(&a2a_config, a2a_agent, a2a_ctx).await
+            if let Err(e) = crate::a2a::server::start_server(&a2a_config, a2a_agent, a2a_ctx).await
             {
                 tracing::error!("A2A gateway error: {}", e);
             }
