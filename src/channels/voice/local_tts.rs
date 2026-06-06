@@ -450,8 +450,10 @@ fn pcm_to_opus(samples: &[i16], sample_rate: u32) -> Result<Vec<u8>> {
 
 /// Resample i16 PCM from one rate to another using rubato.
 fn resample_i16(samples: &[i16], from_rate: u32, to_rate: u32) -> Result<Vec<i16>> {
+    use audioadapter_buffers::direct::InterleavedSlice;
     use rubato::{
-        Resampler, SincFixedIn, SincInterpolationParameters, SincInterpolationType, WindowFunction,
+        Async, FixedAsync, Resampler, SincInterpolationParameters, SincInterpolationType,
+        WindowFunction,
     };
 
     let params = SincInterpolationParameters {
@@ -464,8 +466,10 @@ fn resample_i16(samples: &[i16], from_rate: u32, to_rate: u32) -> Result<Vec<i16
 
     let ratio = to_rate as f64 / from_rate as f64;
     let chunk_size = 1024;
-    let mut resampler = SincFixedIn::<f32>::new(ratio, 2.0, params, chunk_size, 1)
-        .map_err(|e| anyhow::anyhow!("Resampler init: {e}"))?;
+    let channels = 1;
+    let mut resampler =
+        Async::<f32>::new_sinc(ratio, 2.0, &params, chunk_size, channels, FixedAsync::Input)
+            .map_err(|e| anyhow::anyhow!("Resampler init: {e}"))?;
 
     // Convert i16 → f32
     let float_samples: Vec<f32> = samples
@@ -473,25 +477,23 @@ fn resample_i16(samples: &[i16], from_rate: u32, to_rate: u32) -> Result<Vec<i16
         .map(|&s| s as f32 / i16::MAX as f32)
         .collect();
 
-    let mut output = Vec::with_capacity((float_samples.len() as f64 * ratio) as usize + 1024);
-    let mut pos = 0;
+    let input_adapter = InterleavedSlice::new(&float_samples, channels, float_samples.len())
+        .map_err(|e| anyhow::anyhow!("Input adapter error: {e}"))?;
+    let needed_len = resampler.process_all_needed_output_len(float_samples.len());
+    let mut output = vec![0.0f32; needed_len];
+    let out_len = output.len();
+    let mut output_adapter = InterleavedSlice::new_mut(&mut output, channels, out_len)
+        .map_err(|e| anyhow::anyhow!("Output adapter error: {e}"))?;
 
-    while pos + chunk_size <= float_samples.len() {
-        let chunk = &float_samples[pos..pos + chunk_size];
-        let result = resampler
-            .process(&[chunk], None)
-            .map_err(|e| anyhow::anyhow!("Resample error: {e}"))?;
-        output.extend_from_slice(&result[0]);
-        pos += chunk_size;
-    }
-
-    if pos < float_samples.len() {
-        let remaining = &float_samples[pos..];
-        let result = resampler
-            .process_partial(Some(&[remaining]), None)
-            .map_err(|e| anyhow::anyhow!("Resample error: {e}"))?;
-        output.extend_from_slice(&result[0]);
-    }
+    let (_, nbr_out) = resampler
+        .process_all_into_buffer(
+            &input_adapter,
+            &mut output_adapter,
+            float_samples.len(),
+            None,
+        )
+        .map_err(|e| anyhow::anyhow!("Resample error: {e}"))?;
+    output.truncate(nbr_out);
 
     // Convert f32 → i16
     Ok(output

@@ -435,8 +435,10 @@ fn decode_ogg(bytes: &[u8]) -> Result<(Vec<f32>, u32)> {
 
 /// Resample audio from one sample rate to another.
 pub(crate) fn resample(input: &[f32], from_rate: u32, to_rate: u32) -> Result<Vec<f32>> {
+    use audioadapter_buffers::direct::InterleavedSlice;
     use rubato::{
-        Resampler, SincFixedIn, SincInterpolationParameters, SincInterpolationType, WindowFunction,
+        Async, FixedAsync, Resampler, SincInterpolationParameters, SincInterpolationType,
+        WindowFunction,
     };
 
     let params = SincInterpolationParameters {
@@ -449,29 +451,23 @@ pub(crate) fn resample(input: &[f32], from_rate: u32, to_rate: u32) -> Result<Ve
 
     let ratio = to_rate as f64 / from_rate as f64;
     let chunk_size = 1024;
-    let mut resampler = SincFixedIn::<f32>::new(ratio, 2.0, params, chunk_size, 1)
-        .map_err(|e| anyhow::anyhow!("Resampler init error: {}", e))?;
+    let channels = 1;
+    let mut resampler =
+        Async::<f32>::new_sinc(ratio, 2.0, &params, chunk_size, channels, FixedAsync::Input)
+            .map_err(|e| anyhow::anyhow!("Resampler init error: {}", e))?;
 
-    let mut output = Vec::with_capacity((input.len() as f64 * ratio) as usize + 1024);
-    let mut pos = 0;
+    let input_adapter = InterleavedSlice::new(input, channels, input.len())
+        .map_err(|e| anyhow::anyhow!("Input adapter error: {}", e))?;
+    let needed_len = resampler.process_all_needed_output_len(input.len());
+    let mut output = vec![0.0f32; needed_len];
+    let out_len = output.len();
+    let mut output_adapter = InterleavedSlice::new_mut(&mut output, channels, out_len)
+        .map_err(|e| anyhow::anyhow!("Output adapter error: {}", e))?;
 
-    while pos + chunk_size <= input.len() {
-        let chunk = &input[pos..pos + chunk_size];
-        let result = resampler
-            .process(&[chunk], None)
-            .map_err(|e| anyhow::anyhow!("Resample error: {}", e))?;
-        output.extend_from_slice(&result[0]);
-        pos += chunk_size;
-    }
-
-    if pos < input.len() {
-        let remaining = &input[pos..];
-        let result = resampler
-            .process_partial(Some(&[remaining]), None)
-            .map_err(|e| anyhow::anyhow!("Resample error: {}", e))?;
-        output.extend_from_slice(&result[0]);
-    }
-
+    let (_, nbr_out) = resampler
+        .process_all_into_buffer(&input_adapter, &mut output_adapter, input.len(), None)
+        .map_err(|e| anyhow::anyhow!("Resample error: {}", e))?;
+    output.truncate(nbr_out);
     Ok(output)
 }
 

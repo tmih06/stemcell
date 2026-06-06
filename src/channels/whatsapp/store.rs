@@ -17,7 +17,6 @@ use wacore::store::traits::{
     SignalStore, TcTokenEntry,
 };
 
-
 /// Map a deadpool InteractError to StoreError
 fn interact_to_store_err(e: deadpool_sqlite::InteractError) -> StoreError {
     StoreError::Database(format!("interact error: {}", e).into())
@@ -50,7 +49,7 @@ impl Store {
             .builder(Runtime::Tokio1)
             .map_err(|e| StoreError::Connection(format!("builder error: {}", e).into()))?
             .max_size(4)
-                .post_create(Hook::async_fn(|conn, _| {
+            .post_create(Hook::async_fn(|conn, _| {
                 Box::pin(async move {
                     conn.interact(|conn| {
                         conn.execute_batch(
@@ -783,17 +782,11 @@ impl ProtocolStore for Store {
             .map_err(db_err)
     }
 
-    async fn set_sender_key_status(
-        &self,
-        group_jid: &str,
-        entries: &[(&str, bool)],
-    ) -> Result<()> {
+    async fn set_sender_key_status(&self, group_jid: &str, entries: &[(&str, bool)]) -> Result<()> {
         let gj = group_jid.to_string();
         let did = self.device_id;
-        let entries: Vec<(String, bool)> = entries
-            .iter()
-            .map(|(s, b)| (s.to_string(), *b))
-            .collect();
+        let entries: Vec<(String, bool)> =
+            entries.iter().map(|(s, b)| (s.to_string(), *b)).collect();
         self.pool
             .get()
             .await
@@ -1515,8 +1508,6 @@ mod tests {
         assert_eq!(state.version, 0);
     }
 
-
-
     #[tokio::test]
     async fn test_lid_mapping() {
         let store = test_store().await;
@@ -1569,8 +1560,6 @@ mod tests {
                 .unwrap()
         );
     }
-
-
 
     #[tokio::test]
     async fn test_device_store_create_exists() {
