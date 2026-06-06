@@ -75,6 +75,12 @@ pub struct Config {
     /// where strip-on-load was off.
     #[serde(default)]
     pub brain: BrainConfig,
+
+    /// Feature module toggles — enable/disable major subsystems at runtime
+    /// without recompiling. Compile-time exclusion is still possible via
+    /// Cargo features (e.g. `--no-default-features --features telegram`).
+    #[serde(default)]
+    pub features: FeaturesConfig,
 }
 
 /// Brain-file behaviour configuration. Issue #164 added read-time stripping
@@ -128,6 +134,121 @@ impl BrainConfig {
     /// sensitive) so `TOOLS.md` and `tools.md` are distinct entries.
     pub fn cap_for(&self, filename: &str) -> usize {
         self.caps.get(filename).copied().unwrap_or(self.default_cap)
+    }
+}
+
+/// Feature module toggles — runtime enable/disable of major subsystems.
+///
+/// Mirrors the `[tools]` section introduced in the modular tool architecture
+/// (PR #2), but operates at the feature level rather than the tool level.
+///
+/// Each flag independently controls one subsystem. Setting a flag to `false`
+/// keeps the code in the binary (use Cargo features to strip it entirely) but
+/// skips initialisation at startup.
+///
+/// **Compile-time** (Cargo `--features`): remove code from the binary entirely.\
+/// **Runtime** (`config.toml [features]`): keep the binary intact but skip init.
+///
+/// # Toggleable features
+///
+/// | Key | Subsystem | Cargo feature |
+/// |-----|-----------|---------------|
+/// | `channels` | All channel connectors (Telegram, Discord, Slack, WhatsApp, Trello) | `telegram`, `discord`, `slack`, `whatsapp`, `trello` |
+/// | `local_stt` | Local speech-to-text via Whisper (rwhisper) | `local-stt` |
+/// | `local_tts` | Local text-to-speech via Piper (opusic-sys) | `local-tts` |
+/// | `browser` | Browser automation via CDP (chromey) | `browser` |
+/// | `a2a` | Agent-to-Agent protocol HTTP gateway | _(always compiled)_ |
+/// | `cron` | Cron job scheduler | _(always compiled)_ |
+/// | `memory` | Memory search and embedding subsystem | _(always compiled)_ |
+/// | `rtk` | RTK output filtering (saves 60-90% LLM tokens on shell output) | `rtk` |
+///
+/// # Example
+/// ```toml
+/// [features]
+/// # Disable channels and browser to reduce resource usage on a headless server
+/// channels = false
+/// browser  = false
+/// # Keep local-stt enabled (default) but disable local-tts if not needed
+/// local_tts = false
+/// ```
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FeaturesConfig {
+    /// Enable all channel connectors (Telegram, Discord, Slack, WhatsApp, Trello).
+    /// Individual channels still require their own `enabled = true` and valid credentials.
+    /// Disabling here is a master switch that prevents the ChannelManager from spawning
+    /// any connector regardless of per-channel config. Default: `true`.
+    #[serde(default = "default_true")]
+    pub channels: bool,
+
+    /// Enable local speech-to-text via Whisper (rwhisper/candle).
+    /// Requires the `local-stt` Cargo feature to be compiled in.
+    /// Set to `false` to skip model preloading and STT tool registration.
+    /// Default: `true`.
+    #[serde(default = "default_true")]
+    pub local_stt: bool,
+
+    /// Enable local text-to-speech via Piper (opusic-sys).
+    /// Requires the `local-tts` Cargo feature to be compiled in.
+    /// Set to `false` to skip TTS tool registration.
+    /// Default: `true`.
+    #[serde(default = "default_true")]
+    pub local_tts: bool,
+
+    /// Enable browser automation via CDP (chromey fork of chromiumoxide).
+    /// Requires the `browser` Cargo feature to be compiled in.
+    /// Set to `false` to skip browser tool registration (saves startup time if
+    /// no browser is installed).
+    /// Default: `true`.
+    #[serde(default = "default_true")]
+    pub browser: bool,
+
+    /// Enable the Agent-to-Agent (A2A) HTTP gateway.
+    /// When `false`, the gateway is not started even if `a2a.enabled = true`.
+    /// This runtime flag is a second gate on top of `[a2a] enabled`.
+    /// Default: `true`.
+    #[serde(default = "default_true")]
+    pub a2a: bool,
+
+    /// Enable the cron job scheduler.
+    /// When `false`, the scheduler is not spawned and no cron jobs run.
+    /// Existing cron job definitions in the database are preserved.
+    /// Default: `true`.
+    #[serde(default = "default_true")]
+    pub cron: bool,
+
+    /// Enable the memory / embedding subsystem (FTS5 + vector search via qmd).
+    /// When `false`, memory reindexing and the embedding engine warmup are
+    /// skipped at startup. Memory search tools are still registered but will
+    /// return an initialisation error when invoked.
+    /// Set to `false` on resource-constrained hosts or when memory is unused.
+    /// Default: `true`.
+    #[serde(default = "default_true")]
+    pub memory: bool,
+
+    /// Enable RTK (Rust Token Killer) output filtering.
+    /// When `false`, shell command outputs are passed through unfiltered.
+    /// Requires the `rtk` Cargo feature to be compiled in.
+    /// Default: `true`.
+    #[serde(default = "default_true")]
+    pub rtk: bool,
+}
+
+fn default_true() -> bool {
+    true
+}
+
+impl Default for FeaturesConfig {
+    fn default() -> Self {
+        Self {
+            channels: true,
+            local_stt: true,
+            local_tts: true,
+            browser: true,
+            a2a: true,
+            cron: true,
+            memory: true,
+            rtk: true,
+        }
     }
 }
 
@@ -2144,6 +2265,7 @@ impl Default for Config {
             cron: CronConfig::default(),
             memory: MemoryConfig::default(),
             brain: BrainConfig::default(),
+            features: FeaturesConfig::default(),
         }
     }
 }
@@ -2470,6 +2592,8 @@ impl Config {
         "image",
         "cron",
         "memory",
+        "brain",
+        "features",
     ];
 
     /// Check for unknown top-level keys and log warnings.
@@ -2765,6 +2889,7 @@ impl Config {
             cron: overlay.cron,
             memory: overlay.memory,
             brain: overlay.brain,
+            features: overlay.features,
         }
     }
 

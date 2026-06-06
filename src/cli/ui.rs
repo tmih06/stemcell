@@ -266,31 +266,51 @@ async fn cmd_chat_inner(
     // Auto-detect VPS/cloud and disable vector embeddings if needed.
     crate::config::MemoryConfig::auto_apply_vps_defaults();
 
+    // Disable RTK output filtering if the feature flag is turned off.
+    #[cfg(feature = "rtk")]
+    if !config.features.rtk {
+        crate::rtk::disable_rtk();
+    }
+
+    // Disable local STT/TTS if turned off at runtime.
+    if !config.features.local_stt {
+        crate::channels::voice::disable_local_stt();
+    }
+    if !config.features.local_tts {
+        crate::channels::voice::disable_local_tts();
+    }
+
     // Index existing memory files and warm up embedding engine in the background.
     // Delay startup to avoid concurrent FFI access with resumed agent tasks
     // and channel connections — llama-cpp GGML can segfault under contention.
     // When vector_enabled = false, only FTS reindex runs (no model download).
-    tokio::spawn(async {
-        tokio::time::sleep(std::time::Duration::from_secs(10)).await;
-        match crate::memory::get_store() {
-            Ok(store) => match crate::memory::reindex(store).await {
-                Ok(n) => tracing::info!("Startup memory reindex: {n} files"),
-                Err(e) => tracing::warn!("Startup memory reindex failed: {e}"),
-            },
-            Err(e) => tracing::warn!("Memory store init failed at startup: {e}"),
-        }
-        // Warm up embedding engine so first search doesn't pay model download cost.
-        // Skipped entirely when vector_enabled = false.
-        match tokio::task::spawn_blocking(crate::memory::get_engine).await {
-            Ok(Ok(_)) => tracing::info!("Embedding engine warmed up"),
-            Ok(Err(e)) => tracing::info!("Embedding engine init skipped: {e}"),
-            Err(e) => tracing::warn!("Embedding engine warmup failed: {e}"),
-        }
-    });
+    // Skipped entirely when features.memory = false.
+    if config.features.memory {
+        tokio::spawn(async {
+            tokio::time::sleep(std::time::Duration::from_secs(10)).await;
+            match crate::memory::get_store() {
+                Ok(store) => match crate::memory::reindex(store).await {
+                    Ok(n) => tracing::info!("Startup memory reindex: {n} files"),
+                    Err(e) => tracing::warn!("Startup memory reindex failed: {e}"),
+                },
+                Err(e) => tracing::warn!("Memory store init failed at startup: {e}"),
+            }
+            // Warm up embedding engine so first search doesn't pay model download cost.
+            // Skipped entirely when vector_enabled = false.
+            match tokio::task::spawn_blocking(crate::memory::get_engine).await {
+                Ok(Ok(_)) => tracing::info!("Embedding engine warmed up"),
+                Ok(Err(e)) => tracing::info!("Embedding engine init skipped: {e}"),
+                Err(e) => tracing::warn!("Embedding engine warmup failed: {e}"),
+            }
+        });
+    } else {
+        tracing::info!("Memory subsystem disabled via features.memory = false");
+    }
 
     // Preload local whisper model before the TUI starts so candle's
     // "Running on CPU..." println! fires on the raw terminal, not inside
     // the alternate screen where it would bleed into the TUI layout.
+    // Skipped when features.local_stt = false (disable_local_stt() called above).
     #[cfg(feature = "local-stt")]
     {
         let vc = config.voice_config();
@@ -902,8 +922,9 @@ async fn cmd_chat_inner(
     ));
 
     // Browser automation tools (headless Chrome via CDP)
+    // Skipped when features.browser = false.
     #[cfg(feature = "browser")]
-    {
+    if config.features.browser {
         let browser_manager = Arc::new(crate::brain::tools::browser::BrowserManager::new());
         shared_tool_registry.register(Arc::new(
             crate::brain::tools::browser::BrowserNavigateTool::new(browser_manager.clone()),
@@ -933,6 +954,8 @@ async fn cmd_chat_inner(
             crate::brain::tools::browser::BrowserCloseTool::new(browser_manager),
         ));
         tracing::info!("Browser automation tools registered (9 tools)");
+    } else {
+        tracing::info!("Browser automation disabled via features.browser = false");
     }
 
     // Now that the registry is Arc'd, give it to the channel factory
@@ -1217,7 +1240,13 @@ async fn cmd_chat_inner(
     ));
 
     // Initial channel spawn — reconcile against current config
-    channel_manager.reconcile(config).await;
+    // The master `features.channels` flag acts as a circuit breaker;
+    // individual per-channel `enabled` flags still apply within reconcile.
+    if config.features.channels {
+        channel_manager.reconcile(config).await;
+    } else {
+        tracing::info!("Channel connectors disabled via features.channels = false");
+    }
 
     // Spawn config hot-reload watcher — fires on any change to config.toml, keys.toml,
     // or commands.toml without requiring a restart.
@@ -1259,10 +1288,14 @@ async fn cmd_chat_inner(
             }));
         }
 
-        // Channel lifecycle — spawn/stop channels when enabled flag changes
+        // Channel lifecycle — spawn/stop channels when enabled flag changes.
+        // Skipped during reconcile if features.channels = false.
         {
             let channel_mgr = channel_manager.clone();
             callbacks.push(Arc::new(move |cfg: crate::config::Config| {
+                if !cfg.features.channels {
+                    return;
+                }
                 let mgr = channel_mgr.clone();
                 tokio::task::block_in_place(|| {
                     tokio::runtime::Handle::current().block_on(mgr.reconcile(&cfg));
@@ -1286,7 +1319,8 @@ async fn cmd_chat_inner(
     }
 
     // Spawn cron scheduler — polls every 60s, executes jobs in the user's active session
-    {
+    // Skipped when features.cron = false.
+    if config.features.cron {
         let cron_repo = crate::db::CronJobRepository::new(db.pool().clone());
         let cron_run_repo = crate::db::CronJobRunRepository::new(db.pool().clone());
         let cron_scheduler = crate::cron::CronScheduler::new(
@@ -1298,19 +1332,24 @@ async fn cmd_chat_inner(
         );
         let _cron_handle = cron_scheduler.spawn();
         tracing::info!("Cron scheduler spawned");
+    } else {
+        tracing::info!("Cron scheduler disabled via features.cron = false");
     }
 
-    // Spawn A2A gateway if configured
-    if config.a2a.enabled {
+    // Spawn A2A gateway if configured and not disabled via features.a2a
+    if config.features.a2a && config.a2a.enabled {
         let a2a_agent = channel_factory.create_agent_service().await;
         let a2a_ctx = service_context.clone();
         let a2a_config = config.a2a.clone();
         tokio::spawn(async move {
-            if let Err(e) = crate::a2a::server::start_server(&a2a_config, a2a_agent, a2a_ctx).await
+            if let Err(e) =
+                crate::a2a::server::start_server(&a2a_config, a2a_agent, a2a_ctx).await
             {
                 tracing::error!("A2A gateway error: {}", e);
             }
         });
+    } else if !config.features.a2a {
+        tracing::info!("A2A gateway disabled via features.a2a = false");
     }
 
     // Channel spawning is handled by channel_manager.reconcile() above (line ~669).

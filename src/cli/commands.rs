@@ -100,30 +100,36 @@ pub(crate) async fn cmd_status(config: &crate::config::Config) -> Result<()> {
     }
 
     // Channels
-    let mut channels = Vec::new();
-    if config.channels.telegram.enabled {
-        channels.push("Telegram");
-    }
-    if config.channels.discord.enabled {
-        channels.push("Discord");
-    }
-    if config.channels.slack.enabled {
-        channels.push("Slack");
-    }
-    if config.channels.whatsapp.enabled {
-        channels.push("WhatsApp");
-    }
-    if config.channels.trello.enabled {
-        channels.push("Trello");
-    }
-    if channels.is_empty() {
-        println!("  Channels:  none enabled");
+    if !config.features.channels {
+        println!("  Channels:  disabled (features.channels = false)");
     } else {
-        println!("  Channels:  {}", channels.join(", "));
+        let mut channels = Vec::new();
+        if config.channels.telegram.enabled {
+            channels.push("Telegram");
+        }
+        if config.channels.discord.enabled {
+            channels.push("Discord");
+        }
+        if config.channels.slack.enabled {
+            channels.push("Slack");
+        }
+        if config.channels.whatsapp.enabled {
+            channels.push("WhatsApp");
+        }
+        if config.channels.trello.enabled {
+            channels.push("Trello");
+        }
+        if channels.is_empty() {
+            println!("  Channels:  none enabled");
+        } else {
+            println!("  Channels:  {}", channels.join(", "));
+        }
     }
 
     // A2A
-    if config.a2a.enabled {
+    if !config.features.a2a {
+        println!("  A2A:       disabled (features.a2a = false)");
+    } else if config.a2a.enabled {
         println!(
             "  A2A:       enabled ({}:{})",
             config.a2a.bind, config.a2a.port
@@ -142,13 +148,40 @@ pub(crate) async fn cmd_status(config: &crate::config::Config) -> Result<()> {
     }
 
     // Cron
-    let cron_path = BrainLoader::resolve_path().join("cron.toml");
-    if cron_path.exists()
-        && let Ok(contents) = std::fs::read_to_string(&cron_path)
+    if !config.features.cron {
+        println!("  Cron:      disabled (features.cron = false)");
+    } else {
+        let cron_path = BrainLoader::resolve_path().join("cron.toml");
+        if cron_path.exists()
+            && let Ok(contents) = std::fs::read_to_string(&cron_path)
+        {
+            let count = contents.matches("[[jobs]]").count();
+            if count > 0 {
+                println!("  Cron:      {} job(s)", count);
+            }
+        }
+    }
+
+    // Disabled features summary
     {
-        let count = contents.matches("[[jobs]]").count();
-        if count > 0 {
-            println!("  Cron:      {} job(s)", count);
+        let mut disabled = Vec::new();
+        if !config.features.memory {
+            disabled.push("memory");
+        }
+        if !config.features.browser {
+            disabled.push("browser");
+        }
+        if !config.features.local_stt {
+            disabled.push("local_stt");
+        }
+        if !config.features.local_tts {
+            disabled.push("local_tts");
+        }
+        if !config.features.rtk {
+            disabled.push("rtk");
+        }
+        if !disabled.is_empty() {
+            println!("  Disabled:  {} (see [features] in config.toml)", disabled.join(", "));
         }
     }
 

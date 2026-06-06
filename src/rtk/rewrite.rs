@@ -168,8 +168,30 @@ async fn find_rtk_binary() -> Option<String> {
         .clone()
 }
 
+/// Runtime enable/disable flag for RTK output filtering.
+///
+/// Set to `false` at startup when `config.features.rtk = false`.
+/// Defaults to `true` (enabled) for backward compatibility.
+/// Using an atomic so it can be read from async contexts without locking.
+static RTK_RUNTIME_ENABLED: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(true);
+
+/// Disable RTK output filtering at runtime.
+///
+/// Called at startup when `config.features.rtk = false`. Once disabled,
+/// `is_rtk_available()` returns `false` regardless of whether the binary
+/// is present, effectively bypassing all RTK rewriting.
+pub fn disable_rtk() {
+    RTK_RUNTIME_ENABLED.store(false, std::sync::atomic::Ordering::Relaxed);
+    tracing::info!("RTK output filtering disabled via features.rtk = false");
+}
+
 /// Check if the rtk binary is available (bundled or in PATH). Async + cached.
+/// Returns `false` if RTK has been disabled at runtime via `disable_rtk()`.
 pub async fn is_rtk_available() -> bool {
+    if !RTK_RUNTIME_ENABLED.load(std::sync::atomic::Ordering::Relaxed) {
+        return false;
+    }
     find_rtk_binary().await.is_some()
 }
 

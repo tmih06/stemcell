@@ -23,7 +23,7 @@ pub(crate) mod rewrite;
 mod tracker;
 
 #[cfg(feature = "rtk")]
-pub use rewrite::{RtkResult, is_rtk_available, rewrite_command};
+pub use rewrite::{RtkResult, disable_rtk, is_rtk_available, rewrite_command};
 #[cfg(feature = "rtk")]
 pub use tracker::{RtkMetrics, RtkTracker, TokenSavings, global_tracker};
 

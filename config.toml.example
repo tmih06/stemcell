@@ -430,6 +430,61 @@ port = 18790            # A2A gateway port
 # api_key = "your-secret-key"
 
 # ========================================
+# Feature Module Toggles
+# ========================================
+# Enable or disable major subsystems at runtime without recompiling.
+# This mirrors the [tools] section from the modular tool architecture but
+# operates at the feature level rather than the individual tool level.
+#
+# Two ways to disable a feature:
+#   1. Runtime (this section):  set the flag to false in config.toml.
+#      The code stays in the binary but the subsystem is not started.
+#      Changing the flag takes effect on the next restart.
+#   2. Compile-time (Cargo features): build with --no-default-features and
+#      cherry-pick only the features you need. Removes code from the binary
+#      entirely, reducing binary size and compile time.
+#
+# All flags default to `true` (enabled) for backward compatibility.
+#
+# Toggleable features:
+#   channels   — all channel connectors (Telegram, Discord, Slack, WhatsApp, Trello)
+#                Cargo features: telegram, discord, slack, whatsapp, trello
+#   local_stt  — local speech-to-text via Whisper (rwhisper/candle)
+#                Cargo feature: local-stt
+#   local_tts  — local text-to-speech via Piper (opusic-sys)
+#                Cargo feature: local-tts
+#   browser    — browser automation via CDP (chromey)
+#                Cargo feature: browser
+#   a2a        — Agent-to-Agent HTTP gateway (second gate on top of [a2a] enabled)
+#   cron       — cron job scheduler
+#   memory     — memory/embedding subsystem (FTS5 + vector search)
+#   rtk        — RTK output filtering (60-90% token savings on shell commands)
+#                Cargo feature: rtk
+#
+# Example: headless server with no browser, no channels, no local voice:
+# [features]
+# channels  = false
+# browser   = false
+# local_stt = false
+# local_tts = false
+#
+# Example: minimal TUI-only setup (saves RAM by disabling memory subsystem):
+# [features]
+# memory = false
+# cron   = false
+#
+# [features]
+# channels  = true   # default
+# local_stt = true   # default
+# local_tts = true   # default
+# browser   = true   # default
+# a2a       = true   # default
+# cron      = true   # default
+# memory    = true   # default
+# rtk       = true   # default
+
+
+# ========================================
 # Web Search Providers (default to free Duck Duck Go, no need additional web search provider)
 # ========================================
 

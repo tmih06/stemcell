@@ -415,7 +415,7 @@ fn tts_provider_is_configured(kind: TtsProviderKind, cfg: &VoiceConfig) -> bool 
             .as_ref()
             .and_then(|p| p.api_key.as_ref())
             .is_some(),
-        TtsProviderKind::Local => cfg!(feature = "local-tts"),
+        TtsProviderKind::Local => super::local_tts_available(),
     }
 }
 
