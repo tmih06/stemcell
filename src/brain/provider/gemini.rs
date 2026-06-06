@@ -3,19 +3,13 @@
 //! Implements the Provider trait for Google's Gemini models.
 //! Uses rig-core as the backend engine.
 
-use super::error::{ProviderError, Result};
-use super::r#trait::{Provider, ProviderStream};
-use super::types::*;
-use async_trait::async_trait;
 use rig_core::providers::gemini::Client;
-use rig_core::completion::{CompletionModel, CompletionRequest, Message as RigMessage};
-use rig_core::client::CompletionClient;
 use std::sync::Arc;
 
 /// Google Gemini provider
 #[derive(Clone)]
 pub struct GeminiProvider {
-    api_key: String,
+    _api_key: String,
     client: Client,
     model: String,
 }
@@ -26,7 +20,7 @@ impl GeminiProvider {
         let client = Client::new(&api_key).expect("Failed to initialize Rig Gemini client");
 
         Self {
-            api_key,
+            _api_key: api_key.clone(),
             client,
             model: "gemini-2.0-flash".to_string(),
         }
@@ -40,7 +34,7 @@ impl GeminiProvider {
 
     pub fn build(self) -> crate::brain::provider::rig_adapter::RigAdapter<Client> {
         let client = self.client.clone();
-        
+
         crate::brain::provider::rig_adapter::RigAdapter {
             name: "gemini".into(),
             default_model: self.model,

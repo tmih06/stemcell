@@ -364,46 +364,30 @@ impl SlashCommandTool {
         // If a model name was provided, switch to it
         if !model_arg.is_empty() {
             // Detect active provider section
-            let provider = &config.providers;
-            let section = if provider.anthropic.as_ref().is_some_and(|p| p.enabled) {
-                "providers.anthropic"
-            } else if provider.openai.as_ref().is_some_and(|p| p.enabled) {
-                "providers.openai"
-            } else if provider.gemini.as_ref().is_some_and(|p| p.enabled) {
-                "providers.gemini"
-            } else if provider.openrouter.as_ref().is_some_and(|p| p.enabled) {
-                "providers.openrouter"
-            } else if provider.minimax.as_ref().is_some_and(|p| p.enabled) {
-                "providers.minimax"
-            } else if provider.claude_cli.as_ref().is_some_and(|p| p.enabled) {
-                "providers.claude_cli"
-            } else {
-                // Check custom providers
-                let custom = provider
-                    .custom
-                    .as_ref()
-                    .and_then(|m| m.iter().find(|(_, p)| p.enabled))
-                    .map(|(name, _)| name.clone());
-                if let Some(ref name) = custom {
-                    return match crate::config::Config::write_key(
-                        &format!("providers.custom.{}", name),
-                        "default_model",
-                        model_arg,
-                    ) {
-                        Ok(()) => Ok(ToolResult::success(format!(
-                            "Model switched to '{}' on custom provider '{}'.",
-                            model_arg, name
-                        ))),
-                        Err(e) => Ok(ToolResult::error(format!("Failed to write config: {}", e))),
-                    };
+            let mut target_section = None;
+            for (id, _display, _req_key, cfg) in config.providers.provider_registry() {
+                if let Some(c) = cfg {
+                    if c.enabled {
+                        target_section = Some(format!("providers.{}", id.replace("-", "_")));
+                        break;
+                    }
                 }
+            }
+
+            if target_section.is_none() {
+                if let Some((name, _)) = config.providers.active_custom() {
+                    target_section = Some(format!("providers.custom.{}", name));
+                }
+            }
+
+            let Some(section) = target_section else {
                 return Ok(ToolResult::error(
                     "No active provider found. Configure one via config_manager or /onboard."
                         .into(),
                 ));
             };
 
-            return match crate::config::Config::write_key(section, "default_model", model_arg) {
+            return match crate::config::Config::write_key(&section, "default_model", model_arg) {
                 Ok(()) => Ok(ToolResult::success(format!(
                     "Model switched to '{}'. Config updated at [{section}].default_model. \
                      The change takes effect on the next request.",
@@ -416,16 +400,7 @@ impl SlashCommandTool {
         // No args — return current provider/model info
         let mut lines = Vec::new();
 
-        let providers_info = [
-            ("anthropic", &config.providers.anthropic),
-            ("openai", &config.providers.openai),
-            ("gemini", &config.providers.gemini),
-            ("openrouter", &config.providers.openrouter),
-            ("minimax", &config.providers.minimax),
-            ("claude-cli", &config.providers.claude_cli),
-        ];
-
-        for (name, provider_opt) in &providers_info {
+        for (name, _display, _req_key, provider_opt) in config.providers.provider_registry() {
             if let Some(provider) = provider_opt {
                 let status = if provider.enabled {
                     "active"

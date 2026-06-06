@@ -200,6 +200,13 @@ pdfium = ["dep:pdfium-render"]
 # ========================================
 # Tool Module Features (compile-time)
 # ========================================
+
+# Providers
+tools-providers = ["provider-claude-cli", "provider-codex-cli", "provider-opencode-cli"]
+provider-claude-cli = []
+provider-codex-cli = []
+provider-opencode-cli = []
+
 # The `tools-*` features are compatibility aliases that expand into individual
 # `tool-*` features. Build automation should prefer the per-tool features so a
 # manifest toggle can pack exactly one tool at a time.

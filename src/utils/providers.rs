@@ -275,8 +275,26 @@ pub fn keys_toml_path_hint() -> String {
 ///
 /// Two accepted name forms per provider (hyphen and underscore variants)
 /// because both surface from different config-loading paths.
-pub fn cli_supported_models(_name: &str) -> Option<(Vec<String>, &'static str)> {
-    None
+pub fn cli_supported_models(name: &str) -> Option<(Vec<String>, &'static str)> {
+    match name {
+        #[cfg(feature = "provider-claude-cli")]
+        "claude-cli" | "claude_cli" => Some((
+            crate::brain::provider::claude_cli::SUPPORTED_MODELS
+                .iter()
+                .map(|s| s.to_string())
+                .collect(),
+            crate::brain::provider::claude_cli::DEFAULT_MODEL,
+        )),
+        #[cfg(feature = "provider-opencode-cli")]
+        "opencode-cli" | "opencode_cli" => Some((
+            crate::brain::provider::opencode_cli::SUPPORTED_MODELS
+                .iter()
+                .map(|s| s.to_string())
+                .collect(),
+            crate::brain::provider::opencode_cli::DEFAULT_MODEL,
+        )),
+        _ => None,
+    }
 }
 
 /// Find the TUI PROVIDERS index for a provider name/alias.

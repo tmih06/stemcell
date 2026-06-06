@@ -3,20 +3,15 @@
 //! Implements the Provider trait for any OpenAI-compatible API.
 //! Uses rig-core as the backend engine.
 
-use super::error::{ProviderError, Result};
-use super::r#trait::{Provider, ProviderStream};
-use super::types::*;
-use async_trait::async_trait;
-use rig_core::providers::openai::Client;
-use rig_core::client::CompletionClient;
-use rig_core::completion::{CompletionModel, CompletionRequest, Message as RigMessage};
-use std::sync::Arc;
 use crate::brain::provider::rate_limiter::RateLimiter;
+use rig_core::providers::openai::Client;
+use std::sync::Arc;
 
 pub type BodyTransformFn = Arc<dyn Fn(serde_json::Value) -> serde_json::Value + Send + Sync>;
 pub type TokenFn = Arc<dyn Fn() -> String + Send + Sync>;
 pub type BaseUrlFn = Arc<dyn Fn() -> String + Send + Sync>;
-pub type AuthRefreshFn = Arc<dyn Fn() -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>> + Send + Sync>;
+pub type AuthRefreshFn =
+    Arc<dyn Fn() -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>> + Send + Sync>;
 
 pub const STRIP_OPEN_TAGS: &[&str] = &["<think>", "<!-- reasoning -->", "<!--"];
 pub const STRIP_CLOSE_TAGS: &[&[&str]] = &[
@@ -33,6 +28,7 @@ pub struct OpenAIProvider {
     api_key: String,
     base_url: String,
     model: String,
+    name: String,
     pub(crate) extra_headers: Vec<(String, String)>,
     token_fn: Option<TokenFn>,
 }
@@ -43,10 +39,21 @@ impl OpenAIProvider {
     }
 
     pub fn with_base_url(api_key: String, base_url: String) -> Self {
+        let base_url = if base_url.ends_with("/chat/completions") {
+            base_url
+                .strip_suffix("/chat/completions")
+                .unwrap()
+                .trim_end_matches('/')
+                .to_string()
+        } else {
+            base_url.trim_end_matches('/').to_string()
+        };
+
         Self {
             api_key,
             base_url,
             model: "gpt-4o".to_string(),
+            name: "openai".to_string(),
             extra_headers: vec![],
             token_fn: None,
         }
@@ -56,8 +63,11 @@ impl OpenAIProvider {
         Self::with_base_url("".into(), base_url)
     }
 
-    pub fn with_name(self, _name: &str) -> Self { self }
-    
+    pub fn with_name(mut self, name: &str) -> Self {
+        self.name = name.to_string();
+        self
+    }
+
     pub fn with_default_model(mut self, model: String) -> Self {
         self.model = model;
         self
@@ -77,12 +87,24 @@ impl OpenAIProvider {
         self
     }
 
-    pub fn with_rate_limiter(self, _limiter: Arc<RateLimiter>) -> Self { self }
-    pub fn with_vision_model(self, _vm: String) -> Self { self }
-    pub fn with_context_window(self, _cw: u32) -> Self { self }
-    pub fn with_models(self, _models: Vec<String>) -> Self { self }
-    pub fn with_cache_enabled(self, _cache: bool) -> Self { self }
-    pub fn with_cache_ttl(self, _ttl: u32) -> Self { self }
+    pub fn with_rate_limiter(self, _limiter: Arc<RateLimiter>) -> Self {
+        self
+    }
+    pub fn with_vision_model(self, _vm: String) -> Self {
+        self
+    }
+    pub fn with_context_window(self, _cw: u32) -> Self {
+        self
+    }
+    pub fn with_models(self, _models: Vec<String>) -> Self {
+        self
+    }
+    pub fn with_cache_enabled(self, _cache: bool) -> Self {
+        self
+    }
+    pub fn with_cache_ttl(self, _ttl: u32) -> Self {
+        self
+    }
 
     pub fn build(self) -> crate::brain::provider::rig_adapter::RigAdapter<Client> {
         let api_key = self.api_key.clone();
@@ -95,11 +117,15 @@ impl OpenAIProvider {
             } else {
                 api_key.clone()
             };
-            Client::builder().api_key(key).base_url(base_url.clone()).build().expect("Failed to create OpenAI client")
+            Client::builder()
+                .api_key(key)
+                .base_url(base_url.clone())
+                .build()
+                .expect("Failed to create OpenAI client")
         });
 
         crate::brain::provider::rig_adapter::RigAdapter {
-            name: "openai".into(),
+            name: self.name,
             default_model: self.model,
             supported_models: vec![],
             context_window_fn: None,
@@ -110,5 +136,7 @@ impl OpenAIProvider {
     }
 }
 
-pub fn extract_balanced_json(_text: &str) -> Option<String> { None }
+pub fn extract_balanced_json(_text: &str) -> Option<String> {
+    None
+}
 pub const KNOWN_TOOL_NAMES: &[&str] = &[];

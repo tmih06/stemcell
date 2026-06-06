@@ -14,6 +14,12 @@
 //! `create_provider_by_name`, `create_fallback`, `active_provider_vision`)
 //! all iterate the registry automatically.
 
+#[cfg(feature = "provider-claude-cli")]
+use super::claude_cli::ClaudeCliProvider;
+#[cfg(feature = "provider-codex-cli")]
+use super::codex_cli::CodexCliProvider;
+#[cfg(feature = "provider-opencode-cli")]
+use super::opencode_cli::OpenCodeCliProvider;
 use super::qwen::{looks_like_qwen_target, qwen_body_transform, qwen_extra_headers};
 use super::{
     Provider,
@@ -67,6 +73,33 @@ struct ProviderRegistration {
 /// The index is used by `provider_enabled()`.
 static REGISTRATIONS: LazyLock<Vec<ProviderRegistration>> = LazyLock::new(|| {
     vec![
+        #[cfg(feature = "provider-claude-cli")]
+        ProviderRegistration {
+            display_name: "Claude CLI",
+            session_id: "claude-cli",
+            aliases: &["claude_cli"],
+            is_enabled: |c| c.providers.claude_cli.as_ref().is_some_and(|p| p.enabled),
+            factory: sync_factory(try_create_claude_cli),
+            config_field: |c| c.providers.claude_cli.as_ref(),
+        },
+        #[cfg(feature = "provider-opencode-cli")]
+        ProviderRegistration {
+            display_name: "OpenCode CLI",
+            session_id: "opencode-cli",
+            aliases: &["opencode_cli"],
+            is_enabled: |c| c.providers.opencode_cli.as_ref().is_some_and(|p| p.enabled),
+            factory: sync_factory(try_create_opencode_cli),
+            config_field: |c| c.providers.opencode_cli.as_ref(),
+        },
+        #[cfg(feature = "provider-codex-cli")]
+        ProviderRegistration {
+            display_name: "Codex CLI",
+            session_id: "codex-cli",
+            aliases: &["codex_cli"],
+            is_enabled: |c| c.providers.codex_cli.as_ref().is_some_and(|p| p.enabled),
+            factory: sync_factory(try_create_codex_cli),
+            config_field: |c| c.providers.codex_cli.as_ref(),
+        },
         ProviderRegistration {
             display_name: "Codex",
             session_id: "codex",
@@ -168,6 +201,12 @@ static REGISTRATIONS: LazyLock<Vec<ProviderRegistration>> = LazyLock::new(|| {
 
 /// Provider names in priority order, derived from REGISTRATIONS.
 pub const PROVIDER_NAMES: &[&str] = &[
+    #[cfg(feature = "provider-claude-cli")]
+    "Claude CLI",
+    #[cfg(feature = "provider-opencode-cli")]
+    "OpenCode CLI",
+    #[cfg(feature = "provider-codex-cli")]
+    "Codex CLI",
     "Codex",
     "OpenCode",
     "Qwen",
@@ -987,22 +1026,15 @@ fn try_create_minimax(config: &Config) -> Result<Option<Arc<dyn Provider>>> {
         return Ok(None);
     };
 
-    // MiniMax requires specific endpoint path, not just /v1
+    // MiniMax uses standard OpenAI-compatible endpoint at /v1 (rig-core appends /chat/completions)
     let base_url = minimax_config
         .base_url
         .clone()
         .unwrap_or_else(|| "https://api.minimax.io/v1".to_string());
 
-    // Append correct path if not already present
-    let full_url = if base_url.contains("minimax.io") && !base_url.contains("/text/") {
-        format!("{}/text/chatcompletion_v2", base_url.trim_end_matches('/'))
-    } else {
-        base_url
-    };
-
-    tracing::info!("Using Minimax at: {}", full_url);
+    tracing::info!("Using Minimax at: {}", base_url);
     let mut provider = configure_openai_compatible(
-        OpenAIProvider::with_base_url(api_key.clone(), full_url).with_name("minimax"),
+        OpenAIProvider::with_base_url(api_key.clone(), base_url).with_name("minimax"),
         minimax_config,
     );
 
@@ -1201,7 +1233,7 @@ fn try_create_openai(config: &Config) -> Result<Option<Arc<dyn Provider>>> {
             builder = builder.with_body_transform(local_thinking_body_transform(enable));
         }
         let provider = configure_openai_compatible(builder, openai_config);
-        return Ok(Some(Arc::new(provider.build())));;
+        return Ok(Some(Arc::new(provider.build())));
     }
 
     // Official OpenAI API - has api_key
@@ -1243,7 +1275,6 @@ fn try_create_gemini(config: &Config) -> Result<Option<Arc<dyn Provider>>> {
         GeminiProvider::new(api_key).with_model(model).build(),
     )))
 }
-
 
 /// Try to create Codex OAuth provider if configured and tokens are available.
 fn try_create_codex_oauth(config: &Config) -> Result<Option<Arc<dyn Provider>>> {
@@ -1326,6 +1357,74 @@ fn try_create_anthropic(config: &Config) -> Result<Option<Arc<dyn Provider>>> {
     tracing::info!("Using Anthropic provider");
 
     Ok(Some(Arc::new(provider.build())))
+}
+
+#[cfg(feature = "provider-claude-cli")]
+fn try_create_claude_cli(config: &Config) -> anyhow::Result<Option<Arc<dyn Provider>>> {
+    let cli_config = match &config.providers.claude_cli {
+        Some(cfg) if cfg.enabled => cfg,
+        _ => return Ok(None),
+    };
+
+    match ClaudeCliProvider::new() {
+        Ok(mut provider) => {
+            if let Some(model) = &cli_config.default_model {
+                provider = provider.with_default_model(model.clone());
+            }
+            tracing::info!("Using Claude CLI provider (Max subscription, no API key needed)");
+            Ok(Some(Arc::new(provider)))
+        }
+        Err(e) => {
+            tracing::warn!("Claude CLI enabled but binary not found: {}", e);
+            Ok(None)
+        }
+    }
+}
+
+#[cfg(feature = "provider-opencode-cli")]
+fn try_create_opencode_cli(config: &Config) -> anyhow::Result<Option<Arc<dyn Provider>>> {
+    let cli_config = match &config.providers.opencode_cli {
+        Some(cfg) if cfg.enabled => cfg,
+        _ => return Ok(None),
+    };
+
+    match OpenCodeCliProvider::new() {
+        Ok(mut provider) => {
+            if let Some(model) = &cli_config.default_model {
+                provider = provider.with_default_model(model.clone());
+            }
+            tracing::info!("Using OpenCode CLI provider (free models, no API key needed)");
+            Ok(Some(Arc::new(provider)))
+        }
+        Err(e) => {
+            tracing::warn!("OpenCode CLI enabled but binary not found: {}", e);
+            Ok(None)
+        }
+    }
+}
+
+#[cfg(feature = "provider-codex-cli")]
+fn try_create_codex_cli(config: &Config) -> anyhow::Result<Option<Arc<dyn Provider>>> {
+    let cli_config = match &config.providers.codex_cli {
+        Some(cfg) if cfg.enabled => cfg,
+        _ => return Ok(None),
+    };
+
+    match CodexCliProvider::new() {
+        Ok(mut provider) => {
+            if let Some(model) = &cli_config.default_model {
+                provider = provider.with_default_model(model.clone());
+            }
+            tracing::info!(
+                "Using Codex CLI provider (ChatGPT/Codex subscription, no API key needed)"
+            );
+            Ok(Some(Arc::new(provider)))
+        }
+        Err(e) => {
+            tracing::warn!("Codex CLI enabled but binary not found: {}", e);
+            Ok(None)
+        }
+    }
 }
 
 #[cfg(test)]

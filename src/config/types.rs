@@ -1046,19 +1046,26 @@ impl ProviderConfigs {
     /// Priority order matches what `factory::create_provider` would pick:
     /// CLI providers first (free, no key), then API providers, with custom
     /// providers handled separately by the caller via `active_custom()`.
-    fn provider_registry(
+    pub fn provider_registry(
         &self,
-    ) -> [(&'static str, &'static str, bool, Option<&ProviderConfig>); 16] {
-        [
-            // CLI providers — enabled flag alone is enough
-            ("claude-cli", "Claude CLI", false, self.claude_cli.as_ref()),
-            (
-                "opencode-cli",
-                "OpenCode CLI",
-                false,
-                self.opencode_cli.as_ref(),
-            ),
-            ("codex-cli", "Codex CLI", false, self.codex_cli.as_ref()),
+    ) -> Vec<(&'static str, &'static str, bool, Option<&ProviderConfig>)> {
+        let mut registry = Vec::new();
+
+        #[cfg(feature = "provider-claude-cli")]
+        registry.push(("claude-cli", "Claude CLI", false, self.claude_cli.as_ref()));
+
+        #[cfg(feature = "provider-opencode-cli")]
+        registry.push((
+            "opencode-cli",
+            "OpenCode CLI",
+            false,
+            self.opencode_cli.as_ref(),
+        ));
+
+        #[cfg(feature = "provider-codex-cli")]
+        registry.push(("codex-cli", "Codex CLI", false, self.codex_cli.as_ref()));
+
+        registry.extend_from_slice(&[
             ("codex", "Codex OAuth", false, self.codex.as_ref()),
             // OpenCode API — OAuth-backed but registered as a regular provider
             ("opencode", "OpenCode", false, self.opencode.as_ref()),
@@ -1074,7 +1081,9 @@ impl ProviderConfigs {
             ("ollama", "Ollama", false, self.ollama.as_ref()),
             ("bedrock", "AWS Bedrock", true, self.bedrock.as_ref()),
             ("vertex", "Google Vertex", true, self.vertex.as_ref()),
-        ]
+        ]);
+
+        registry
     }
 
     /// Return `(provider_name, default_model)` for the currently active provider,

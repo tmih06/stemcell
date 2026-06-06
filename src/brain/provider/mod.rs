@@ -19,6 +19,10 @@ pub use types::*;
 
 // Provider implementations
 pub mod anthropic;
+#[cfg(feature = "provider-claude-cli")]
+pub mod claude_cli;
+#[cfg(feature = "provider-codex-cli")]
+pub mod codex_cli;
 pub mod codex_oauth;
 pub mod copilot;
 pub mod custom_openai_compatible;
@@ -26,20 +30,32 @@ pub mod factory;
 pub mod fallback;
 pub mod gemini;
 pub mod model_fetch;
-pub(crate) mod nonstream_compat;
-pub mod streaming_utils;
-pub mod rig_adapter;
+#[cfg(feature = "provider-opencode-cli")]
+pub mod opencode_cli;
 pub mod qwen;
+pub mod rig_adapter;
+pub mod streaming_utils;
 
 pub use anthropic::AnthropicProvider;
+#[cfg(feature = "provider-claude-cli")]
+pub use claude_cli::ClaudeCliProvider;
+#[cfg(feature = "provider-codex-cli")]
+pub use codex_cli::CodexCliProvider;
 pub use codex_oauth::CodexOAuthProvider;
 pub use custom_openai_compatible::OpenAIProvider;
 pub use factory::{create_provider, create_provider_by_name, create_provider_with_warning};
 pub use fallback::{FallbackProvider, SwapEvent};
 pub use gemini::GeminiProvider;
+#[cfg(feature = "provider-opencode-cli")]
+pub use opencode_cli::OpenCodeCliProvider;
 
 /// Cross-platform binary lookup. Uses `where.exe` on Windows, `which` elsewhere.
 /// Returns the resolved path if found on PATH, or None.
+#[cfg(any(
+    feature = "provider-claude-cli",
+    feature = "provider-codex-cli",
+    feature = "provider-opencode-cli"
+))]
 pub(crate) fn which_binary(name: &str) -> Option<String> {
     #[cfg(target_os = "windows")]
     let cmd = "where.exe";

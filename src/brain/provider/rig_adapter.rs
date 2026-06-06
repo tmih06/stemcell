@@ -2,10 +2,10 @@ use super::error::{ProviderError, Result};
 use super::r#trait::{Provider, ProviderStream};
 use super::types::*;
 use async_trait::async_trait;
+use futures::StreamExt;
 use rig_core::client::CompletionClient;
 use rig_core::completion::{CompletionModel, CompletionRequest, Message as RigMessage};
 use std::sync::Arc;
-use futures::StreamExt;
 
 pub struct RigAdapter<C> {
     pub name: String,
@@ -31,14 +31,19 @@ where
 
         let mut history = vec![];
         for msg in &request.messages {
-            let content_str = msg.content.iter().filter_map(|c| {
-                if let ContentBlock::Text { text } = c {
-                    Some(text.clone())
-                } else {
-                    None
-                }
-            }).collect::<Vec<String>>().join("\n");
-            
+            let content_str = msg
+                .content
+                .iter()
+                .filter_map(|c| {
+                    if let ContentBlock::Text { text } = c {
+                        Some(text.clone())
+                    } else {
+                        None
+                    }
+                })
+                .collect::<Vec<String>>()
+                .join("\n");
+
             match msg.role {
                 Role::User => history.push(RigMessage::user(content_str)),
                 Role::Assistant => history.push(RigMessage::assistant(content_str)),
@@ -62,18 +67,24 @@ where
             tool_choice: None,
         };
 
-        let res = model.completion(req).await.map_err(|e| ProviderError::ApiError {
-            status: 500,
-            message: e.to_string(),
-            error_type: None,
-        })?;
+        let res = model
+            .completion(req)
+            .await
+            .map_err(|e| ProviderError::ApiError {
+                status: 500,
+                message: e.to_string(),
+                error_type: None,
+            })?;
 
-        let text = res.choice.into_iter().filter_map(|c| {
-            match c {
+        let text = res
+            .choice
+            .into_iter()
+            .filter_map(|c| match c {
                 rig_core::message::AssistantContent::Text(t) => Some(t.text),
-                _ => None
-            }
-        }).collect::<Vec<_>>().join("\n");
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
 
         Ok(LLMResponse {
             id: res.message_id.unwrap_or_else(|| "rig-response".into()),
@@ -91,14 +102,19 @@ where
 
         let mut history = vec![];
         for msg in &request.messages {
-            let content_str = msg.content.iter().filter_map(|c| {
-                if let ContentBlock::Text { text } = c {
-                    Some(text.clone())
-                } else {
-                    None
-                }
-            }).collect::<Vec<String>>().join("\n");
-            
+            let content_str = msg
+                .content
+                .iter()
+                .filter_map(|c| {
+                    if let ContentBlock::Text { text } = c {
+                        Some(text.clone())
+                    } else {
+                        None
+                    }
+                })
+                .collect::<Vec<String>>()
+                .join("\n");
+
             match msg.role {
                 Role::User => history.push(RigMessage::user(content_str)),
                 Role::Assistant => history.push(RigMessage::assistant(content_str)),
@@ -122,7 +138,10 @@ where
             tool_choice: None,
         };
 
-        let stream_res = model.stream(req).await.map_err(|e| ProviderError::StreamError(e.to_string()))?;
+        let stream_res = model
+            .stream(req)
+            .await
+            .map_err(|e| ProviderError::StreamError(e.to_string()))?;
         let model_name = request.model.clone();
 
         let mut inside_think = false;
@@ -130,73 +149,81 @@ where
         let mut bytes_consumed = 0;
         let mut carry = String::new();
 
-        let event_stream = stream_res.map(move |chunk_res| {
-            match chunk_res {
-                Ok(chunk) => {
-                    match chunk {
-                        rig_core::streaming::StreamedAssistantContent::Text(t) => {
-                            let (filtered_text, reasoning_text) = crate::brain::provider::streaming_utils::filter_think_tags(
+        let event_stream = stream_res
+            .map(move |chunk_res| match chunk_res {
+                Ok(chunk) => match chunk {
+                    rig_core::streaming::StreamedAssistantContent::Text(t) => {
+                        let (filtered_text, reasoning_text) =
+                            crate::brain::provider::streaming_utils::filter_think_tags(
                                 &t.text,
                                 &mut inside_think,
                                 &mut active_close_tag,
                                 &mut bytes_consumed,
-                                &mut carry
+                                &mut carry,
                             );
 
-                            let mut events = vec![];
-                            if !reasoning_text.is_empty() {
-                                events.push(Ok(StreamEvent::ContentBlockDelta {
-                                    index: 0,
-                                    delta: ContentDelta::ReasoningDelta { text: reasoning_text }
-                                }));
-                            }
-                            if !filtered_text.is_empty() {
-                                events.push(Ok(StreamEvent::ContentBlockDelta {
-                                    index: 0,
-                                    delta: ContentDelta::TextDelta { text: filtered_text }
-                                }));
-                            }
-
-                            if events.is_empty() {
-                                vec![Ok(StreamEvent::Ping)]
-                            } else {
-                                events
-                            }
-                        },
-                        rig_core::streaming::StreamedAssistantContent::ReasoningDelta { reasoning, .. } => {
-                            vec![Ok(StreamEvent::ContentBlockDelta {
+                        let mut events = vec![];
+                        if !reasoning_text.is_empty() {
+                            events.push(Ok(StreamEvent::ContentBlockDelta {
                                 index: 0,
-                                delta: ContentDelta::ReasoningDelta { text: reasoning }
-                            })]
-                        },
-                        rig_core::streaming::StreamedAssistantContent::Final(res) => {
-                            use rig_core::completion::GetTokenUsage;
-                            let mut events = vec![];
-                            
-                            let mut opencrabs_usage = TokenUsage::default();
-                            if let Some(usage) = res.token_usage() {
-                                opencrabs_usage.input_tokens = usage.input_tokens as u32;
-                                opencrabs_usage.output_tokens = usage.output_tokens as u32;
-                            }
-                            
-                            events.push(Ok(StreamEvent::MessageDelta {
-                                delta: MessageDelta {
-                                    stop_reason: Some(StopReason::EndTurn),
-                                    stop_sequence: None,
+                                delta: ContentDelta::ReasoningDelta {
+                                    text: reasoning_text,
                                 },
-                                usage: opencrabs_usage,
                             }));
-                            events.push(Ok(StreamEvent::MessageStop));
+                        }
+                        if !filtered_text.is_empty() {
+                            events.push(Ok(StreamEvent::ContentBlockDelta {
+                                index: 0,
+                                delta: ContentDelta::TextDelta {
+                                    text: filtered_text,
+                                },
+                            }));
+                        }
+
+                        if events.is_empty() {
+                            vec![Ok(StreamEvent::Ping)]
+                        } else {
                             events
-                        },
-                        _ => vec![Ok(StreamEvent::Ping)],
+                        }
                     }
+                    rig_core::streaming::StreamedAssistantContent::ReasoningDelta {
+                        reasoning,
+                        ..
+                    } => {
+                        vec![Ok(StreamEvent::ContentBlockDelta {
+                            index: 0,
+                            delta: ContentDelta::ReasoningDelta { text: reasoning },
+                        })]
+                    }
+                    rig_core::streaming::StreamedAssistantContent::Final(res) => {
+                        use rig_core::completion::GetTokenUsage;
+                        let mut events = vec![];
+
+                        let mut opencrabs_usage = TokenUsage::default();
+                        if let Some(usage) = res.token_usage() {
+                            opencrabs_usage.input_tokens = usage.input_tokens as u32;
+                            opencrabs_usage.output_tokens = usage.output_tokens as u32;
+                        }
+
+                        events.push(Ok(StreamEvent::MessageDelta {
+                            delta: MessageDelta {
+                                stop_reason: Some(StopReason::EndTurn),
+                                stop_sequence: None,
+                            },
+                            usage: opencrabs_usage,
+                        }));
+                        events.push(Ok(StreamEvent::MessageStop));
+                        events
+                    }
+                    _ => vec![Ok(StreamEvent::Ping)],
                 },
                 Err(e) => {
-                    vec![Ok(StreamEvent::Error { error: e.to_string() })]
+                    vec![Ok(StreamEvent::Error {
+                        error: e.to_string(),
+                    })]
                 }
-            }
-        }).flat_map(futures::stream::iter);
+            })
+            .flat_map(futures::stream::iter);
 
         let start_event = futures::stream::once(async move {
             Ok(StreamEvent::MessageStart {
@@ -205,7 +232,7 @@ where
                     model: model_name,
                     role: Role::Assistant,
                     usage: TokenUsage::default(),
-                }
+                },
             })
         });
 
