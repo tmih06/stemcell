@@ -254,6 +254,7 @@ fn resolve_source_repo_returns_some_when_env_var_points_at_a_git_dir() {
     // SAFETY: tests in this binary may run in parallel; the env var is
     // process-global. Snapshot and restore the previous value to avoid
     // bleeding state. This is the standard `temp-env`-free pattern.
+    let _env_guard = crate::tests::ENV_LOCK.lock().unwrap();
     let prev = std::env::var("OPENCRABS_SRC").ok();
     // SAFETY: same parallelism caveat as above. The crate doesn't use
     // OPENCRABS_SRC anywhere else under cfg(test), so swapping it for
@@ -273,6 +274,7 @@ fn resolve_source_repo_returns_some_when_env_var_points_at_a_git_dir() {
 fn resolve_source_repo_rejects_env_var_without_dot_git() {
     let dir = tempfile::tempdir().expect("tmpdir");
     // No `git init` here — the dir exists but isn't a repo.
+    let _env_guard = crate::tests::ENV_LOCK.lock().unwrap();
     let prev = std::env::var("OPENCRABS_SRC").ok();
     unsafe { std::env::set_var("OPENCRABS_SRC", dir.path()) };
 
