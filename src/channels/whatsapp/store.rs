@@ -4,27 +4,32 @@
 //! matching the rest of the OpenCrabs database layer.
 
 use async_trait::async_trait;
+use bytes::Bytes;
 use deadpool_sqlite::{Config, Hook, Pool, Runtime};
 use rusqlite::params;
 
 use wacore::appstate::hash::HashState;
 use wacore::appstate::processor::AppStateMutationMAC;
 use wacore::store::Device;
-use wacore::store::error::{Result, StoreError, db_err};
+use wacore::store::error::{Result, StoreError};
 use wacore::store::traits::{
     AppStateSyncKey, AppSyncStore, DeviceListRecord, DeviceStore, LidPnMappingEntry, ProtocolStore,
     SignalStore, TcTokenEntry,
 };
-use wacore_binary::jid::Jid;
 
 /// Map a deadpool InteractError to StoreError
 fn interact_to_store_err(e: deadpool_sqlite::InteractError) -> StoreError {
-    StoreError::Database(format!("interact error: {}", e))
+    StoreError::Database(format!("interact error: {}", e).into())
 }
 
 /// Map a deadpool PoolError to StoreError
 fn pool_err(e: deadpool_sqlite::PoolError) -> StoreError {
-    StoreError::Connection(format!("pool error: {}", e))
+    StoreError::Connection(format!("pool error: {}", e).into())
+}
+
+/// Map a rusqlite::Error to StoreError
+fn db_err(e: rusqlite::Error) -> StoreError {
+    StoreError::Database(Box::new(e))
 }
 
 /// Rusqlite-backed storage for `whatsapp-rust`.
@@ -42,7 +47,7 @@ impl Store {
     pub async fn new(path: &str) -> Result<Self> {
         let pool = Config::new(path)
             .builder(Runtime::Tokio1)
-            .map_err(|e| StoreError::Connection(e.to_string()))?
+            .map_err(|e| StoreError::Connection(format!("builder error: {}", e).into()))?
             .max_size(4)
             .post_create(Hook::async_fn(|conn, _| {
                 Box::pin(async move {
@@ -59,7 +64,7 @@ impl Store {
                 })
             }))
             .build()
-            .map_err(|e| StoreError::Connection(e.to_string()))?;
+            .map_err(|e| StoreError::Connection(format!("build error: {}", e).into()))?;
 
         let store = Self { pool, device_id: 1 };
         store.run_migrations().await?;
@@ -102,6 +107,13 @@ impl Store {
                 device_id   INTEGER NOT NULL,
                 record      BLOB NOT NULL,
                 PRIMARY KEY (address, device_id)
+            );
+            CREATE TABLE IF NOT EXISTS wa_sender_key_devices (
+                group_jid   TEXT NOT NULL,
+                device_jid  TEXT NOT NULL,
+                has_key     INTEGER NOT NULL,
+                device_id   INTEGER NOT NULL,
+                PRIMARY KEY (group_jid, device_jid, device_id)
             );
             CREATE TABLE IF NOT EXISTS wa_app_state_keys (
                 key_id      BLOB NOT NULL,
@@ -229,10 +241,11 @@ impl SignalStore for Store {
         Ok(())
     }
 
-    async fn load_identity(&self, address: &str) -> Result<Option<Vec<u8>>> {
+    async fn load_identity(&self, address: &str) -> Result<Option<[u8; 32]>> {
         let addr = address.to_string();
         let did = self.device_id;
-        self.pool
+        let bytes_opt = self
+            .pool
             .get()
             .await
             .map_err(pool_err)?
@@ -243,7 +256,21 @@ impl SignalStore for Store {
             })
             .await
             .map_err(interact_to_store_err)?
-            .map_err(db_err)
+            .map_err(db_err)?;
+        match bytes_opt {
+            Some(v) => {
+                let mut arr = [0u8; 32];
+                if v.len() != 32 {
+                    return Err(StoreError::Validation(format!(
+                        "identity key length {} != 32",
+                        v.len()
+                    )));
+                }
+                arr.copy_from_slice(&v);
+                Ok(Some(arr))
+            }
+            None => Ok(None),
+        }
     }
 
     async fn delete_identity(&self, address: &str) -> Result<()> {
@@ -265,7 +292,7 @@ impl SignalStore for Store {
         Ok(())
     }
 
-    async fn get_session(&self, address: &str) -> Result<Option<Vec<u8>>> {
+    async fn get_session(&self, address: &str) -> Result<Option<Bytes>> {
         let addr = address.to_string();
         let did = self.device_id;
         self.pool
@@ -281,6 +308,7 @@ impl SignalStore for Store {
             })
             .await
             .map_err(interact_to_store_err)?
+            .map(|opt| opt.map(Bytes::from))
             .map_err(db_err)
     }
 
@@ -344,7 +372,7 @@ impl SignalStore for Store {
         Ok(())
     }
 
-    async fn load_prekey(&self, id: u32) -> Result<Option<Vec<u8>>> {
+    async fn load_prekey(&self, id: u32) -> Result<Option<Bytes>> {
         let did = self.device_id;
         self.pool
             .get()
@@ -357,6 +385,7 @@ impl SignalStore for Store {
             })
             .await
             .map_err(interact_to_store_err)?
+            .map(|opt| opt.map(Bytes::from))
             .map_err(db_err)
     }
 
@@ -554,7 +583,7 @@ impl AppSyncStore for Store {
         match json_opt {
             Some(json) => {
                 let key: AppStateSyncKey = serde_json::from_str(&json)
-                    .map_err(|e| StoreError::Serialization(e.to_string()))?;
+                    .map_err(|e| StoreError::Serialization(Box::new(e)))?;
                 Ok(Some(key))
             }
             None => Ok(None),
@@ -563,7 +592,7 @@ impl AppSyncStore for Store {
 
     async fn set_sync_key(&self, key_id: &[u8], key: AppStateSyncKey) -> Result<()> {
         let json =
-            serde_json::to_string(&key).map_err(|e| StoreError::Serialization(e.to_string()))?;
+            serde_json::to_string(&key).map_err(|e| StoreError::Serialization(Box::new(e)))?;
         let kid = key_id.to_vec();
         let did = self.device_id;
         self.pool
@@ -604,7 +633,7 @@ impl AppSyncStore for Store {
         match json_opt {
             Some(json) => {
                 let state: HashState = serde_json::from_str(&json)
-                    .map_err(|e| StoreError::Serialization(e.to_string()))?;
+                    .map_err(|e| StoreError::Serialization(Box::new(e)))?;
                 Ok(state)
             }
             None => Ok(HashState::default()),
@@ -613,7 +642,7 @@ impl AppSyncStore for Store {
 
     async fn set_version(&self, name: &str, state: HashState) -> Result<()> {
         let json =
-            serde_json::to_string(&state).map_err(|e| StoreError::Serialization(e.to_string()))?;
+            serde_json::to_string(&state).map_err(|e| StoreError::Serialization(Box::new(e)))?;
         let n = name.to_string();
         let did = self.device_id;
         self.pool
@@ -731,47 +760,87 @@ impl AppSyncStore for Store {
 
 #[async_trait]
 impl ProtocolStore for Store {
-    async fn get_skdm_recipients(&self, group_jid: &str) -> Result<Vec<Jid>> {
+    async fn get_sender_key_devices(&self, group_jid: &str) -> Result<Vec<(String, bool)>> {
         let gj = group_jid.to_string();
         let did = self.device_id;
-        let strings = self
-            .pool
-            .get()
-            .await
-            .map_err(pool_err)?
-            .interact(move |conn| {
-                let mut stmt = conn.prepare(
-                    "SELECT device_jid FROM wa_skdm_recipients WHERE group_jid = ?1 AND device_id = ?2",
-                )?;
-                let rows = stmt.query_map(params![gj, did], |row| row.get::<_, String>(0))?;
-                rows.collect::<std::result::Result<Vec<_>, _>>()
-            })
-            .await
-            .map_err(interact_to_store_err)?
-            .map_err(db_err)?;
-        let mut jids = Vec::with_capacity(strings.len());
-        for s in strings {
-            if let Ok(jid) = s.parse::<Jid>() {
-                jids.push(jid);
-            }
-        }
-        Ok(jids)
-    }
-
-    async fn add_skdm_recipients(&self, group_jid: &str, device_jids: &[Jid]) -> Result<()> {
-        let gj = group_jid.to_string();
-        let did = self.device_id;
-        let jid_strings: Vec<String> = device_jids.iter().map(|j| j.to_string()).collect();
         self.pool
             .get()
             .await
             .map_err(pool_err)?
             .interact(move |conn| {
-                for jid_str in &jid_strings {
+                let mut stmt = conn.prepare(
+                    "SELECT device_jid, has_key FROM wa_sender_key_devices
+                     WHERE group_jid = ?1 AND device_id = ?2",
+                )?;
+                let rows = stmt.query_map(params![gj, did], |row| {
+                    Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)? != 0))
+                })?;
+                rows.collect::<std::result::Result<Vec<_>, _>>()
+            })
+            .await
+            .map_err(interact_to_store_err)?
+            .map_err(db_err)
+    }
+
+    async fn set_sender_key_status(&self, group_jid: &str, entries: &[(&str, bool)]) -> Result<()> {
+        let gj = group_jid.to_string();
+        let did = self.device_id;
+        let entries: Vec<(String, bool)> =
+            entries.iter().map(|(s, b)| (s.to_string(), *b)).collect();
+        self.pool
+            .get()
+            .await
+            .map_err(pool_err)?
+            .interact(move |conn| {
+                let tx = conn.transaction()?;
+                for (jid, has_key) in &entries {
+                    tx.execute(
+                        "INSERT INTO wa_sender_key_devices (group_jid, device_jid, has_key, device_id)
+                         VALUES (?1, ?2, ?3, ?4)
+                         ON CONFLICT(group_jid, device_jid, device_id) DO UPDATE SET has_key = excluded.has_key",
+                        params![gj, jid, *has_key as i64, did],
+                    )?;
+                }
+                tx.commit()?;
+                Ok::<_, rusqlite::Error>(())
+            })
+            .await
+            .map_err(interact_to_store_err)?
+            .map_err(db_err)?;
+        Ok(())
+    }
+
+    async fn clear_sender_key_devices(&self, group_jid: &str) -> Result<()> {
+        let gj = group_jid.to_string();
+        let did = self.device_id;
+        self.pool
+            .get()
+            .await
+            .map_err(pool_err)?
+            .interact(move |conn| {
+                conn.execute(
+                    "DELETE FROM wa_sender_key_devices WHERE group_jid = ?1 AND device_id = ?2",
+                    params![gj, did],
+                )
+            })
+            .await
+            .map_err(interact_to_store_err)?
+            .map_err(db_err)?;
+        Ok(())
+    }
+
+    async fn delete_sender_key_device_rows(&self, device_jids: &[&str]) -> Result<()> {
+        let did = self.device_id;
+        let jids: Vec<String> = device_jids.iter().map(|s| s.to_string()).collect();
+        self.pool
+            .get()
+            .await
+            .map_err(pool_err)?
+            .interact(move |conn| {
+                for jid in &jids {
                     conn.execute(
-                        "INSERT OR IGNORE INTO wa_skdm_recipients (group_jid, device_jid, device_id)
-                         VALUES (?1, ?2, ?3)",
-                        params![gj, jid_str, did],
+                        "DELETE FROM wa_sender_key_devices WHERE device_jid = ?1 AND device_id = ?2",
+                        params![jid, did],
                     )?;
                 }
                 Ok::<_, rusqlite::Error>(())
@@ -782,8 +851,7 @@ impl ProtocolStore for Store {
         Ok(())
     }
 
-    async fn clear_skdm_recipients(&self, group_jid: &str) -> Result<()> {
-        let gj = group_jid.to_string();
+    async fn clear_all_sender_key_devices(&self) -> Result<()> {
         let did = self.device_id;
         self.pool
             .get()
@@ -791,8 +859,8 @@ impl ProtocolStore for Store {
             .map_err(pool_err)?
             .interact(move |conn| {
                 conn.execute(
-                    "DELETE FROM wa_skdm_recipients WHERE group_jid = ?1 AND device_id = ?2",
-                    params![gj, did],
+                    "DELETE FROM wa_sender_key_devices WHERE device_id = ?1",
+                    params![did],
                 )
             })
             .await
@@ -1086,7 +1154,7 @@ impl ProtocolStore for Store {
 
     async fn update_device_list(&self, record: DeviceListRecord) -> Result<()> {
         let json =
-            serde_json::to_string(&record).map_err(|e| StoreError::Serialization(e.to_string()))?;
+            serde_json::to_string(&record).map_err(|e| StoreError::Serialization(Box::new(e)))?;
         let user = record.user.clone();
         let did = self.device_id;
         self.pool
@@ -1127,16 +1195,15 @@ impl ProtocolStore for Store {
         match json_opt {
             Some(json) => {
                 let record: DeviceListRecord = serde_json::from_str(&json)
-                    .map_err(|e| StoreError::Serialization(e.to_string()))?;
+                    .map_err(|e| StoreError::Serialization(Box::new(e)))?;
                 Ok(Some(record))
             }
             None => Ok(None),
         }
     }
 
-    async fn mark_forget_sender_key(&self, group_jid: &str, participant: &str) -> Result<()> {
-        let gj = group_jid.to_string();
-        let p = participant.to_string();
+    async fn delete_devices(&self, user: &str) -> Result<()> {
+        let u = user.to_string();
         let did = self.device_id;
         self.pool
             .get()
@@ -1144,43 +1211,14 @@ impl ProtocolStore for Store {
             .map_err(pool_err)?
             .interact(move |conn| {
                 conn.execute(
-                    "INSERT OR IGNORE INTO wa_sender_key_forget (group_jid, participant, device_id)
-                     VALUES (?1, ?2, ?3)",
-                    params![gj, p, did],
+                    "DELETE FROM wa_device_registry WHERE user = ?1 AND device_id = ?2",
+                    params![u, did],
                 )
             })
             .await
             .map_err(interact_to_store_err)?
             .map_err(db_err)?;
         Ok(())
-    }
-
-    async fn consume_forget_marks(&self, group_jid: &str) -> Result<Vec<String>> {
-        let gj = group_jid.to_string();
-        let did = self.device_id;
-        self.pool
-            .get()
-            .await
-            .map_err(pool_err)?
-            .interact(move |conn| {
-                let mut stmt = conn.prepare(
-                    "SELECT participant FROM wa_sender_key_forget
-                     WHERE group_jid = ?1 AND device_id = ?2",
-                )?;
-                let rows = stmt.query_map(params![&gj, did], |row| row.get::<_, String>(0))?;
-                let participants: Vec<String> = rows.collect::<std::result::Result<Vec<_>, _>>()?;
-
-                if !participants.is_empty() {
-                    conn.execute(
-                        "DELETE FROM wa_sender_key_forget WHERE group_jid = ?1 AND device_id = ?2",
-                        params![gj, did],
-                    )?;
-                }
-                Ok::<_, rusqlite::Error>(participants)
-            })
-            .await
-            .map_err(interact_to_store_err)?
-            .map_err(db_err)
     }
 
     async fn store_sent_message(
@@ -1266,7 +1304,7 @@ impl ProtocolStore for Store {
 impl DeviceStore for Store {
     async fn save(&self, device: &Device) -> Result<()> {
         let bytes =
-            rmp_serde::to_vec(device).map_err(|e| StoreError::Serialization(e.to_string()))?;
+            rmp_serde::to_vec(device).map_err(|e| StoreError::Serialization(Box::new(e)))?;
         let did = self.device_id;
         self.pool
             .get()
@@ -1372,7 +1410,7 @@ mod tests {
             .unwrap();
 
         let loaded = store.load_identity("alice@s.whatsapp.net").await.unwrap();
-        assert_eq!(loaded.unwrap(), key.to_vec());
+        assert_eq!(loaded.unwrap().as_ref(), key.as_ref());
     }
 
     #[tokio::test]
@@ -1396,7 +1434,7 @@ mod tests {
         let data = b"session-bytes";
         store.put_session("addr1", data).await.unwrap();
         let loaded = store.get_session("addr1").await.unwrap().unwrap();
-        assert_eq!(loaded, data);
+        assert_eq!(loaded.as_ref(), data.as_ref());
         assert!(store.has_session("addr1").await.unwrap());
         assert!(!store.has_session("nonexistent").await.unwrap());
     }
@@ -1406,7 +1444,7 @@ mod tests {
         let store = test_store().await;
         store.store_prekey(1, b"prekey-data", false).await.unwrap();
         let loaded = store.load_prekey(1).await.unwrap().unwrap();
-        assert_eq!(loaded, b"prekey-data");
+        assert_eq!(loaded.as_ref(), b"prekey-data".as_ref());
         store.remove_prekey(1).await.unwrap();
         assert!(store.load_prekey(1).await.unwrap().is_none());
     }
@@ -1471,31 +1509,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_skdm_recipients() {
-        let store = test_store().await;
-        store
-            .add_skdm_recipients(
-                "group1",
-                &[
-                    "user1@s.whatsapp.net".parse().unwrap(),
-                    "user2@s.whatsapp.net".parse().unwrap(),
-                ],
-            )
-            .await
-            .unwrap();
-        let recipients = store.get_skdm_recipients("group1").await.unwrap();
-        assert_eq!(recipients.len(), 2);
-        store.clear_skdm_recipients("group1").await.unwrap();
-        assert!(
-            store
-                .get_skdm_recipients("group1")
-                .await
-                .unwrap()
-                .is_empty()
-        );
-    }
-
-    #[tokio::test]
     async fn test_lid_mapping() {
         let store = test_store().await;
         let entry = LidPnMappingEntry {
@@ -1546,26 +1559,6 @@ mod tests {
                 .await
                 .unwrap()
         );
-    }
-
-    #[tokio::test]
-    async fn test_sender_key_forget_marks() {
-        let store = test_store().await;
-        store
-            .mark_forget_sender_key("group1", "user1")
-            .await
-            .unwrap();
-        store
-            .mark_forget_sender_key("group1", "user2")
-            .await
-            .unwrap();
-
-        let marks = store.consume_forget_marks("group1").await.unwrap();
-        assert_eq!(marks.len(), 2);
-
-        // Consumed — should be empty now
-        let marks = store.consume_forget_marks("group1").await.unwrap();
-        assert!(marks.is_empty());
     }
 
     #[tokio::test]
