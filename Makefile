@@ -47,6 +47,29 @@ build-release: ## Build the release binary
 build-no-default: ## Build with no default features
 	$(CARGO) build --locked --no-default-features
 
+## == Build Profiles ==
+## Use build-profiles.toml or ./build.sh for custom configurations
+
+.PHONY: build-minimal
+build-minimal: ## Build core tools only, no channels
+	./build.sh minimal
+
+.PHONY: build-chatbot
+build-chatbot: ## Build with no tools (pure chatbot mode)
+	./build.sh chatbot
+
+.PHONY: build-telegram
+build-telegram: ## Build core tools with Telegram channel
+	./build.sh telegram-agent
+
+.PHONY: build-headless
+build-headless: ## Build full tools, no channels (for API/A2A)
+	./build.sh headless-agent
+
+.PHONY: build-profiles
+build-profiles: ## List available build profiles
+	./build.sh --list
+
 .PHONY: check
 check: ## Fast type-check across all targets and features
 	$(CARGO) check --locked --all-targets --all-features
