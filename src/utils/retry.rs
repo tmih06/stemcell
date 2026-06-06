@@ -98,7 +98,7 @@ impl RetryConfig {
         let capped = exponential.min(self.max_delay.as_millis() as f64);
 
         let final_delay = if self.jitter > 0.0 {
-            use rand::Rng;
+            use rand::RngExt;
             let mut rng = rand::rng();
             let jitter_factor = 1.0 + rng.random_range(-self.jitter..self.jitter);
             (capped * jitter_factor).max(0.0)
