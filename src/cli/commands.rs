@@ -1,7 +1,6 @@
 //! CLI subcommands — run, init, config, db, keyring, logs, status, doctor, and config loading.
 
 use anyhow::{Context, Result};
-use std::sync::Arc;
 
 use crate::brain::BrainLoader;
 use crate::brain::prompt_builder::RuntimeInfo;
@@ -661,20 +660,7 @@ pub(crate) async fn cmd_run(
     format: OutputFormat,
 ) -> Result<()> {
     use crate::{
-        brain::{
-            agent::AgentService,
-            tools::{
-                bash::BashTool, brave_search::BraveSearchTool, code_exec::CodeExecTool,
-                config_tool::ConfigTool, context::ContextTool, doc_parser::DocParserTool,
-                edit::EditTool, exa_search::ExaSearchTool,
-                follow_up_question::FollowUpQuestionTool, glob::GlobTool, grep::GrepTool,
-                http::HttpClientTool, ls::LsTool, memory_search::MemorySearchTool,
-                notebook::NotebookEditTool, plan_tool::PlanTool, read::ReadTool,
-                registry::ToolRegistry, rename_session::RenameSessionTool,
-                session_search::SessionSearchTool, slash_command::SlashCommandTool, task::TaskTool,
-                web_search::WebSearchTool, write::WriteTool,
-            },
-        },
+        brain::agent::AgentService,
         db::Database,
         services::{ServiceContext, SessionService},
     };
@@ -688,113 +674,12 @@ pub(crate) async fn cmd_run(
     // Select provider based on configuration using factory
     let provider = crate::brain::provider::create_provider(config).await?;
 
-    // Create tool registry (Arc-wrapped early so SpawnAgentTool can reference it)
-    let tool_registry = Arc::new(ToolRegistry::new());
-    // Phase 1: Essential file operations
-    tool_registry.register(Arc::new(ReadTool));
-    tool_registry.register(Arc::new(WriteTool));
-    tool_registry.register(Arc::new(EditTool));
-    tool_registry.register(Arc::new(crate::brain::tools::hashline::HashlineEditTool));
-    tool_registry.register(Arc::new(BashTool));
-    tool_registry.register(Arc::new(LsTool));
-    tool_registry.register(Arc::new(GlobTool));
-    tool_registry.register(Arc::new(GrepTool));
-    // Phase 2: Advanced features
-    tool_registry.register(Arc::new(WebSearchTool));
-    tool_registry.register(Arc::new(CodeExecTool));
-    tool_registry.register(Arc::new(NotebookEditTool));
-    tool_registry.register(Arc::new(DocParserTool));
-    // Phase 3: Workflow & integration
-    tool_registry.register(Arc::new(TaskTool));
-    tool_registry.register(Arc::new(ContextTool));
-    tool_registry.register(Arc::new(HttpClientTool));
-    tool_registry.register(Arc::new(PlanTool));
-    // Memory search (built-in FTS5, always available)
-    tool_registry.register(Arc::new(MemorySearchTool));
-    // Session search — hybrid QMD search across all session message history
-    tool_registry.register(Arc::new(SessionSearchTool::new(db.pool().clone())));
-    // Config management (read/write config.toml, commands.toml)
-    tool_registry.register(Arc::new(ConfigTool));
-    // Slash command invocation (agent can call any slash command)
-    tool_registry.register(Arc::new(SlashCommandTool));
-    // Session rename — agent can update the current session's title
-    tool_registry.register(Arc::new(RenameSessionTool));
-    // Follow-up question — agent asks the user a multi-choice question
-    // mid-task and blocks until they click an option button.
-    tool_registry.register(Arc::new(FollowUpQuestionTool));
-    // EXA search: always available (free via MCP), uses direct API if key is set
-    let exa_key = config
-        .providers
-        .web_search
-        .as_ref()
-        .and_then(|ws| ws.exa.as_ref())
-        .and_then(|p| p.api_key.clone())
-        .filter(|k| !k.is_empty());
-    tool_registry.register(Arc::new(ExaSearchTool::new(exa_key)));
-    // Brave search: requires enabled = true in config.toml AND API key in keys.toml
-    if let Some(brave_cfg) = config
-        .providers
-        .web_search
-        .as_ref()
-        .and_then(|ws| ws.brave.as_ref())
-        && brave_cfg.enabled
-        && let Some(brave_key) = brave_cfg.api_key.clone()
-    {
-        tool_registry.register(Arc::new(BraveSearchTool::new(brave_key)));
-    }
-
-    // Phase 5: Multi-agent orchestration
-    let subagent_manager = Arc::new(crate::brain::tools::subagent::SubAgentManager::new());
-    tool_registry.register(Arc::new(
-        crate::brain::tools::subagent::SpawnAgentTool::new(
-            subagent_manager.clone(),
-            tool_registry.clone(),
-        ),
-    ));
-    tool_registry.register(Arc::new(crate::brain::tools::subagent::WaitAgentTool::new(
-        subagent_manager.clone(),
-    )));
-    tool_registry.register(Arc::new(crate::brain::tools::subagent::SendInputTool::new(
-        subagent_manager.clone(),
-    )));
-    tool_registry.register(Arc::new(
-        crate::brain::tools::subagent::CloseAgentTool::new(subagent_manager.clone()),
-    ));
-    tool_registry.register(Arc::new(
-        crate::brain::tools::subagent::ResumeAgentTool::new(
-            subagent_manager.clone(),
-            tool_registry.clone(),
-        ),
-    ));
-
-    let team_manager = Arc::new(crate::brain::tools::subagent::TeamManager::new());
-    tool_registry.register(Arc::new(
-        crate::brain::tools::subagent::TeamCreateTool::new(
-            subagent_manager.clone(),
-            team_manager.clone(),
-            tool_registry.clone(),
-        ),
-    ));
-    tool_registry.register(Arc::new(
-        crate::brain::tools::subagent::TeamDeleteTool::new(
-            subagent_manager.clone(),
-            team_manager.clone(),
-        ),
-    ));
-    tool_registry.register(Arc::new(
-        crate::brain::tools::subagent::TeamBroadcastTool::new(
-            subagent_manager.clone(),
-            team_manager.clone(),
-        ),
-    ));
-
-    // Recursive Self-Improvement tools
-    use crate::brain::tools::feedback_analyze::FeedbackAnalyzeTool;
-    use crate::brain::tools::feedback_record::FeedbackRecordTool;
-    use crate::brain::tools::self_improve::SelfImproveTool;
-    tool_registry.register(Arc::new(FeedbackRecordTool));
-    tool_registry.register(Arc::new(FeedbackAnalyzeTool));
-    tool_registry.register(Arc::new(SelfImproveTool));
+    // Create tool registry via the modular tool system
+    let tool_registry = crate::brain::tools::modules::register_enabled_tools(
+        config,
+        db.pool(),
+        crate::brain::tools::modules::RegistrationMode::Minimal,
+    );
 
     // Build dynamic system brain from workspace files
     let brain_path = BrainLoader::resolve_path();
@@ -809,20 +694,15 @@ pub(crate) async fn cmd_run(
             &std::env::current_dir().unwrap_or_default(),
         )),
     };
-    let mut system_brain = brain_loader.build_system_brain(Some(&runtime_info), None);
+    let mut system_brain = brain_loader.build_system_brain(
+        Some(&runtime_info),
+        None,
+        Some(&tool_registry.list_tools()),
+    );
     if let Some(digest) =
         crate::brain::prompt_builder::build_feedback_digest(db.pool().clone()).await
     {
         system_brain.push_str(&digest);
-    }
-
-    // Load dynamic tools from ~/.opencrabs/tools.toml
-    let tools_toml_path = crate::brain::tools::dynamic::DynamicToolLoader::default_path()
-        .unwrap_or_else(|| std::path::PathBuf::from("tools.toml"));
-    let dynamic_count =
-        crate::brain::tools::dynamic::DynamicToolLoader::load(&tools_toml_path, &tool_registry);
-    if dynamic_count > 0 {
-        tracing::info!("Loaded {dynamic_count} dynamic tool(s) from tools.toml");
     }
 
     // Create service context and agent service
@@ -1040,20 +920,7 @@ pub(crate) async fn cmd_agent_interactive(
     auto_approve: bool,
 ) -> Result<()> {
     use crate::{
-        brain::{
-            agent::AgentService,
-            tools::{
-                bash::BashTool, brave_search::BraveSearchTool, code_exec::CodeExecTool,
-                config_tool::ConfigTool, context::ContextTool, doc_parser::DocParserTool,
-                edit::EditTool, exa_search::ExaSearchTool,
-                follow_up_question::FollowUpQuestionTool, glob::GlobTool, grep::GrepTool,
-                http::HttpClientTool, ls::LsTool, memory_search::MemorySearchTool,
-                notebook::NotebookEditTool, plan_tool::PlanTool, read::ReadTool,
-                registry::ToolRegistry, rename_session::RenameSessionTool,
-                session_search::SessionSearchTool, slash_command::SlashCommandTool, task::TaskTool,
-                web_search::WebSearchTool, write::WriteTool,
-            },
-        },
+        brain::agent::AgentService,
         db::Database,
         services::{ServiceContext, SessionService},
     };
@@ -1066,101 +933,12 @@ pub(crate) async fn cmd_agent_interactive(
 
     let provider = crate::brain::provider::create_provider(config).await?;
 
-    let tool_registry = Arc::new(ToolRegistry::new());
-    tool_registry.register(Arc::new(ReadTool));
-    tool_registry.register(Arc::new(WriteTool));
-    tool_registry.register(Arc::new(EditTool));
-    tool_registry.register(Arc::new(BashTool));
-    tool_registry.register(Arc::new(LsTool));
-    tool_registry.register(Arc::new(GlobTool));
-    tool_registry.register(Arc::new(GrepTool));
-    tool_registry.register(Arc::new(WebSearchTool));
-    tool_registry.register(Arc::new(CodeExecTool));
-    tool_registry.register(Arc::new(NotebookEditTool));
-    tool_registry.register(Arc::new(DocParserTool));
-    tool_registry.register(Arc::new(TaskTool));
-    tool_registry.register(Arc::new(ContextTool));
-    tool_registry.register(Arc::new(HttpClientTool));
-    tool_registry.register(Arc::new(PlanTool));
-    tool_registry.register(Arc::new(MemorySearchTool));
-    tool_registry.register(Arc::new(SessionSearchTool::new(db.pool().clone())));
-    tool_registry.register(Arc::new(ConfigTool));
-    tool_registry.register(Arc::new(SlashCommandTool));
-    tool_registry.register(Arc::new(RenameSessionTool));
-    // Follow-up question — agent asks the user a multi-choice question
-    // mid-task and blocks until they click an option button.
-    tool_registry.register(Arc::new(FollowUpQuestionTool));
-    let exa_key = config
-        .providers
-        .web_search
-        .as_ref()
-        .and_then(|ws| ws.exa.as_ref())
-        .and_then(|p| p.api_key.clone())
-        .filter(|k| !k.is_empty());
-    tool_registry.register(Arc::new(ExaSearchTool::new(exa_key)));
-    if let Some(brave_cfg) = config
-        .providers
-        .web_search
-        .as_ref()
-        .and_then(|ws| ws.brave.as_ref())
-        && brave_cfg.enabled
-        && let Some(brave_key) = brave_cfg.api_key.clone()
-    {
-        tool_registry.register(Arc::new(BraveSearchTool::new(brave_key)));
-    }
-
-    let subagent_manager = Arc::new(crate::brain::tools::subagent::SubAgentManager::new());
-    tool_registry.register(Arc::new(
-        crate::brain::tools::subagent::SpawnAgentTool::new(
-            subagent_manager.clone(),
-            tool_registry.clone(),
-        ),
-    ));
-    tool_registry.register(Arc::new(crate::brain::tools::subagent::WaitAgentTool::new(
-        subagent_manager.clone(),
-    )));
-    tool_registry.register(Arc::new(crate::brain::tools::subagent::SendInputTool::new(
-        subagent_manager.clone(),
-    )));
-    tool_registry.register(Arc::new(
-        crate::brain::tools::subagent::CloseAgentTool::new(subagent_manager.clone()),
-    ));
-    tool_registry.register(Arc::new(
-        crate::brain::tools::subagent::ResumeAgentTool::new(
-            subagent_manager.clone(),
-            tool_registry.clone(),
-        ),
-    ));
-
-    let team_manager = Arc::new(crate::brain::tools::subagent::TeamManager::new());
-    tool_registry.register(Arc::new(
-        crate::brain::tools::subagent::TeamCreateTool::new(
-            subagent_manager.clone(),
-            team_manager.clone(),
-            tool_registry.clone(),
-        ),
-    ));
-    tool_registry.register(Arc::new(
-        crate::brain::tools::subagent::TeamDeleteTool::new(
-            subagent_manager.clone(),
-            team_manager.clone(),
-        ),
-    ));
-    tool_registry.register(Arc::new(
-        crate::brain::tools::subagent::TeamBroadcastTool::new(
-            subagent_manager.clone(),
-            team_manager.clone(),
-        ),
-    ));
-
-    // Recursive Self-Improvement tools
-    tool_registry.register(Arc::new(
-        crate::brain::tools::feedback_record::FeedbackRecordTool,
-    ));
-    tool_registry.register(Arc::new(
-        crate::brain::tools::feedback_analyze::FeedbackAnalyzeTool,
-    ));
-    tool_registry.register(Arc::new(crate::brain::tools::self_improve::SelfImproveTool));
+    // Create tool registry via the modular tool system
+    let tool_registry = crate::brain::tools::modules::register_enabled_tools(
+        config,
+        db.pool(),
+        crate::brain::tools::modules::RegistrationMode::Minimal,
+    );
 
     let brain_path = BrainLoader::resolve_path();
     let brain_loader = BrainLoader::new(brain_path);
@@ -1171,20 +949,15 @@ pub(crate) async fn cmd_agent_interactive(
             &std::env::current_dir().unwrap_or_default(),
         )),
     };
-    let mut system_brain = brain_loader.build_system_brain(Some(&runtime_info), None);
+    let mut system_brain = brain_loader.build_system_brain(
+        Some(&runtime_info),
+        None,
+        Some(&tool_registry.list_tools()),
+    );
     if let Some(digest) =
         crate::brain::prompt_builder::build_feedback_digest(db.pool().clone()).await
     {
         system_brain.push_str(&digest);
-    }
-
-    // Load dynamic tools from ~/.opencrabs/tools.toml
-    let tools_toml_path = crate::brain::tools::dynamic::DynamicToolLoader::default_path()
-        .unwrap_or_else(|| std::path::PathBuf::from("tools.toml"));
-    let dynamic_count =
-        crate::brain::tools::dynamic::DynamicToolLoader::load(&tools_toml_path, &tool_registry);
-    if dynamic_count > 0 {
-        tracing::info!("Loaded {dynamic_count} dynamic tool(s) from tools.toml");
     }
 
     let service_context = ServiceContext::new(db.pool().clone());
@@ -2003,6 +1776,14 @@ pub(crate) async fn cmd_evolve(check_only: bool) -> Result<()> {
     let current_version = crate::VERSION;
     println!("🔄 OpenCrabs v{current_version} — checking for updates...\n");
 
+    #[cfg(not(feature = "tool-evolve"))]
+    {
+        let _ = check_only;
+        println!("⚠️ Evolve is unavailable in this build. Rebuild with `--features tools-meta`.");
+        return Ok(());
+    }
+
+    #[cfg(feature = "tool-evolve")]
     if check_only {
         match crate::brain::tools::evolve::check_for_update().await {
             Some(latest) => {
@@ -2017,13 +1798,20 @@ pub(crate) async fn cmd_evolve(check_only: bool) -> Result<()> {
     }
 
     // Full evolve — instantiate the tool and execute
+    #[cfg(feature = "tool-evolve")]
     use crate::brain::tools::evolve::EvolveTool;
+    #[cfg(feature = "tool-evolve")]
     use crate::brain::tools::{Tool, ToolExecutionContext};
+    #[cfg(feature = "tool-evolve")]
     use serde_json::json;
+    #[cfg(feature = "tool-evolve")]
     use std::collections::HashMap;
 
+    #[cfg(feature = "tool-evolve")]
     let tool = EvolveTool::new(None);
+    #[cfg(feature = "tool-evolve")]
     let input = json!({"check_only": false});
+    #[cfg(feature = "tool-evolve")]
     let context = ToolExecutionContext {
         session_id: uuid::Uuid::new_v4(),
         working_directory: std::env::current_dir().unwrap_or_default(),
@@ -2037,8 +1825,11 @@ pub(crate) async fn cmd_evolve(check_only: bool) -> Result<()> {
         question_callback: None,
     };
 
+    #[cfg(feature = "tool-evolve")]
     let result = tool.execute(input, &context).await?;
+    #[cfg(feature = "tool-evolve")]
     println!("{}", result.output);
 
+    #[cfg(feature = "tool-evolve")]
     Ok(())
 }

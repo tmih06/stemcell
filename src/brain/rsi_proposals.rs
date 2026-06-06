@@ -34,7 +34,16 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use crate::brain::commands::UserCommand;
+#[cfg(feature = "tools-dynamic")]
 use crate::brain::tools::dynamic::tool::DynamicToolDef;
+#[cfg(not(feature = "tools-dynamic"))]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DynamicToolDef {
+    pub name: String,
+    pub command: Option<String>,
+    pub url: Option<String>,
+    pub method: Option<String>,
+}
 
 const PROPOSED_TOOLS_FILE: &str = "proposed_tools.toml";
 const PROPOSED_COMMANDS_FILE: &str = "proposed_commands.toml";

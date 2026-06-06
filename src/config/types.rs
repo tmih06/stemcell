@@ -75,6 +75,11 @@ pub struct Config {
     /// where strip-on-load was off.
     #[serde(default)]
     pub brain: BrainConfig,
+
+    /// Tool module configuration: enable/disable tool groups to reduce
+    /// token bloat sent to the LLM.
+    #[serde(default)]
+    pub tools: ToolsConfig,
 }
 
 /// Brain-file behaviour configuration. Issue #164 added read-time stripping
@@ -648,6 +653,35 @@ impl Default for AgentConfig {
             silent_compaction: false,
         }
     }
+}
+
+/// Tool module configuration for enabling/disabling tool groups.
+///
+/// Tool modules group related tools together. Disabling a module prevents
+/// its tools from being registered, reducing the token budget consumed by
+/// tool definitions sent to the LLM.
+///
+/// Available modules: `file_ops`, `search`, `workflow`, `multi_agent`,
+/// `rsi`, `image`, `brain`, `channel_integrations`, `browser`, `meta`,
+/// `dynamic`.
+///
+/// Example in config.toml:
+/// ```toml
+/// [tools]
+/// disabled = ["browser", "rsi", "channel_integrations"]
+/// ```
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct ToolsConfig {
+    /// Module IDs to disable. Disabled modules skip registration entirely,
+    /// so their tools never appear in the LLM tool list.
+    #[serde(default)]
+    pub disabled: Vec<String>,
+
+    /// Opt-in module IDs. Modules that default to off must be listed here
+    /// to be registered. Most modules are opt-out (enabled by default) so
+    /// this list is usually empty.
+    #[serde(default)]
+    pub enabled: Vec<String>,
 }
 
 /// Cron job default settings.
@@ -2144,6 +2178,7 @@ impl Default for Config {
             cron: CronConfig::default(),
             memory: MemoryConfig::default(),
             brain: BrainConfig::default(),
+            tools: ToolsConfig::default(),
         }
     }
 }
@@ -2765,6 +2800,7 @@ impl Config {
             cron: overlay.cron,
             memory: overlay.memory,
             brain: overlay.brain,
+            tools: overlay.tools,
         }
     }
 

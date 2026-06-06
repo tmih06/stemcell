@@ -188,9 +188,9 @@ fn push_compiled_features_emits_nothing_when_no_features() {
 
 #[test]
 fn brain_preamble_has_self_awareness_directive() {
-    use crate::brain::prompt_builder::BRAIN_PREAMBLE;
+    use crate::brain::prompt_builder::BRAIN_PREAMBLE_CORE;
     assert!(
-        BRAIN_PREAMBLE.contains("SELF-AWARENESS"),
+        BRAIN_PREAMBLE_CORE.contains("SELF-AWARENESS"),
         "preamble must include the SELF-AWARENESS section header so \
          the agent treats the check-first rule as load-bearing, not \
          buried prose"
@@ -199,8 +199,8 @@ fn brain_preamble_has_self_awareness_directive() {
 
 #[test]
 fn brain_preamble_tells_agent_to_check_tool_list_first() {
-    use crate::brain::prompt_builder::BRAIN_PREAMBLE;
-    let lower = BRAIN_PREAMBLE.to_lowercase();
+    use crate::brain::prompt_builder::BRAIN_PREAMBLE_CORE;
+    let lower = BRAIN_PREAMBLE_CORE.to_lowercase();
     assert!(
         lower.contains("check your tool list") || lower.contains("check what you already have"),
         "preamble must explicitly tell the agent to check available \
@@ -210,9 +210,9 @@ fn brain_preamble_tells_agent_to_check_tool_list_first() {
 
 #[test]
 fn brain_preamble_references_compiled_features_line() {
-    use crate::brain::prompt_builder::BRAIN_PREAMBLE;
+    use crate::brain::prompt_builder::BRAIN_PREAMBLE_CORE;
     assert!(
-        BRAIN_PREAMBLE.contains("Built-in features"),
+        BRAIN_PREAMBLE_CORE.contains("Built-in features"),
         "preamble must reference the Runtime Info line that lists \
          compiled features so the agent knows where to look"
     );
@@ -220,11 +220,11 @@ fn brain_preamble_references_compiled_features_line() {
 
 #[test]
 fn brain_preamble_names_concrete_capabilities_users_might_ask_to_reimplement() {
-    use crate::brain::prompt_builder::BRAIN_PREAMBLE;
+    use crate::brain::prompt_builder::BRAIN_PREAMBLE_CORE;
     // The user incident was specifically STT/TTS. Other common ones:
     // browser automation, messaging channels. List the headline cases
     // so the agent recognizes the pattern without abstract reasoning.
-    let lower = BRAIN_PREAMBLE.to_lowercase();
+    let lower = BRAIN_PREAMBLE_CORE.to_lowercase();
     assert!(
         lower.contains("stt"),
         "STT must be named as a check-first example"

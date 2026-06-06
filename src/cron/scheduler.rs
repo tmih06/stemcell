@@ -409,7 +409,9 @@ async fn deliver_result(deliver_to: &str, job_name: &str, content: &str, api_key
     let (channel, target_id) = (parts[0], parts[1]);
 
     // Truncate content for delivery (channels have message limits)
+    #[cfg(feature = "telegram")]
     let max_len = 4000;
+    #[cfg(feature = "telegram")]
     let msg = if content.len() > max_len {
         format!(
             "{}...\n\n(truncated — full output in session)",
@@ -419,6 +421,7 @@ async fn deliver_result(deliver_to: &str, job_name: &str, content: &str, api_key
         content.to_string()
     };
 
+    #[cfg(feature = "telegram")]
     let delivery_msg = format!("⏰ **Cron: {job_name}**\n\n{msg}");
 
     match channel {

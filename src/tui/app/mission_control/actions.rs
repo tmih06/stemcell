@@ -6,10 +6,15 @@
 //! agent uses, so a UI-applied proposal is byte-identical to one
 //! applied via `rsi_proposals apply <id>`.
 
-use crate::brain::mission_control::{activity_service, inbox_service, schedule_service};
+#[cfg(feature = "tool-rsi-proposals")]
+use crate::brain::mission_control::inbox_service;
+use crate::brain::mission_control::{activity_service, schedule_service};
+#[cfg(feature = "tool-rsi-proposals")]
 use crate::brain::tools::dynamic::DynamicToolLoader;
+#[cfg(feature = "tool-rsi-proposals")]
 use crate::brain::tools::rsi_proposals::RsiProposalsTool;
 use crate::tui::app::App;
+#[cfg(feature = "tool-rsi-proposals")]
 use crate::tui::app::mission_control::McPanel;
 use crate::tui::events::AppMode;
 
@@ -42,6 +47,7 @@ pub async fn refresh(app: &mut App) {
 /// `RsiProposalsTool::apply_tool` or `apply_command` based on kind.
 /// On success / failure surfaces the result via the existing
 /// notification field (visible in the status bar).
+#[cfg(feature = "tool-rsi-proposals")]
 pub async fn apply_selected(app: &mut App) {
     if app.mc.focused_panel != McPanel::Inbox {
         return;
@@ -77,8 +83,17 @@ pub async fn apply_selected(app: &mut App) {
     refresh(app).await;
 }
 
+#[cfg(not(feature = "tool-rsi-proposals"))]
+pub async fn apply_selected(app: &mut App) {
+    notify(
+        app,
+        "Action unavailable (tool-rsi-proposals disabled at compile time)",
+    );
+}
+
 /// Reject the currently selected inbox proposal — archives without
 /// installing.
+#[cfg(feature = "tool-rsi-proposals")]
 pub async fn reject_selected(app: &mut App) {
     if app.mc.focused_panel != McPanel::Inbox {
         return;
@@ -108,11 +123,20 @@ pub async fn reject_selected(app: &mut App) {
     refresh(app).await;
 }
 
+#[cfg(not(feature = "tool-rsi-proposals"))]
+pub async fn reject_selected(app: &mut App) {
+    notify(
+        app,
+        "Action unavailable (tool-rsi-proposals disabled at compile time)",
+    );
+}
+
 /// After applying or rejecting an item, the inbox shrinks by one.
 /// Clamp the selection so the next render lands on the row that was
 /// previously below the just-removed one (or the new last row when
 /// the user was at the bottom). Keeps the caret close to where the
 /// user was looking.
+#[cfg(feature = "tool-rsi-proposals")]
 fn finalize_selection_after_action(app: &mut App) {
     let count = inbox_service::list().len();
     if count == 0 {
@@ -122,6 +146,7 @@ fn finalize_selection_after_action(app: &mut App) {
     }
 }
 
+#[cfg(feature = "tool-rsi-proposals")]
 fn build_proposals_tool(app: &App) -> Option<RsiProposalsTool> {
     let registry = app.agent_service.tool_registry().clone();
     let tools_path = DynamicToolLoader::default_path()?;

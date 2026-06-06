@@ -41,7 +41,7 @@ const BRAIN_FILES: &[(&str, &str)] = &[
 ];
 
 /// Brain preamble — always present regardless of workspace contents.
-pub(crate) const BRAIN_PREAMBLE: &str = r#"You are OpenCrabs, an AI orchestration agent with powerful tools to help with software development tasks.
+pub(crate) const BRAIN_PREAMBLE_CORE: &str = r#"You are OpenCrabs, an AI orchestration agent with powerful tools to help with software development tasks.
 
 IMPORTANT: You have access to tools for file operations and code exploration. USE THEM PROACTIVELY!
 
@@ -63,52 +63,10 @@ CRITICAL RULE: After calling tools and getting results, you MUST provide a final
 DO NOT keep calling tools in a loop. Call the necessary tools, get results, then respond with text.
 
 When asked to analyze or explore a codebase:
-1. Use 'ls' tool with recursive=true to list all directories and files
-2. Use 'glob' tool with patterns like "**/*.rs", "**/*.toml", "**/*.md" to find files
-3. Use 'grep' tool to search for patterns, functions, or keywords in code
-4. Use 'read_file' tool to read specific files you've identified
-5. Use 'bash' tool for git operations like: git log, git diff, git branch
+Explore first using your available file reading and search tools before answering.
 
 When asked to make changes:
-1. Use 'read_file' first to understand the current code
-2. Use 'edit_file' to modify existing files
-3. Use 'write_file' to create new files
-4. Use 'bash' to run tests or build commands
-
-Available tools and their REQUIRED parameters (use exact parameter names):
-- ls: List directory contents. Params: path (string), recursive (bool)
-- glob: Find files matching patterns. Params: pattern (string, REQUIRED — e.g. "**/*.rs")
-- grep: Search for text in files. Params: pattern (string, REQUIRED — the search text), path (string), regex (bool), case_insensitive (bool), file_pattern (string), limit (int), context (int)
-- read_file: Read file contents. Params: path (string, REQUIRED)
-- edit_file: Modify existing files. Params: path (string, REQUIRED), operation (string, REQUIRED)
-- write_file: Create new files. Params: path (string, REQUIRED), content (string, REQUIRED)
-- bash: Run shell commands. Params: command (string, REQUIRED)
-- execute_code: Test code snippets. Params: language (string, REQUIRED), code (string, REQUIRED)
-- web_search: Search the internet. Params: query (string, REQUIRED)
-- http_request: Call external APIs. Params: method (string, REQUIRED), url (string, REQUIRED)
-- task_manager: Track multi-step work. Params: operation (string, REQUIRED)
-- session_context: Remember important facts. Params: operation (string, REQUIRED)
-- session_search: Search across sessions. Params: operation (string, REQUIRED — "search" or "list"), query (string), n (int)
-- plan: Create structured plans. Params: operation (string, REQUIRED)
-
-CRITICAL: PLAN TOOL USAGE
-When a user says "create a plan", "make a plan", or describes a complex multi-step task, you MUST use the plan tool immediately.
-DO NOT write a text description of a plan. DO NOT explain what should be done. CALL THE TOOL.
-
-Mandatory steps for plan creation:
-1. IMMEDIATELY call plan tool with operation='create' to create a new plan
-2. Call plan tool with operation='add_task' for each task (call multiple times)
-   - IMPORTANT: The 'description' field MUST contain detailed implementation steps
-   - Include: specific files to create/modify, functions to implement, commands to run
-   - Format: Use numbered steps or bullet points for clarity
-   - Be concrete: "Create Login.jsx component with email/password form fields and validation"
-     NOT vague: "Create login component"
-3. Call plan tool with operation='finalize' — this auto-approves the plan immediately
-4. Begin executing tasks in order right away using start_task/complete_task — no waiting
-
-NEVER generate text plans. ALWAYS use the plan tool for planning requests.
-
-ALWAYS explore first before answering questions about a codebase. Don't guess - use the tools!
+Understand the current code first, then modify it using your available file editing tools.
 
 SELF-AWARENESS — CHECK WHAT YOU ALREADY HAVE BEFORE BUILDING NEW:
 Before proposing to implement a feature from scratch (STT, TTS, browser automation, messaging channels, token compression, PDF rendering, etc.):
@@ -116,11 +74,6 @@ Before proposing to implement a feature from scratch (STT, TTS, browser automati
 2. Check the "Built-in features compiled into this binary" line in Runtime Info below — is the capability already baked into the OpenCrabs binary you're running? If yes, USE it; don't re-implement it.
 3. Check the relevant brain file (TOOLS.md for tool usage, AGENTS.md for project conventions) before deciding the right surface.
 Skipping these checks wastes the user's time, ships duplicate code, and makes the agent look unaware of its own runtime.
-
-WEB / GITHUB / BROWSER ROUTING — pick the right surface, not the heaviest one:
-- Web research, docs, "what's the latest X", "find me info about Y": use `exa_search` (if available) → `brave_search` (if available) → `web_search`. Never reach for `browser_navigate` to read pages.
-- Anything on GitHub (issues, PRs, releases, comments, file contents, commits, checks, code search, workflow runs): use the `gh` CLI via `bash`. It is preinstalled, authenticated, returns structured JSON (`--json`, `--jq`), and is far cheaper than navigating github.com in a browser.
-- `browser_navigate` is for: (a) the user explicitly asking you to open / interact with a page, (b) tasks that require clicking / typing / submitting / scrolling / running JS against live DOM, (c) genuine last resort after every search route has been tried and failed. It is slow, token-heavy, and steals window focus in headed mode — never the default.
 
 FINISHING A TURN — always acknowledge clearly, never disappear silently:
 Every turn that runs tool calls MUST end with a real text acknowledgement. Empty completions (`finish_reason: stop` with no content) look identical to silent crashes from the user's side — never do that. The shape of the acknowledgement depends on the task, but it is ALWAYS present:
@@ -139,9 +92,33 @@ The tool calls fetched data. You still owe the user a real text answer that uses
 - "Fetched." / "Got it." / "Loaded." are NOT analysis answers. They tell the user nothing they didn't already know from the tool indicator in the TUI.
 - The cue is the verb in the user's request: audit / review / compare / explain / summarise / summarize / check / describe / analyse / analyze / what does / how does / why does / find — these all expect an analytical text response.
 
-The single rule both shapes share: never end with empty content. If you've decided you have nothing to add beyond what the tool already showed, the right minimum is still one concrete sentence naming WHAT you did with the specifics — never zero text, never a bare "Done." with no context. Side-effect tasks get a short factual confirmation. Analysis tasks get the actual analysis.
+The single rule both shapes share: never end with empty content. If you've decided you have nothing to add beyond what the tool already showed, the right minimum is still one concrete sentence naming WHAT you did with the specifics — never zero text, never a bare "Done." with no context. Side-effect tasks get a short factual confirmation. Analysis tasks get the actual analysis."#;
 
-RECURSIVE SELF-IMPROVEMENT:
+pub(crate) const BRAIN_PREAMBLE_PLAN: &str = r#"CRITICAL: PLAN TOOL USAGE
+When a user says "create a plan", "make a plan", or describes a complex multi-step task, you MUST use the plan tool immediately.
+DO NOT write a text description of a plan. DO NOT explain what should be done. CALL THE TOOL.
+
+Mandatory steps for plan creation:
+1. IMMEDIATELY call plan tool with operation='create' to create a new plan
+2. Call plan tool with operation='add_task' for each task (call multiple times)
+   - IMPORTANT: The 'description' field MUST contain detailed implementation steps
+   - Include: specific files to create/modify, functions to implement, commands to run
+   - Format: Use numbered steps or bullet points for clarity
+   - Be concrete: "Create Login.jsx component with email/password form fields and validation"
+     NOT vague: "Create login component"
+3. Call plan tool with operation='finalize' — this auto-approves the plan immediately
+4. Begin executing tasks in order right away using start_task/complete_task — no waiting
+
+NEVER generate text plans. ALWAYS use the plan tool for planning requests.
+
+ALWAYS explore first before answering questions about a codebase. Don't guess - use the tools!"#;
+
+pub(crate) const BRAIN_PREAMBLE_WEB: &str = r#"WEB / GITHUB / BROWSER ROUTING — pick the right surface, not the heaviest one:
+- Web research, docs, "what's the latest X", "find me info about Y": use `exa_search` (if available) → `brave_search` (if available) → `web_search`. Never reach for `browser_navigate` to read pages.
+- Anything on GitHub (issues, PRs, releases, comments, file contents, commits, checks, code search, workflow runs): use the `gh` CLI via `bash`. It is preinstalled, authenticated, returns structured JSON (`--json`, `--jq`), and is far cheaper than navigating github.com in a browser.
+- `browser_navigate` is for: (a) the user explicitly asking you to open / interact with a page, (b) tasks that require clicking / typing / submitting / scrolling / running JS against live DOM, (c) genuine last resort after every search route has been tried and failed. It is slow, token-heavy, and steals window focus in headed mode — never the default."#;
+
+pub(crate) const BRAIN_PREAMBLE_RSI: &str = r#"RECURSIVE SELF-IMPROVEMENT:
 You have three tools for improving yourself over time:
 - feedback_analyze: Query your performance history (tool success rates, failure patterns, recent events). Call with query='summary' or query='tool_stats' or query='failures'.
 - feedback_record: Manually log observations — user corrections, patterns you notice, strategies that work well.
@@ -216,12 +193,41 @@ impl BrainLoader {
         &self,
         runtime_info: Option<&RuntimeInfo>,
         slash_commands_section: Option<&str>,
+        active_tools: Option<&[String]>,
     ) -> String {
         let mut prompt = String::with_capacity(8192);
 
-        // 1. Brain preamble — always present
-        prompt.push_str(BRAIN_PREAMBLE);
+        // 1. Brain preamble
+        prompt.push_str(BRAIN_PREAMBLE_CORE);
         prompt.push_str("\n\n");
+
+        if let Some(tools) = active_tools {
+            if tools.iter().any(|t| t == "plan") {
+                prompt.push_str(BRAIN_PREAMBLE_PLAN);
+                prompt.push_str("\n\n");
+            }
+            if tools.iter().any(|t| {
+                t == "exa_search"
+                    || t == "brave_search"
+                    || t == "web_search"
+                    || t == "browser_navigate"
+                    || t == "bash"
+            }) {
+                prompt.push_str(BRAIN_PREAMBLE_WEB);
+                prompt.push_str("\n\n");
+            }
+            if tools
+                .iter()
+                .any(|t| t == "self_improve" || t == "feedback_analyze")
+            {
+                prompt.push_str(BRAIN_PREAMBLE_RSI);
+                prompt.push_str("\n\n");
+            }
+            prompt.push_str("--- CURRENTLY EQUIPPED TOOLS ---\n");
+            prompt.push_str("You ONLY have access to the tools listed below (and in your JSON tool schema). Do not hallucinate or attempt to use any other tools.\n");
+            prompt.push_str(&tools.join(", "));
+            prompt.push_str("\n\n");
+        }
 
         // 2-7. Brain workspace files (skip missing ones silently)
         for (filename, label) in BRAIN_FILES {
@@ -281,12 +287,41 @@ impl BrainLoader {
         &self,
         runtime_info: Option<&RuntimeInfo>,
         slash_commands_section: Option<&str>,
+        active_tools: Option<&[String]>,
     ) -> String {
         let mut prompt = String::with_capacity(4096);
 
-        // 1. Brain preamble — always present
-        prompt.push_str(BRAIN_PREAMBLE);
+        // 1. Brain preamble
+        prompt.push_str(BRAIN_PREAMBLE_CORE);
         prompt.push_str("\n\n");
+
+        if let Some(tools) = active_tools {
+            if tools.iter().any(|t| t == "plan") {
+                prompt.push_str(BRAIN_PREAMBLE_PLAN);
+                prompt.push_str("\n\n");
+            }
+            if tools.iter().any(|t| {
+                t == "exa_search"
+                    || t == "brave_search"
+                    || t == "web_search"
+                    || t == "browser_navigate"
+                    || t == "bash"
+            }) {
+                prompt.push_str(BRAIN_PREAMBLE_WEB);
+                prompt.push_str("\n\n");
+            }
+            if tools
+                .iter()
+                .any(|t| t == "self_improve" || t == "feedback_analyze")
+            {
+                prompt.push_str(BRAIN_PREAMBLE_RSI);
+                prompt.push_str("\n\n");
+            }
+            prompt.push_str("--- CURRENTLY EQUIPPED TOOLS ---\n");
+            prompt.push_str("You ONLY have access to the tools listed below (and in your JSON tool schema). Do not hallucinate or attempt to use any other tools.\n");
+            prompt.push_str(&tools.join(", "));
+            prompt.push_str("\n\n");
+        }
 
         // 2. Core files only (SOUL.md + USER.md)
         for (filename, label) in CORE_BRAIN_FILES {
@@ -583,6 +618,247 @@ pub(crate) fn compiled_features() -> Vec<&'static str> {
     if cfg!(feature = "profiling") {
         out.push("profiling");
     }
+    // Coarse `tools-*` alias features (compatibility shims that group
+    // per-tool features together; listed so the agent can see which
+    // category groupings are active).
+    if cfg!(feature = "tools-file-ops") {
+        out.push("tools-file-ops");
+    }
+    if cfg!(feature = "tools-search") {
+        out.push("tools-search");
+    }
+    if cfg!(feature = "tools-workflow") {
+        out.push("tools-workflow");
+    }
+    if cfg!(feature = "tools-multi-agent") {
+        out.push("tools-multi-agent");
+    }
+    if cfg!(feature = "tools-rsi") {
+        out.push("tools-rsi");
+    }
+    if cfg!(feature = "tools-image") {
+        out.push("tools-image");
+    }
+    if cfg!(feature = "tools-brain") {
+        out.push("tools-brain");
+    }
+    if cfg!(feature = "tools-channel-integrations") {
+        out.push("tools-channel-integrations");
+    }
+    if cfg!(feature = "tools-browser") {
+        out.push("tools-browser");
+    }
+    if cfg!(feature = "tools-meta") {
+        out.push("tools-meta");
+    }
+    if cfg!(feature = "tools-dynamic") {
+        out.push("tools-dynamic");
+    }
+    // Per-tool features — one entry per `tool-*` cargo feature.
+    if cfg!(feature = "tool-read") {
+        out.push("tool-read");
+    }
+    if cfg!(feature = "tool-write") {
+        out.push("tool-write");
+    }
+    if cfg!(feature = "tool-edit") {
+        out.push("tool-edit");
+    }
+    if cfg!(feature = "tool-hashline-edit") {
+        out.push("tool-hashline-edit");
+    }
+    if cfg!(feature = "tool-bash") {
+        out.push("tool-bash");
+    }
+    if cfg!(feature = "tool-ls") {
+        out.push("tool-ls");
+    }
+    if cfg!(feature = "tool-glob") {
+        out.push("tool-glob");
+    }
+    if cfg!(feature = "tool-grep") {
+        out.push("tool-grep");
+    }
+    if cfg!(feature = "tool-web-search") {
+        out.push("tool-web-search");
+    }
+    if cfg!(feature = "tool-memory-search") {
+        out.push("tool-memory-search");
+    }
+    if cfg!(feature = "tool-session-search") {
+        out.push("tool-session-search");
+    }
+    if cfg!(feature = "tool-channel-search") {
+        out.push("tool-channel-search");
+    }
+    if cfg!(feature = "tool-exa-search") {
+        out.push("tool-exa-search");
+    }
+    if cfg!(feature = "tool-brave-search") {
+        out.push("tool-brave-search");
+    }
+    if cfg!(feature = "tool-task-manager") {
+        out.push("tool-task-manager");
+    }
+    if cfg!(feature = "tool-session-context") {
+        out.push("tool-session-context");
+    }
+    if cfg!(feature = "tool-http-request") {
+        out.push("tool-http-request");
+    }
+    if cfg!(feature = "tool-plan") {
+        out.push("tool-plan");
+    }
+    if cfg!(feature = "tool-execute-code") {
+        out.push("tool-execute-code");
+    }
+    if cfg!(feature = "tool-notebook-edit") {
+        out.push("tool-notebook-edit");
+    }
+    if cfg!(feature = "tool-parse-document") {
+        out.push("tool-parse-document");
+    }
+    if cfg!(feature = "tool-config-manager") {
+        out.push("tool-config-manager");
+    }
+    if cfg!(feature = "tool-follow-up-question") {
+        out.push("tool-follow-up-question");
+    }
+    if cfg!(feature = "tool-cron-manage") {
+        out.push("tool-cron-manage");
+    }
+    if cfg!(feature = "tool-spawn-agent") {
+        out.push("tool-spawn-agent");
+    }
+    if cfg!(feature = "tool-wait-agent") {
+        out.push("tool-wait-agent");
+    }
+    if cfg!(feature = "tool-send-input") {
+        out.push("tool-send-input");
+    }
+    if cfg!(feature = "tool-close-agent") {
+        out.push("tool-close-agent");
+    }
+    if cfg!(feature = "tool-resume-agent") {
+        out.push("tool-resume-agent");
+    }
+    if cfg!(feature = "tool-team-create") {
+        out.push("tool-team-create");
+    }
+    if cfg!(feature = "tool-team-delete") {
+        out.push("tool-team-delete");
+    }
+    if cfg!(feature = "tool-team-broadcast") {
+        out.push("tool-team-broadcast");
+    }
+    if cfg!(feature = "tool-feedback-record") {
+        out.push("tool-feedback-record");
+    }
+    if cfg!(feature = "tool-feedback-analyze") {
+        out.push("tool-feedback-analyze");
+    }
+    if cfg!(feature = "tool-self-improve") {
+        out.push("tool-self-improve");
+    }
+    if cfg!(feature = "tool-rsi-propose") {
+        out.push("tool-rsi-propose");
+    }
+    if cfg!(feature = "tool-generate-image") {
+        out.push("tool-generate-image");
+    }
+    if cfg!(feature = "tool-analyze-image") {
+        out.push("tool-analyze-image");
+    }
+    if cfg!(feature = "tool-analyze-video") {
+        out.push("tool-analyze-video");
+    }
+    if cfg!(feature = "tool-slash-command") {
+        out.push("tool-slash-command");
+    }
+    if cfg!(feature = "tool-rename-session") {
+        out.push("tool-rename-session");
+    }
+    if cfg!(feature = "tool-load-brain-file") {
+        out.push("tool-load-brain-file");
+    }
+    if cfg!(feature = "tool-write-opencrabs-file") {
+        out.push("tool-write-opencrabs-file");
+    }
+    if cfg!(feature = "tool-a2a-send") {
+        out.push("tool-a2a-send");
+    }
+    if cfg!(feature = "tool-telegram-connect") {
+        out.push("tool-telegram-connect");
+    }
+    if cfg!(feature = "tool-telegram-send") {
+        out.push("tool-telegram-send");
+    }
+    if cfg!(feature = "tool-whatsapp-connect") {
+        out.push("tool-whatsapp-connect");
+    }
+    if cfg!(feature = "tool-whatsapp-send") {
+        out.push("tool-whatsapp-send");
+    }
+    if cfg!(feature = "tool-discord-connect") {
+        out.push("tool-discord-connect");
+    }
+    if cfg!(feature = "tool-discord-send") {
+        out.push("tool-discord-send");
+    }
+    if cfg!(feature = "tool-slack-connect") {
+        out.push("tool-slack-connect");
+    }
+    if cfg!(feature = "tool-slack-send") {
+        out.push("tool-slack-send");
+    }
+    if cfg!(feature = "tool-trello-connect") {
+        out.push("tool-trello-connect");
+    }
+    if cfg!(feature = "tool-trello-send") {
+        out.push("tool-trello-send");
+    }
+    if cfg!(feature = "tool-browser-navigate") {
+        out.push("tool-browser-navigate");
+    }
+    if cfg!(feature = "tool-browser-screenshot") {
+        out.push("tool-browser-screenshot");
+    }
+    if cfg!(feature = "tool-browser-click") {
+        out.push("tool-browser-click");
+    }
+    if cfg!(feature = "tool-browser-type") {
+        out.push("tool-browser-type");
+    }
+    if cfg!(feature = "tool-browser-eval") {
+        out.push("tool-browser-eval");
+    }
+    if cfg!(feature = "tool-browser-content") {
+        out.push("tool-browser-content");
+    }
+    if cfg!(feature = "tool-browser-wait") {
+        out.push("tool-browser-wait");
+    }
+    if cfg!(feature = "tool-browser-find") {
+        out.push("tool-browser-find");
+    }
+    if cfg!(feature = "tool-browser-close") {
+        out.push("tool-browser-close");
+    }
+    if cfg!(feature = "tool-rebuild") {
+        out.push("tool-rebuild");
+    }
+    if cfg!(feature = "tool-evolve") {
+        out.push("tool-evolve");
+    }
+    if cfg!(feature = "tool-tool-manage") {
+        out.push("tool-tool-manage");
+    }
+    if cfg!(feature = "tool-rsi-proposals") {
+        out.push("tool-rsi-proposals");
+    }
+    if cfg!(feature = "tool-dynamic-runtime") {
+        out.push("tool-dynamic-runtime");
+    }
     out
 }
 
@@ -651,7 +927,7 @@ mod tests {
     fn test_build_prompt_no_files() {
         let dir = TempDir::new().unwrap();
         let loader = BrainLoader::new(dir.path().to_path_buf());
-        let prompt = loader.build_system_brain(None, None);
+        let prompt = loader.build_system_brain(None, None, None);
 
         // Should contain brain preamble even with no brain files
         assert!(prompt.contains("You are OpenCrabs"));
@@ -664,7 +940,7 @@ mod tests {
         std::fs::write(dir.path().join("SOUL.md"), "I am a helpful crab.").unwrap();
 
         let loader = BrainLoader::new(dir.path().to_path_buf());
-        let prompt = loader.build_system_brain(None, None);
+        let prompt = loader.build_system_brain(None, None, None);
 
         assert!(prompt.contains("You are OpenCrabs"));
         assert!(prompt.contains("I am a helpful crab."));
@@ -680,7 +956,7 @@ mod tests {
             provider: Some("anthropic".to_string()),
             working_directory: Some("/home/user/project".to_string()),
         };
-        let prompt = loader.build_system_brain(Some(&info), None);
+        let prompt = loader.build_system_brain(Some(&info), None, None);
 
         assert!(prompt.contains("claude-sonnet-4-20250514"));
         assert!(prompt.contains("anthropic"));
@@ -693,7 +969,7 @@ mod tests {
         std::fs::write(dir.path().join("SOUL.md"), "  \n  ").unwrap();
 
         let loader = BrainLoader::new(dir.path().to_path_buf());
-        let prompt = loader.build_system_brain(None, None);
+        let prompt = loader.build_system_brain(None, None, None);
 
         // Should NOT contain SOUL.md section header for empty content
         // (the filename may appear in BRAIN_PREAMBLE tool docs, so check for the section format)

@@ -1,0 +1,113 @@
+# OpenCrabs Build Profiles
+# 
+# Use with: ./build.sh <profile>
+# Or: make build-<profile>
+#
+# Each profile defines which tool modules and channel features to include.
+# This makes it easy to build minimal binaries without remembering long
+# cargo feature flag strings.
+
+[full]
+description = "All tools and channels enabled (default)"
+default_features = true
+# No extra features needed - all tools are in default features
+
+[minimal]
+description = "Core tools only, no channels"
+default_features = false
+features = [
+    "tools-file-ops",
+    "tools-search", 
+    "tools-workflow",
+    "tools-brain",
+    "tools-meta",
+    "tools-dynamic",
+]
+
+[chatbot]
+description = "No tools at all - pure chatbot mode"
+default_features = false
+features = []
+
+[file-ops-only]
+description = "Just file operations and shell"
+default_features = false
+features = [
+    "tools-file-ops",
+]
+
+[search-agent]
+description = "File ops + search capabilities"
+default_features = false
+features = [
+    "tools-file-ops",
+    "tools-search",
+    "tools-brain",
+]
+
+[telegram-agent]
+description = "Core tools with Telegram channel"
+default_features = false
+features = [
+    "telegram",
+    "tools-file-ops",
+    "tools-search",
+    "tools-workflow",
+    "tools-brain",
+    "tools-meta",
+    "tools-dynamic",
+]
+
+[headless-agent]
+description = "Full tools, no channels - for API/A2A use"
+default_features = false
+features = [
+    "tools-file-ops",
+    "tools-search",
+    "tools-workflow",
+    "tools-multi-agent",
+    "tools-rsi",
+    "tools-image",
+    "tools-brain",
+    "tools-meta",
+    "tools-dynamic",
+]
+
+[all-channels]
+description = "All channel integrations with core tools"
+default_features = false
+features = [
+    "telegram",
+    "whatsapp",
+    "discord",
+    "slack",
+    "trello",
+    "tools-file-ops",
+    "tools-search",
+    "tools-workflow",
+    "tools-brain",
+    "tools-meta",
+    "tools-dynamic",
+]
+
+[ci-coverage]
+description = "Profile used by CI for code coverage"
+default_features = false
+features = [
+    "telegram",
+    "whatsapp",
+    "discord",
+    "slack",
+    "trello",
+    "tools-file-ops",
+    "tools-search",
+    "tools-workflow",
+    "tools-multi-agent",
+    "tools-rsi",
+    "tools-image",
+    "tools-brain",
+    "tools-channel-integrations",
+    "tools-browser",
+    "tools-meta",
+    "tools-dynamic",
+]

@@ -455,9 +455,20 @@ impl OnboardingWizard {
     }
 
     /// Called by app when a QR code is received from the pairing flow
+    #[cfg(feature = "tool-whatsapp-connect")]
     pub fn set_whatsapp_qr(&mut self, qr_data: &str) {
         self.whatsapp_qr_text = crate::brain::tools::whatsapp_connect::render_qr_unicode(qr_data);
         self.whatsapp_connecting = true;
+    }
+
+    #[cfg(not(feature = "tool-whatsapp-connect"))]
+    pub fn set_whatsapp_qr(&mut self, _qr_data: &str) {
+        self.whatsapp_qr_text = None;
+        self.whatsapp_connecting = true;
+        self.whatsapp_error = Some(
+            "WhatsApp QR rendering is unavailable in this build. Rebuild with `tool-whatsapp-connect`."
+                .to_string(),
+        );
     }
 
     /// Called by app when WhatsApp is successfully paired

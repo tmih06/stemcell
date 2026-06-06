@@ -1,0 +1,87 @@
+# build_toggles.toml — what to include in the default `make build` /
+# `make build-release`.
+#
+# Each key maps to one or more cargo features. The resolved set is
+# passed to `cargo build --no-default-features --features <set>`.
+# To disable something, flip its value to `false`. To add a new
+# toggle, append it to the appropriate section AND register it in
+# the matching map in:
+#   - src/scripts/tool_features.py  (TOGGLE_TO_FEATURES / IMPLIES)
+#   - build.rs                       (TOGGLE_TO_FEATURES / IMPLIES)
+
+## == Capabilities ==
+## Optional subsystems and integrations. None of these are
+## dependencies of the other packs.
+[capabilities]
+local-stt = false
+local-tts = false
+browser = false
+pdfium = false
+rtk = true
+profiling = false
+
+## == Channels ==
+## Each channel pulls in the matching client dependency. The
+## channel-integration tools (telegram_connect / telegram_send,
+## etc.) come along automatically — there's no point enabling
+## the channel without them.
+[channels]
+telegram = false
+whatsapp = false
+discord = false
+slack = false
+trello = false
+
+## == File I/O ==
+## Two escalating tiers — enable only what you need:
+##   file-read   : read files + list/glob/grep the filesystem
+##   file-write  : adds create + edit (implies file-read)
+[file]
+file-read = true
+file-write = false
+
+## == Bash ==
+## Shell command execution. Independent of the file tier — the
+## agent can have bash without write access, or write without
+## shell, depending on what you want it to do.
+[bash]
+bash = false
+
+## == Search ==
+## Web search needs an API key; memory-search covers the agent's
+## own history (brain memory, past sessions, channel messages).
+[search]
+web-search = false
+memory-search = true
+
+## == Workflow ==
+## Task management, planning, HTTP, code execution, document
+## parsing, notebook editing, cron, config mgmt.
+[workflow]
+workflow = false
+
+## == Multi-agent ==
+## Sub-agent spawning and team management. The four agent
+## lifecycle tools (spawn / wait / close / resume) and the three
+## team tools (create / delete / broadcast) only make sense as a
+## pack — partial enables leave the agent unable to actually use
+## the agents it spawns.
+[multi-agent]
+multi-agent = false
+
+## == RSI ==
+## Recursive self-improvement: feedback ledger + analysis +
+## self-improve + proposals + tool management. The whole loop
+## is interdependent.
+[rsi]
+rsi = false
+
+## == Image ==
+## Image generation + vision analysis.
+[image]
+image = false
+
+## == Brain ==
+## Slash commands, session rename, brain file I/O, A2A.
+[brain]
+brain = true

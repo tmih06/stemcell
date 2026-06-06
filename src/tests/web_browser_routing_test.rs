@@ -22,7 +22,7 @@
 //! constructor needs an `Arc<BrowserManager>`, which costs a real
 //! Chrome handshake we don't want in a unit test.
 
-use crate::brain::prompt_builder::BRAIN_PREAMBLE;
+use crate::brain::prompt_builder::BRAIN_PREAMBLE_WEB;
 use crate::brain::tools::Tool;
 use crate::brain::tools::bash::BashTool;
 use crate::brain::tools::brave_search::BraveSearchTool;
@@ -37,23 +37,23 @@ fn brain_preamble_carries_routing_block() {
     // and the "last resort" framing for browser. Without all three,
     // the model still has freedom to misroute.
     assert!(
-        BRAIN_PREAMBLE.contains("WEB / GITHUB / BROWSER ROUTING"),
+        BRAIN_PREAMBLE_WEB.contains("WEB / GITHUB / BROWSER ROUTING"),
         "the routing section header must be present in BRAIN_PREAMBLE \
          so the rule reaches the model every turn"
     );
     assert!(
-        BRAIN_PREAMBLE.contains("exa_search")
-            && BRAIN_PREAMBLE.contains("brave_search")
-            && BRAIN_PREAMBLE.contains("web_search"),
+        BRAIN_PREAMBLE_WEB.contains("exa_search")
+            && BRAIN_PREAMBLE_WEB.contains("brave_search")
+            && BRAIN_PREAMBLE_WEB.contains("web_search"),
         "preamble must name all three search tools so the model knows \
          the preference order"
     );
     assert!(
-        BRAIN_PREAMBLE.contains("`gh` CLI"),
+        BRAIN_PREAMBLE_WEB.contains("`gh` CLI"),
         "preamble must name the gh CLI as the GitHub surface"
     );
     assert!(
-        BRAIN_PREAMBLE.contains("last resort"),
+        BRAIN_PREAMBLE_WEB.contains("last resort"),
         "browser must be framed as a last resort, not just an option"
     );
 }

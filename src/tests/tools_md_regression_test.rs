@@ -170,9 +170,13 @@ fn test_no_brain_preamble_overlap() {
     let prompt_builder = fs::read_to_string("src/brain/prompt_builder.rs")
         .expect("Failed to read prompt_builder.rs");
 
-    // Extract the BRAIN_PREAMBLE constant value from the source.
-    let preamble = extract_const_string(&prompt_builder, "BRAIN_PREAMBLE")
-        .unwrap_or_else(|| panic!("Could not find BRAIN_PREAMBLE constant in prompt_builder.rs"));
+    // Extract the BRAIN_PREAMBLE_CORE constant value from the source.
+    // (BRAIN_PREAMBLE was split into CORE / WEB / PLAN / RSI in commit
+    // 4adc1aeb; this sentinel only covers the always-on core block.)
+    let preamble =
+        extract_const_string(&prompt_builder, "BRAIN_PREAMBLE_CORE").unwrap_or_else(|| {
+            panic!("Could not find BRAIN_PREAMBLE_CORE constant in prompt_builder.rs")
+        });
 
     // Extract 4+ word phrases from the preamble and check if they appear in TOOLS.md.
     // We skip short phrases (common words) and focus on meaningful sequences.
