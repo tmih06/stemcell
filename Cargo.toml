@@ -20,6 +20,7 @@ tokio = { version = "1.43", features = ["full"] }
 tokio-util = { version = "0.7", features = ["codec"] }
 futures = "0.3"
 async-trait = "0.1"
+bytes = "1"
 
 # CLI Framework
 clap = { version = "4.5", features = ["derive", "env", "cargo"] }
@@ -35,7 +36,7 @@ rusqlite = { version = "0.38", features = ["bundled"] }
 rusqlite_migration = "2.4"
 
 # Cron scheduling
-cron = "0.15"
+cron = "0.16"
 
 # Serialization
 serde = { version = "1.0", features = ["derive", "rc"] }
@@ -80,7 +81,7 @@ regex = "1.11"
 glob = "0.3"
 ignore = "0.4"
 which = "8.0"
-rand = "0.9"
+rand = "0.10"
 urlencoding = "2.1"
 
 # Syntax & Parsing
@@ -98,12 +99,12 @@ zeroize = { version = "1.8", features = ["derive"] }
 teloxide = { version = "0.17", features = ["macros"], optional = true }
 
 # WhatsApp
-whatsapp-rust = { version = "0.4.1", optional = true, default-features = false, features = ["tokio-transport", "ureq-client", "tokio-native", "tokio-runtime"] }
-whatsapp-rust-tokio-transport = { version = "0.4.1", optional = true }
-whatsapp-rust-ureq-http-client = { version = "0.4.1", optional = true }
-wacore = { version = "0.4.1", optional = true, default-features = false }
-wacore-binary = { version = "0.4.1", optional = true, default-features = false, features = ["serde"] }
-waproto = { version = "0.4.1", optional = true }
+whatsapp-rust = { version = "0.6.0", optional = true, default-features = false, features = ["tokio-transport", "ureq-client", "tokio-native", "tokio-runtime"] }
+whatsapp-rust-tokio-transport = { version = "0.6.0", optional = true }
+whatsapp-rust-ureq-http-client = { version = "0.6.0", optional = true }
+wacore = { version = "0.6.0", optional = true, default-features = false }
+wacore-binary = { version = "0.6.0", optional = true, default-features = false, features = ["serde"] }
+waproto = { version = "0.6.0", optional = true }
 qrcode = { version = "0.14", optional = true }
 rmp-serde = { version = "1", optional = true }
 
@@ -122,7 +123,8 @@ rustls = { version = "0.23", features = ["ring"], optional = true }
 rwhisper = { version = "0.4", optional = true }
 rodio = { version = "0.20", optional = true, default-features = false }
 hound = { version = "3.5", optional = true }
-rubato = { version = "0.14", optional = true }
+rubato = { version = "3.0", optional = true }
+audioadapter-buffers = { version = "3.0", optional = true }
 symphonia = { version = "0.5", features = ["ogg", "vorbis", "wav", "pcm"], optional = true }
 symphonia-adapter-libopus = { version = "0.2", optional = true }
 opusic-sys = { version = "0.5", optional = true, default-features = false }
@@ -137,7 +139,7 @@ unicode-segmentation = "1.12"
 # Document Parsing
 pdf-extract = "0.10"
 pdfium-render = { version = "0.9", optional = true }
-zip = "6.0"
+zip = "8.6"
 quick-xml = "0.37"
 tiktoken-rs = "0.9.1"
 
@@ -155,7 +157,7 @@ unicode-normalization = "0.1.25"
 [dev-dependencies]
 rstest = "0.25"
 proptest = "1.6"
-mockall = "0.13"
+mockall = "0.14"
 criterion = { version = "0.5", features = ["html_reports"] }
 insta = { version = "1.42", features = ["json", "yaml"] }
 tempfile = "3.25"
@@ -193,8 +195,8 @@ trello = []
 whatsapp = ["whatsapp-rust", "whatsapp-rust-tokio-transport", "whatsapp-rust-ureq-http-client", "wacore", "wacore-binary", "waproto", "dep:qrcode", "dep:rmp-serde"]
 discord = ["serenity"]
 slack = ["slack-morphism", "tokio-tungstenite", "rustls"]
-local-stt = ["rwhisper", "rodio", "hound", "rubato", "symphonia", "symphonia-adapter-libopus"]
-local-tts = ["opusic-sys", "rubato"]
+local-stt = ["rwhisper", "rodio", "hound", "rubato", "audioadapter-buffers", "symphonia", "symphonia-adapter-libopus"]
+local-tts = ["opusic-sys", "rubato", "audioadapter-buffers"]
 browser = ["chromey"]
 pdfium = ["dep:pdfium-render"]
 

@@ -224,8 +224,7 @@ impl RsiProposalsTool {
         let original = std::fs::read_to_string(&target_path)
             .map_err(|e| format!("read {}: {e}", target_path.display()))?;
 
-        // Count occurrences — should match proposal.dedup.count but we
-        // only remove ONE instance (the one the scan flagged). If the
+        // Count occurrences — should match proposal.dedup.count. If the
         // text isn't found at all, the file was edited since scan.
         let occurrences = original.matches(&proposal.dedup.duplicate_text).count();
         if occurrences == 0 {
@@ -235,12 +234,15 @@ impl RsiProposalsTool {
             ));
         }
 
-        // Remove the FIRST occurrence only — keeps the canonical copy.
-        let new_content = original.replacen(&proposal.dedup.duplicate_text, "", 1);
+        // Remove ALL occurrences — the canonical copy lives elsewhere
+        // (different file or different line in same file). The scan
+        // already verified this text is a duplicate, so removing all
+        // instances from the target is safe.
+        let new_content = original.replace(&proposal.dedup.duplicate_text, "");
 
         // Safety check: the dedup_intent contract requires every
-        // original line to still appear in the result. We just removed
-        // one block so this should hold unless the block was unique.
+        // original line to still appear in the result. We removed all
+        // duplicate blocks so this should hold unless a block was unique.
         let original_lines: std::collections::HashSet<&str> = original.lines().collect();
         let result_lines: std::collections::HashSet<&str> = new_content.lines().collect();
         // Only flag if we removed lines that had NO other copy left.
@@ -257,8 +259,8 @@ impl RsiProposalsTool {
 
         let _ = (original_lines, result_lines);
         Ok(format!(
-            "Removed duplicate block from '{}' (proposal {}). {} occurrence(s) were present, removed 1.",
-            proposal.dedup.target_file, id, occurrences
+            "Removed {} duplicate occurrence(s) from '{}' (proposal {}).",
+            occurrences, proposal.dedup.target_file, id
         ))
     }
 

@@ -395,7 +395,7 @@ async fn run_loop(
                 app.scroll_offset = app.scroll_offset.saturating_add(capped as usize);
                 app.auto_scroll = false;
                 // History loading removed — causes overshoot. User can manually
-                // load more history via keyboard shortcut if needed.
+                // load more history via PageUp if needed.
             } else if capped < 0 {
                 app.scroll_offset = app
                     .scroll_offset

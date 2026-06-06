@@ -511,7 +511,14 @@ impl AgentService {
     /// Also caches the provider's `configured_context_window()` into
     /// `session_context_limits` so compaction uses the correct budget
     /// even if the global provider changes later.
+    ///
+    /// **Model sync:** Also updates `session_models` to the new
+    /// provider's default model so the {provider, model} pair stays
+    /// consistent. Without this, a fallback that swaps only the
+    /// provider leaves the stale model from the previous provider,
+    /// causing contamination (e.g. zhipu + Qwen-Ambassador/Qwen3.7-Plus).
     pub fn swap_provider_for_session(&self, session_id: Uuid, new_provider: Arc<dyn Provider>) {
+        let new_default_model = new_provider.default_model().to_string();
         let context_window = new_provider.configured_context_window();
         let stored: Arc<dyn Provider> = if new_provider.is_fallback_chain() {
             new_provider
@@ -554,6 +561,14 @@ impl AgentService {
                 .write()
                 .expect("session_context_limits lock poisoned")
                 .insert(session_id, cw);
+        }
+
+        // Sync the session's model to the new provider's default so
+        // the {provider, model} pair is always consistent. This prevents
+        // contamination where a fallback swaps the provider but leaves
+        // the stale model from the previous provider.
+        if let Ok(mut map) = self.session_models.write() {
+            map.insert(session_id, new_default_model);
         }
     }
 

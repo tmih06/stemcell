@@ -28,5 +28,6 @@ pub mod schedule_service;
 pub mod types;
 
 pub use types::{
-    McActivity, McActivityLevel, McInboxItem, McInboxKind, McScheduleItem, McScheduleKind,
+    McActivity, McActivityLevel, McInboxDetail, McInboxItem, McInboxKind, McScheduleItem,
+    McScheduleKind,
 };

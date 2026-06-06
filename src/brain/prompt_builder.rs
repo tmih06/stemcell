@@ -266,9 +266,6 @@ impl BrainLoader {
             prompt.push_str("\n\n");
         }
 
-        // 10. Available skills
-        push_skills_section(&mut prompt);
-
         prompt
     }
 
@@ -429,9 +426,6 @@ impl BrainLoader {
             prompt.push_str(commands_section);
             prompt.push_str("\n\n");
         }
-
-        // 6. Available skills
-        push_skills_section(&mut prompt);
 
         prompt
     }
@@ -644,30 +638,6 @@ pub(crate) fn push_compiled_features(prompt: &mut String) {
          rebuild with `--features <name>` instead of writing fresh code.\n",
         features.join(", ")
     ));
-}
-
-/// Append an "Available Skills" section listing every skill's name +
-/// description so the LLM can recommend or auto-dispatch them.
-///
-/// This closes issue #151: skills had a `description` field documented
-/// as "LLM auto-invoking" but it was never injected into the prompt.
-/// Cheap fix: just list them here so the model knows what's available.
-fn push_skills_section(prompt: &mut String) {
-    let skills = crate::brain::skills::load_all_skills();
-    if skills.is_empty() {
-        return;
-    }
-    prompt.push_str("--- Available Skills ---\n");
-    prompt.push_str(
-        "Use the `slash_command` tool with `/skill-name` to invoke these workflow templates.\n",
-    );
-    for skill in &skills {
-        prompt.push_str(&format!(
-            "- **{}**: {}\n",
-            skill.slash_name, skill.description
-        ));
-    }
-    prompt.push('\n');
 }
 
 /// Append a "Known paths" section to the runtime info so when the

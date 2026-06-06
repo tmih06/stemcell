@@ -253,33 +253,25 @@ fn test_slash_commands_included_in_core_brain() {
 
 /// Skills descriptions must be injected into the system prompt so the LLM
 /// can recommend or auto-dispatch them. Previously the `description` field
-/// was only used for TUI filtering, never reaching the prompt.
+/// Skills are no longer injected into the system prompt.
+/// TOOLS.md has a pointer to `/skills` for on-demand discovery.
 #[test]
-fn test_skills_section_present_in_core_brain() {
+fn test_skills_section_absent_from_core_brain() {
     let dir = TempDir::new().unwrap();
     let brain = loader(&dir).build_core_brain(None, None);
     assert!(
-        brain.contains("--- Available Skills ---"),
-        "skills section must appear in core brain"
-    );
-    assert!(
-        brain.contains("slash_command"),
-        "skills section must mention how to invoke them"
-    );
-    // Built-in skills should always be listed
-    assert!(
-        brain.contains("/security-audit"),
-        "built-in security-audit skill must be listed"
+        !brain.contains("--- Available Skills ---"),
+        "skills section must NOT appear in core brain (moved to on-demand via TOOLS.md pointer)"
     );
 }
 
 #[test]
-fn test_skills_section_present_in_full_brain() {
+fn test_skills_section_absent_from_full_brain() {
     let dir = TempDir::new().unwrap();
     let brain = loader(&dir).build_system_brain(None, None);
     assert!(
-        brain.contains("--- Available Skills ---"),
-        "skills section must appear in full brain too"
+        !brain.contains("--- Available Skills ---"),
+        "skills section must NOT appear in full brain (moved to on-demand via TOOLS.md pointer)"
     );
 }
 

@@ -48,6 +48,10 @@ enum PlanOperation {
         complexity: u8,
         #[serde(default)]
         acceptance_criteria: Vec<String>,
+        /// Insert after this task number (1-based). If omitted, appends at end.
+        /// Existing tasks are renumbered sequentially after insert.
+        #[serde(default)]
+        insert_after: Option<usize>,
     },
     /// Update plan metadata
     UpdatePlan {
@@ -275,6 +279,11 @@ impl Tool for PlanTool {
                     "type": "array",
                     "items": { "type": "string" },
                     "description": "Acceptance criteria for task completion (for add_task)"
+                },
+                "insert_after": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "description": "Insert new task after this task number (for add_task). 0 = insert at beginning. If omitted, appends at end. Existing tasks are renumbered."
                 },
                 "task_order": {
                     "type": "integer",
@@ -578,6 +587,7 @@ impl Tool for PlanTool {
                 dependencies,
                 complexity,
                 acceptance_criteria,
+                insert_after,
             } => {
                 // Validate inputs
                 validate_string(&title, MAX_TITLE_LENGTH, "Task title")?;
@@ -609,39 +619,58 @@ impl Tool for PlanTool {
                 task.complexity = complexity.clamp(1, 5);
                 task.acceptance_criteria = acceptance_criteria;
 
-                // Validate and convert dependency order numbers to task IDs
-                for dep_order in dependencies {
-                    if dep_order == 0 {
+                // Validate dependencies against existing tasks
+                for dep_order in &dependencies {
+                    if *dep_order == 0 {
                         return Err(ToolError::InvalidInput(
                             "Task numbers start at 1, not 0".to_string(),
                         ));
                     }
-                    if dep_order >= task_order {
+                    if *dep_order > current_plan.tasks.len() {
                         return Err(ToolError::InvalidInput(format!(
-                            "Task {} cannot depend on task {} (not yet created or would create a cycle)",
-                            task_order, dep_order
+                            "Invalid dependency: task {} does not exist",
+                            dep_order
                         )));
                     }
-
-                    let dep_task = current_plan.tasks.get(dep_order - 1).ok_or_else(|| {
+                    let dep_task = current_plan.tasks.get(*dep_order - 1).ok_or_else(|| {
                         ToolError::InvalidInput(format!(
                             "Invalid dependency: task {} does not exist",
                             dep_order
                         ))
                     })?;
-
                     task.dependencies
                         .push(crate::tui::plan::TaskDep::Id(dep_task.id));
                 }
 
-                current_plan.add_task(task);
+                // Determine insert position and renumber
+                let insert_idx = if let Some(after) = insert_after {
+                    if after > current_plan.tasks.len() {
+                        return Err(ToolError::InvalidInput(format!(
+                            "insert_after {} is beyond the {} tasks in the plan",
+                            after,
+                            current_plan.tasks.len()
+                        )));
+                    }
+                    after // 0 = beginning, 1 = after task 1, etc.
+                } else {
+                    current_plan.tasks.len() // append at end
+                };
 
+                current_plan.tasks.insert(insert_idx, task);
+
+                // Renumber all tasks sequentially after insert
+                for (i, t) in current_plan.tasks.iter_mut().enumerate() {
+                    t.order = i + 1;
+                }
+
+                let new_task_order = insert_idx + 1;
                 format!(
-                    "✓ Added task #{}: '{}'\n  Type: {:?} | Complexity: {}★\n  Total tasks: {}",
-                    task_order,
+                    "✓ Added task #{}: '{}'\n  Type: {:?} | Complexity: {}★\n  Inserted at position {} | Total tasks: {}\n  All tasks renumbered sequentially.",
+                    new_task_order,
                     title,
                     parsed_type,
                     complexity,
+                    new_task_order,
                     current_plan.tasks.len()
                 )
             }

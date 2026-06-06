@@ -118,10 +118,17 @@ pub fn format_user_error(err: &AgentError) -> String {
                 );
             }
             _ => {
+                // Truncate raw error to avoid dumping hundreds of bytes
+                // of HTML from provider error pages into the TUI.
+                let display_raw = if raw.len() > 200 {
+                    format!("{}...", &raw[..200])
+                } else {
+                    raw.clone()
+                };
                 return format!(
-                    "Provider returned HTTP {status} — self-heal couldn't \
-                     recover. Try again, or switch provider via `/models`. \
-                     Raw error: {raw}"
+                    "Provider returned HTTP {status}. \
+                     Try again, or switch provider via `/models`. \
+                     Details: {display_raw}"
                 );
             }
         }

@@ -1261,7 +1261,7 @@ fn print_terminal_banner(
 
     println!("  {}Tips{}", CYAN, RESET);
     println!(
-        "  {}@ for files  ·  ! for shell  ·  Shift+Enter for newline  ·  Ctrl+O for older messages{}",
+        "  {}@ for files  ·  ! for shell  ·  Shift+Enter for newline  ·  Ctrl+O for details  ·  PgUp for older messages{}",
         DIM, RESET
     );
     println!();
