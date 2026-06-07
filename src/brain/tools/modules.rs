@@ -614,114 +614,11 @@ impl ToolModule for BrainModule {
     }
 }
 
-/// Channel integrations: discord, slack, telegram, trello, whatsapp
-/// (feature-gated)
-#[cfg(any(
-    feature = "tool-telegram-connect",
-    feature = "tool-telegram-send",
-    feature = "tool-whatsapp-connect",
-    feature = "tool-whatsapp-send",
-    feature = "tool-discord-connect",
-    feature = "tool-discord-send",
-    feature = "tool-slack-connect",
-    feature = "tool-slack-send",
-    feature = "tool-trello-connect",
-    feature = "tool-trello-send"
-))]
-struct ChannelIntegrationsModule;
-
-#[cfg(any(
-    feature = "tool-telegram-connect",
-    feature = "tool-telegram-send",
-    feature = "tool-whatsapp-connect",
-    feature = "tool-whatsapp-send",
-    feature = "tool-discord-connect",
-    feature = "tool-discord-send",
-    feature = "tool-slack-connect",
-    feature = "tool-slack-send",
-    feature = "tool-trello-connect",
-    feature = "tool-trello-send"
-))]
-impl ToolModule for ChannelIntegrationsModule {
-    fn id(&self) -> &str {
-        "channel_integrations"
-    }
-    fn name(&self) -> &str {
-        "Channel Integrations"
-    }
-    fn description(&self) -> &str {
-        "Messaging platform connectors (Telegram, Discord, Slack, WhatsApp, Trello)"
-    }
-    fn register(&self, ctx: &ModuleContext) {
-        if ctx.mode != RegistrationMode::Full {
-            tracing::debug!("Channel integrations skipped outside full registration mode");
-            return;
-        }
-
-        let Some(channel_factory) = ctx.runtime.channel_factory.clone() else {
-            tracing::debug!("Channel integrations skipped (channel factory unavailable)");
-            return;
-        };
-
-        #[cfg(any(feature = "tool-telegram-connect", feature = "tool-telegram-send"))]
-        if let Some(state) = ctx.runtime.telegram_state.clone() {
-            #[cfg(feature = "tool-telegram-connect")]
-            ctx.register(Arc::new(super::telegram_connect::TelegramConnectTool::new(
-                channel_factory.clone(),
-                state.clone(),
-            )));
-            #[cfg(feature = "tool-telegram-send")]
-            ctx.register(Arc::new(super::telegram_send::TelegramSendTool::new(state)));
-        }
-
-        #[cfg(any(feature = "tool-whatsapp-connect", feature = "tool-whatsapp-send"))]
-        if let Some(state) = ctx.runtime.whatsapp_state.clone() {
-            #[cfg(feature = "tool-whatsapp-connect")]
-            ctx.register(Arc::new(super::whatsapp_connect::WhatsAppConnectTool::new(
-                ctx.runtime.progress_callback.clone(),
-                state.clone(),
-            )));
-            #[cfg(feature = "tool-whatsapp-send")]
-            ctx.register(Arc::new(super::whatsapp_send::WhatsAppSendTool::new(
-                state,
-                channel_factory.config_rx(),
-            )));
-        }
-
-        #[cfg(any(feature = "tool-discord-connect", feature = "tool-discord-send"))]
-        if let Some(state) = ctx.runtime.discord_state.clone() {
-            #[cfg(feature = "tool-discord-connect")]
-            ctx.register(Arc::new(super::discord_connect::DiscordConnectTool::new(
-                channel_factory.clone(),
-                state.clone(),
-            )));
-            #[cfg(feature = "tool-discord-send")]
-            ctx.register(Arc::new(super::discord_send::DiscordSendTool::new(state)));
-        }
-
-        #[cfg(any(feature = "tool-slack-connect", feature = "tool-slack-send"))]
-        if let Some(state) = ctx.runtime.slack_state.clone() {
-            #[cfg(feature = "tool-slack-connect")]
-            ctx.register(Arc::new(super::slack_connect::SlackConnectTool::new(
-                channel_factory.clone(),
-                state.clone(),
-            )));
-            #[cfg(feature = "tool-slack-send")]
-            ctx.register(Arc::new(super::slack_send::SlackSendTool::new(state)));
-        }
-
-        #[cfg(any(feature = "tool-trello-connect", feature = "tool-trello-send"))]
-        if let Some(state) = ctx.runtime.trello_state.clone() {
-            #[cfg(feature = "tool-trello-connect")]
-            ctx.register(Arc::new(super::trello_connect::TrelloConnectTool::new(
-                channel_factory.clone(),
-                state.clone(),
-            )));
-            #[cfg(feature = "tool-trello-send")]
-            ctx.register(Arc::new(super::trello_send::TrelloSendTool::new(state)));
-        }
-    }
-}
+// Channel integrations are no longer agent tools. Channels are remote surfaces
+// on the gateway bus (`crate::channels::gateway`): inbound messages enter the
+// agent like a TUI prompt and responses route back to the originating surface.
+// The agent has no channel send/connect tools and nothing channel-related in
+// its context.
 
 /// Browser automation tools (feature-gated)
 #[cfg(any(
@@ -956,19 +853,6 @@ pub fn all_modules() -> Vec<Box<dyn ToolModule>> {
         feature = "tool-a2a-send"
     ))]
     modules.push(Box::new(BrainModule));
-    #[cfg(any(
-        feature = "tool-telegram-connect",
-        feature = "tool-telegram-send",
-        feature = "tool-whatsapp-connect",
-        feature = "tool-whatsapp-send",
-        feature = "tool-discord-connect",
-        feature = "tool-discord-send",
-        feature = "tool-slack-connect",
-        feature = "tool-slack-send",
-        feature = "tool-trello-connect",
-        feature = "tool-trello-send"
-    ))]
-    modules.push(Box::new(ChannelIntegrationsModule));
     #[cfg(any(
         feature = "tool-browser-navigate",
         feature = "tool-browser-screenshot",

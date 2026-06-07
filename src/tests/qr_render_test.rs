@@ -1,6 +1,6 @@
 //! Tests for QR code Unicode rendering.
 
-use crate::brain::tools::whatsapp_connect::render_qr_unicode;
+use crate::channels::whatsapp::pairing::render_qr_unicode;
 
 #[test]
 fn render_qr_returns_some_for_valid_data() {

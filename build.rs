@@ -28,23 +28,13 @@ const TOGGLE_TO_FEATURES: &[(&str, &[&str])] = &[
     ("rtk", &["rtk"]),
     ("profiling", &["profiling"]),
     // channels
-    (
-        "telegram",
-        &["telegram", "tool-telegram-connect", "tool-telegram-send"],
-    ),
-    (
-        "whatsapp",
-        &["whatsapp", "tool-whatsapp-connect", "tool-whatsapp-send"],
-    ),
-    (
-        "discord",
-        &["discord", "tool-discord-connect", "tool-discord-send"],
-    ),
-    ("slack", &["slack", "tool-slack-connect", "tool-slack-send"]),
-    (
-        "trello",
-        &["trello", "tool-trello-connect", "tool-trello-send"],
-    ),
+    // channels — each toggle maps to just its own feature now that channels
+    // are remote surfaces, not agent tools (no more tool-*-send/connect).
+    ("telegram", &["telegram"]),
+    ("whatsapp", &["whatsapp"]),
+    ("discord", &["discord"]),
+    ("slack", &["slack"]),
+    ("trello", &["trello"]),
     // file tier
     (
         "file-read",

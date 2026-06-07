@@ -2419,7 +2419,7 @@ impl App {
                         #[cfg(feature = "whatsapp")]
                         {
                             let handle =
-                                crate::brain::tools::whatsapp_connect::subscribe_whatsapp_pairing(
+                                crate::channels::whatsapp::pairing::subscribe_whatsapp_pairing(
                                     &wa_state, false,
                                 );
                             // Forward QR codes to the TUI

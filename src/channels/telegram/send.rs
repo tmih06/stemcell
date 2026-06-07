@@ -42,6 +42,30 @@ pub async fn latest_thread_id_for_chat(chat_id: i64) -> Option<ThreadId> {
     tid_str.parse::<i32>().ok().map(|n| ThreadId(MessageId(n)))
 }
 
+/// Resolve a forum-topic `thread_id` for a proactive Telegram send.
+///
+/// Precedence:
+///   1. Explicit `thread_id` field in the input — honour it. Lets cron jobs /
+///      callers route a message to a topic OTHER than the most recent one.
+///   2. Auto-lookup via [`latest_thread_id_for_chat`] — the fallback that
+///      closed #130, picking up the most recently stored topic.
+///
+/// Returns `None` when neither path produces a value (non-forum chat, empty
+/// channel history, explicit value outside i32 range).
+/// Resolve a forum-topic `thread_id` from a JSON input, used by the
+/// thread-override test that documents the precedence `TelegramSurface::deliver`
+/// follows: an explicit value wins, else auto-lookup of the most recent topic
+/// (#130). Retained as the executable spec for that rule.
+#[allow(dead_code)]
+pub async fn resolve_thread_id(input: &serde_json::Value, chat_id: i64) -> Option<ThreadId> {
+    if let Some(tid) = input.get("thread_id").and_then(|v| v.as_i64())
+        && let Ok(tid_i32) = i32::try_from(tid)
+    {
+        return Some(ThreadId(MessageId(tid_i32)));
+    }
+    latest_thread_id_for_chat(chat_id).await
+}
+
 /// `bot.send_message(chat_id, text)` with optional `message_thread_id`.
 /// Returns the teloxide request so callers can chain `.parse_mode()`,
 /// `.reply_markup()`, etc. before `.await`.

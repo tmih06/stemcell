@@ -182,7 +182,7 @@ rwhisper = { version = "0.4", optional = true, features = ["metal", "accelerate"
 winresource = "0.1"
 
 [features]
-default = ["telegram", "whatsapp", "discord", "slack", "trello", "local-stt", "local-tts", "browser", "rtk", "tools-file-ops", "tools-search", "tools-workflow", "tools-multi-agent", "tools-rsi", "tools-image", "tools-brain", "tools-channel-integrations", "tools-browser", "tools-meta", "tools-dynamic"]
+default = ["telegram", "whatsapp", "discord", "slack", "trello", "local-stt", "local-tts", "browser", "rtk", "tools-file-ops", "tools-search", "tools-workflow", "tools-multi-agent", "tools-rsi", "tools-image", "tools-brain", "tools-browser", "tools-meta", "tools-dynamic"]
 # Profiling feature enables pprof on Unix only (no-op on Windows)
 profiling = []
 # RTK (Rust Token Killer) integration - filters bash command outputs to save 60-90% tokens
@@ -307,29 +307,9 @@ tool-load-brain-file = []
 tool-write-opencrabs-file = []
 tool-a2a-send = []
 
-# Messaging platform connectors (depends on telegram/discord/slack/whatsapp/trello features)
-tools-channel-integrations = [
-    "tool-telegram-connect",
-    "tool-telegram-send",
-    "tool-whatsapp-connect",
-    "tool-whatsapp-send",
-    "tool-discord-connect",
-    "tool-discord-send",
-    "tool-slack-connect",
-    "tool-slack-send",
-    "tool-trello-connect",
-    "tool-trello-send",
-]
-tool-telegram-connect = ["telegram"]
-tool-telegram-send = ["telegram"]
-tool-whatsapp-connect = ["whatsapp"]
-tool-whatsapp-send = ["whatsapp"]
-tool-discord-connect = ["discord"]
-tool-discord-send = ["discord"]
-tool-slack-connect = ["slack"]
-tool-slack-send = ["slack"]
-tool-trello-connect = ["trello"]
-tool-trello-send = ["trello"]
+# Channels are remote surfaces on the gateway, not agent tools — there are no
+# longer per-channel send/connect tool features. Each channel client is enabled
+# directly by its own feature (telegram / whatsapp / discord / slack / trello).
 
 # Headless Chrome automation (depends on browser feature)
 tools-browser = [

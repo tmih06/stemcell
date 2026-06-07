@@ -6,6 +6,7 @@
 mod agent;
 pub(crate) mod follow_up_question;
 pub(crate) mod handler;
+pub mod pairing;
 pub(crate) mod store;
 
 pub use agent::WhatsAppAgent;

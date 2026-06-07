@@ -143,29 +143,10 @@ pub mod modules;
 ))]
 pub mod browser;
 
-// Tool implementations - Phase 4: Channel Integrations
-// Channel connector/send tools are gated both by their channel feature and by
-// the channel-integrations tool module so builds can drop them entirely.
-#[cfg(feature = "tool-discord-connect")]
-pub mod discord_connect;
-#[cfg(feature = "tool-discord-send")]
-pub mod discord_send;
-#[cfg(feature = "tool-slack-connect")]
-pub mod slack_connect;
-#[cfg(feature = "tool-slack-send")]
-pub mod slack_send;
-#[cfg(feature = "tool-telegram-connect")]
-pub mod telegram_connect;
-#[cfg(feature = "tool-telegram-send")]
-pub mod telegram_send;
-#[cfg(feature = "tool-trello-connect")]
-pub mod trello_connect;
-#[cfg(feature = "tool-trello-send")]
-pub mod trello_send;
-#[cfg(feature = "tool-whatsapp-connect")]
-pub mod whatsapp_connect;
-#[cfg(feature = "tool-whatsapp-send")]
-pub mod whatsapp_send;
+// Channels are no longer agent tools. Inbound messages from a channel enter the
+// agent like a TUI prompt and the gateway routes the response back out the
+// originating surface — the agent has no telegram_send / *_connect tools and
+// nothing channel-related in its context. See `crate::channels::gateway`.
 
 // Re-exports
 pub use error::{Result, ToolError};

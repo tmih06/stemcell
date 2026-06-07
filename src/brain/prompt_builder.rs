@@ -654,9 +654,6 @@ pub(crate) fn compiled_features() -> Vec<&'static str> {
     if cfg!(feature = "tools-brain") {
         out.push("tools-brain");
     }
-    if cfg!(feature = "tools-channel-integrations") {
-        out.push("tools-channel-integrations");
-    }
     if cfg!(feature = "tools-browser") {
         out.push("tools-browser");
     }
@@ -798,36 +795,6 @@ pub(crate) fn compiled_features() -> Vec<&'static str> {
     }
     if cfg!(feature = "tool-a2a-send") {
         out.push("tool-a2a-send");
-    }
-    if cfg!(feature = "tool-telegram-connect") {
-        out.push("tool-telegram-connect");
-    }
-    if cfg!(feature = "tool-telegram-send") {
-        out.push("tool-telegram-send");
-    }
-    if cfg!(feature = "tool-whatsapp-connect") {
-        out.push("tool-whatsapp-connect");
-    }
-    if cfg!(feature = "tool-whatsapp-send") {
-        out.push("tool-whatsapp-send");
-    }
-    if cfg!(feature = "tool-discord-connect") {
-        out.push("tool-discord-connect");
-    }
-    if cfg!(feature = "tool-discord-send") {
-        out.push("tool-discord-send");
-    }
-    if cfg!(feature = "tool-slack-connect") {
-        out.push("tool-slack-connect");
-    }
-    if cfg!(feature = "tool-slack-send") {
-        out.push("tool-slack-send");
-    }
-    if cfg!(feature = "tool-trello-connect") {
-        out.push("tool-trello-connect");
-    }
-    if cfg!(feature = "tool-trello-send") {
-        out.push("tool-trello-send");
     }
     if cfg!(feature = "tool-browser-navigate") {
         out.push("tool-browser-navigate");
