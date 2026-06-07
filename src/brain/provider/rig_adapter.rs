@@ -165,6 +165,126 @@ fn build_tools(request: &LLMRequest) -> Vec<ToolDefinition> {
         .collect()
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum StreamBlockKind {
+    Text,
+    Thinking,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct OpenStreamBlock {
+    index: usize,
+    kind: StreamBlockKind,
+}
+
+#[derive(Default)]
+struct RigStreamState {
+    inside_think: bool,
+    active_close_tag: usize,
+    bytes_consumed: usize,
+    carry: String,
+    open_block: Option<OpenStreamBlock>,
+    next_block_index: usize,
+}
+
+impl RigStreamState {
+    fn current_index(&self) -> Option<usize> {
+        self.open_block.map(|block| block.index)
+    }
+
+    fn switch_block(
+        &mut self,
+        kind: StreamBlockKind,
+        signature: Option<String>,
+    ) -> Vec<Result<StreamEvent>> {
+        if self.open_block.is_some_and(|block| block.kind == kind) {
+            return Vec::new();
+        }
+
+        let mut events = self.finish_block();
+        let index = self.next_block_index;
+        self.next_block_index += 1;
+
+        let content_block = match kind {
+            StreamBlockKind::Text => ContentBlock::Text {
+                text: String::new(),
+            },
+            StreamBlockKind::Thinking => ContentBlock::Thinking {
+                thinking: String::new(),
+                signature,
+            },
+        };
+
+        events.push(Ok(StreamEvent::ContentBlockStart {
+            index,
+            content_block,
+        }));
+        self.open_block = Some(OpenStreamBlock { index, kind });
+        events
+    }
+
+    fn finish_block(&mut self) -> Vec<Result<StreamEvent>> {
+        self.open_block
+            .take()
+            .map(|block| vec![Ok(StreamEvent::ContentBlockStop { index: block.index })])
+            .unwrap_or_default()
+    }
+
+    fn push_reasoning(
+        &mut self,
+        reasoning_text: String,
+        signature: Option<String>,
+    ) -> Vec<Result<StreamEvent>> {
+        if reasoning_text.is_empty() {
+            return Vec::new();
+        }
+
+        let mut events = self.switch_block(StreamBlockKind::Thinking, signature);
+        let index = self
+            .current_index()
+            .expect("thinking block must be open before emitting reasoning");
+        events.push(Ok(StreamEvent::ContentBlockDelta {
+            index,
+            delta: ContentDelta::ReasoningDelta {
+                text: reasoning_text,
+            },
+        }));
+        events
+    }
+
+    fn push_text(&mut self, text: String) -> Vec<Result<StreamEvent>> {
+        if text.is_empty() {
+            return Vec::new();
+        }
+
+        let mut events = self.switch_block(StreamBlockKind::Text, None);
+        let index = self
+            .current_index()
+            .expect("text block must be open before emitting text");
+        events.push(Ok(StreamEvent::ContentBlockDelta {
+            index,
+            delta: ContentDelta::TextDelta { text },
+        }));
+        events
+    }
+
+    fn push_filtered_text_chunk(&mut self, raw_text: &str) -> Vec<Result<StreamEvent>> {
+        let (filtered_text, reasoning_text) =
+            crate::brain::provider::streaming_utils::filter_think_tags(
+                raw_text,
+                &mut self.inside_think,
+                &mut self.active_close_tag,
+                &mut self.bytes_consumed,
+                &mut self.carry,
+            );
+
+        let mut events = Vec::new();
+        events.extend(self.push_reasoning(reasoning_text, None));
+        events.extend(self.push_text(filtered_text));
+        events
+    }
+}
+
 #[async_trait]
 impl<C> Provider for RigAdapter<C>
 where
@@ -227,8 +347,7 @@ where
                         .iter()
                         .filter_map(|c| match c {
                             rig_core::completion::message::ReasoningContent::Text {
-                                text,
-                                ..
+                                text, ..
                             } => Some(text.as_str()),
                             rig_core::completion::message::ReasoningContent::Summary(s) => {
                                 Some(s.as_str())
@@ -295,52 +414,13 @@ where
             .map_err(|e| ProviderError::StreamError(e.to_string()))?;
         let model_name = request.model.clone();
 
-        let mut inside_think = false;
-        let mut active_close_tag = 0;
-        let mut bytes_consumed = 0;
-        let mut carry = String::new();
-        let mut block_open = false;
+        let mut stream_state = RigStreamState::default();
 
         let event_stream = stream_res
             .map(move |chunk_res| match chunk_res {
                 Ok(chunk) => match chunk {
                     rig_core::streaming::StreamedAssistantContent::Text(t) => {
-                        let (filtered_text, reasoning_text) =
-                            crate::brain::provider::streaming_utils::filter_think_tags(
-                                &t.text,
-                                &mut inside_think,
-                                &mut active_close_tag,
-                                &mut bytes_consumed,
-                                &mut carry,
-                            );
-
-                        let mut events = vec![];
-                        if !block_open {
-                            events.push(Ok(StreamEvent::ContentBlockStart {
-                                index: 0,
-                                content_block: ContentBlock::Text {
-                                    text: String::new(),
-                                },
-                            }));
-                            block_open = true;
-                        }
-                        if !reasoning_text.is_empty() {
-                            events.push(Ok(StreamEvent::ContentBlockDelta {
-                                index: 0,
-                                delta: ContentDelta::ReasoningDelta {
-                                    text: reasoning_text,
-                                },
-                            }));
-                        }
-                        if !filtered_text.is_empty() {
-                            events.push(Ok(StreamEvent::ContentBlockDelta {
-                                index: 0,
-                                delta: ContentDelta::TextDelta {
-                                    text: filtered_text,
-                                },
-                            }));
-                        }
-
+                        let events = stream_state.push_filtered_text_chunk(&t.text);
                         if events.is_empty() {
                             vec![Ok(StreamEvent::Ping)]
                         } else {
@@ -363,56 +443,30 @@ where
                             })
                             .collect::<Vec<_>>()
                             .join("\n");
-                        let mut events = vec![];
-                        if !block_open {
-                            events.push(Ok(StreamEvent::ContentBlockStart {
-                                index: 0,
-                                content_block: ContentBlock::Thinking {
-                                    thinking: String::new(),
-                                    signature: None,
-                                },
-                            }));
-                            block_open = true;
+                        let events = stream_state.push_reasoning(
+                            reasoning_text,
+                            reasoning.first_signature().map(String::from),
+                        );
+                        if events.is_empty() {
+                            vec![Ok(StreamEvent::Ping)]
+                        } else {
+                            events
                         }
-                        if !reasoning_text.is_empty() {
-                            events.push(Ok(StreamEvent::ContentBlockDelta {
-                                index: 0,
-                                delta: ContentDelta::ReasoningDelta {
-                                    text: reasoning_text,
-                                },
-                            }));
-                        }
-                        events
                     }
                     rig_core::streaming::StreamedAssistantContent::ReasoningDelta {
                         reasoning,
                         ..
                     } => {
-                        let mut events = vec![];
-                        if !block_open {
-                            events.push(Ok(StreamEvent::ContentBlockStart {
-                                index: 0,
-                                content_block: ContentBlock::Thinking {
-                                    thinking: String::new(),
-                                    signature: None,
-                                },
-                            }));
-                            block_open = true;
+                        let events = stream_state.push_reasoning(reasoning, None);
+                        if events.is_empty() {
+                            vec![Ok(StreamEvent::Ping)]
+                        } else {
+                            events
                         }
-                        events.push(Ok(StreamEvent::ContentBlockDelta {
-                            index: 0,
-                            delta: ContentDelta::ReasoningDelta { text: reasoning },
-                        }));
-                        events
                     }
                     rig_core::streaming::StreamedAssistantContent::Final(res) => {
                         use rig_core::completion::GetTokenUsage;
-                        let mut events = vec![];
-
-                        if block_open {
-                            events.push(Ok(StreamEvent::ContentBlockStop { index: 0 }));
-                            block_open = false;
-                        }
+                        let mut events = stream_state.finish_block();
 
                         let mut opencrabs_usage = TokenUsage::default();
                         if let Some(usage) = res.token_usage() {
@@ -436,10 +490,7 @@ where
                     let mut events = vec![Ok(StreamEvent::Error {
                         error: e.to_string(),
                     })];
-                    if block_open {
-                        events.push(Ok(StreamEvent::ContentBlockStop { index: 0 }));
-                        block_open = false;
-                    }
+                    events.extend(stream_state.finish_block());
                     events
                 }
             })
@@ -490,5 +541,63 @@ where
 
     fn supports_vision(&self) -> bool {
         self.vision_model.is_some()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn stream_state_splits_reasoning_then_text_into_distinct_blocks() {
+        let mut state = RigStreamState::default();
+
+        let reasoning_events = state.push_reasoning(
+            "Reasoning before the answer".to_string(),
+            Some("sig-1".into()),
+        );
+        assert_eq!(reasoning_events.len(), 2);
+        assert!(matches!(
+            &reasoning_events[0],
+            Ok(StreamEvent::ContentBlockStart {
+                index: 0,
+                content_block: ContentBlock::Thinking { signature, .. },
+            }) if signature.as_deref() == Some("sig-1")
+        ));
+        assert!(matches!(
+            &reasoning_events[1],
+            Ok(StreamEvent::ContentBlockDelta {
+                index: 0,
+                delta: ContentDelta::ReasoningDelta { text },
+            }) if text == "Reasoning before the answer"
+        ));
+
+        let text_events = state.push_text("Visible answer".to_string());
+        assert_eq!(text_events.len(), 3);
+        assert!(matches!(
+            &text_events[0],
+            Ok(StreamEvent::ContentBlockStop { index: 0 })
+        ));
+        assert!(matches!(
+            &text_events[1],
+            Ok(StreamEvent::ContentBlockStart {
+                index: 1,
+                content_block: ContentBlock::Text { .. },
+            })
+        ));
+        assert!(matches!(
+            &text_events[2],
+            Ok(StreamEvent::ContentBlockDelta {
+                index: 1,
+                delta: ContentDelta::TextDelta { text },
+            }) if text == "Visible answer"
+        ));
+
+        let finish_events = state.finish_block();
+        assert_eq!(finish_events.len(), 1);
+        assert!(matches!(
+            &finish_events[0],
+            Ok(StreamEvent::ContentBlockStop { index: 1 })
+        ));
     }
 }
