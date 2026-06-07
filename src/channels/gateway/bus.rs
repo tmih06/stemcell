@@ -241,11 +241,12 @@ impl Gateway {
                 tracing::info!("gateway: starting surface '{}'", id);
                 let handle = surface.clone().start(self.handle.clone()).await;
                 self.listeners.insert(id, handle);
-            } else if !ready && running {
-                if let Some(handle) = self.listeners.remove(id) {
-                    tracing::info!("gateway: stopping surface '{}'", id);
-                    handle.abort();
-                }
+            } else if !ready
+                && running
+                && let Some(handle) = self.listeners.remove(id)
+            {
+                tracing::info!("gateway: stopping surface '{}'", id);
+                handle.abort();
             }
         }
     }

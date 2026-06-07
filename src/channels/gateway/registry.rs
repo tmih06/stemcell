@@ -56,15 +56,13 @@ pub struct SurfaceDeps {
 /// its Cargo feature, so a channel toggled off in `build_toggles.toml`
 /// contributes no source, no symbols, and no registry entry.
 pub fn registered_surfaces(_deps: &SurfaceDeps) -> Vec<Arc<dyn Surface>> {
-    #[allow(unused_mut)]
-    let mut surfaces: Vec<Arc<dyn Surface>> = Vec::new();
-
     // The TUI is always compiled in — it is the local terminal frontend.
-    surfaces.push(
+    #[allow(unused_mut)]
+    let mut surfaces: Vec<Arc<dyn Surface>> = vec![
         crate::channels::tui_surface::TuiSurface::new(_deps)
             .with_event_sender(_deps.tui_event_tx.clone())
             .into_arc(),
-    );
+    ];
 
     // Each channel surface, gated on its feature — the single source-exclusion
     // point for channels.
