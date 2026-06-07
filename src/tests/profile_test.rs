@@ -1428,6 +1428,7 @@ fn test_resolve_profile_home_default_explicit() {
     let would_be_wrong = base.join("profiles").join("default");
 
     // resolve_profile_home with no active profile and no env var returns base
+    let _env_guard = crate::tests::ENV_LOCK.lock().unwrap();
     let original_env = std::env::var("OPENCRABS_PROFILE").ok();
     unsafe { std::env::remove_var("OPENCRABS_PROFILE") };
 

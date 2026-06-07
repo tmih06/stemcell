@@ -25,9 +25,9 @@
 
 use crate::config::Config;
 
-// Shared across all $HOME-mutating test modules — see `tests::HOME_ENV_LOCK`.
-use crate::tests::HOME_ENV_LOCK as HOME_LOCK;
-
+// Serialize tests that mutate $HOME so they don't race other tests
+// that touch Config::load. Same pattern as
+// `custom_provider_no_models_test`.
 struct HomeGuard {
     prev_home: Option<std::ffi::OsString>,
     prev_userprofile: Option<std::ffi::OsString>,
@@ -36,7 +36,9 @@ struct HomeGuard {
 
 impl HomeGuard {
     fn new(temp_home: &std::path::Path) -> Self {
-        let lock = HOME_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        let lock = crate::tests::ENV_LOCK
+            .lock()
+            .unwrap_or_else(|p| p.into_inner());
         let prev_home = std::env::var_os("HOME");
         let prev_userprofile = std::env::var_os("USERPROFILE");
         unsafe {
