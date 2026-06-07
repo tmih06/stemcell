@@ -444,10 +444,7 @@ impl App {
         if text.trim().is_empty() {
             return;
         }
-        if Self::copy_to_clipboard(&text) {
-            self.notification = Some("Copied to clipboard".to_string());
-            self.notification_shown_at = Some(std::time::Instant::now());
-        }
+        self.copy_and_notify(&text);
     }
 
     /// Right-click: copy the clicked (or selected) message to clipboard
@@ -461,11 +458,8 @@ impl App {
             _ => return,
         };
 
-        if Self::copy_to_clipboard(&content) {
-            self.notification = Some("Copied to clipboard".to_string());
-            self.notification_shown_at = Some(std::time::Instant::now());
-            self.selected_message_idx = None;
-        }
+        self.copy_and_notify(&content);
+        self.selected_message_idx = None;
     }
 
     /// Number of transcript rows visible in the chat viewport.
@@ -640,10 +634,7 @@ impl App {
         if text.trim().is_empty() {
             return;
         }
-        if Self::copy_to_clipboard(&text) {
-            self.notification = Some("Copied to clipboard".to_string());
-            self.notification_shown_at = Some(std::time::Instant::now());
-        }
+        self.copy_and_notify(&text);
         self.select_anchor = None;
     }
 
@@ -694,7 +685,8 @@ impl App {
         if text.trim().is_empty() {
             return false;
         }
-        Self::copy_to_clipboard(&text)
+        self.copy_and_notify(&text);
+        true
     }
 
     /// Extract text from input buffer based on drag selection coordinates.
@@ -780,6 +772,20 @@ impl App {
         let to = map_to_byte(end_visual, end.0);
 
         buf[from.min(to)..from.max(to)].to_string()
+    }
+
+    /// Copy `text` and set a count-based notification. Reports a distinct
+    /// message on failure so the user knows whether the clipboard tool ran.
+    fn copy_and_notify(&mut self, text: &str) {
+        let chars = text.chars().count();
+        let lines = text.lines().count().max(1);
+        let msg = if Self::copy_to_clipboard(text) {
+            format!("Copied {chars} chars, {lines} lines")
+        } else {
+            "Copy failed: no clipboard tool (wl-copy/xclip/xsel)".to_string()
+        };
+        self.notification = Some(msg);
+        self.notification_shown_at = Some(std::time::Instant::now());
     }
 
     /// Copy text to system clipboard

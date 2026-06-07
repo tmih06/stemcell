@@ -739,28 +739,8 @@ pub(super) fn render_chat(f: &mut Frame, app: &mut App, area: Rect) {
         lines.push(Line::from(""));
     }
 
-    // Show notification if present (auto-dismiss after 2s)
-    if let Some(ref note) = app.notification {
-        if app
-            .notification_shown_at
-            .is_some_and(|t| t.elapsed() < std::time::Duration::from_secs(2))
-        {
-            lines.push(Line::from(""));
-            lines.push(Line::from(vec![
-                Span::styled("  ", Style::default()),
-                Span::styled(
-                    note.clone(),
-                    Style::default()
-                        .fg(Color::Cyan)
-                        .add_modifier(Modifier::BOLD),
-                ),
-            ]));
-            lines.push(Line::from(""));
-        } else {
-            app.notification = None;
-            app.notification_shown_at = None;
-        }
-    }
+    // Notification is rendered as a fixed overlay (see below) so it stays
+    // visible regardless of scroll position.
 
     // Show SSH password dialog inline (like approval dialogs).
     // Same shape as the sudo dialog, different label.
@@ -1041,6 +1021,39 @@ pub(super) fn render_chat(f: &mut Frame, app: &mut App, area: Rect) {
                         .add_modifier(Modifier::BOLD),
                 );
             }
+        }
+    }
+
+    // Fixed notification overlay: pinned to the bottom row of the chat area so
+    // it stays visible no matter where the transcript is scrolled. Auto-dismiss
+    // after 2s. A copy-failure message is shown in red, success in cyan.
+    if let Some(note) = app.notification.clone() {
+        let fresh = app
+            .notification_shown_at
+            .is_some_and(|t| t.elapsed() < std::time::Duration::from_secs(2));
+        if fresh && area.height > 0 {
+            let is_err = note.starts_with("Copy failed");
+            let fg = if is_err { Color::Red } else { Color::Black };
+            let bg = if is_err { Color::Yellow } else { Color::Cyan };
+            let label = format!(" {note} ");
+            let width = (label.chars().count() as u16).min(area.width);
+            let x = area.x + area.width.saturating_sub(width).saturating_sub(1);
+            let y = area.y + area.height.saturating_sub(1);
+            let rect = Rect {
+                x,
+                y,
+                width,
+                height: 1,
+            };
+            let widget = Paragraph::new(Line::from(Span::styled(
+                label,
+                Style::default().fg(fg).bg(bg).add_modifier(Modifier::BOLD),
+            )));
+            f.render_widget(Clear, rect);
+            f.render_widget(widget, rect);
+        } else if !fresh {
+            app.notification = None;
+            app.notification_shown_at = None;
         }
     }
 }

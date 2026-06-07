@@ -1553,10 +1553,7 @@ impl App {
                         || (row >= self.input_area_y
                             && row < self.input_area_y + self.input_area_height)
                     {
-                        if self.handle_input_mouse_up(col, row) {
-                            self.notification = Some("Copied to clipboard".to_string());
-                            self.notification_shown_at = Some(std::time::Instant::now());
-                        }
+                        self.handle_input_mouse_up(col, row);
                     } else {
                         self.handle_mouse_up(col, row);
                     }
