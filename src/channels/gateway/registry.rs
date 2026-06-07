@@ -52,13 +52,9 @@ pub struct SurfaceDeps {
 /// each channel is gated on its feature.
 ///
 /// During migration this starts empty and surfaces are added as they move onto
-/// the [`Surface`] trait:
-/// - Phase 2: the TUI surface (always present).
-/// - Phase 3: Telegram (gated on `feature = "telegram"`).
-/// - Phase 4: Discord / Slack / WhatsApp / Trello.
-///
-/// Un-migrated channels continue to run via the legacy `ChannelManager` path,
-/// untouched, so the build stays green at every step.
+/// the [`Surface`] trait. The TUI is always present; each channel is gated on
+/// its Cargo feature, so a channel toggled off in `build_toggles.toml`
+/// contributes no source, no symbols, and no registry entry.
 pub fn registered_surfaces(_deps: &SurfaceDeps) -> Vec<Arc<dyn Surface>> {
     #[allow(unused_mut)]
     let mut surfaces: Vec<Arc<dyn Surface>> = Vec::new();
@@ -70,11 +66,8 @@ pub fn registered_surfaces(_deps: &SurfaceDeps) -> Vec<Arc<dyn Surface>> {
             .into_arc(),
     );
 
-    // Channels are pushed here as they are migrated:
-    // - Phase 3: Telegram (gated on `feature = "telegram"`).
-    // - Phase 4: Discord / Slack / WhatsApp / Trello.
-    // Un-migrated channels continue to run via the legacy `ChannelManager`
-    // path, untouched, so the build stays green at every step.
+    // Each channel surface, gated on its feature — the single source-exclusion
+    // point for channels.
     #[cfg(feature = "telegram")]
     surfaces.push(
         crate::channels::telegram_surface::TelegramSurface::new(

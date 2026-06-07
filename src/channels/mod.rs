@@ -6,7 +6,6 @@
 pub mod commands;
 mod factory;
 pub mod gateway;
-pub mod manager;
 pub mod session_init;
 pub mod session_resolve;
 #[cfg(test)]
@@ -39,4 +38,3 @@ mod greeting;
 
 pub use factory::ChannelFactory;
 pub use greeting::generate_connection_greeting;
-pub use manager::ChannelManager;
