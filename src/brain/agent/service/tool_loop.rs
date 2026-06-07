@@ -827,7 +827,7 @@ impl AgentService {
         // is enough to give the model a chance to wrap up; beyond that,
         // returning the reasoning as the answer is the only way out of
         // the loop.
-        const EMPTY_REASONING_MAX_NUDGES: u32 = 1;
+        const EMPTY_REASONING_MAX_NUDGES: u32 = 5;
         // Local reasoning models (notably Qwen3.6-35B on MLX) periodically
         // emit an EOS token mid-sentence — the response looks complete from
         // a protocol standpoint (proper finish_reason=stop + usage chunk)
