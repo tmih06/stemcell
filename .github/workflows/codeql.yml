@@ -34,8 +34,10 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # Rust uses buildless (`none`) extraction — its extractor does
+          # not support `manual` build mode, so no cargo build is needed.
           - language: rust
-            build-mode: manual
+            build-mode: none
           - language: actions
             build-mode: none
 
@@ -47,32 +49,6 @@ jobs:
         with:
           languages: ${{ matrix.language }}
           build-mode: ${{ matrix.build-mode }}
-
-      # Rust requires a real build so CodeQL can extract the analysis
-      # database. Mirror the CI toolchain + system deps (ALSA for the
-      # local-stt feature) so --all-features compiles.
-      - name: Install Rust (from rust-toolchain.toml)
-        if: matrix.language == 'rust'
-        uses: dtolnay/rust-toolchain@master
-        with:
-          toolchain: stable
-
-      - uses: swatinem/rust-cache@v2
-        if: matrix.language == 'rust'
-        with:
-          cache-on-failure: true
-          save-if: ${{ github.ref == 'refs/heads/main' }}
-
-      - name: Install mold + ALSA dev (Linux)
-        if: matrix.language == 'rust'
-        run: sudo apt-get update -qq && sudo apt-get install -y mold clang libasound2-dev
-
-      - name: Build (Rust)
-        if: matrix.language == 'rust'
-        env:
-          CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER: clang
-          CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS: "-C link-arg=-fuse-ld=mold"
-        run: cargo build --locked --profile ci --all-features
 
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@v3
