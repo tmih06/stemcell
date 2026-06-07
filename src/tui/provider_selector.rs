@@ -3,7 +3,7 @@
 //! Used by both the `/models` dialog and the `/onboard` wizard to avoid
 //! duplicate code that falls out of sync.
 
-use crate::config::ProviderConfig;
+use crate::config::{Config, ProviderConfig};
 
 /// Sentinel value stored in api_key_input when a key was loaded from config.
 /// The actual key is never held in memory — this just signals "key exists".
@@ -76,6 +76,8 @@ pub struct ProviderSelectorState {
     pub models: Vec<String>,
     /// Models loaded from config.toml (fallback when API fetch not available)
     pub config_models: Vec<String>,
+    /// Cached unified model catalog used by the `/models` picker.
+    pub dialog_model_options_cache: Vec<ModelSelectorOption>,
     /// Currently selected model index in filtered list
     pub selected_model: usize,
     /// Live search filter for models (case-insensitive substring match)
@@ -213,7 +215,7 @@ impl ProviderSelectorState {
             .collect()
     }
 
-    fn dialog_models_for_provider(&self, idx: usize) -> Vec<String> {
+    fn dialog_models_for_provider(&self, idx: usize, config: Option<&Config>) -> Vec<String> {
         let mut models = Vec::new();
 
         if idx < CUSTOM_PROVIDER_IDX {
@@ -225,7 +227,7 @@ impl ProviderSelectorState {
                 }
             }
 
-            if let Ok(config) = crate::config::Config::load()
+            if let Some(config) = config
                 && let Some(cfg) =
                     crate::utils::providers::config_for(&config.providers, provider.id)
             {
@@ -247,7 +249,7 @@ impl ProviderSelectorState {
         } else if idx > CUSTOM_PROVIDER_IDX {
             let custom_idx = idx - CUSTOM_INSTANCES_START;
             if let Some(custom_name) = self.custom_names.get(custom_idx)
-                && let Ok(config) = crate::config::Config::load()
+                && let Some(config) = config
                 && let Some(cfg) = config.providers.custom_by_name(custom_name)
             {
                 for model in &cfg.models {
@@ -262,7 +264,8 @@ impl ProviderSelectorState {
         models
     }
 
-    pub fn dialog_model_options(&self) -> Vec<ModelSelectorOption> {
+    pub fn rebuild_dialog_model_options_cache(&mut self) {
+        let config = Config::load().ok();
         let mut options: Vec<ModelSelectorOption> = Vec::new();
 
         for idx in self.provider_display_order() {
@@ -282,7 +285,7 @@ impl ProviderSelectorState {
                     .cloned()
                     .unwrap_or_else(|| "custom".to_string())
             };
-            for model_id in self.dialog_models_for_provider(idx) {
+            for model_id in self.dialog_models_for_provider(idx, config.as_ref()) {
                 options.push(ModelSelectorOption {
                     provider_idx: idx,
                     provider_name: provider_name.clone(),
@@ -307,18 +310,21 @@ impl ProviderSelectorState {
                         .cmp(&b.model_id.to_ascii_lowercase())
                 })
         });
-        options
+        self.dialog_model_options_cache = options;
     }
 
-    pub fn filtered_dialog_model_options(&self) -> Vec<ModelSelectorOption> {
-        let options = self.dialog_model_options();
+    pub fn dialog_model_options(&self) -> &[ModelSelectorOption] {
+        &self.dialog_model_options_cache
+    }
+
+    pub fn filtered_dialog_model_options(&self) -> Vec<&ModelSelectorOption> {
         let query = self.model_filter.trim().to_ascii_lowercase();
         if query.is_empty() {
-            return options;
+            return self.dialog_model_options_cache.iter().collect();
         }
 
-        options
-            .into_iter()
+        self.dialog_model_options_cache
+            .iter()
             .filter(|option| {
                 option.display_name.to_ascii_lowercase().contains(&query)
                     || option.model_id.to_ascii_lowercase().contains(&query)
@@ -328,19 +334,53 @@ impl ProviderSelectorState {
     }
 
     pub fn dialog_model_count(&self) -> usize {
-        self.filtered_dialog_model_options().len()
+        let query = self.model_filter.trim().to_ascii_lowercase();
+        if query.is_empty() {
+            self.dialog_model_options_cache.len()
+        } else {
+            self.dialog_model_options_cache
+                .iter()
+                .filter(|option| {
+                    option.display_name.to_ascii_lowercase().contains(&query)
+                        || option.model_id.to_ascii_lowercase().contains(&query)
+                        || option.provider_name.to_ascii_lowercase().contains(&query)
+                })
+                .count()
+        }
     }
 
     pub fn selected_dialog_model_option(&self) -> Option<ModelSelectorOption> {
-        let options = self.filtered_dialog_model_options();
-        options
-            .get(self.selected_model)
-            .cloned()
-            .or_else(|| options.first().cloned())
+        let query = self.model_filter.trim().to_ascii_lowercase();
+        if query.is_empty() {
+            return self
+                .dialog_model_options_cache
+                .get(self.selected_model)
+                .cloned()
+                .or_else(|| self.dialog_model_options_cache.first().cloned());
+        }
+
+        let mut matched = 0usize;
+        let mut first = None;
+        for option in &self.dialog_model_options_cache {
+            let matches = option.display_name.to_ascii_lowercase().contains(&query)
+                || option.model_id.to_ascii_lowercase().contains(&query)
+                || option.provider_name.to_ascii_lowercase().contains(&query);
+            if !matches {
+                continue;
+            }
+            if first.is_none() {
+                first = Some(option.clone());
+            }
+            if matched == self.selected_model {
+                return Some(option.clone());
+            }
+            matched += 1;
+        }
+        first
     }
 
     pub fn dialog_model_index_for(&self, provider_idx: usize, model_id: &str) -> Option<usize> {
-        self.dialog_model_options()
+        self.dialog_model_options_cache
             .iter()
             .position(|option| option.provider_idx == provider_idx && option.model_id == model_id)
     }
@@ -583,6 +623,7 @@ impl ProviderSelectorState {
             .cloned()
             .collect();
         self.models.extend(extras);
+        self.rebuild_dialog_model_options_cache();
     }
 
     /// Reload config_models for the currently selected provider.
@@ -590,6 +631,7 @@ impl ProviderSelectorState {
         self.config_models.clear();
         if let Ok(config) = crate::config::Config::load() {
             if self.is_cli() {
+                self.rebuild_dialog_model_options_cache();
                 return; // CLI — static or fetched, no config models
             }
             if self.selected_provider < CUSTOM_PROVIDER_IDX {
@@ -605,10 +647,12 @@ impl ProviderSelectorState {
                 && !p.models.is_empty()
             {
                 self.config_models = p.models.clone();
+                self.rebuild_dialog_model_options_cache();
                 return;
             }
         }
         self.config_models = load_default_models(self.provider_id());
+        self.rebuild_dialog_model_options_cache();
     }
 
     /// All model names for the current provider, with the live fetch
@@ -859,6 +903,7 @@ mod tests {
             "openai/gpt-4o".to_string(),
             "anthropic/claude-3.7".to_string(),
         ];
+        state.rebuild_dialog_model_options_cache();
 
         let options = state.filtered_dialog_model_options();
         assert!(options.iter().any(

@@ -39,6 +39,7 @@ fn state() -> ProviderSelectorState {
         api_key_cursor: 0,
         models: Vec::new(),
         config_models: Vec::new(),
+        dialog_model_options_cache: Vec::new(),
         selected_model: 0,
         model_filter: String::new(),
         models_fetching: false,

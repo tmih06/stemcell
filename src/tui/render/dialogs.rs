@@ -337,9 +337,7 @@ pub(super) fn render_model_selector(f: &mut Frame, app: &App, area: Rect) {
             });
 
         const MAX_VISIBLE_MODELS: usize = 10;
-        let visible_models = total.min(MAX_VISIBLE_MODELS);
-        let has_more_indicators = total > MAX_VISIBLE_MODELS;
-        let content_lines = 8 + visible_models as u16 + if has_more_indicators { 2 } else { 0 };
+        let content_lines = 8 + MAX_VISIBLE_MODELS as u16 + 2;
         let max_height = area.height.saturating_mul(19) / 20;
         let dialog_height = content_lines
             .min(max_height)
@@ -408,23 +406,18 @@ pub(super) fn render_model_selector(f: &mut Frame, app: &App, area: Rect) {
             (s, s + MAX_VISIBLE_MODELS)
         };
 
-        if start > 0 {
-            lines.push(Line::from(Span::styled(
-                format!("  ↑ {} more", start),
-                Style::default().fg(Color::DarkGray),
-            )));
-        }
+        lines.push(Line::from(Span::styled(
+            if start > 0 {
+                format!("  ↑ {} more", start)
+            } else {
+                String::new()
+            },
+            Style::default().fg(Color::DarkGray),
+        )));
 
-        if total == 0 {
-            lines.push(Line::from(Span::styled(
-                "  No models match the current search",
-                Style::default()
-                    .fg(Color::DarkGray)
-                    .add_modifier(Modifier::ITALIC),
-            )));
-        }
-
-        let provider_width = dialog_model_options
+        let provider_width = app
+            .ps
+            .dialog_model_options()
             .iter()
             .map(|option| option.provider_name.chars().count())
             .max()
@@ -437,7 +430,20 @@ pub(super) fn render_model_selector(f: &mut Frame, app: &App, area: Rect) {
             .saturating_sub(gap_width)
             .max(12);
 
+        if total == 0 {
+            lines.push(Line::from(Span::styled(
+                "  No models match the current search",
+                Style::default()
+                    .fg(Color::DarkGray)
+                    .add_modifier(Modifier::ITALIC),
+            )));
+            for _ in 1..MAX_VISIBLE_MODELS {
+                lines.push(Line::from(""));
+            }
+        }
+
         for (offset, option) in dialog_model_options[start..end].iter().enumerate() {
+            let option = *option;
             let i = start + offset;
             let selected = i == safe_selected;
             let active = current_provider_idx == Some(option.provider_idx)
@@ -471,12 +477,20 @@ pub(super) fn render_model_selector(f: &mut Frame, app: &App, area: Rect) {
             ]));
         }
 
-        if end < total {
-            lines.push(Line::from(Span::styled(
-                format!("  ↓ {} more", total - end),
-                Style::default().fg(Color::DarkGray),
-            )));
+        let visible_count = end.saturating_sub(start);
+        if total > 0 {
+            for _ in visible_count..MAX_VISIBLE_MODELS {
+                lines.push(Line::from(""));
+            }
         }
+        lines.push(Line::from(Span::styled(
+            if end < total {
+                format!("  ↓ {} more", total - end)
+            } else {
+                String::new()
+            },
+            Style::default().fg(Color::DarkGray),
+        )));
 
         lines.push(Line::from(""));
         lines.push(Line::from(vec![
