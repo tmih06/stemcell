@@ -94,15 +94,15 @@ pub fn synthesize_stream_events(
     let stop_reason = map_stop_reason(&finish_reason);
 
     // 2. Optional reasoning delta (some providers carry it in `message.reasoning`).
-    if let Some(reasoning) = message.get("reasoning").and_then(|v| v.as_str()) {
-        if !reasoning.is_empty() {
-            events.push(Ok(StreamEvent::ContentBlockDelta {
-                index: 0,
-                delta: ContentDelta::ReasoningDelta {
-                    text: reasoning.to_string(),
-                },
-            }));
-        }
+    if let Some(reasoning) = message.get("reasoning").and_then(|v| v.as_str())
+        && !reasoning.is_empty()
+    {
+        events.push(Ok(StreamEvent::ContentBlockDelta {
+            index: 0,
+            delta: ContentDelta::ReasoningDelta {
+                text: reasoning.to_string(),
+            },
+        }));
     }
 
     // 3. Optional text content
@@ -115,16 +115,16 @@ pub fn synthesize_stream_events(
     } else {
         0
     };
-    if let Some(text) = content_text {
-        if !text.is_empty() {
-            let idx = next_index;
-            next_index += 1;
-            events.push(Ok(StreamEvent::ContentBlockStart {
-                index: idx,
-                content_block: ContentBlock::Text { text: text.clone() },
-            }));
-            events.push(Ok(StreamEvent::ContentBlockStop { index: idx }));
-        }
+    if let Some(text) = content_text
+        && !text.is_empty()
+    {
+        let idx = next_index;
+        next_index += 1;
+        events.push(Ok(StreamEvent::ContentBlockStart {
+            index: idx,
+            content_block: ContentBlock::Text { text: text.clone() },
+        }));
+        events.push(Ok(StreamEvent::ContentBlockStop { index: idx }));
     }
 
     // 4. Tool calls

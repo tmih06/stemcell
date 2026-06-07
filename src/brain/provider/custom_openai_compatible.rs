@@ -206,12 +206,14 @@ impl OpenAIProvider {
                 .expect("Failed to create OpenAI client")
         });
 
-        let context_window_fn: Option<Arc<dyn Fn(&str) -> Option<u32> + Send + Sync>> =
-            configured_cw.map(|cw| -> Arc<dyn Fn(&str) -> Option<u32> + Send + Sync> {
-                Arc::new(move |_model| Some(cw))
-            });
+        let context_window_fn: Option<crate::brain::provider::rig_adapter::ContextWindowFn> =
+            configured_cw.map(
+                |cw| -> crate::brain::provider::rig_adapter::ContextWindowFn {
+                    Arc::new(move |_model| Some(cw))
+                },
+            );
 
-        let calculate_cost_fn: Option<Arc<dyn Fn(&str, u32, u32) -> f64 + Send + Sync>> =
+        let calculate_cost_fn: Option<crate::brain::provider::rig_adapter::CalculateCostFn> =
             Some(Arc::new(move |model, input_tokens, output_tokens| {
                 crate::usage::pricing::PricingConfig::load()
                     .map(|cfg| cfg.calculate_cost(model, input_tokens, output_tokens))
@@ -433,9 +435,7 @@ impl OpenAIProvider {
 
 fn context_window_for_model(model: &str) -> Option<u32> {
     let m = model.to_ascii_lowercase();
-    if m.starts_with("gpt-4.1") {
-        Some(1_047_576)
-    } else if m.starts_with("gpt-5") {
+    if m.starts_with("gpt-4.1") || m.starts_with("gpt-5") {
         Some(1_047_576)
     } else if m == "gpt-4o" || m == "gpt-4o-mini" || m == "gpt-4-turbo-preview" {
         Some(128_000)

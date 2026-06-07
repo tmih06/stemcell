@@ -366,18 +366,18 @@ impl SlashCommandTool {
             // Detect active provider section
             let mut target_section = None;
             for (id, _display, _req_key, cfg) in config.providers.provider_registry() {
-                if let Some(c) = cfg {
-                    if c.enabled {
-                        target_section = Some(format!("providers.{}", id.replace("-", "_")));
-                        break;
-                    }
+                if let Some(c) = cfg
+                    && c.enabled
+                {
+                    target_section = Some(format!("providers.{}", id.replace("-", "_")));
+                    break;
                 }
             }
 
-            if target_section.is_none() {
-                if let Some((name, _)) = config.providers.active_custom() {
-                    target_section = Some(format!("providers.custom.{}", name));
-                }
+            if target_section.is_none()
+                && let Some((name, _)) = config.providers.active_custom()
+            {
+                target_section = Some(format!("providers.custom.{}", name));
             }
 
             let Some(section) = target_section else {

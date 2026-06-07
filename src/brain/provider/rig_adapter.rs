@@ -13,13 +13,18 @@ use rig_core::completion::request::ToolDefinition;
 use rig_core::completion::{CompletionModel, CompletionRequest};
 use std::sync::Arc;
 
+/// Maps a model name to its context-window size (in tokens).
+pub type ContextWindowFn = Arc<dyn Fn(&str) -> Option<u32> + Send + Sync>;
+/// Computes request cost in USD from (model, input_tokens, output_tokens).
+pub type CalculateCostFn = Arc<dyn Fn(&str, u32, u32) -> f64 + Send + Sync>;
+
 pub struct RigAdapter<C> {
     pub name: String,
     pub default_model: String,
     pub supported_models: Vec<String>,
     pub client_builder: Arc<dyn Fn() -> C + Send + Sync>,
-    pub context_window_fn: Option<Arc<dyn Fn(&str) -> Option<u32> + Send + Sync>>,
-    pub calculate_cost_fn: Option<Arc<dyn Fn(&str, u32, u32) -> f64 + Send + Sync>>,
+    pub context_window_fn: Option<ContextWindowFn>,
+    pub calculate_cost_fn: Option<CalculateCostFn>,
     pub base_url: Option<String>,
     /// Optional vision-capable model. When set, `supports_vision()`
     /// returns true so the channel side knows it can route image
@@ -115,7 +120,7 @@ fn build_rig_message(msg: &Message) -> Option<RigMessage> {
                         thinking,
                         signature,
                     } => Some(AssistantContent::Reasoning(Reasoning::new_with_signature(
-                        &thinking,
+                        thinking,
                         signature.clone(),
                     ))),
                     ContentBlock::ToolUse { id, name, input } => Some(AssistantContent::ToolCall(

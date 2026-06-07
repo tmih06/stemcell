@@ -442,6 +442,16 @@ pub(super) fn render_model_selector(f: &mut Frame, app: &App, area: Rect) {
             }
         }
 
+        // Reserve a 2-col gutter on the far right for the green "connected"
+        // tick so provider names stay right-aligned whether or not a tick is
+        // shown.
+        const TICK_GUTTER: usize = 2;
+        // Credential status is cached per render so Config::load() (and the
+        // CLI-binary probes inside provider_has_credentials) runs at most
+        // once per distinct provider currently in view.
+        let mut cred_cache: std::collections::HashMap<usize, bool> =
+            std::collections::HashMap::new();
+
         for (offset, option) in dialog_model_options[start..end].iter().enumerate() {
             let option = *option;
             let i = start + offset;
@@ -468,12 +478,34 @@ pub(super) fn render_model_selector(f: &mut Frame, app: &App, area: Rect) {
                 truncate_to_chars(&option.provider_name, provider_width).into_owned();
             let filler = " ".repeat(
                 row_width
+                    .saturating_sub(TICK_GUTTER)
                     .saturating_sub(model_label.chars().count() + provider_label.chars().count()),
             );
             let row = format!("{model_label}{filler}{provider_label}");
+
+            // Right-aligned green tick for providers that are connected
+            // (API key present, OAuth token saved, or CLI binary on PATH).
+            // Providers you are not logged into show a blank gutter instead.
+            let configured = *cred_cache
+                .entry(option.provider_idx)
+                .or_insert_with(|| app.ps.provider_has_credentials(option.provider_idx));
+            let tick_span = if configured {
+                Span::styled(
+                    " ✓",
+                    if selected {
+                        Style::default().fg(Color::Green).bg(BRAND_BLUE)
+                    } else {
+                        Style::default().fg(Color::Green)
+                    },
+                )
+            } else {
+                Span::styled("  ", style)
+            };
+
             lines.push(Line::from(vec![
                 Span::styled(prefix, style),
                 Span::styled(row, style),
+                tick_span,
             ]));
         }
 
