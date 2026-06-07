@@ -311,6 +311,216 @@ pub(super) fn render_model_selector(f: &mut Frame, app: &App, area: Rect) {
 
     let is_custom_selected = provider_idx >= CUSTOM_PROVIDER_IDX;
 
+    let unified_model_picker = !app.ps.showing_providers;
+    if unified_model_picker {
+        let dialog_model_options = app.ps.filtered_dialog_model_options();
+        let total = dialog_model_options.len();
+        let max_sel = if total > 0 { total - 1 } else { 0 };
+        let safe_selected = app.ps.selected_model.min(max_sel);
+        let current_model = app
+            .current_session
+            .as_ref()
+            .and_then(|s| s.model.clone())
+            .unwrap_or_else(|| app.provider_model());
+        let current_provider_idx = app
+            .current_session
+            .as_ref()
+            .and_then(|s| s.provider_name.as_deref())
+            .and_then(|name| {
+                crate::utils::providers::tui_index_for_id(name).or_else(|| {
+                    app.ps
+                        .custom_names
+                        .iter()
+                        .position(|custom_name| custom_name == name)
+                        .map(|idx| CUSTOM_INSTANCES_START + idx)
+                })
+            });
+
+        const MAX_VISIBLE_MODELS: usize = 10;
+        let visible_models = total.min(MAX_VISIBLE_MODELS);
+        let has_more_indicators = total > MAX_VISIBLE_MODELS;
+        let content_lines = 8 + visible_models as u16 + if has_more_indicators { 2 } else { 0 };
+        let max_height = area.height.saturating_mul(19) / 20;
+        let dialog_height = content_lines
+            .min(max_height)
+            .min(area.height.saturating_sub(2));
+        let dialog_width = 84u16.min(area.width * 9 / 10).max(52u16.min(area.width));
+
+        let v_chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Min(0),
+                Constraint::Length(dialog_height),
+                Constraint::Min(0),
+            ])
+            .split(area);
+        let h_chunks = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([
+                Constraint::Min(0),
+                Constraint::Length(dialog_width),
+                Constraint::Min(0),
+            ])
+            .split(v_chunks[1]);
+        let dialog_area = h_chunks[1];
+
+        let mut lines: Vec<Line> = Vec::new();
+        lines.push(Line::from(vec![
+            Span::styled(
+                "  Models",
+                Style::default()
+                    .fg(Color::Reset)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(
+                "  pick a model; provider switches with it",
+                Style::default()
+                    .fg(Color::DarkGray)
+                    .add_modifier(Modifier::ITALIC),
+            ),
+        ]));
+        lines.push(Line::from(""));
+
+        let search_cursor = "█";
+        let search_display = if app.ps.model_filter.is_empty() {
+            format!("  Search: model or provider{}", search_cursor)
+        } else {
+            format!("  Search: {}{}", app.ps.model_filter, search_cursor)
+        };
+        lines.push(Line::from(Span::styled(
+            search_display,
+            Style::default().fg(BRAND_BLUE),
+        )));
+        lines.push(Line::from(Span::styled(
+            "  Model                                                  Provider",
+            Style::default()
+                .fg(Color::DarkGray)
+                .add_modifier(Modifier::BOLD),
+        )));
+
+        let (start, end) = if total <= MAX_VISIBLE_MODELS {
+            (0, total)
+        } else {
+            let half = MAX_VISIBLE_MODELS / 2;
+            let s = safe_selected
+                .saturating_sub(half)
+                .min(total - MAX_VISIBLE_MODELS);
+            (s, s + MAX_VISIBLE_MODELS)
+        };
+
+        if start > 0 {
+            lines.push(Line::from(Span::styled(
+                format!("  ↑ {} more", start),
+                Style::default().fg(Color::DarkGray),
+            )));
+        }
+
+        if total == 0 {
+            lines.push(Line::from(Span::styled(
+                "  No models match the current search",
+                Style::default()
+                    .fg(Color::DarkGray)
+                    .add_modifier(Modifier::ITALIC),
+            )));
+        }
+
+        let provider_width = dialog_model_options
+            .iter()
+            .map(|option| option.provider_name.chars().count())
+            .max()
+            .unwrap_or(12)
+            .min(22);
+        let row_width = dialog_area.width.saturating_sub(10) as usize;
+        let gap_width = 2usize;
+        let model_width = row_width
+            .saturating_sub(provider_width)
+            .saturating_sub(gap_width)
+            .max(12);
+
+        for (offset, option) in dialog_model_options[start..end].iter().enumerate() {
+            let i = start + offset;
+            let selected = i == safe_selected;
+            let active = current_provider_idx == Some(option.provider_idx)
+                && option.model_id == current_model;
+
+            let prefix = if selected { " > " } else { "   " };
+            let style = if selected {
+                Style::default()
+                    .fg(Color::Black)
+                    .bg(BRAND_BLUE)
+                    .add_modifier(Modifier::BOLD)
+            } else if active {
+                Style::default()
+                    .fg(Color::Gray)
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(Color::Reset)
+            };
+
+            let model_label = truncate_to_chars(&option.display_name, model_width).into_owned();
+            let provider_label =
+                truncate_to_chars(&option.provider_name, provider_width).into_owned();
+            let filler = " ".repeat(
+                row_width
+                    .saturating_sub(model_label.chars().count() + provider_label.chars().count()),
+            );
+            let row = format!("{model_label}{filler}{provider_label}");
+            lines.push(Line::from(vec![
+                Span::styled(prefix, style),
+                Span::styled(row, style),
+            ]));
+        }
+
+        if end < total {
+            lines.push(Line::from(Span::styled(
+                format!("  ↓ {} more", total - end),
+                Style::default().fg(Color::DarkGray),
+            )));
+        }
+
+        lines.push(Line::from(""));
+        lines.push(Line::from(vec![
+            Span::styled(
+                "[↑/↓]",
+                Style::default().fg(BRAND_GOLD).add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(" Move  ", Style::default().fg(Color::Reset)),
+            Span::styled(
+                "[Type]",
+                Style::default().fg(BRAND_GOLD).add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(" Search  ", Style::default().fg(Color::Reset)),
+            Span::styled(
+                "[Enter]",
+                Style::default().fg(BRAND_GOLD).add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(" Select  ", Style::default().fg(Color::Reset)),
+            Span::styled(
+                "[Esc]",
+                Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(" Cancel", Style::default().fg(Color::Reset)),
+        ]));
+
+        let widget = Paragraph::new(lines)
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .border_style(Style::default().fg(Color::Rgb(120, 120, 120)))
+                    .title(Span::styled(
+                        " Select Model ",
+                        Style::default()
+                            .fg(Color::Rgb(120, 120, 120))
+                            .add_modifier(Modifier::BOLD),
+                    )),
+            )
+            .wrap(Wrap { trim: false });
+
+        f.render_widget(Clear, dialog_area);
+        f.render_widget(widget, dialog_area);
+        return;
+    }
+
     // Custom providers keep the existing fetch/paste flow. Built-ins use a
     // flat searchable model catalogue inspired by opencode's model dialog.
     let filter = app.ps.model_filter.to_lowercase();

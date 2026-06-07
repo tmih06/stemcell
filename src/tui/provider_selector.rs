@@ -214,36 +214,49 @@ impl ProviderSelectorState {
     }
 
     fn dialog_models_for_provider(&self, idx: usize) -> Vec<String> {
-        if idx >= CUSTOM_PROVIDER_IDX {
-            return Vec::new();
-        }
-
-        let provider = &PROVIDERS[idx];
         let mut models = Vec::new();
 
-        if idx == self.selected_provider {
-            for model in &self.models {
-                push_unique_model(&mut models, model.clone());
-            }
-        }
+        if idx < CUSTOM_PROVIDER_IDX {
+            let provider = &PROVIDERS[idx];
 
-        if let Ok(config) = crate::config::Config::load()
-            && let Some(cfg) = crate::utils::providers::config_for(&config.providers, provider.id)
-        {
-            for model in &cfg.models {
-                push_unique_model(&mut models, model.clone());
+            if idx == self.selected_provider {
+                for model in &self.models {
+                    push_unique_model(&mut models, model.clone());
+                }
             }
-            if let Some(model) = cfg.default_model.as_ref() {
-                push_unique_model(&mut models, model.clone());
+
+            if let Ok(config) = crate::config::Config::load()
+                && let Some(cfg) =
+                    crate::utils::providers::config_for(&config.providers, provider.id)
+            {
+                for model in &cfg.models {
+                    push_unique_model(&mut models, model.clone());
+                }
+                if let Some(model) = cfg.default_model.as_ref() {
+                    push_unique_model(&mut models, model.clone());
+                }
             }
-        }
 
-        for model in load_default_models(provider.id) {
-            push_unique_model(&mut models, model);
-        }
+            for model in load_default_models(provider.id) {
+                push_unique_model(&mut models, model);
+            }
 
-        for model in provider.models {
-            push_unique_model(&mut models, (*model).to_string());
+            for model in provider.models {
+                push_unique_model(&mut models, (*model).to_string());
+            }
+        } else if idx > CUSTOM_PROVIDER_IDX {
+            let custom_idx = idx - CUSTOM_INSTANCES_START;
+            if let Some(custom_name) = self.custom_names.get(custom_idx)
+                && let Ok(config) = crate::config::Config::load()
+                && let Some(cfg) = config.providers.custom_by_name(custom_name)
+            {
+                for model in &cfg.models {
+                    push_unique_model(&mut models, model.clone());
+                }
+                if let Some(model) = cfg.default_model.as_ref() {
+                    push_unique_model(&mut models, model.clone());
+                }
+            }
         }
 
         models
@@ -252,12 +265,23 @@ impl ProviderSelectorState {
     pub fn dialog_model_options(&self) -> Vec<ModelSelectorOption> {
         let mut options: Vec<ModelSelectorOption> = Vec::new();
 
-        for idx in 0..CUSTOM_PROVIDER_IDX {
-            if !is_provider_compiled(PROVIDERS[idx].id) {
+        for idx in self.provider_display_order() {
+            if idx == CUSTOM_PROVIDER_IDX {
                 continue;
             }
 
-            let provider_name = PROVIDERS[idx].name.to_string();
+            let provider_name = if idx < CUSTOM_PROVIDER_IDX {
+                if !is_provider_compiled(PROVIDERS[idx].id) {
+                    continue;
+                }
+                PROVIDERS[idx].name.to_string()
+            } else {
+                let custom_idx = idx - CUSTOM_INSTANCES_START;
+                self.custom_names
+                    .get(custom_idx)
+                    .cloned()
+                    .unwrap_or_else(|| "custom".to_string())
+            };
             for model_id in self.dialog_models_for_provider(idx) {
                 options.push(ModelSelectorOption {
                     provider_idx: idx,

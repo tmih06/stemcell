@@ -278,7 +278,7 @@ impl App {
         self.ps.models.clear();
         self.ps.reload_config_models();
 
-        if provider_idx < CUSTOM_PROVIDER_IDX {
+        if provider_idx != CUSTOM_PROVIDER_IDX {
             let initial_model = self
                 .current_session
                 .as_ref()
@@ -293,7 +293,7 @@ impl App {
         // Reset view state
         self.ps.showing_providers = false;
         self.ps.model_filter.clear();
-        self.ps.focused_field = 0;
+        self.ps.focused_field = 2;
 
         self.mode = AppMode::ModelSelector;
     }
@@ -304,6 +304,64 @@ impl App {
         event: crossterm::event::KeyEvent,
     ) -> Result<()> {
         use super::events::keys;
+
+        let unified_model_picker = !self.ps.showing_providers;
+        if unified_model_picker {
+            if keys::is_cancel(&event) {
+                self.switch_mode(AppMode::Chat).await?;
+                return Ok(());
+            }
+
+            if event.code == crossterm::event::KeyCode::Tab {
+                self.ps.focused_field = 2;
+                return Ok(());
+            }
+
+            if keys::is_enter(&event) {
+                let Some(selected_option) = self.ps.selected_dialog_model_option() else {
+                    self.error_message = Some("No models match the current search".to_string());
+                    self.error_message_shown_at = Some(std::time::Instant::now());
+                    return Ok(());
+                };
+
+                let target_provider_idx = selected_option.provider_idx;
+                self.ps.selected_provider = target_provider_idx;
+                if target_provider_idx >= CUSTOM_INSTANCES_START {
+                    self.reload_model_selector_custom_fields();
+                    self.ps.custom_model = selected_option.model_id.clone();
+                }
+                self.save_provider_selection(target_provider_idx.min(CUSTOM_PROVIDER_IDX), false)
+                    .await?;
+                return Ok(());
+            }
+
+            match event.code {
+                crossterm::event::KeyCode::Char(c) => {
+                    self.ps.model_filter.push(c);
+                    self.ps.selected_model = 0;
+                }
+                crossterm::event::KeyCode::Backspace => {
+                    self.ps.model_filter.pop();
+                    let count = self.ps.dialog_model_count();
+                    if self.ps.selected_model >= count && count > 0 {
+                        self.ps.selected_model = count - 1;
+                    } else if count == 0 {
+                        self.ps.selected_model = 0;
+                    }
+                }
+                _ if keys::is_up(&event) => {
+                    self.ps.selected_model = self.ps.selected_model.saturating_sub(1);
+                }
+                _ if keys::is_down(&event) => {
+                    let max_models = self.ps.dialog_model_count();
+                    if max_models > 0 {
+                        self.ps.selected_model = (self.ps.selected_model + 1).min(max_models - 1);
+                    }
+                }
+                _ => {}
+            }
+            return Ok(());
+        }
 
         let is_zhipu = self.ps.provider_id() == "zhipu";
         let is_custom_field_3 =
