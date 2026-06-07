@@ -16,16 +16,24 @@ pub mod voice;
 
 #[cfg(feature = "discord")]
 pub mod discord;
+#[cfg(feature = "discord")]
+pub mod discord_surface;
 #[cfg(feature = "slack")]
 pub mod slack;
+#[cfg(feature = "slack")]
+pub mod slack_surface;
 #[cfg(feature = "telegram")]
 pub mod telegram;
 #[cfg(feature = "telegram")]
 pub mod telegram_surface;
 #[cfg(feature = "trello")]
 pub mod trello;
+#[cfg(feature = "trello")]
+pub mod trello_surface;
 #[cfg(feature = "whatsapp")]
 pub mod whatsapp;
+#[cfg(feature = "whatsapp")]
+pub mod whatsapp_surface;
 
 mod greeting;
 

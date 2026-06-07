@@ -942,6 +942,14 @@ async fn cmd_chat_inner(
             tui_event_tx: app.event_sender(),
             #[cfg(feature = "telegram")]
             telegram_state: telegram_state.clone(),
+            #[cfg(feature = "discord")]
+            discord_state: discord_state.clone(),
+            #[cfg(feature = "slack")]
+            slack_state: slack_state.clone(),
+            #[cfg(feature = "whatsapp")]
+            whatsapp_state: whatsapp_state.clone(),
+            #[cfg(feature = "trello")]
+            trello_state: trello_state.clone(),
         };
         let surfaces = crate::channels::gateway::registered_surfaces(&surface_deps);
         let ctx = crate::channels::gateway::GatewayContext {

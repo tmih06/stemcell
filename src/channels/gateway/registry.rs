@@ -34,6 +34,18 @@ pub struct SurfaceDeps {
     /// Present only when the `telegram` feature is compiled in.
     #[cfg(feature = "telegram")]
     pub telegram_state: Arc<crate::channels::telegram::TelegramState>,
+    /// Shared Discord state. Present only when `discord` is compiled in.
+    #[cfg(feature = "discord")]
+    pub discord_state: Arc<crate::channels::discord::DiscordState>,
+    /// Shared Slack state. Present only when `slack` is compiled in.
+    #[cfg(feature = "slack")]
+    pub slack_state: Arc<crate::channels::slack::SlackState>,
+    /// Shared WhatsApp state. Present only when `whatsapp` is compiled in.
+    #[cfg(feature = "whatsapp")]
+    pub whatsapp_state: Arc<crate::channels::whatsapp::WhatsAppState>,
+    /// Shared Trello state. Present only when `trello` is compiled in.
+    #[cfg(feature = "trello")]
+    pub trello_state: Arc<crate::channels::trello::TrelloState>,
 }
 
 /// Build the list of surfaces present in this build. The TUI is always present;
@@ -70,6 +82,33 @@ pub fn registered_surfaces(_deps: &SurfaceDeps) -> Vec<Arc<dyn Surface>> {
             _deps.telegram_state.clone(),
         )
         .into_arc(),
+    );
+
+    #[cfg(feature = "discord")]
+    surfaces.push(
+        crate::channels::discord_surface::DiscordSurface::new(_deps, _deps.discord_state.clone())
+            .into_arc(),
+    );
+
+    #[cfg(feature = "slack")]
+    surfaces.push(
+        crate::channels::slack_surface::SlackSurface::new(_deps, _deps.slack_state.clone())
+            .into_arc(),
+    );
+
+    #[cfg(feature = "whatsapp")]
+    surfaces.push(
+        crate::channels::whatsapp_surface::WhatsAppSurface::new(
+            _deps,
+            _deps.whatsapp_state.clone(),
+        )
+        .into_arc(),
+    );
+
+    #[cfg(feature = "trello")]
+    surfaces.push(
+        crate::channels::trello_surface::TrelloSurface::new(_deps, _deps.trello_state.clone())
+            .into_arc(),
     );
 
     surfaces

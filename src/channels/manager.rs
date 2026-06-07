@@ -46,6 +46,11 @@ use std::sync::Arc;
 use tokio::task::JoinHandle;
 
 /// Manages running channel agents, allowing dynamic spawn/stop on config reload.
+///
+/// Superseded by the unified gateway — all channels now run as `Surface`s.
+/// Retained (inert) until Phase 5 deletes it; its internals are intentionally
+/// dead code in the meantime.
+#[allow(dead_code)]
 pub struct ChannelManager {
     #[cfg(any(
         feature = "telegram",
@@ -91,6 +96,7 @@ pub struct ChannelManager {
 
 impl ChannelManager {
     #[allow(clippy::too_many_arguments)]
+    #[allow(dead_code)] // legacy internals retained until Phase 5 deletes ChannelManager
     pub fn new(
         #[cfg(any(
             feature = "telegram",
@@ -153,6 +159,13 @@ impl ChannelManager {
     }
 
     /// Compare running channels against config and spawn/stop as needed.
+    ///
+    /// **All channels are now owned by the unified gateway** (each implements
+    /// the `Surface` trait and is started by `Gateway::reconcile`). This legacy
+    /// manager no longer spawns anything — its per-channel `reconcile_*` methods
+    /// are retained under `allow(dead_code)` and the whole `ChannelManager` is
+    /// removed in Phase 5. Kept as a no-op for now so the construction +
+    /// call sites in `cli/ui.rs` stay unchanged during the migration.
     #[cfg(any(
         feature = "telegram",
         feature = "whatsapp",
@@ -160,27 +173,8 @@ impl ChannelManager {
         feature = "slack",
         feature = "trello"
     ))]
-    pub async fn reconcile(&self, config: &Config) {
-        let mut handles = self.handles.lock().await;
-
-        // Telegram is owned by the unified channel gateway (it implements the
-        // `Surface` trait), not this legacy manager — skip it here so the bot
-        // is not double-spawned (two dispatchers on one token => Telegram API
-        // conflict). The remaining channels migrate off the manager in later
-        // phases.
-        let _ = &mut handles;
-
-        #[cfg(feature = "whatsapp")]
-        self.reconcile_whatsapp(config, &mut handles).await;
-
-        #[cfg(feature = "discord")]
-        self.reconcile_discord(config, &mut handles).await;
-
-        #[cfg(feature = "slack")]
-        self.reconcile_slack(config, &mut handles).await;
-
-        #[cfg(feature = "trello")]
-        self.reconcile_trello(config, &mut handles).await;
+    pub async fn reconcile(&self, _config: &Config) {
+        // No-op: gateway owns all channel lifecycles now.
     }
 
     #[cfg(feature = "telegram")]
@@ -238,6 +232,7 @@ impl ChannelManager {
     }
 
     #[cfg(feature = "whatsapp")]
+    #[allow(dead_code)] // Superseded by WhatsAppSurface; removed in Phase 5.
     async fn reconcile_whatsapp(
         &self,
         config: &Config,
@@ -271,6 +266,7 @@ impl ChannelManager {
     }
 
     #[cfg(feature = "discord")]
+    #[allow(dead_code)] // Superseded by DiscordSurface; removed in Phase 5.
     async fn reconcile_discord(
         &self,
         config: &Config,
@@ -316,6 +312,7 @@ impl ChannelManager {
     }
 
     #[cfg(feature = "slack")]
+    #[allow(dead_code)] // Superseded by SlackSurface; removed in Phase 5.
     async fn reconcile_slack(
         &self,
         config: &Config,
@@ -366,6 +363,7 @@ impl ChannelManager {
     }
 
     #[cfg(feature = "trello")]
+    #[allow(dead_code)] // Superseded by TrelloSurface; removed in Phase 5.
     async fn reconcile_trello(
         &self,
         config: &Config,
