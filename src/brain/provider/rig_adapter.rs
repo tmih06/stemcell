@@ -202,22 +202,67 @@ where
                 error_type: None,
             })?;
 
-        let text = res
-            .choice
-            .into_iter()
-            .filter_map(|c| match c {
-                AssistantContent::Text(t) => Some(t.text),
-                _ => None,
-            })
-            .collect::<Vec<_>>()
-            .join("\n");
+        // Extract both reasoning and text from the response. The reasoning
+        // MUST be preserved as a Thinking block so downstream code can
+        // detect it and avoid the false-positive empty-reasoning nudge
+        // (which would fire when reasoning > 40 chars but visible text is
+        // empty — even when the model actually replied with reasoning +
+        // text in a single turn, the visible text is the user's answer,
+        // not a dropped turn).
+        let mut content_blocks: Vec<ContentBlock> = Vec::new();
+        let mut text_acc = String::new();
+
+        for choice in res.choice.into_iter() {
+            match choice {
+                AssistantContent::Text(t) => {
+                    if !text_acc.is_empty() {
+                        text_acc.push('\n');
+                    }
+                    text_acc.push_str(&t.text);
+                }
+                AssistantContent::Reasoning(reasoning) => {
+                    // Collect the reasoning text from all variants
+                    let reasoning_text = reasoning
+                        .content
+                        .iter()
+                        .filter_map(|c| match c {
+                            rig_core::completion::message::ReasoningContent::Text {
+                                text,
+                                ..
+                            } => Some(text.as_str()),
+                            rig_core::completion::message::ReasoningContent::Summary(s) => {
+                                Some(s.as_str())
+                            }
+                            _ => None,
+                        })
+                        .collect::<Vec<_>>()
+                        .join("\n");
+                    if !reasoning_text.trim().is_empty() {
+                        content_blocks.push(ContentBlock::Thinking {
+                            thinking: reasoning_text,
+                            signature: reasoning.first_signature().map(String::from),
+                        });
+                    }
+                }
+                _ => {
+                    // Ignore other variants (ToolCall, Image, etc.) in the
+                    // non-streaming response for now — they're handled
+                    // via the streaming path or by the tool_call
+                    // detection in the tool loop.
+                }
+            }
+        }
+
+        if !text_acc.is_empty() {
+            content_blocks.push(ContentBlock::Text { text: text_acc });
+        }
 
         let response_id = res.message_id.unwrap_or_else(|| "rig-response".into());
 
         Ok(LLMResponse {
             id: response_id,
             model: request.model,
-            content: vec![ContentBlock::Text { text }],
+            content: content_blocks,
             stop_reason: Some(StopReason::EndTurn),
             usage: TokenUsage::default(),
             streaming_active_secs: None,
