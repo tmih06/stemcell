@@ -3,6 +3,7 @@
 //! File picker, directory picker, model selector, usage dialog, restart dialog, and update prompt.
 
 use super::super::app::App;
+use super::input::truncate_to_chars;
 use ratatui::{
     Frame,
     layout::{Constraint, Direction, Layout, Rect},
@@ -308,17 +309,29 @@ pub(super) fn render_model_selector(f: &mut Frame, app: &App, area: Rect) {
 
     let selected_provider = &PROVIDERS[clamped_idx];
 
-    // Get models from fetched list, filtered by search text
+    let is_custom_selected = provider_idx >= CUSTOM_PROVIDER_IDX;
+
+    // Custom providers keep the existing fetch/paste flow. Built-ins use a
+    // flat searchable model catalogue inspired by opencode's model dialog.
     let filter = app.ps.model_filter.to_lowercase();
-    let display_models: Vec<&str> = app
+    let custom_display_models: Vec<&str> = app
         .ps
         .models
         .iter()
         .filter(|m| filter.is_empty() || m.to_lowercase().contains(&filter))
         .map(|s| s.as_ref())
         .collect();
+    let dialog_model_options = if is_custom_selected {
+        Vec::new()
+    } else {
+        app.ps.filtered_dialog_model_options()
+    };
 
-    let model_count = display_models.len();
+    let model_count = if is_custom_selected {
+        custom_display_models.len()
+    } else {
+        dialog_model_options.len()
+    };
     // For custom providers in mid-edit (user picked a model on field 3 then
     // advanced to field 4/5 but hasn't hit final save yet), prefer the
     // freshly-picked `custom_model` over `session.model` — otherwise the
@@ -336,11 +349,14 @@ pub(super) fn render_model_selector(f: &mut Frame, app: &App, area: Rect) {
             .and_then(|s| s.model.clone())
             .unwrap_or_else(|| app.provider_model())
     };
+    let current_provider_idx = app
+        .current_session
+        .as_ref()
+        .and_then(|s| s.provider_name.as_deref())
+        .and_then(crate::utils::providers::tui_index_for_id);
 
-    let custom_extra = app.ps.custom_names.len() as u16;
-    let is_custom_selected = provider_idx >= CUSTOM_PROVIDER_IDX;
     // static providers + custom_extra + "+ New Custom" + API key line + filter + models + footer + padding
-    let provider_lines = CUSTOM_PROVIDER_IDX as u16 + custom_extra + 1; // static + customs + new custom
+    let provider_lines = app.ps.provider_display_order().len() as u16;
     // Custom providers: text fields + optional model list when fetched
     // No models (PASTE mode): Base URL(2) + API Key(2) + Model text(1) + paste hint(1) + Name(2) + Context Window(1) + spacing(2) + help(2) = 13
     // With models: Base URL(2) + API Key(2) + filter(1) + models + ↑↓ indicators(2) + Name(2) + Context Window(1) + spacing(1) + help(1) = 12 + models
@@ -354,7 +370,7 @@ pub(super) fn render_model_selector(f: &mut Frame, app: &App, area: Rect) {
         // + up/down indicators when total exceeds the viewport
         11 + visible_models as u16 + if has_more_indicators { 2 } else { 0 }
     } else {
-        4 + model_count as u16 + 4 // key/filter chrome + model list + footer
+        8 + visible_models as u16 + if has_more_indicators { 2 } else { 0 }
     };
     let content_lines = provider_lines + form_lines;
     // Use up to 95% of the terminal so the last 1-3 form fields
@@ -749,26 +765,8 @@ pub(super) fn render_model_selector(f: &mut Frame, app: &App, area: Rect) {
                     .add_modifier(Modifier::ITALIC),
             )));
         }
-    } else {
-        // Non-custom: filter/search model list
-        if model_focused {
-            let filter_cursor = if model_focused { "█" } else { "" };
-            let filter_display = if app.ps.model_filter.is_empty() {
-                format!("  / filter{}", filter_cursor)
-            } else {
-                format!("  / {}{}", app.ps.model_filter, filter_cursor)
-            };
-            lines.push(Line::from(Span::styled(
-                filter_display,
-                Style::default().fg(if model_focused {
-                    BRAND_BLUE
-                } else {
-                    Color::DarkGray
-                }),
-            )));
-        }
-
-        let total = display_models.len();
+    } else if is_custom {
+        let total = custom_display_models.len();
         let max_sel = if total > 0 { total - 1 } else { 0 };
         let safe_selected = app.ps.selected_model.min(max_sel);
         let (start, end) = if total <= MAX_VISIBLE_MODELS {
@@ -788,7 +786,7 @@ pub(super) fn render_model_selector(f: &mut Frame, app: &App, area: Rect) {
             )));
         }
 
-        for (offset, model) in display_models[start..end].iter().enumerate() {
+        for (offset, model) in custom_display_models[start..end].iter().enumerate() {
             let i = start + offset;
             let selected = i == safe_selected;
             let active = *model == current_model;
@@ -819,6 +817,116 @@ pub(super) fn render_model_selector(f: &mut Frame, app: &App, area: Rect) {
                 Span::styled(prefix, style),
                 Span::styled(label.to_string(), style),
                 Span::styled(suffix, Style::default().fg(Color::DarkGray)),
+            ]));
+        }
+
+        if end < total {
+            lines.push(Line::from(Span::styled(
+                format!("  ↓ {} more", total - end),
+                Style::default().fg(Color::DarkGray),
+            )));
+        }
+    } else {
+        let search_cursor = if model_focused { "█" } else { "" };
+        let search_display = if app.ps.model_filter.is_empty() {
+            format!("  Search: model or provider{}", search_cursor)
+        } else {
+            format!("  Search: {}{}", app.ps.model_filter, search_cursor)
+        };
+        lines.push(Line::from(Span::styled(
+            search_display,
+            Style::default().fg(if model_focused {
+                BRAND_BLUE
+            } else {
+                Color::DarkGray
+            }),
+        )));
+        lines.push(Line::from(Span::styled(
+            "  Model                                            Provider",
+            Style::default()
+                .fg(Color::DarkGray)
+                .add_modifier(Modifier::BOLD),
+        )));
+
+        let total = dialog_model_options.len();
+        let max_sel = if total > 0 { total - 1 } else { 0 };
+        let safe_selected = app.ps.selected_model.min(max_sel);
+        let (start, end) = if total <= MAX_VISIBLE_MODELS {
+            (0, total)
+        } else {
+            let half = MAX_VISIBLE_MODELS / 2;
+            let s = safe_selected
+                .saturating_sub(half)
+                .min(total - MAX_VISIBLE_MODELS);
+            (s, s + MAX_VISIBLE_MODELS)
+        };
+
+        if start > 0 {
+            lines.push(Line::from(Span::styled(
+                format!("  ↑ {} more", start),
+                Style::default().fg(Color::DarkGray),
+            )));
+        }
+
+        if total == 0 {
+            lines.push(Line::from(Span::styled(
+                "  No models match the current search",
+                Style::default()
+                    .fg(Color::DarkGray)
+                    .add_modifier(Modifier::ITALIC),
+            )));
+        }
+
+        let provider_width = dialog_model_options
+            .iter()
+            .map(|option| option.provider_name.chars().count())
+            .max()
+            .unwrap_or(12)
+            .min(20);
+        let row_width = dialog_area.width.saturating_sub(10) as usize;
+        let gap_width = 2usize;
+        let model_width = row_width
+            .saturating_sub(provider_width)
+            .saturating_sub(gap_width)
+            .max(8);
+
+        for (offset, option) in dialog_model_options[start..end].iter().enumerate() {
+            let i = start + offset;
+            let selected = i == safe_selected;
+            let active = current_provider_idx == Some(option.provider_idx)
+                && option.model_id == current_model;
+
+            let prefix = if selected && model_focused {
+                " > "
+            } else {
+                "   "
+            };
+
+            let style = if selected && model_focused {
+                Style::default()
+                    .fg(Color::Black)
+                    .bg(BRAND_BLUE)
+                    .add_modifier(Modifier::BOLD)
+            } else if active {
+                Style::default()
+                    .fg(Color::Gray)
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(Color::Reset)
+            };
+
+            let model_label = truncate_to_chars(&option.display_name, model_width).into_owned();
+            let provider_label =
+                truncate_to_chars(&option.provider_name, provider_width).into_owned();
+            let filler = " ".repeat(
+                row_width
+                    .saturating_sub(model_label.chars().count() + provider_label.chars().count()),
+            );
+            let row = format!("{model_label}{filler}{provider_label}");
+
+            lines.push(Line::from(vec![
+                Span::styled(prefix, style),
+                Span::styled(row, style),
             ]));
         }
 

@@ -19,6 +19,44 @@ pub const CUSTOM_PROVIDER_IDX: usize = PROVIDERS.len() - 1;
 /// First index used for existing custom provider instances (stored in config).
 pub const CUSTOM_INSTANCES_START: usize = PROVIDERS.len();
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ModelSelectorOption {
+    pub provider_idx: usize,
+    pub provider_name: String,
+    pub model_id: String,
+    pub display_name: String,
+}
+
+pub fn is_provider_compiled(id: &str) -> bool {
+    match id {
+        "claude-cli" => cfg!(feature = "provider-claude-cli"),
+        "opencode-cli" => cfg!(feature = "provider-opencode-cli"),
+        "codex-cli" => cfg!(feature = "provider-codex-cli"),
+        _ => true,
+    }
+}
+
+pub fn first_available_provider_idx() -> usize {
+    (0..CUSTOM_PROVIDER_IDX)
+        .find(|&idx| is_provider_compiled(PROVIDERS[idx].id))
+        .unwrap_or(0)
+}
+
+pub fn is_provider_index_available(idx: usize) -> bool {
+    if idx >= CUSTOM_PROVIDER_IDX {
+        true
+    } else {
+        is_provider_compiled(PROVIDERS[idx].id)
+    }
+}
+
+fn push_unique_model(models: &mut Vec<String>, model: impl Into<String>) {
+    let model = model.into();
+    if !model.trim().is_empty() && !models.iter().any(|existing| existing == &model) {
+        models.push(model);
+    }
+}
+
 /// Shared state for provider + model selection.
 /// Both `/models` dialog and `/onboard` wizard embed this struct.
 #[derive(Default)]
@@ -114,7 +152,10 @@ impl ProviderSelectorState {
 /// if the id isn't in `PROVIDERS`. Lets call-sites avoid hardcoding
 /// positions so reordering the array doesn't cascade into the TUI.
 pub fn index_of_provider(id: &str) -> Option<usize> {
-    PROVIDERS.iter().position(|p| p.id == id)
+    PROVIDERS
+        .iter()
+        .position(|p| p.id == id)
+        .filter(|idx| is_provider_index_available(*idx))
 }
 
 impl ProviderSelectorState {
@@ -161,13 +202,123 @@ impl ProviderSelectorState {
     pub fn provider_display_order(&self) -> Vec<usize> {
         let num_customs = self.custom_names.len();
         // Named providers: everything except the last "Custom" sentinel
-        let mut static_indices: Vec<usize> = (0..CUSTOM_PROVIDER_IDX).collect();
+        let mut static_indices: Vec<usize> = (0..CUSTOM_PROVIDER_IDX)
+            .filter(|&idx| is_provider_compiled(PROVIDERS[idx].id))
+            .collect();
         static_indices.sort_by_key(|&i| PROVIDERS[i].name.to_ascii_lowercase());
         static_indices
             .into_iter()
             .chain(CUSTOM_INSTANCES_START..CUSTOM_INSTANCES_START + num_customs)
             .chain(std::iter::once(CUSTOM_PROVIDER_IDX))
             .collect()
+    }
+
+    fn dialog_models_for_provider(&self, idx: usize) -> Vec<String> {
+        if idx >= CUSTOM_PROVIDER_IDX {
+            return Vec::new();
+        }
+
+        let provider = &PROVIDERS[idx];
+        let mut models = Vec::new();
+
+        if idx == self.selected_provider {
+            for model in &self.models {
+                push_unique_model(&mut models, model.clone());
+            }
+        }
+
+        if let Ok(config) = crate::config::Config::load()
+            && let Some(cfg) = crate::utils::providers::config_for(&config.providers, provider.id)
+        {
+            for model in &cfg.models {
+                push_unique_model(&mut models, model.clone());
+            }
+            if let Some(model) = cfg.default_model.as_ref() {
+                push_unique_model(&mut models, model.clone());
+            }
+        }
+
+        for model in load_default_models(provider.id) {
+            push_unique_model(&mut models, model);
+        }
+
+        for model in provider.models {
+            push_unique_model(&mut models, (*model).to_string());
+        }
+
+        models
+    }
+
+    pub fn dialog_model_options(&self) -> Vec<ModelSelectorOption> {
+        let mut options: Vec<ModelSelectorOption> = Vec::new();
+
+        for idx in 0..CUSTOM_PROVIDER_IDX {
+            if !is_provider_compiled(PROVIDERS[idx].id) {
+                continue;
+            }
+
+            let provider_name = PROVIDERS[idx].name.to_string();
+            for model_id in self.dialog_models_for_provider(idx) {
+                options.push(ModelSelectorOption {
+                    provider_idx: idx,
+                    provider_name: provider_name.clone(),
+                    display_name: model_display_label(&model_id).to_string(),
+                    model_id,
+                });
+            }
+        }
+
+        options.sort_by(|a, b| {
+            a.display_name
+                .to_ascii_lowercase()
+                .cmp(&b.display_name.to_ascii_lowercase())
+                .then_with(|| {
+                    a.provider_name
+                        .to_ascii_lowercase()
+                        .cmp(&b.provider_name.to_ascii_lowercase())
+                })
+                .then_with(|| {
+                    a.model_id
+                        .to_ascii_lowercase()
+                        .cmp(&b.model_id.to_ascii_lowercase())
+                })
+        });
+        options
+    }
+
+    pub fn filtered_dialog_model_options(&self) -> Vec<ModelSelectorOption> {
+        let options = self.dialog_model_options();
+        let query = self.model_filter.trim().to_ascii_lowercase();
+        if query.is_empty() {
+            return options;
+        }
+
+        options
+            .into_iter()
+            .filter(|option| {
+                option.display_name.to_ascii_lowercase().contains(&query)
+                    || option.model_id.to_ascii_lowercase().contains(&query)
+                    || option.provider_name.to_ascii_lowercase().contains(&query)
+            })
+            .collect()
+    }
+
+    pub fn dialog_model_count(&self) -> usize {
+        self.filtered_dialog_model_options().len()
+    }
+
+    pub fn selected_dialog_model_option(&self) -> Option<ModelSelectorOption> {
+        let options = self.filtered_dialog_model_options();
+        options
+            .get(self.selected_model)
+            .cloned()
+            .or_else(|| options.first().cloned())
+    }
+
+    pub fn dialog_model_index_for(&self, provider_idx: usize, model_id: &str) -> Option<usize> {
+        self.dialog_model_options()
+            .iter()
+            .position(|option| option.provider_idx == provider_idx && option.model_id == model_id)
     }
 
     /// Check if a provider at the given index has credentials configured.
@@ -649,4 +800,45 @@ pub fn load_default_models(provider_id: &str) -> Vec<String> {
         provider_id
     );
     models
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn compiled_cli_provider_visibility_matches_features() {
+        #[cfg(feature = "provider-claude-cli")]
+        assert!(index_of_provider("claude-cli").is_some());
+        #[cfg(not(feature = "provider-claude-cli"))]
+        assert!(index_of_provider("claude-cli").is_none());
+
+        #[cfg(feature = "provider-opencode-cli")]
+        assert!(index_of_provider("opencode-cli").is_some());
+        #[cfg(not(feature = "provider-opencode-cli"))]
+        assert!(index_of_provider("opencode-cli").is_none());
+
+        #[cfg(feature = "provider-codex-cli")]
+        assert!(index_of_provider("codex-cli").is_some());
+        #[cfg(not(feature = "provider-codex-cli"))]
+        assert!(index_of_provider("codex-cli").is_none());
+    }
+
+    #[test]
+    fn dialog_model_options_filter_by_provider_name_and_model_name() {
+        let mut state = ProviderSelectorState {
+            selected_provider: index_of_provider("openrouter").unwrap_or(0),
+            model_filter: "router".to_string(),
+            ..Default::default()
+        };
+        state.models = vec![
+            "openai/gpt-4o".to_string(),
+            "anthropic/claude-3.7".to_string(),
+        ];
+
+        let options = state.filtered_dialog_model_options();
+        assert!(options.iter().any(
+            |option| option.provider_name == "OpenRouter" && option.model_id == "openai/gpt-4o"
+        ));
+    }
 }

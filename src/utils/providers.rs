@@ -301,10 +301,12 @@ pub fn cli_supported_models(name: &str) -> Option<(Vec<String>, &'static str)> {
 /// Returns None for custom providers (those map to 9+ dynamically).
 pub fn tui_index_for_id(name: &str) -> Option<usize> {
     use crate::tui::onboarding::PROVIDERS;
+    use crate::tui::provider_selector::is_provider_compiled;
     let normalized = normalize_provider_name(name);
     PROVIDERS
         .iter()
         .position(|p| !p.id.is_empty() && p.id == normalized)
+        .filter(|idx| is_provider_compiled(PROVIDERS[*idx].id))
 }
 
 /// All config sections (for toggling enabled flags during model switch).
