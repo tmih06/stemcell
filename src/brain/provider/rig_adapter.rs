@@ -409,6 +409,11 @@ where
         flush_text_buffer(&mut text_acc, &mut content_blocks);
 
         let response_id = res.message_id.unwrap_or_else(|| "rig-response".into());
+        let usage = TokenUsage {
+            input_tokens: res.usage.input_tokens as u32,
+            output_tokens: res.usage.output_tokens as u32,
+            ..Default::default()
+        };
 
         Ok(LLMResponse {
             id: response_id,
@@ -419,7 +424,7 @@ where
             } else {
                 StopReason::EndTurn
             }),
-            usage: TokenUsage::default(),
+            usage,
             streaming_active_secs: None,
         })
     }

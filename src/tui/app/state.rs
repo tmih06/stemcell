@@ -2016,18 +2016,9 @@ impl App {
                 // accumulator: foreground uses self.streaming_reasoning,
                 // background uses the sidecar's. Either way the take()
                 // clears the source so the next round starts fresh.
-                let reasoning_details = if let Some(r) = reasoning {
-                    Some(r)
-                } else {
+                let reasoning_details = {
                     let mut state = self.session_state_mut(session_id);
-                    match &mut state {
-                        super::background_session::SessionStateMut::Foreground(app) => {
-                            app.streaming_reasoning.take()
-                        }
-                        super::background_session::SessionStateMut::Background(bg) => {
-                            bg.streaming_reasoning.take()
-                        }
-                    }
+                    state.take_reasoning_for_intermediate(reasoning)
                 };
 
                 // Build a tool_group DisplayMessage helper.

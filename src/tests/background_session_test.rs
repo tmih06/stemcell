@@ -84,6 +84,45 @@ fn reasoning_skips_empty_and_whitespace_first_chunks() {
 }
 
 #[test]
+fn explicit_intermediate_reasoning_clears_streaming_accumulator() {
+    let mut bg = BackgroundSessionState::default();
+    {
+        let mut routing = SessionStateMut::Background(&mut bg);
+        routing.append_reasoning_chunk("same thinking");
+    }
+    assert_eq!(bg.streaming_reasoning.as_deref(), Some("same thinking"));
+
+    let flushed = {
+        let mut routing = SessionStateMut::Background(&mut bg);
+        routing.take_reasoning_for_intermediate(Some("same thinking".to_string()))
+    };
+
+    assert_eq!(flushed.as_deref(), Some("same thinking"));
+    assert_eq!(
+        bg.streaming_reasoning, None,
+        "explicit reasoning flush must clear the live buffer so ResponseComplete \
+         cannot attach the same thinking again"
+    );
+}
+
+#[test]
+fn implicit_intermediate_reasoning_takes_accumulator() {
+    let mut bg = BackgroundSessionState::default();
+    {
+        let mut routing = SessionStateMut::Background(&mut bg);
+        routing.append_reasoning_chunk("buffered reasoning");
+    }
+
+    let flushed = {
+        let mut routing = SessionStateMut::Background(&mut bg);
+        routing.take_reasoning_for_intermediate(None)
+    };
+
+    assert_eq!(flushed.as_deref(), Some("buffered reasoning"));
+    assert_eq!(bg.streaming_reasoning, None);
+}
+
+#[test]
 fn streaming_output_tokens_accumulate_and_advance_tps_tracker() {
     use std::time::Instant;
     let mut bg = BackgroundSessionState::default();
