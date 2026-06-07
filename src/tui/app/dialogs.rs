@@ -276,6 +276,17 @@ impl App {
 
         // Clear models until fetch completes (or stays empty for custom)
         self.ps.models.clear();
+
+        // Warm-start from the startup-jobs model cache so the list is populated
+        // instantly instead of waiting on the live fetch above. The background
+        // fetch still runs and overwrites with fresh data when it returns.
+        if !is_custom_provider
+            && let Some(id) = super::onboarding::PROVIDERS.get(provider_idx).map(|p| p.id)
+            && let Some(cached) = crate::startup::model_cache::models_for(id)
+        {
+            self.ps.models = cached;
+        }
+
         self.ps.reload_config_models();
 
         if provider_idx != CUSTOM_PROVIDER_IDX {
