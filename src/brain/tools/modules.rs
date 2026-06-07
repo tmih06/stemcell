@@ -882,6 +882,18 @@ impl ToolModule for DynamicModule {
 // Module registry
 // ---------------------------------------------------------------------------
 
+/// Push a `ToolModule` into the accumulator only when at least one of the
+/// listed Cargo features is enabled. Collapses the repeated
+/// `#[cfg(any(feature = ..., ...))] modules.push(Box::new(X));` blocks in
+/// `all_modules()` into a single declarative line per module, keeping the
+/// feature list adjacent to the module it gates.
+macro_rules! push_module {
+    ($modules:ident, [$($feat:literal),+ $(,)?], $module:expr) => {
+        #[cfg(any($(feature = $feat),+))]
+        $modules.push(Box::new($module));
+    };
+}
+
 /// Returns all available tool modules in registration order.
 ///
 /// Only includes modules whose Cargo features are enabled. Modules disabled
@@ -889,105 +901,135 @@ impl ToolModule for DynamicModule {
 #[allow(clippy::vec_init_then_push)]
 pub fn all_modules() -> Vec<Box<dyn ToolModule>> {
     let mut modules: Vec<Box<dyn ToolModule>> = Vec::new();
-    #[cfg(any(
-        feature = "tool-read",
-        feature = "tool-write",
-        feature = "tool-edit",
-        feature = "tool-hashline-edit",
-        feature = "tool-bash",
-        feature = "tool-ls",
-        feature = "tool-glob",
-        feature = "tool-grep",
-        feature = "tools-file-ops"
-    ))]
-    modules.push(Box::new(FileOpsModule));
-    #[cfg(any(
-        feature = "tool-web-search",
-        feature = "tool-memory-search",
-        feature = "tool-session-search",
-        feature = "tool-channel-search",
-        feature = "tool-exa-search",
-        feature = "tool-brave-search",
-        feature = "tools-search"
-    ))]
-    modules.push(Box::new(SearchModule));
-    #[cfg(any(
-        feature = "tool-task-manager",
-        feature = "tool-session-context",
-        feature = "tool-http-request",
-        feature = "tool-plan",
-        feature = "tool-execute-code",
-        feature = "tool-notebook-edit",
-        feature = "tool-parse-document",
-        feature = "tool-config-manager",
-        feature = "tool-follow-up-question",
-        feature = "tool-cron-manage"
-    ))]
-    modules.push(Box::new(WorkflowModule));
-    #[cfg(any(
-        feature = "tool-spawn-agent",
-        feature = "tool-wait-agent",
-        feature = "tool-send-input",
-        feature = "tool-close-agent",
-        feature = "tool-resume-agent",
-        feature = "tool-team-create",
-        feature = "tool-team-delete",
-        feature = "tool-team-broadcast"
-    ))]
-    modules.push(Box::new(MultiAgentModule));
-    #[cfg(any(
-        feature = "tool-feedback-record",
-        feature = "tool-feedback-analyze",
-        feature = "tool-self-improve",
-        feature = "tool-rsi-propose"
-    ))]
-    modules.push(Box::new(RsiModule));
-    #[cfg(any(
-        feature = "tool-generate-image",
-        feature = "tool-analyze-image",
-        feature = "tool-analyze-video"
-    ))]
-    modules.push(Box::new(ImageModule));
-    #[cfg(any(
-        feature = "tool-slash-command",
-        feature = "tool-rename-session",
-        feature = "tool-load-brain-file",
-        feature = "tool-write-opencrabs-file",
-        feature = "tool-a2a-send"
-    ))]
-    modules.push(Box::new(BrainModule));
-    #[cfg(any(
-        feature = "tool-telegram-connect",
-        feature = "tool-telegram-send",
-        feature = "tool-whatsapp-connect",
-        feature = "tool-whatsapp-send",
-        feature = "tool-discord-connect",
-        feature = "tool-discord-send",
-        feature = "tool-slack-connect",
-        feature = "tool-slack-send",
-        feature = "tool-trello-connect",
-        feature = "tool-trello-send"
-    ))]
-    modules.push(Box::new(ChannelIntegrationsModule));
-    #[cfg(any(
-        feature = "tool-browser-navigate",
-        feature = "tool-browser-screenshot",
-        feature = "tool-browser-click",
-        feature = "tool-browser-type",
-        feature = "tool-browser-eval",
-        feature = "tool-browser-content",
-        feature = "tool-browser-wait",
-        feature = "tool-browser-find",
-        feature = "tool-browser-close"
-    ))]
-    modules.push(Box::new(BrowserModule));
-    #[cfg(any(
-        feature = "tool-rebuild",
-        feature = "tool-evolve",
-        feature = "tool-tool-manage",
-        feature = "tool-rsi-proposals"
-    ))]
-    modules.push(Box::new(MetaModule));
+    push_module!(
+        modules,
+        [
+            "tool-read",
+            "tool-write",
+            "tool-edit",
+            "tool-hashline-edit",
+            "tool-bash",
+            "tool-ls",
+            "tool-glob",
+            "tool-grep",
+            "tools-file-ops"
+        ],
+        FileOpsModule
+    );
+    push_module!(
+        modules,
+        [
+            "tool-web-search",
+            "tool-memory-search",
+            "tool-session-search",
+            "tool-channel-search",
+            "tool-exa-search",
+            "tool-brave-search",
+            "tools-search"
+        ],
+        SearchModule
+    );
+    push_module!(
+        modules,
+        [
+            "tool-task-manager",
+            "tool-session-context",
+            "tool-http-request",
+            "tool-plan",
+            "tool-execute-code",
+            "tool-notebook-edit",
+            "tool-parse-document",
+            "tool-config-manager",
+            "tool-follow-up-question",
+            "tool-cron-manage"
+        ],
+        WorkflowModule
+    );
+    push_module!(
+        modules,
+        [
+            "tool-spawn-agent",
+            "tool-wait-agent",
+            "tool-send-input",
+            "tool-close-agent",
+            "tool-resume-agent",
+            "tool-team-create",
+            "tool-team-delete",
+            "tool-team-broadcast"
+        ],
+        MultiAgentModule
+    );
+    push_module!(
+        modules,
+        [
+            "tool-feedback-record",
+            "tool-feedback-analyze",
+            "tool-self-improve",
+            "tool-rsi-propose"
+        ],
+        RsiModule
+    );
+    push_module!(
+        modules,
+        [
+            "tool-generate-image",
+            "tool-analyze-image",
+            "tool-analyze-video"
+        ],
+        ImageModule
+    );
+    push_module!(
+        modules,
+        [
+            "tool-slash-command",
+            "tool-rename-session",
+            "tool-load-brain-file",
+            "tool-write-opencrabs-file",
+            "tool-a2a-send"
+        ],
+        BrainModule
+    );
+    push_module!(
+        modules,
+        [
+            "tool-telegram-connect",
+            "tool-telegram-send",
+            "tool-whatsapp-connect",
+            "tool-whatsapp-send",
+            "tool-discord-connect",
+            "tool-discord-send",
+            "tool-slack-connect",
+            "tool-slack-send",
+            "tool-trello-connect",
+            "tool-trello-send"
+        ],
+        ChannelIntegrationsModule
+    );
+    push_module!(
+        modules,
+        [
+            "tool-browser-navigate",
+            "tool-browser-screenshot",
+            "tool-browser-click",
+            "tool-browser-type",
+            "tool-browser-eval",
+            "tool-browser-content",
+            "tool-browser-wait",
+            "tool-browser-find",
+            "tool-browser-close"
+        ],
+        BrowserModule
+    );
+    push_module!(
+        modules,
+        [
+            "tool-rebuild",
+            "tool-evolve",
+            "tool-tool-manage",
+            "tool-rsi-proposals"
+        ],
+        MetaModule
+    );
     #[cfg(feature = "tools-dynamic")]
     modules.push(Box::new(DynamicModule));
     modules
@@ -1089,7 +1131,13 @@ pub fn register_enabled_tools_with_runtime(
     let mut registered_count = 0usize;
     let mut skipped_count = 0usize;
 
-    for module in all_modules() {
+    // Build the module list once and reuse its length for the summary log
+    // below, instead of rebuilding the whole Vec a second time just to call
+    // `.len()` on it.
+    let modules = all_modules();
+    let total_modules = modules.len();
+
+    for module in modules {
         if disable_all || disabled.contains(module.id()) {
             tracing::info!(
                 "Skipping disabled tool module: {} ({})",
@@ -1126,7 +1174,7 @@ pub fn register_enabled_tools_with_runtime(
     tracing::info!(
         "Tool registration complete: {} tool(s) from {} module(s) ({} module(s) disabled)",
         registered_count,
-        all_modules().len() - skipped_count,
+        total_modules - skipped_count,
         skipped_count
     );
 

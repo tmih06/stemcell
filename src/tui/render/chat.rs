@@ -315,14 +315,32 @@ pub(super) fn render_chat(f: &mut Frame, app: &mut App, area: Rect) {
         let msg_id = app.messages[msg_idx].id;
         let cache_key = (msg_id, content_width as u16);
         if !app.render_cache.contains_key(&cache_key) {
+            // Bounded eviction: the cache otherwise grows without limit over a
+            // long session (every message × every width ever rendered, retained
+            // until a wholesale .clear()). Before inserting a fresh entry, if we
+            // are over the cap, drop entries whose message id is no longer in
+            // the current session — those can never be hit again. This keeps the
+            // common case (cache hit) allocation-free while bounding growth.
+            const RENDER_CACHE_CAP: usize = 512;
+            if app.render_cache.len() >= RENDER_CACHE_CAP {
+                let live: std::collections::HashSet<_> =
+                    app.messages.iter().map(|m| m.id).collect();
+                app.render_cache.retain(|(id, _), _| live.contains(id));
+            }
             let parsed = parse_markdown(
                 &app.messages[msg_idx].content,
                 content_width.saturating_sub(2),
             );
             app.render_cache.insert(cache_key, parsed);
         }
-        let content_lines = app.render_cache[&cache_key].clone();
-        for (i, line) in content_lines.into_iter().enumerate() {
+        // Borrow the cached lines instead of deep-cloning the whole Vec each
+        // frame. The loop body below only touches pre-computed locals
+        // (is_user, msg_bg, content_width), so holding an immutable borrow of
+        // render_cache across it is safe. Spans are cloned individually as we
+        // build each padded line, avoiding the redundant outer Vec<Line>/inner
+        // Vec<Span> allocations the full clone produced.
+        let content_lines = &app.render_cache[&cache_key];
+        for (i, line) in content_lines.iter().enumerate() {
             let mut padded_spans = if i == 0 {
                 if is_user {
                     // User: arrow prefix
@@ -342,7 +360,7 @@ pub(super) fn render_chat(f: &mut Frame, app: &mut App, area: Rect) {
             } else {
                 vec![Span::raw("  ")]
             };
-            padded_spans.extend(line.spans);
+            padded_spans.extend(line.spans.iter().cloned());
             let padded_line = Line::from(padded_spans);
             for wrapped in wrap_line_with_padding(padded_line, content_width, "  ") {
                 if let Some(bg) = msg_bg {

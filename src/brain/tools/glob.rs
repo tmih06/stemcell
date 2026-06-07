@@ -3,7 +3,7 @@
 //! Find files matching glob patterns.
 
 use super::error::{Result, ToolError};
-use super::r#trait::{Tool, ToolCapability, ToolExecutionContext, ToolResult};
+use super::r#trait::{Tool, ToolCapability, ToolExecutionContext, ToolResult, parse_input};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -76,8 +76,7 @@ impl Tool for GlobTool {
     }
 
     fn validate_input(&self, input: &Value) -> Result<()> {
-        let input: GlobInput = serde_json::from_value(input.clone())
-            .map_err(|e| ToolError::InvalidInput(format!("Invalid input: {}", e)))?;
+        let input: GlobInput = parse_input(input)?;
 
         if input.pattern.trim().is_empty() {
             return Err(ToolError::InvalidInput(
@@ -89,7 +88,7 @@ impl Tool for GlobTool {
     }
 
     async fn execute(&self, input: Value, context: &ToolExecutionContext) -> Result<ToolResult> {
-        let input: GlobInput = serde_json::from_value(input)?;
+        let input: GlobInput = parse_input(&input)?;
 
         // Resolve base directory (tilde expansion + absolute/relative resolution).
         let base_dir = if let Some(ref dir) = input.base_dir {

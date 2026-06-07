@@ -1,4 +1,5 @@
 use super::builder::AgentService;
+use super::tool_loop::guard_cross_provider_model_leak;
 use super::types::{MessageQueueCallback, ProgressCallback, ProgressEvent};
 use crate::brain::provider::{
     ContentBlock, ImageSource, LLMRequest, LLMResponse, Message, Role, StopReason,
@@ -93,16 +94,17 @@ impl AgentService {
         // at the stream site regardless of the cached state.
         let mut request = request;
         let supported = provider.supported_models();
-        if !supported.is_empty() && !supported.iter().any(|m| m == &request.model) {
-            let remapped = provider.default_model().to_string();
+        let (model, leaked) =
+            guard_cross_provider_model_leak(request.model, provider.default_model(), &supported);
+        if let Some(leaked) = leaked {
             tracing::warn!(
                 "stream_complete: provider '{}' does not support model '{}' — remapping to '{}' (never send a pair the user never configured)",
                 provider.name(),
-                request.model,
-                remapped,
+                leaked,
+                model,
             );
-            request.model = remapped;
         }
+        request.model = model;
         let request_model = request.model.clone();
 
         // Bound the initial stream handshake (HTTP POST + response headers)

@@ -1331,11 +1331,12 @@ impl AgentService {
                     let actual_model = {
                         let p = self.provider_for_session(session_id);
                         let supported = p.supported_models();
-                        if !supported.is_empty() && !supported.iter().any(|m| m == &model_name) {
-                            p.default_model().to_string()
-                        } else {
-                            model_name.clone()
-                        }
+                        guard_cross_provider_model_leak(
+                            model_name.clone(),
+                            p.default_model(),
+                            &supported,
+                        )
+                        .0
                     };
                     let provider_model_dim = format!("{}/{}", primary_from_name, actual_model);
 
@@ -1573,11 +1574,12 @@ impl AgentService {
                     let actual_model = {
                         let p = self.provider_for_session(session_id);
                         let supported = p.supported_models();
-                        if !supported.is_empty() && !supported.iter().any(|m| m == &model_name) {
-                            p.default_model().to_string()
-                        } else {
-                            model_name.clone()
-                        }
+                        guard_cross_provider_model_leak(
+                            model_name.clone(),
+                            p.default_model(),
+                            &supported,
+                        )
+                        .0
                     };
                     let provider_model_dim = format!("{}/{}", primary_from_name, actual_model);
                     self.record_provider_feedback(
@@ -1903,11 +1905,12 @@ impl AgentService {
                     let actual_model = {
                         let p = self.provider_for_session(session_id);
                         let supported = p.supported_models();
-                        if !supported.is_empty() && !supported.iter().any(|m| m == &model_name) {
-                            p.default_model().to_string()
-                        } else {
-                            model_name.clone()
-                        }
+                        guard_cross_provider_model_leak(
+                            model_name.clone(),
+                            p.default_model(),
+                            &supported,
+                        )
+                        .0
                     };
                     let provider_model_dim = format!("{}/{}", primary_from_name, actual_model);
                     self.record_provider_feedback(

@@ -127,27 +127,32 @@ fn redact_command(cmd: &str) -> String {
         }
     }
 
+    // 5-7. Env-var assignments, piped secrets, and IPv4 addresses.
+    apply_common_regex_redactions(&result)
+}
+
+/// Apply the env-var assignment, piped-secret, and IPv4 regex redaction passes
+/// (steps 5-7). Shared verbatim by `redact_command` and `redact_secrets` so the
+/// two paths cannot drift. Output is byte-identical to running the three
+/// `replace_all` passes in sequence.
+fn apply_common_regex_redactions(s: &str) -> String {
     // 5. Redact environment variable assignments with sensitive suffixes
-    result = ENV_SECRET_RE
-        .replace_all(&result, |caps: &regex::Captures| {
-            let var_name = caps.get(1).unwrap().as_str();
-            format!("{var_name}=[REDACTED]")
-        })
-        .into_owned();
+    let result = ENV_SECRET_RE.replace_all(s, |caps: &regex::Captures| {
+        let var_name = caps.get(1).unwrap().as_str();
+        format!("{var_name}=[REDACTED]")
+    });
 
     // 6. Redact piped secrets: echo "secret" | command
     //    The secret value inside quotes is replaced with [REDACTED]
-    result = PIPED_SECRET_RE
-        .replace_all(&result, |caps: &regex::Captures| {
-            let full_match = caps.get(0).unwrap().as_str();
-            let secret = caps.get(1).unwrap().as_str();
-            full_match.replace(secret, "[REDACTED]")
-        })
-        .into_owned();
+    let result = PIPED_SECRET_RE.replace_all(&result, |caps: &regex::Captures| {
+        let full_match = caps.get(0).unwrap().as_str();
+        let secret = caps.get(1).unwrap().as_str();
+        full_match.replace(secret, "[REDACTED]")
+    });
 
     // 7. Redact IPv4 addresses (server IPs, infrastructure addresses).
     //    Keeps 127.0.0.1 and 0.0.0.0 as they are non-sensitive.
-    result = IPV4_RE
+    IPV4_RE
         .replace_all(&result, |caps: &regex::Captures| {
             let ip = caps.get(1).unwrap().as_str();
             if ip == "127.0.0.1" || ip == "0.0.0.0" {
@@ -156,9 +161,7 @@ fn redact_command(cmd: &str) -> String {
                 "[IP_REDACTED]".to_string()
             }
         })
-        .into_owned();
-
-    result
+        .into_owned()
 }
 
 /// Find a case-insensitive ASCII substring in `haystack`, returning the byte
@@ -574,38 +577,8 @@ pub fn redact_secrets(text: &str) -> String {
         }
     }
 
-    // 5. Redact environment variable assignments with sensitive suffixes
-    result = ENV_SECRET_RE
-        .replace_all(&result, |caps: &regex::Captures| {
-            let var_name = caps.get(1).unwrap().as_str();
-            format!("{var_name}=[REDACTED]")
-        })
-        .into_owned();
-
-    // 6. Redact piped secrets: echo "secret" | command
-    //    The secret value inside quotes is replaced with [REDACTED]
-    result = PIPED_SECRET_RE
-        .replace_all(&result, |caps: &regex::Captures| {
-            let full_match = caps.get(0).unwrap().as_str();
-            let secret = caps.get(1).unwrap().as_str();
-            full_match.replace(secret, "[REDACTED]")
-        })
-        .into_owned();
-
-    // 7. Redact IPv4 addresses (server IPs, infrastructure addresses).
-    //    Keeps 127.0.0.1 and 0.0.0.0 as they are non-sensitive.
-    result = IPV4_RE
-        .replace_all(&result, |caps: &regex::Captures| {
-            let ip = caps.get(1).unwrap().as_str();
-            if ip == "127.0.0.1" || ip == "0.0.0.0" {
-                ip.to_string()
-            } else {
-                "[IP_REDACTED]".to_string()
-            }
-        })
-        .into_owned();
-
-    result
+    // 5-7. Env-var assignments, piped secrets, and IPv4 addresses.
+    apply_common_regex_redactions(&result)
 }
 
 /// Strip LLM-hallucinated artifacts from text before external delivery.

@@ -7,7 +7,7 @@ use crate::db::database::interact_err;
 use crate::db::models::{Plan, PlanTask};
 use crate::tui::plan::{PlanDocument, PlanStatus, TaskDep, TaskStatus, TaskType};
 use anyhow::{Context, Result};
-use rusqlite::params;
+use rusqlite::{OptionalExtension, params};
 use uuid::Uuid;
 
 /// Repository for plan operations
@@ -69,9 +69,13 @@ impl PlanRepository {
             .map_err(interact_err)?
             .context("Failed to find plans by session")?;
 
+        // Fetch all tasks for these plans in one query to avoid N+1.
+        let plan_ids: Vec<Uuid> = plans.iter().map(|p| p.id).collect();
+        let mut tasks_by_plan = self.find_tasks_by_plan_ids(&plan_ids).await?;
+
         let mut result = Vec::new();
         for plan in plans {
-            let tasks = self.find_tasks_by_plan_id(plan.id).await?;
+            let tasks = tasks_by_plan.remove(&plan.id).unwrap_or_default();
             result.push(self.plan_from_db(plan, tasks)?);
         }
 
@@ -95,6 +99,45 @@ impl PlanRepository {
             .await
             .map_err(interact_err)?
             .context("Failed to find plan tasks")
+    }
+
+    /// Fetch tasks for many plans in a single query, grouped by plan_id.
+    /// Avoids the N+1 pattern of calling `find_tasks_by_plan_id` per plan.
+    async fn find_tasks_by_plan_ids(
+        &self,
+        plan_ids: &[Uuid],
+    ) -> Result<std::collections::HashMap<Uuid, Vec<PlanTask>>> {
+        if plan_ids.is_empty() {
+            return Ok(std::collections::HashMap::new());
+        }
+        let id_strs: Vec<String> = plan_ids.iter().map(|id| id.to_string()).collect();
+        let tasks = self
+            .pool
+            .get()
+            .await
+            .context("Failed to get connection")?
+            .interact(move |conn| {
+                let placeholders = vec!["?"; id_strs.len()].join(",");
+                let sql = format!(
+                    "SELECT * FROM plan_tasks WHERE plan_id IN ({}) ORDER BY task_order ASC",
+                    placeholders
+                );
+                let mut stmt = conn.prepare(&sql)?;
+                let params_refs: Vec<&dyn rusqlite::ToSql> =
+                    id_strs.iter().map(|s| s as &dyn rusqlite::ToSql).collect();
+                let rows = stmt.query_map(params_refs.as_slice(), PlanTask::from_row)?;
+                rows.collect::<std::result::Result<Vec<_>, _>>()
+            })
+            .await
+            .map_err(interact_err)?
+            .context("Failed to find plan tasks")?;
+
+        let mut grouped: std::collections::HashMap<Uuid, Vec<PlanTask>> =
+            std::collections::HashMap::new();
+        for task in tasks {
+            grouped.entry(task.plan_id).or_default().push(task);
+        }
+        Ok(grouped)
     }
 
     /// Create a new plan with tasks
@@ -448,21 +491,6 @@ impl PlanRepository {
             TaskStatus::Skipped => "Skipped".to_string(),
             TaskStatus::Failed => "Failed".to_string(),
             TaskStatus::Blocked(reason) => format!("Blocked:{}", reason),
-        }
-    }
-}
-
-/// Extension trait for rusqlite to add `.optional()` to query results
-trait OptionalExt<T> {
-    fn optional(self) -> rusqlite::Result<Option<T>>;
-}
-
-impl<T> OptionalExt<T> for rusqlite::Result<T> {
-    fn optional(self) -> rusqlite::Result<Option<T>> {
-        match self {
-            Ok(v) => Ok(Some(v)),
-            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
-            Err(e) => Err(e),
         }
     }
 }

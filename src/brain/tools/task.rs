@@ -3,7 +3,7 @@
 //! Organize and track multi-step workflows and tasks.
 
 use super::error::{Result, ToolError};
-use super::r#trait::{Tool, ToolCapability, ToolExecutionContext, ToolResult};
+use super::r#trait::{Tool, ToolCapability, ToolExecutionContext, ToolResult, parse_input};
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -375,13 +375,12 @@ impl Tool for TaskTool {
     }
 
     fn validate_input(&self, input: &Value) -> Result<()> {
-        let _: TaskInput = serde_json::from_value(input.clone())
-            .map_err(|e| ToolError::InvalidInput(format!("Invalid input: {}", e)))?;
+        let _: TaskInput = parse_input(input)?;
         Ok(())
     }
 
     async fn execute(&self, input: Value, context: &ToolExecutionContext) -> Result<ToolResult> {
-        let input: TaskInput = serde_json::from_value(input)?;
+        let input: TaskInput = parse_input(&input)?;
         let store_path = get_store_path(context);
 
         // Read-only operations don't need locking

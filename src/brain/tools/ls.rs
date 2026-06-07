@@ -3,7 +3,7 @@
 //! List contents of directories for exploration.
 
 use super::error::{Result, ToolError, resolve_tool_path};
-use super::r#trait::{Tool, ToolCapability, ToolExecutionContext, ToolResult};
+use super::r#trait::{Tool, ToolCapability, ToolExecutionContext, ToolResult, parse_input};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -78,13 +78,12 @@ impl Tool for LsTool {
     }
 
     fn validate_input(&self, input: &Value) -> Result<()> {
-        let _: LsInput = serde_json::from_value(input.clone())
-            .map_err(|e| ToolError::InvalidInput(format!("Invalid input: {}", e)))?;
+        let _: LsInput = parse_input(input)?;
         Ok(())
     }
 
     async fn execute(&self, input: Value, context: &ToolExecutionContext) -> Result<ToolResult> {
-        let input: LsInput = serde_json::from_value(input)?;
+        let input: LsInput = parse_input(&input)?;
 
         // Resolve path (expands leading `~`, absolutes pass through,
         // relatives join to the session working directory).

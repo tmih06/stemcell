@@ -6,7 +6,7 @@
 //! - **Direct API mode:** When `EXA_API_KEY` is set — higher rate limits
 
 use super::error::{Result, ToolError};
-use super::r#trait::{Tool, ToolCapability, ToolExecutionContext, ToolResult};
+use super::r#trait::{Tool, ToolCapability, ToolExecutionContext, ToolResult, parse_input};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -474,8 +474,7 @@ impl Tool for ExaSearchTool {
     }
 
     fn validate_input(&self, input: &Value) -> Result<()> {
-        let input: ExaSearchInput = serde_json::from_value(input.clone())
-            .map_err(|e| ToolError::InvalidInput(format!("Invalid input: {}", e)))?;
+        let input: ExaSearchInput = parse_input(input)?;
 
         if input.query.trim().is_empty() {
             return Err(ToolError::InvalidInput("Query cannot be empty".to_string()));
@@ -491,7 +490,7 @@ impl Tool for ExaSearchTool {
     }
 
     async fn execute(&self, input: Value, _context: &ToolExecutionContext) -> Result<ToolResult> {
-        let parsed: ExaSearchInput = serde_json::from_value(input)?;
+        let parsed: ExaSearchInput = parse_input(&input)?;
 
         if self.use_mcp() {
             self.execute_via_mcp(&parsed.query, parsed.max_results, &parsed.search_type)

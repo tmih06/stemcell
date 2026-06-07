@@ -197,37 +197,7 @@ impl BrainLoader {
     ) -> String {
         let mut prompt = String::with_capacity(8192);
 
-        // 1. Brain preamble
-        prompt.push_str(BRAIN_PREAMBLE_CORE);
-        prompt.push_str("\n\n");
-
-        if let Some(tools) = active_tools {
-            if tools.iter().any(|t| t == "plan") {
-                prompt.push_str(BRAIN_PREAMBLE_PLAN);
-                prompt.push_str("\n\n");
-            }
-            if tools.iter().any(|t| {
-                t == "exa_search"
-                    || t == "brave_search"
-                    || t == "web_search"
-                    || t == "browser_navigate"
-                    || t == "bash"
-            }) {
-                prompt.push_str(BRAIN_PREAMBLE_WEB);
-                prompt.push_str("\n\n");
-            }
-            if tools
-                .iter()
-                .any(|t| t == "self_improve" || t == "feedback_analyze")
-            {
-                prompt.push_str(BRAIN_PREAMBLE_RSI);
-                prompt.push_str("\n\n");
-            }
-            prompt.push_str("--- CURRENTLY EQUIPPED TOOLS ---\n");
-            prompt.push_str("You ONLY have access to the tools listed below (and in your JSON tool schema). Do not hallucinate or attempt to use any other tools.\n");
-            prompt.push_str(&tools.join(", "));
-            prompt.push_str("\n\n");
-        }
+        push_preamble_and_tools(&mut prompt, active_tools);
 
         // 2-7. Brain workspace files (skip missing ones silently)
         for (filename, label) in BRAIN_FILES {
@@ -291,37 +261,7 @@ impl BrainLoader {
     ) -> String {
         let mut prompt = String::with_capacity(4096);
 
-        // 1. Brain preamble
-        prompt.push_str(BRAIN_PREAMBLE_CORE);
-        prompt.push_str("\n\n");
-
-        if let Some(tools) = active_tools {
-            if tools.iter().any(|t| t == "plan") {
-                prompt.push_str(BRAIN_PREAMBLE_PLAN);
-                prompt.push_str("\n\n");
-            }
-            if tools.iter().any(|t| {
-                t == "exa_search"
-                    || t == "brave_search"
-                    || t == "web_search"
-                    || t == "browser_navigate"
-                    || t == "bash"
-            }) {
-                prompt.push_str(BRAIN_PREAMBLE_WEB);
-                prompt.push_str("\n\n");
-            }
-            if tools
-                .iter()
-                .any(|t| t == "self_improve" || t == "feedback_analyze")
-            {
-                prompt.push_str(BRAIN_PREAMBLE_RSI);
-                prompt.push_str("\n\n");
-            }
-            prompt.push_str("--- CURRENTLY EQUIPPED TOOLS ---\n");
-            prompt.push_str("You ONLY have access to the tools listed below (and in your JSON tool schema). Do not hallucinate or attempt to use any other tools.\n");
-            prompt.push_str(&tools.join(", "));
-            prompt.push_str("\n\n");
-        }
+        push_preamble_and_tools(&mut prompt, active_tools);
 
         // 2. Core files only (SOUL.md + USER.md)
         for (filename, label) in CORE_BRAIN_FILES {
@@ -571,6 +511,44 @@ fn push_home_anchor_and_expansion_rule(prompt: &mut String) {
          the shell expands `~` for you. Do NOT substitute `/Users/<name>/...` yourself; if you \
          need an absolute form, copy the `Home:` line above exactly.\n",
     );
+}
+
+/// Push the brain preamble (core + conditional plan/web/RSI sections) and
+/// the "currently equipped tools" block. Shared verbatim by
+/// `build_system_brain` and `build_core_brain` — these strings are the
+/// system prompt, so the output must stay byte-identical between callers.
+fn push_preamble_and_tools(prompt: &mut String, active_tools: Option<&[String]>) {
+    // 1. Brain preamble
+    prompt.push_str(BRAIN_PREAMBLE_CORE);
+    prompt.push_str("\n\n");
+
+    if let Some(tools) = active_tools {
+        if tools.iter().any(|t| t == "plan") {
+            prompt.push_str(BRAIN_PREAMBLE_PLAN);
+            prompt.push_str("\n\n");
+        }
+        if tools.iter().any(|t| {
+            t == "exa_search"
+                || t == "brave_search"
+                || t == "web_search"
+                || t == "browser_navigate"
+                || t == "bash"
+        }) {
+            prompt.push_str(BRAIN_PREAMBLE_WEB);
+            prompt.push_str("\n\n");
+        }
+        if tools
+            .iter()
+            .any(|t| t == "self_improve" || t == "feedback_analyze")
+        {
+            prompt.push_str(BRAIN_PREAMBLE_RSI);
+            prompt.push_str("\n\n");
+        }
+        prompt.push_str("--- CURRENTLY EQUIPPED TOOLS ---\n");
+        prompt.push_str("You ONLY have access to the tools listed below (and in your JSON tool schema). Do not hallucinate or attempt to use any other tools.\n");
+        prompt.push_str(&tools.join(", "));
+        prompt.push_str("\n\n");
+    }
 }
 
 /// List of OpenCrabs features compiled into this binary. Built at

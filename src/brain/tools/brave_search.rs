@@ -3,7 +3,7 @@
 //! Perform real-time internet searches using the Brave Search API.
 
 use super::error::{Result, ToolError};
-use super::r#trait::{Tool, ToolCapability, ToolExecutionContext, ToolResult};
+use super::r#trait::{Tool, ToolCapability, ToolExecutionContext, ToolResult, parse_input};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -98,8 +98,7 @@ impl Tool for BraveSearchTool {
     }
 
     fn validate_input(&self, input: &Value) -> Result<()> {
-        let input: BraveSearchInput = serde_json::from_value(input.clone())
-            .map_err(|e| ToolError::InvalidInput(format!("Invalid input: {}", e)))?;
+        let input: BraveSearchInput = parse_input(input)?;
 
         if input.query.trim().is_empty() {
             return Err(ToolError::InvalidInput("Query cannot be empty".to_string()));
@@ -115,7 +114,7 @@ impl Tool for BraveSearchTool {
     }
 
     async fn execute(&self, input: Value, _context: &ToolExecutionContext) -> Result<ToolResult> {
-        let input: BraveSearchInput = serde_json::from_value(input)?;
+        let input: BraveSearchInput = parse_input(&input)?;
 
         let client = reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(15))

@@ -6,7 +6,7 @@ use crate::db::Pool;
 use crate::db::database::interact_err;
 use crate::db::models::Message;
 use anyhow::{Context, Result};
-use rusqlite::params;
+use rusqlite::{OptionalExtension, params};
 use uuid::Uuid;
 
 /// Repository for message operations
@@ -356,6 +356,70 @@ impl MessageRepository {
             .context("Failed to get last message")
     }
 
+    /// Get messages with a given role within a session, ordered by sequence.
+    /// Pushes the role filter into SQL instead of loading all rows.
+    pub async fn find_by_session_and_role(
+        &self,
+        session_id: Uuid,
+        role: &str,
+    ) -> Result<Vec<Message>> {
+        let sid = session_id.to_string();
+        let role = role.to_string();
+        self.pool
+            .get()
+            .await
+            .context("Failed to get connection")?
+            .interact(move |conn| {
+                let mut stmt = conn.prepare_cached(
+                    "SELECT * FROM messages WHERE session_id = ?1 AND role = ?2 ORDER BY sequence ASC",
+                )?;
+                let rows = stmt.query_map(params![sid, role], Message::from_row)?;
+                rows.collect::<std::result::Result<Vec<_>, _>>()
+            })
+            .await
+            .map_err(interact_err)?
+            .context("Failed to find messages by role")
+    }
+
+    /// Sum of `token_count` across all messages in a session (NULLs ignored).
+    pub async fn sum_token_count(&self, session_id: Uuid) -> Result<i32> {
+        let sid = session_id.to_string();
+        self.pool
+            .get()
+            .await
+            .context("Failed to get connection")?
+            .interact(move |conn| {
+                conn.query_row(
+                    "SELECT COALESCE(SUM(token_count), 0) FROM messages WHERE session_id = ?1",
+                    params![sid],
+                    |row| row.get::<_, i64>(0),
+                )
+            })
+            .await
+            .map_err(interact_err)?
+            .map(|v| v as i32)
+            .context("Failed to sum token count")
+    }
+
+    /// Sum of `cost` across all messages in a session (NULLs ignored).
+    pub async fn sum_cost(&self, session_id: Uuid) -> Result<f64> {
+        let sid = session_id.to_string();
+        self.pool
+            .get()
+            .await
+            .context("Failed to get connection")?
+            .interact(move |conn| {
+                conn.query_row(
+                    "SELECT COALESCE(SUM(cost), 0.0) FROM messages WHERE session_id = ?1",
+                    params![sid],
+                    |row| row.get::<_, f64>(0),
+                )
+            })
+            .await
+            .map_err(interact_err)?
+            .context("Failed to sum cost")
+    }
+
     /// Delete all messages in a session
     pub async fn delete_by_session(&self, session_id: Uuid) -> Result<()> {
         let sid = session_id.to_string();
@@ -372,21 +436,6 @@ impl MessageRepository {
 
         tracing::debug!("Deleted all messages for session: {}", session_id);
         Ok(())
-    }
-}
-
-/// Extension trait for rusqlite to add `.optional()` to query results
-trait OptionalExt<T> {
-    fn optional(self) -> rusqlite::Result<Option<T>>;
-}
-
-impl<T> OptionalExt<T> for rusqlite::Result<T> {
-    fn optional(self) -> rusqlite::Result<Option<T>> {
-        match self {
-            Ok(v) => Ok(Some(v)),
-            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
-            Err(e) => Err(e),
-        }
     }
 }
 
