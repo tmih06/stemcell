@@ -925,6 +925,39 @@ async fn cmd_chat_inner(
     ))]
     channel_manager.reconcile(config).await;
 
+    // ── Unified channel gateway ───────────────────────────────────────────
+    // Surfaces migrated onto the `Surface` trait (TUI + Telegram) run via the
+    // gateway instead of the legacy `ChannelManager`. The gateway owns their
+    // lifecycle (start/stop on config change) and the single
+    // inbound→agent→outbound pipeline. Un-migrated channels stay on
+    // `ChannelManager` above. Telegram is intentionally excluded from the
+    // manager's reconcile (see `manager.rs`) so it is not double-spawned.
+    let gateway_handle = {
+        let surface_deps = crate::channels::gateway::SurfaceDeps {
+            agent: app.agent_service().clone(),
+            service_context: service_context.clone(),
+            config_rx: channel_factory.config_rx(),
+            shared_session_id: app.shared_session_id(),
+            db_pool: db.pool().clone(),
+            tui_event_tx: app.event_sender(),
+            #[cfg(feature = "telegram")]
+            telegram_state: telegram_state.clone(),
+        };
+        let surfaces = crate::channels::gateway::registered_surfaces(&surface_deps);
+        let ctx = crate::channels::gateway::GatewayContext {
+            agent: app.agent_service().clone(),
+            session_service: crate::services::SessionService::new(service_context.clone()),
+            config_rx: channel_factory.config_rx(),
+        };
+        let mut gateway = crate::channels::gateway::Gateway::new(ctx, surfaces);
+        gateway.reconcile(config).await;
+        let handle = gateway.handle();
+        tokio::spawn(gateway.run());
+        tracing::info!("Channel gateway started");
+        handle
+    };
+    let _ = &gateway_handle;
+
     // Spawn config hot-reload watcher — fires on any change to config.toml, keys.toml,
     // or commands.toml without requiring a restart.
     {

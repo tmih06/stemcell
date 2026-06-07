@@ -72,7 +72,12 @@ pub struct ChannelManager {
     ))]
     db_pool: deadpool_sqlite::Pool,
 
+    // Telegram is owned by the unified gateway now (see `reconcile`), not this
+    // manager. The state is still accepted + stored so the constructor call
+    // site and the `telegram_send` tool wiring are unchanged until Phase 5
+    // removes the legacy manager entirely.
     #[cfg(feature = "telegram")]
+    #[allow(dead_code)]
     telegram_state: Arc<crate::channels::telegram::TelegramState>,
     #[cfg(feature = "whatsapp")]
     whatsapp_state: Arc<crate::channels::whatsapp::WhatsAppState>,
@@ -158,8 +163,12 @@ impl ChannelManager {
     pub async fn reconcile(&self, config: &Config) {
         let mut handles = self.handles.lock().await;
 
-        #[cfg(feature = "telegram")]
-        self.reconcile_telegram(config, &mut handles).await;
+        // Telegram is owned by the unified channel gateway (it implements the
+        // `Surface` trait), not this legacy manager — skip it here so the bot
+        // is not double-spawned (two dispatchers on one token => Telegram API
+        // conflict). The remaining channels migrate off the manager in later
+        // phases.
+        let _ = &mut handles;
 
         #[cfg(feature = "whatsapp")]
         self.reconcile_whatsapp(config, &mut handles).await;
@@ -175,6 +184,7 @@ impl ChannelManager {
     }
 
     #[cfg(feature = "telegram")]
+    #[allow(dead_code)] // Superseded by the gateway's TelegramSurface; removed in Phase 5.
     async fn reconcile_telegram(
         &self,
         config: &Config,

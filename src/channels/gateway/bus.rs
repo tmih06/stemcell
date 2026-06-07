@@ -190,6 +190,10 @@ pub struct Gateway {
     inbound_rx: mpsc::UnboundedReceiver<Inbound>,
     handle: GatewayHandle,
     core: Arc<Core>,
+    /// Listener tasks for surfaces that have been started, keyed by surface id.
+    /// Mirrors `ChannelManager`'s handle map so a surface is started once and
+    /// can be stopped on config-driven disable.
+    listeners: HashMap<&'static str, tokio::task::JoinHandle<()>>,
 }
 
 impl Gateway {
@@ -203,6 +207,7 @@ impl Gateway {
             inbound_rx,
             handle: GatewayHandle { inbound_tx },
             core: Arc::new(Core { surfaces: map, ctx }),
+            listeners: HashMap::new(),
         }
     }
 
@@ -217,18 +222,68 @@ impl Gateway {
         self.core.process(&inbound).await
     }
 
+    /// Start (or stop) each surface to match the current config — the
+    /// generic replacement for `ChannelManager::reconcile`'s per-channel
+    /// `should_run` / `is_running` dance. A surface reporting
+    /// [`SurfaceStatus::Ready`](super::surface::SurfaceStatus::Ready) that
+    /// isn't running is started; one that is running but no longer ready is
+    /// aborted. Idempotent: safe to call on every config reload.
+    pub async fn reconcile(&mut self, cfg: &Config) {
+        for (id, surface) in &self.core.surfaces {
+            let ready = surface.status(cfg).is_ready();
+            let running = self
+                .listeners
+                .get(id)
+                .map(|h| !h.is_finished())
+                .unwrap_or(false);
+
+            if ready && !running {
+                tracing::info!("gateway: starting surface '{}'", id);
+                let handle = surface.clone().start(self.handle.clone()).await;
+                self.listeners.insert(id, handle);
+            } else if !ready && running {
+                if let Some(handle) = self.listeners.remove(id) {
+                    tracing::info!("gateway: stopping surface '{}'", id);
+                    handle.abort();
+                }
+            }
+        }
+    }
+
     /// Run the inbound→agent→outbound loop until all inbound senders drop.
     /// Each message is processed on its own spawned task so a slow agent turn
     /// on one conversation doesn't block others.
+    ///
+    /// The loop also watches the config watch channel and re-[`reconcile`]s
+    /// surfaces on change, so toggling `channels.telegram.enabled` at runtime
+    /// starts/stops the surface without a restart — the gateway equivalent of
+    /// the old `ChannelManager` config-reload callback.
     pub async fn run(mut self) {
-        while let Some(inbound) = self.inbound_rx.recv().await {
-            let core = self.core.clone();
-            tokio::spawn(async move {
-                if let Some(outbound) = core.process(&inbound).await {
-                    core.deliver(outbound).await;
+        let mut config_rx = self.core.ctx.config_rx.clone();
+        loop {
+            tokio::select! {
+                maybe_inbound = self.inbound_rx.recv() => {
+                    let Some(inbound) = maybe_inbound else {
+                        tracing::info!("gateway: inbound channel closed, run loop exiting");
+                        return;
+                    };
+                    let core = self.core.clone();
+                    tokio::spawn(async move {
+                        if let Some(outbound) = core.process(&inbound).await {
+                            core.deliver(outbound).await;
+                        }
+                    });
                 }
-            });
+                changed = config_rx.changed() => {
+                    if changed.is_err() {
+                        // Config sender dropped — keep serving inbound, just
+                        // stop watching for config changes.
+                        continue;
+                    }
+                    let cfg = config_rx.borrow_and_update().clone();
+                    self.reconcile(&cfg).await;
+                }
+            }
         }
-        tracing::info!("gateway: inbound channel closed, run loop exiting");
     }
 }
