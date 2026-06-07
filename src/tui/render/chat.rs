@@ -1060,10 +1060,11 @@ pub(super) fn render_chat(f: &mut Frame, app: &mut App, area: Rect) {
                 };
                 for col in from..to {
                     let x = col_to_x(col);
-                    if x >= content_left && x < x_max {
-                        if let Some(cell) = buf.cell_mut((x, row)) {
-                            cell.set_style(sel_style);
-                        }
+                    if x >= content_left
+                        && x < x_max
+                        && let Some(cell) = buf.cell_mut((x, row))
+                    {
+                        cell.set_style(sel_style);
                     }
                 }
             }

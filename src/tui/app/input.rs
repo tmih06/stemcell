@@ -681,7 +681,11 @@ impl App {
     /// copies the caret's full line. Strips the code-block gutter so copied
     /// text matches what the user sees (same rule as the mouse path).
     fn extract_keyboard_selection(&self) -> String {
-        extract_selection_text(&self.chat_rendered_lines, self.select_anchor, self.select_cursor)
+        extract_selection_text(
+            &self.chat_rendered_lines,
+            self.select_anchor,
+            self.select_cursor,
+        )
     }
 
     /// Handle mouse drag in the input area — track text selection.
