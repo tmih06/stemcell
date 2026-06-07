@@ -795,6 +795,10 @@ impl App {
                 });
                 true
             }
+            "/quit" | "/exit" | "/q" => {
+                let _ = self.event_sender().send(TuiEvent::Quit);
+                true
+            }
             "/help" => {
                 self.mode = AppMode::Help;
                 true
