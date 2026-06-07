@@ -5,7 +5,119 @@
 //! Used by custom providers, Ollama, onboarding, and the /models dialog.
 
 use reqwest::Client;
+use std::collections::HashMap;
 use std::time::Duration;
+
+/// How long a cached model list is considered fresh before a re-fetch is
+/// attempted. Model rosters change on the order of weeks, so an hour keeps
+/// the list current without hammering provider APIs on every `/models` call.
+pub const DEFAULT_MODEL_CACHE_TTL: Duration = Duration::from_secs(60 * 60);
+
+/// One provider's cached model list plus the unix-seconds timestamp it was
+/// fetched at. `fetched_at` drives TTL expiry; a stale entry is still kept
+/// and served if a later fetch fails, so we degrade to "last known good"
+/// instead of an empty list when the network is down.
+#[derive(serde::Serialize, serde::Deserialize, Clone)]
+pub(crate) struct CacheEntry {
+    pub models: Vec<String>,
+    pub fetched_at: u64,
+}
+
+/// On-disk path for the persisted model cache. Lives next to the other
+/// learned-state files (e.g. `claude_cli_models.json`) under `~/.opencrabs`.
+#[cfg(not(test))]
+fn model_cache_path() -> std::path::PathBuf {
+    crate::config::profile::base_opencrabs_dir().join("model_cache.json")
+}
+
+fn now_unix_secs() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
+}
+
+/// Load the whole cache map from disk (production), or empty in tests so the
+/// suite never reads or writes the developer's real `~/.opencrabs` cache.
+#[cfg(not(test))]
+fn load_cache() -> HashMap<String, CacheEntry> {
+    std::fs::read_to_string(model_cache_path())
+        .ok()
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or_default()
+}
+
+#[cfg(test)]
+fn load_cache() -> HashMap<String, CacheEntry> {
+    HashMap::new()
+}
+
+#[cfg(not(test))]
+fn store_cache_entry(key: &str, entry: &CacheEntry) {
+    let mut map = load_cache();
+    map.insert(key.to_string(), entry.clone());
+    let path = model_cache_path();
+    if let Ok(json) = serde_json::to_string_pretty(&map) {
+        if let Some(parent) = path.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        let _ = std::fs::write(&path, json);
+    }
+}
+
+#[cfg(test)]
+fn store_cache_entry(_key: &str, _entry: &CacheEntry) {}
+
+fn read_cache_entry(key: &str) -> Option<CacheEntry> {
+    load_cache().get(key).cloned()
+}
+
+/// Fetch a model list through the disk-backed TTL cache.
+///
+/// `key` identifies the provider (e.g. its name or base URL). The flow:
+/// 1. Fresh cache hit (within `ttl`) → return it, no network.
+/// 2. Otherwise run `fetch` (a live API call). On success, persist + return.
+/// 3. On fetch failure, fall back to the stale cache entry if one exists.
+///
+/// This is what lets every provider track new model releases automatically
+/// while staying fast and resilient to transient network failures.
+pub async fn cached_or_fetch<F, Fut>(key: &str, ttl: Duration, fetch: F) -> Vec<String>
+where
+    F: FnOnce() -> Fut,
+    Fut: std::future::Future<Output = Vec<String>>,
+{
+    let now = now_unix_secs();
+    let cached = read_cache_entry(key);
+
+    if let Some(entry) = &cached
+        && !entry.models.is_empty()
+        && now.saturating_sub(entry.fetched_at) < ttl.as_secs()
+    {
+        tracing::debug!("[model_fetch] cache hit for '{}'", key);
+        return entry.models.clone();
+    }
+
+    let fetched = fetch().await;
+    if !fetched.is_empty() {
+        store_cache_entry(
+            key,
+            &CacheEntry {
+                models: fetched.clone(),
+                fetched_at: now,
+            },
+        );
+        return fetched;
+    }
+
+    // Fetch failed/empty — serve stale cache rather than nothing.
+    match cached {
+        Some(entry) if !entry.models.is_empty() => {
+            tracing::debug!("[model_fetch] serving stale cache for '{}'", key);
+            entry.models
+        }
+        _ => Vec::new(),
+    }
+}
 
 /// Response shape for OpenAI-compatible `/v1/models` endpoint.
 #[derive(serde::Deserialize)]
@@ -197,4 +309,120 @@ pub async fn fetch_models_from_endpoint(base_url: &str, api_key: Option<&str>) -
     }
 
     Vec::new()
+}
+
+fn http_client() -> Option<Client> {
+    Client::builder()
+        .timeout(Duration::from_secs(15))
+        .connect_timeout(Duration::from_secs(5))
+        .build()
+        .ok()
+}
+
+/// Fetch Claude model ids live from Anthropic's `/v1/models`. Anthropic
+/// authenticates with `x-api-key` (or a `Bearer` + `anthropic-beta` header
+/// for OAuth tokens) and requires the `anthropic-version` header — it is
+/// not a plain OpenAI-compatible endpoint, so it needs its own fetcher.
+/// Returns newest-first; empty on failure.
+pub async fn fetch_anthropic_models(api_key: Option<&str>) -> Vec<String> {
+    let Some(client) = http_client() else {
+        return Vec::new();
+    };
+    let mut req = client
+        .get("https://api.anthropic.com/v1/models?limit=100")
+        .header("anthropic-version", "2023-06-01");
+    if let Some(key) = api_key
+        && !key.is_empty()
+    {
+        if key.starts_with("sk-ant-oat") {
+            req = req
+                .header("Authorization", format!("Bearer {}", key))
+                .header("anthropic-beta", "oauth-2025-04-20");
+        } else {
+            req = req.header("x-api-key", key);
+        }
+    }
+    match req.send().await {
+        Ok(resp) if resp.status().is_success() => match resp.json::<OpenAIModelsResponse>().await {
+            Ok(body) if !body.data.is_empty() => {
+                let mut entries = body.data;
+                entries.sort_by_key(|e| std::cmp::Reverse(e.created));
+                entries.into_iter().map(|m| m.id).collect()
+            }
+            _ => Vec::new(),
+        },
+        Ok(resp) => {
+            tracing::debug!(
+                "[model_fetch] anthropic /v1/models returned {}",
+                resp.status()
+            );
+            Vec::new()
+        }
+        Err(e) => {
+            tracing::debug!("[model_fetch] anthropic fetch failed: {}", e);
+            Vec::new()
+        }
+    }
+}
+
+#[derive(serde::Deserialize)]
+struct GeminiModelEntry {
+    name: String,
+    #[serde(default, rename = "supportedGenerationMethods")]
+    supported_generation_methods: Vec<String>,
+}
+
+#[derive(serde::Deserialize)]
+struct GeminiModelsResponse {
+    models: Vec<GeminiModelEntry>,
+}
+
+/// Fetch Gemini model ids live from the generativelanguage API. Uses the
+/// `x-goog-api-key` header and a Gemini-specific response shape
+/// (`models[].name = "models/gemini-..."`), filtering to models that
+/// support `generateContent`. Returns newest-first; empty on failure.
+pub async fn fetch_gemini_models(api_key: Option<&str>) -> Vec<String> {
+    let Some(key) = api_key.filter(|k| !k.is_empty()) else {
+        return Vec::new();
+    };
+    let Some(client) = http_client() else {
+        return Vec::new();
+    };
+    let url = "https://generativelanguage.googleapis.com/v1beta/models?pageSize=200";
+    match client.get(url).header("x-goog-api-key", key).send().await {
+        Ok(resp) if resp.status().is_success() => match resp.json::<GeminiModelsResponse>().await {
+            Ok(body) => {
+                let mut models: Vec<String> = body
+                    .models
+                    .into_iter()
+                    .filter(|m| {
+                        m.supported_generation_methods.is_empty()
+                            || m.supported_generation_methods
+                                .iter()
+                                .any(|g| g == "generateContent")
+                    })
+                    .map(|m| {
+                        m.name
+                            .strip_prefix("models/")
+                            .unwrap_or(&m.name)
+                            .to_string()
+                    })
+                    .collect();
+                models.sort_by_key(|a| version_sort_key(a));
+                models
+            }
+            Err(e) => {
+                tracing::debug!("[model_fetch] gemini parse error: {}", e);
+                Vec::new()
+            }
+        },
+        Ok(resp) => {
+            tracing::debug!("[model_fetch] gemini models returned {}", resp.status());
+            Vec::new()
+        }
+        Err(e) => {
+            tracing::debug!("[model_fetch] gemini fetch failed: {}", e);
+            Vec::new()
+        }
+    }
 }

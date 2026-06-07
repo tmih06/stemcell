@@ -213,6 +213,28 @@ impl OpenAIProvider {
         let calculate_cost_fn: Option<crate::brain::provider::rig_adapter::CalculateCostFn> =
             Some(Arc::new(pricing_cost));
 
+        // Live model fetcher: query the provider's own `/v1/models` (or
+        // Ollama `/api/tags`) endpoint, cached on disk with a TTL keyed by
+        // base URL. Keeps custom/OpenAI-compatible providers' model lists
+        // current without the user hand-editing config.
+        let fetch_base_url = self.base_url.clone();
+        let fetch_api_key = self.api_key.clone();
+        let fetch_models_fn: crate::brain::provider::rig_adapter::FetchModelsFn =
+            Arc::new(move || {
+                let base_url = fetch_base_url.clone();
+                let api_key = fetch_api_key.clone();
+                Box::pin(async move {
+                    use crate::brain::provider::model_fetch::{
+                        DEFAULT_MODEL_CACHE_TTL, cached_or_fetch, fetch_models_from_endpoint,
+                    };
+                    let key = (!api_key.is_empty()).then_some(api_key.clone());
+                    cached_or_fetch(&base_url, DEFAULT_MODEL_CACHE_TTL, || {
+                        fetch_models_from_endpoint(&base_url, key.as_deref())
+                    })
+                    .await
+                })
+            });
+
         crate::brain::provider::rig_adapter::RigAdapter {
             name: self.name,
             default_model: self.model,
@@ -222,6 +244,7 @@ impl OpenAIProvider {
             base_url: Some(self.base_url),
             client_builder,
             vision_model: self.vision_model,
+            fetch_models_fn: Some(fetch_models_fn),
         }
     }
 

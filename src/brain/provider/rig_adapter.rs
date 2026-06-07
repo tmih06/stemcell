@@ -17,6 +17,14 @@ use std::sync::Arc;
 pub type ContextWindowFn = Arc<dyn Fn(&str) -> Option<u32> + Send + Sync>;
 /// Computes request cost in USD from (model, input_tokens, output_tokens).
 pub type CalculateCostFn = Arc<dyn Fn(&str, u32, u32) -> f64 + Send + Sync>;
+/// Fetches the live model list for a provider (async). Wired into
+/// `Provider::fetch_models` so rig-backed providers track new releases at
+/// runtime instead of being pinned to their static `supported_models` seed.
+pub type FetchModelsFn = Arc<
+    dyn Fn() -> std::pin::Pin<Box<dyn std::future::Future<Output = Vec<String>> + Send>>
+        + Send
+        + Sync,
+>;
 
 /// A streamed chunk that produced no `StreamEvent`s still needs to keep the
 /// stream alive, so emit a `Ping` in that case.
@@ -40,6 +48,10 @@ pub struct RigAdapter<C> {
     /// returns true so the channel side knows it can route image
     /// attachments through this provider.
     pub vision_model: Option<String>,
+    /// Optional live model-list fetcher. When set, `fetch_models()` calls
+    /// it (results cached on disk with a TTL); when `None`, `fetch_models()`
+    /// falls back to the static `supported_models` list.
+    pub fetch_models_fn: Option<FetchModelsFn>,
 }
 
 fn parse_image_media_type(mime: &str) -> Option<ImageMediaType> {
@@ -549,6 +561,20 @@ where
 
     fn supported_models(&self) -> Vec<String> {
         self.supported_models.clone()
+    }
+
+    async fn fetch_models(&self) -> Vec<String> {
+        match &self.fetch_models_fn {
+            Some(f) => {
+                let fetched = f().await;
+                if fetched.is_empty() {
+                    self.supported_models.clone()
+                } else {
+                    fetched
+                }
+            }
+            None => self.supported_models.clone(),
+        }
     }
 
     fn context_window(&self, model: &str) -> Option<u32> {

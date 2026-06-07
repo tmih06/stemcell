@@ -10,6 +10,7 @@ use std::sync::Arc;
 #[derive(Clone)]
 pub struct AnthropicProvider {
     client: Client,
+    api_key: String,
     custom_default_model: Option<String>,
 }
 
@@ -21,6 +22,7 @@ impl AnthropicProvider {
 
         Self {
             client: rig_core::providers::anthropic::Client::new(&api_key).unwrap(),
+            api_key,
             custom_default_model: None,
         }
     }
@@ -38,9 +40,28 @@ impl AnthropicProvider {
             .clone()
             .unwrap_or_else(|| "claude-sonnet-4-20250514".to_string());
 
+        let api_key = self.api_key.clone();
+        let fetch_models_fn: crate::brain::provider::rig_adapter::FetchModelsFn =
+            Arc::new(move || {
+                let api_key = api_key.clone();
+                Box::pin(async move {
+                    use crate::brain::provider::model_fetch::{
+                        DEFAULT_MODEL_CACHE_TTL, cached_or_fetch, fetch_anthropic_models,
+                    };
+                    cached_or_fetch("anthropic", DEFAULT_MODEL_CACHE_TTL, || {
+                        fetch_anthropic_models(Some(api_key.as_str()))
+                    })
+                    .await
+                })
+            });
+
         crate::brain::provider::rig_adapter::RigAdapter {
             name: "anthropic".into(),
             default_model,
+            // Offline-fallback seed only. The live list comes from
+            // `fetch_anthropic_models` via `fetch_models_fn`; this is what
+            // `validate_model`/`supported_models` return when the network
+            // is unavailable and the disk cache is cold.
             supported_models: vec![
                 "claude-sonnet-4-20250514".to_string(),
                 "claude-opus-4-1-20250805".to_string(),
@@ -51,6 +72,7 @@ impl AnthropicProvider {
             base_url: None,
             client_builder: Arc::new(move || client.clone()),
             vision_model: None,
+            fetch_models_fn: Some(fetch_models_fn),
         }
     }
 }

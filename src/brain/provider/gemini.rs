@@ -34,6 +34,7 @@ pub fn sanitize_schema_for_gemini(schema: Value) -> Value {
 #[derive(Clone)]
 pub struct GeminiProvider {
     client: Client,
+    api_key: String,
     model: String,
 }
 
@@ -44,6 +45,7 @@ impl GeminiProvider {
 
         Self {
             client,
+            api_key,
             model: "gemini-2.0-flash".to_string(),
         }
     }
@@ -57,9 +59,26 @@ impl GeminiProvider {
     pub fn build(self) -> crate::brain::provider::rig_adapter::RigAdapter<Client> {
         let client = self.client.clone();
 
+        let api_key = self.api_key.clone();
+        let fetch_models_fn: crate::brain::provider::rig_adapter::FetchModelsFn =
+            Arc::new(move || {
+                let api_key = api_key.clone();
+                Box::pin(async move {
+                    use crate::brain::provider::model_fetch::{
+                        DEFAULT_MODEL_CACHE_TTL, cached_or_fetch, fetch_gemini_models,
+                    };
+                    cached_or_fetch("gemini", DEFAULT_MODEL_CACHE_TTL, || {
+                        fetch_gemini_models(Some(api_key.as_str()))
+                    })
+                    .await
+                })
+            });
+
         crate::brain::provider::rig_adapter::RigAdapter {
             name: "gemini".into(),
             default_model: self.model,
+            // Offline-fallback seed only — the live roster comes from
+            // `fetch_gemini_models` via `fetch_models_fn`.
             supported_models: vec![
                 "gemini-2.0-flash".to_string(),
                 "gemini-3.1-flash-image-preview".to_string(),
@@ -69,6 +88,7 @@ impl GeminiProvider {
             base_url: None,
             client_builder: Arc::new(move || client.clone()),
             vision_model: None,
+            fetch_models_fn: Some(fetch_models_fn),
         }
     }
 }
