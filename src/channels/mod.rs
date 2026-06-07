@@ -7,11 +7,11 @@ pub mod commands;
 mod factory;
 pub mod gateway;
 pub mod manager;
-pub mod tui_surface;
 pub mod session_init;
 pub mod session_resolve;
 #[cfg(test)]
 mod tests;
+pub mod tui_surface;
 pub mod voice;
 
 #[cfg(feature = "discord")]
@@ -20,6 +20,8 @@ pub mod discord;
 pub mod slack;
 #[cfg(feature = "telegram")]
 pub mod telegram;
+#[cfg(feature = "telegram")]
+pub mod telegram_surface;
 #[cfg(feature = "trello")]
 pub mod trello;
 #[cfg(feature = "whatsapp")]

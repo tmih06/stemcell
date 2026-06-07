@@ -24,5 +24,5 @@ pub use envelope::{
     Attachment, AttachmentKind, Inbound, Outbound, OutboundMessage, OutboundTarget, ReplyContext,
     Routing, SenderRef,
 };
-pub use registry::{registered_surfaces, SurfaceDeps};
+pub use registry::{SurfaceDeps, registered_surfaces};
 pub use surface::{Surface, SurfaceCallbacks, SurfaceStatus};

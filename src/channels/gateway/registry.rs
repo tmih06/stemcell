@@ -30,6 +30,10 @@ pub struct SurfaceDeps {
     /// The live TUI event sender, used by the TUI surface to route agent
     /// responses back to the terminal renderer.
     pub tui_event_tx: tokio::sync::mpsc::UnboundedSender<crate::tui::events::TuiEvent>,
+    /// Shared Telegram state (connected Bot, owner chat, approval routing).
+    /// Present only when the `telegram` feature is compiled in.
+    #[cfg(feature = "telegram")]
+    pub telegram_state: Arc<crate::channels::telegram::TelegramState>,
 }
 
 /// Build the list of surfaces present in this build. The TUI is always present;
@@ -59,6 +63,14 @@ pub fn registered_surfaces(_deps: &SurfaceDeps) -> Vec<Arc<dyn Surface>> {
     // - Phase 4: Discord / Slack / WhatsApp / Trello.
     // Un-migrated channels continue to run via the legacy `ChannelManager`
     // path, untouched, so the build stays green at every step.
+    #[cfg(feature = "telegram")]
+    surfaces.push(
+        crate::channels::telegram_surface::TelegramSurface::new(
+            _deps,
+            _deps.telegram_state.clone(),
+        )
+        .into_arc(),
+    );
 
     surfaces
 }
