@@ -4,7 +4,10 @@ use super::events::{AppMode, TuiEvent};
 use super::onboarding::{OnboardingStep, WELCOME_MESSAGE, WizardAction};
 use super::*;
 use crate::brain::provider::{ContentBlock, LLMRequest};
-use crate::tui::provider_selector::{CUSTOM_INSTANCES_START, CUSTOM_PROVIDER_IDX};
+use crate::tui::provider_selector::{
+    CUSTOM_INSTANCES_START, CUSTOM_PROVIDER_IDX, first_available_provider_idx,
+    is_provider_index_available,
+};
 use anyhow::Result;
 use std::path::PathBuf;
 use uuid::Uuid;
@@ -133,12 +136,19 @@ impl App {
                 return (idx, api_key);
             }
 
+            // 3. Built-in provider compiled out of this binary (e.g. CLI
+            // feature disabled) — snap back to the first available provider
+            // instead of pretending it's a new custom entry.
+            if providers::find_provider_meta(name).is_some() {
+                return (first_available_provider_idx(), None);
+            }
+
             // 3. Unknown — default to new-custom flow
             (CUSTOM_PROVIDER_IDX, None)
         });
 
         // Determine which provider is enabled — iterate PROVIDERS using shared utility
-        let (provider_idx, api_key) = if let Some(resolved) = from_session {
+        let (mut provider_idx, mut api_key) = if let Some(resolved) = from_session {
             tracing::debug!("[open_model_selector] From session: {:?}", session_provider);
             resolved
         } else {
@@ -149,6 +159,9 @@ impl App {
 
             // Check known providers by iterating PROVIDERS (skip custom sentinel)
             for (idx, info) in PROVIDERS.iter().enumerate().take(CUSTOM_PROVIDER_IDX) {
+                if !crate::tui::provider_selector::is_provider_compiled(info.id) {
+                    continue;
+                }
                 if let Some(cfg) = prov::config_for(&config.providers, info.id)
                     && cfg.enabled
                 {
@@ -204,9 +217,14 @@ impl App {
                 tracing::debug!(
                     "[open_model_selector] No provider enabled, defaulting to Anthropic"
                 );
-                (0, None)
+                (first_available_provider_idx(), None)
             })
         };
+
+        if !is_provider_index_available(provider_idx) {
+            provider_idx = first_available_provider_idx();
+            api_key = None;
+        }
 
         tracing::debug!(
             "[open_model_selector] provider_idx={}, has_api_key={}",
@@ -258,12 +276,24 @@ impl App {
 
         // Clear models until fetch completes (or stays empty for custom)
         self.ps.models.clear();
+        self.ps.reload_config_models();
+
+        if provider_idx != CUSTOM_PROVIDER_IDX {
+            let initial_model = self
+                .current_session
+                .as_ref()
+                .and_then(|s| s.model.clone())
+                .unwrap_or_else(|| self.default_model_name.clone());
+            self.ps.selected_model = self
+                .ps
+                .dialog_model_index_for(provider_idx, &initial_model)
+                .unwrap_or(0);
+        }
 
         // Reset view state
         self.ps.showing_providers = false;
         self.ps.model_filter.clear();
-        self.ps.focused_field = 0;
-        self.ps.selected_model = 0;
+        self.ps.focused_field = 2;
 
         self.mode = AppMode::ModelSelector;
     }
@@ -274,7 +304,64 @@ impl App {
         event: crossterm::event::KeyEvent,
     ) -> Result<()> {
         use super::events::keys;
-        use super::onboarding::PROVIDERS;
+
+        let unified_model_picker = !self.ps.showing_providers;
+        if unified_model_picker {
+            if keys::is_cancel(&event) {
+                self.switch_mode(AppMode::Chat).await?;
+                return Ok(());
+            }
+
+            if event.code == crossterm::event::KeyCode::Tab {
+                self.ps.focused_field = 2;
+                return Ok(());
+            }
+
+            if keys::is_enter(&event) {
+                let Some(selected_option) = self.ps.selected_dialog_model_option() else {
+                    self.error_message = Some("No models match the current search".to_string());
+                    self.error_message_shown_at = Some(std::time::Instant::now());
+                    return Ok(());
+                };
+
+                let target_provider_idx = selected_option.provider_idx;
+                self.ps.selected_provider = target_provider_idx;
+                if target_provider_idx >= CUSTOM_INSTANCES_START {
+                    self.reload_model_selector_custom_fields();
+                    self.ps.custom_model = selected_option.model_id.clone();
+                }
+                self.save_provider_selection(target_provider_idx.min(CUSTOM_PROVIDER_IDX), false)
+                    .await?;
+                return Ok(());
+            }
+
+            match event.code {
+                crossterm::event::KeyCode::Char(c) => {
+                    self.ps.model_filter.push(c);
+                    self.ps.selected_model = 0;
+                }
+                crossterm::event::KeyCode::Backspace => {
+                    self.ps.model_filter.pop();
+                    let count = self.ps.dialog_model_count();
+                    if self.ps.selected_model >= count && count > 0 {
+                        self.ps.selected_model = count - 1;
+                    } else if count == 0 {
+                        self.ps.selected_model = 0;
+                    }
+                }
+                _ if keys::is_up(&event) => {
+                    self.ps.selected_model = self.ps.selected_model.saturating_sub(1);
+                }
+                _ if keys::is_down(&event) => {
+                    let max_models = self.ps.dialog_model_count();
+                    if max_models > 0 {
+                        self.ps.selected_model = (self.ps.selected_model + 1).min(max_models - 1);
+                    }
+                }
+                _ => {}
+            }
+            return Ok(());
+        }
 
         let is_zhipu = self.ps.provider_id() == "zhipu";
         let is_custom_field_3 =
@@ -317,14 +404,7 @@ impl App {
         } else if self.ps.focused_field == 0 {
             // Provider selection (focused)
             // Navigate using display order: static providers sorted alphabetically, then customs, then "+New"
-            let num_customs = self.ps.custom_names.len();
-            let mut static_indices: Vec<usize> = (0..CUSTOM_PROVIDER_IDX).collect();
-            static_indices.sort_by_key(|&i| PROVIDERS[i].name.to_ascii_lowercase());
-            let display_order: Vec<usize> = static_indices
-                .into_iter()
-                .chain(CUSTOM_INSTANCES_START..CUSTOM_INSTANCES_START + num_customs)
-                .chain(std::iter::once(CUSTOM_PROVIDER_IDX))
-                .collect();
+            let display_order = self.ps.provider_display_order();
             let provider_changed = match event.code {
                 crossterm::event::KeyCode::Up => {
                     let pos = display_order
@@ -414,8 +494,9 @@ impl App {
                     });
                 }
                 self.ps.models.clear();
-                self.ps.selected_model = 0;
                 self.ps.model_filter.clear();
+                self.ps.reload_config_models();
+                self.ps.selected_model = 0;
             }
         } else if self.ps.focused_field == 1 && is_zhipu {
             // z.ai GLM endpoint type toggle (field 1)
@@ -556,16 +637,7 @@ impl App {
                 crossterm::event::KeyCode::Backspace => {
                     self.ps.model_filter.pop();
                     // Keep selection valid after filter change
-                    let filter = self.ps.model_filter.to_lowercase();
-                    let count = if self.ps.models.is_empty() {
-                        self.ps.current_provider().models.len()
-                    } else {
-                        self.ps
-                            .models
-                            .iter()
-                            .filter(|m| m.to_lowercase().contains(&filter))
-                            .count()
-                    };
+                    let count = self.ps.dialog_model_count();
                     if self.ps.selected_model >= count && count > 0 {
                         self.ps.selected_model = count - 1;
                     }
@@ -579,17 +651,7 @@ impl App {
                     if keys::is_up(&event) {
                         self.ps.selected_model = self.ps.selected_model.saturating_sub(1);
                     } else if keys::is_down(&event) {
-                        // Get filtered count
-                        let filter = self.ps.model_filter.to_lowercase();
-                        let max_models = if self.ps.models.is_empty() {
-                            self.ps.current_provider().models.len()
-                        } else {
-                            self.ps
-                                .models
-                                .iter()
-                                .filter(|m| m.to_lowercase().contains(&filter))
-                                .count()
-                        };
+                        let max_models = self.ps.dialog_model_count();
                         if max_models > 0 {
                             self.ps.selected_model =
                                 (self.ps.selected_model + 1).min(max_models - 1);
@@ -804,6 +866,14 @@ impl App {
                         )
                         .await;
                         self.ps.merge_config_models_into_fetched();
+                        let target_model = crate::config::Config::load().ok().and_then(|c| {
+                            crate::utils::providers::config_for(&c.providers, self.ps.provider_id())
+                                .and_then(|p| p.default_model.clone())
+                        });
+                        self.ps.selected_model = target_model
+                            .as_deref()
+                            .and_then(|model| self.ps.dialog_model_index_for(provider_idx, model))
+                            .unwrap_or(0);
                     }
 
                     // Move to model field (field 2 for non-Custom, field 3 for Custom/zhipu)
@@ -900,11 +970,24 @@ impl App {
                 .await?;
             } else {
                 // Non-custom: on model field — save and close
+                let Some(selected_option) = self.ps.selected_dialog_model_option() else {
+                    self.error_message = Some("No models match the current search".to_string());
+                    self.error_message_shown_at = Some(std::time::Instant::now());
+                    return Ok(());
+                };
+
+                let target_provider_idx = selected_option.provider_idx;
+                let cross_provider_pick = target_provider_idx != self.ps.selected_provider;
                 let key_changed =
                     !self.ps.api_key_input.is_empty() && !self.ps.has_existing_key_sentinel();
+                if cross_provider_pick {
+                    self.ps.selected_provider = target_provider_idx;
+                    self.detect_model_selector_key_for_provider();
+                    self.reload_model_selector_custom_fields();
+                }
                 self.save_provider_selection(
-                    self.ps.selected_provider.min(CUSTOM_PROVIDER_IDX),
-                    key_changed,
+                    target_provider_idx,
+                    key_changed && !cross_provider_pick,
                 )
                 .await?;
             }
@@ -1078,19 +1161,12 @@ impl App {
             } else {
                 String::new()
             }
-        } else if !self.ps.models.is_empty() {
-            let filter = self.ps.model_filter.to_lowercase();
-            let filtered: Vec<_> = self
-                .ps
-                .models
-                .iter()
-                .filter(|m| m.to_lowercase().contains(&filter))
-                .collect();
-            filtered
-                .get(self.ps.selected_model)
-                .map(|m| m.to_string())
-                .or_else(|| self.ps.models.first().cloned())
-                .unwrap_or_else(|| self.default_model_name.clone())
+        } else if let Some(option) = self
+            .ps
+            .selected_dialog_model_option()
+            .filter(|option| option.provider_idx == provider_idx)
+        {
+            option.model_id
         } else if let Some(model) = provider.models.get(self.ps.selected_model) {
             model.to_string()
         } else {

@@ -153,6 +153,7 @@ llama-cpp-2 = "0.1.137"
 emojis = "0.8.0"
 url = "2.5.8"
 unicode-normalization = "0.1.25"
+rig-core = { version = "0.38.1", default-features = false }
 
 [dev-dependencies]
 rstest = "0.25"
@@ -199,6 +200,13 @@ pdfium = ["dep:pdfium-render"]
 # ========================================
 # Tool Module Features (compile-time)
 # ========================================
+
+# Providers
+tools-providers = ["provider-claude-cli", "provider-codex-cli", "provider-opencode-cli"]
+provider-claude-cli = []
+provider-codex-cli = []
+provider-opencode-cli = []
+
 # The `tools-*` features are compatibility aliases that expand into individual
 # `tool-*` features. Build automation should prefer the per-tool features so a
 # manifest toggle can pack exactly one tool at a time.

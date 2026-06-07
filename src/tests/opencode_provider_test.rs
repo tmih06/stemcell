@@ -8,6 +8,8 @@
 //!
 //! E2E tests skip gracefully if the opencode binary is not installed.
 
+#![cfg(feature = "tools-providers")]
+
 use crate::brain::provider::Provider;
 use crate::brain::provider::opencode_cli::OpenCodeCliProvider;
 use crate::brain::provider::types::*;

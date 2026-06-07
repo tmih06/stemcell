@@ -140,6 +140,10 @@ TOGGLE_TO_FEATURES: dict[str, tuple[str, ...]] = {
         "tool-write-opencrabs-file",
         "tool-a2a-send",
     ),
+    # providers
+    "claude-cli": ("provider-claude-cli",),
+    "codex-cli": ("provider-codex-cli",),
+    "opencode-cli": ("provider-opencode-cli",),
 }
 
 # Implication rules: enabling `key` also enables `other_key` first

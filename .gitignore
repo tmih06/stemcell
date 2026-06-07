@@ -84,3 +84,6 @@ src/plans/
 commands.md
 cc-research.md
 examples/
+
+# Codegraph index
+.codegraph/

@@ -134,6 +134,10 @@ const TOGGLE_TO_FEATURES: &[(&str, &[&str])] = &[
             "tool-a2a-send",
         ],
     ),
+    // providers
+    ("claude-cli", &["provider-claude-cli"]),
+    ("codex-cli", &["provider-codex-cli"]),
+    ("opencode-cli", &["provider-opencode-cli"]),
 ];
 
 /// Implication rules: enabling `key` also enables every `dep` first

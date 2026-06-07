@@ -1,210 +1,243 @@
-//! Non-streaming response → stream event synthesizer.
+//! Compatibility shim: synthesize Anthropic-style `StreamEvent`s from a
+//! non-streaming OpenAI-compatible chat-completion JSON response.
 //!
-//! Some OpenRouter upstreams (e.g. Venice) don't support streaming.
-//! OpenRouter returns the full response as a single JSON blob with
-//! `"object":"chat.completion"` and `"message"` instead of SSE `data:`
-//! lines with `"delta"`. This module detects that case and synthesizes
-//! the same stream events the SSE parser would have produced.
+//! Some upstream proxies / local models return a full `chat.completion`
+//! JSON object when OpenCrabs asks for streaming (e.g. when `stream=true`
+//! is ignored or unsupported). The streaming tool loop expects a sequence
+//! of `StreamEvent`s. Rather than re-implementing the whole response
+//! pipeline, we convert the JSON into the same event sequence that the
+//! streaming path would have produced.
+//!
+//! The event ordering mirrors the Anthropic Messages API streaming
+//! format used elsewhere in the codebase:
+//!
+//! ```text
+//! MessageStart
+//! ContentBlockStart         (one per block: text, tool, ...)
+//! ContentBlockDelta         (zero or more per block)
+//! ContentBlockStop
+//! MessageDelta              (carries final usage + stop_reason)
+//! MessageStop
+//! ```
 
-use super::error::ProviderError;
-use super::types::*;
+use crate::brain::provider::types::{
+    ContentBlock, ContentDelta, MessageDelta, Role, StopReason, StreamEvent, StreamMessage,
+    TokenUsage,
+};
+use serde_json::Value;
 
-/// Deserialize structs — mirrors the OpenAI types in custom_openai_compatible
-/// but with full (non-streaming) `message` fields.
-
-#[derive(Debug, Deserialize)]
-struct NonStreamResponse {
-    id: String,
-    #[serde(default)]
-    model: Option<String>,
-    choices: Vec<NonStreamChoice>,
-    #[serde(default)]
-    usage: Option<NonStreamUsage>,
-}
-
-#[derive(Debug, Deserialize)]
-struct NonStreamChoice {
-    #[allow(dead_code)]
-    index: u32,
-    message: Option<NonStreamMessage>,
-    /// Some providers put the message under `delta` even in non-streaming.
-    delta: Option<NonStreamMessage>,
-    finish_reason: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-struct NonStreamMessage {
-    #[allow(dead_code)]
-    role: Option<String>,
-    #[serde(default)]
-    content: Option<String>,
-    #[serde(default, alias = "reasoning")]
-    reasoning_content: Option<String>,
-    #[serde(default)]
-    tool_calls: Option<Vec<NonStreamToolCall>>,
-}
-
-#[derive(Debug, Deserialize)]
-struct NonStreamToolCall {
-    #[serde(default)]
-    index: usize,
-    #[serde(default)]
-    id: Option<String>,
-    #[serde(default)]
-    function: Option<NonStreamFunction>,
-}
-
-#[derive(Debug, Deserialize)]
-struct NonStreamFunction {
-    #[serde(default)]
-    name: Option<String>,
-    #[serde(default)]
-    arguments: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-struct NonStreamUsage {
-    #[serde(default)]
-    prompt_tokens: Option<u32>,
-    #[serde(default)]
-    completion_tokens: Option<u32>,
-    #[serde(default)]
-    cache_creation_input_tokens: Option<u32>,
-    #[serde(default, alias = "prompt_tokens_details")]
-    prompt_details: Option<NonStreamPromptDetails>,
-}
-
-#[derive(Debug, Deserialize)]
-struct NonStreamPromptDetails {
-    #[serde(default)]
-    cached_tokens: Option<u32>,
-}
-
-use serde::Deserialize;
-
-/// Check if the buffer looks like a non-streaming response.
-pub(crate) fn is_nonstream_response(buf: &str) -> bool {
-    let trimmed = buf.trim();
-    trimmed.starts_with('{') && trimmed.contains("\"chat.completion\"")
-}
-
-/// Parse a non-streaming JSON response and synthesize the same stream
-/// events that the SSE parser would have produced. Returns `None` if
-/// the buffer doesn't parse as a valid response.
-pub(crate) fn synthesize_stream_events(
-    buf: &str,
-) -> Option<Vec<std::result::Result<StreamEvent, ProviderError>>> {
-    let resp: NonStreamResponse = serde_json::from_str(buf.trim()).ok()?;
-    let mut events = Vec::new();
-
-    tracing::info!(
-        "[OR_NONSTREAM] Synthesizing stream events from non-streaming response (id={})",
-        resp.id,
-    );
-
-    // ── MessageStart ──
-    if !resp.id.is_empty() {
-        events.push(Ok(StreamEvent::MessageStart {
-            message: StreamMessage {
-                id: resp.id,
-                model: resp.model.unwrap_or_default(),
-                role: Role::Assistant,
-                usage: TokenUsage::default(),
-            },
-        }));
+/// Returns `true` when the given body looks like a non-streaming
+/// `chat.completion` response (i.e. `object == "chat.completion"`, not
+/// `"chat.completion.chunk"` and not wrapped in `data: ...` SSE).
+pub fn is_nonstream_response(body: &str) -> bool {
+    let trimmed = body.trim_start();
+    if trimmed.starts_with("data:") || !trimmed.starts_with('{') {
+        return false;
     }
+    let Ok(value) = serde_json::from_str::<Value>(trimmed) else {
+        return false;
+    };
+    matches!(
+        value.get("object").and_then(|v| v.as_str()),
+        Some("chat.completion")
+    )
+}
 
-    let choice = resp.choices.first()?;
-    let msg = choice.message.as_ref().or(choice.delta.as_ref())?;
+/// Convert a non-streaming OpenAI-style chat-completion JSON body into the
+/// sequence of `StreamEvent`s the streaming pipeline would have produced.
+pub fn synthesize_stream_events(
+    body: &str,
+) -> Result<Vec<Result<StreamEvent, ()>>, serde_json::Error> {
+    let value: Value = serde_json::from_str(body)?;
+    let mut events: Vec<Result<StreamEvent, ()>> = Vec::new();
 
-    // ── Reasoning / thinking content ──
-    if let Some(ref reasoning) = msg.reasoning_content
+    let id = value
+        .get("id")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+    let model = value
+        .get("model")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+
+    let usage = parse_usage(value.get("usage"));
+
+    // Pick the first choice (proxy responses always have one for non-streaming).
+    let choice = value
+        .get("choices")
+        .and_then(|v| v.as_array())
+        .and_then(|arr| arr.first());
+
+    let (finish_reason, message) = match choice {
+        Some(c) => (
+            c.get("finish_reason")
+                .and_then(|v| v.as_str())
+                .unwrap_or("stop")
+                .to_string(),
+            c.get("message").cloned().unwrap_or(Value::Null),
+        ),
+        None => ("stop".to_string(), Value::Null),
+    };
+
+    // 1. MessageStart
+    events.push(Ok(StreamEvent::MessageStart {
+        message: StreamMessage {
+            id: id.clone(),
+            model: model.clone(),
+            role: Role::Assistant,
+            usage,
+        },
+    }));
+
+    let stop_reason = map_stop_reason(&finish_reason);
+
+    // 2. Optional reasoning delta (some providers carry it in `message.reasoning`).
+    if let Some(reasoning) = message.get("reasoning").and_then(|v| v.as_str())
         && !reasoning.is_empty()
     {
         events.push(Ok(StreamEvent::ContentBlockDelta {
             index: 0,
             delta: ContentDelta::ReasoningDelta {
-                text: reasoning.clone(),
+                text: reasoning.to_string(),
             },
         }));
     }
 
-    // ── Text content ──
-    let content = msg.content.as_deref().unwrap_or("");
-    // Strip leading newline that some models prepend after reasoning
-    let content = content.strip_prefix('\n').unwrap_or(content);
-    if !content.is_empty() {
+    // 3. Optional text content
+    let content_text = message
+        .get("content")
+        .and_then(|v| v.as_str())
+        .map(|s| s.trim_start_matches('\n').to_string());
+    let mut next_index: usize = if message.get("reasoning").is_some() {
+        1
+    } else {
+        0
+    };
+    if let Some(text) = content_text
+        && !text.is_empty()
+    {
+        let idx = next_index;
+        next_index += 1;
         events.push(Ok(StreamEvent::ContentBlockStart {
-            index: 0,
-            content_block: ContentBlock::Text {
-                text: content.to_string(),
-            },
+            index: idx,
+            content_block: ContentBlock::Text { text: text.clone() },
         }));
-        events.push(Ok(StreamEvent::ContentBlockStop { index: 0 }));
+        events.push(Ok(StreamEvent::ContentBlockStop { index: idx }));
     }
 
-    // ── Tool calls ──
-    if let Some(ref tc_list) = msg.tool_calls {
-        for tc in tc_list {
-            let id = tc.id.clone().unwrap_or_default();
+    // 4. Tool calls
+    if let Some(tool_calls) = message.get("tool_calls").and_then(|v| v.as_array()) {
+        for tc in tool_calls {
+            let call_id = tc
+                .get("id")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
             let name = tc
-                .function
-                .as_ref()
-                .and_then(|f| f.name.clone())
-                .unwrap_or_default();
-            let args = tc
-                .function
-                .as_ref()
-                .and_then(|f| f.arguments.clone())
-                .unwrap_or_default();
-            let input = serde_json::from_str(&args).unwrap_or_else(|_| serde_json::json!({}));
-            let tool_index = tc.index + 1; // offset by 1 to avoid collision with text at 0
+                .get("function")
+                .and_then(|f| f.get("name"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let arguments_str = tc
+                .get("function")
+                .and_then(|f| f.get("arguments"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("{}");
+            let input: serde_json::Value =
+                serde_json::from_str(arguments_str).unwrap_or(Value::Null);
 
-            tracing::info!(
-                "[OR_NONSTREAM] tool_call: id={}, name={}, args_len={}",
-                id,
-                name,
-                args.len(),
-            );
-
+            let idx = next_index;
+            next_index += 1;
             events.push(Ok(StreamEvent::ContentBlockStart {
-                index: tool_index,
-                content_block: ContentBlock::ToolUse { id, name, input },
+                index: idx,
+                content_block: ContentBlock::ToolUse {
+                    id: call_id,
+                    name,
+                    input,
+                },
             }));
-            events.push(Ok(StreamEvent::ContentBlockStop { index: tool_index }));
+            events.push(Ok(StreamEvent::ContentBlockStop { index: idx }));
         }
     }
 
-    // ── Stop reason ──
-    let stop_reason = choice.finish_reason.as_deref().map(|fr| match fr {
-        "tool_calls" | "function_call" => StopReason::ToolUse,
-        "length" => StopReason::MaxTokens,
-        _ => StopReason::EndTurn,
-    });
-
-    // ── Usage ──
-    let mut token_usage = TokenUsage::default();
-    if let Some(ref usage) = resp.usage {
-        token_usage.input_tokens = usage.prompt_tokens.unwrap_or(0);
-        token_usage.output_tokens = usage.completion_tokens.unwrap_or(0);
-        if let Some(cache_create) = usage.cache_creation_input_tokens {
-            token_usage.cache_creation_tokens = cache_create;
-        }
-        if let Some(ref details) = usage.prompt_details
-            && let Some(cached) = details.cached_tokens
-        {
-            token_usage.cache_read_tokens = cached;
-        }
-    }
-
+    // 5. MessageDelta (carries final stop_reason + usage)
     events.push(Ok(StreamEvent::MessageDelta {
         delta: MessageDelta {
-            stop_reason,
+            stop_reason: Some(stop_reason),
             stop_sequence: None,
         },
-        usage: token_usage,
+        usage,
     }));
+
+    // 6. MessageStop
     events.push(Ok(StreamEvent::MessageStop));
 
-    Some(events)
+    Ok(events)
+}
+
+fn map_stop_reason(s: &str) -> StopReason {
+    match s {
+        "stop" | "end_turn" => StopReason::EndTurn,
+        "length" | "max_tokens" => StopReason::MaxTokens,
+        "tool_calls" | "tool_use" => StopReason::ToolUse,
+        "stop_sequence" => StopReason::StopSequence,
+        _ => StopReason::EndTurn,
+    }
+}
+
+fn parse_usage(value: Option<&Value>) -> TokenUsage {
+    let Some(v) = value else {
+        return TokenUsage::default();
+    };
+    let input_tokens = v
+        .get("prompt_tokens")
+        .and_then(|x| x.as_u64())
+        .map(|n| n as u32)
+        .unwrap_or(0);
+    let output_tokens = v
+        .get("completion_tokens")
+        .and_then(|x| x.as_u64())
+        .map(|n| n as u32)
+        .unwrap_or(0);
+    let cache_creation_tokens = v
+        .get("cache_creation_input_tokens")
+        .and_then(|x| x.as_u64())
+        .map(|n| n as u32)
+        .unwrap_or(0);
+    let cache_read_tokens = v
+        .get("prompt_tokens_details")
+        .and_then(|d| d.get("cached_tokens"))
+        .and_then(|x| x.as_u64())
+        .map(|n| n as u32)
+        .unwrap_or(0);
+    TokenUsage {
+        input_tokens,
+        output_tokens,
+        cache_creation_tokens,
+        cache_read_tokens,
+        billing_cache_creation: 0,
+        billing_cache_read: 0,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn detects_nonstream_shape() {
+        assert!(is_nonstream_response(
+            r#"{"object":"chat.completion","id":"x"}"#
+        ));
+        assert!(!is_nonstream_response(
+            r#"data: {"object":"chat.completion"}"#
+        ));
+        assert!(!is_nonstream_response("not json"));
+        assert!(!is_nonstream_response(
+            r#"{"object":"chat.completion.chunk"}"#
+        ));
+    }
 }

@@ -3,7 +3,6 @@
 //! Tests factory fallback behavior, custom providers with optional API keys,
 //! local providers (LM Studio, Ollama), and no-crash guarantees.
 
-use crate::brain::Provider;
 use crate::brain::provider::custom_openai_compatible::OpenAIProvider;
 use crate::brain::provider::factory::{create_provider, create_provider_by_name};
 use crate::config::{Config, ProviderConfig, ProviderConfigs};

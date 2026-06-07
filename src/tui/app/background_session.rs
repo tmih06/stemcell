@@ -182,6 +182,28 @@ impl SessionStateMut<'_> {
         }
     }
 
+    /// Consume reasoning for an `IntermediateText` flush.
+    ///
+    /// If the flush already carries explicit reasoning, that payload is
+    /// authoritative and any live streaming accumulator must be cleared so
+    /// `ResponseComplete` does not attach the same thinking a second time.
+    /// Otherwise, take the accumulated streaming reasoning from the routed
+    /// state and clear it.
+    pub fn take_reasoning_for_intermediate(&mut self, explicit: Option<String>) -> Option<String> {
+        if let Some(reasoning) = explicit {
+            match self {
+                Self::Foreground(app) => app.streaming_reasoning = None,
+                Self::Background(bg) => bg.streaming_reasoning = None,
+            }
+            Some(reasoning)
+        } else {
+            match self {
+                Self::Foreground(app) => app.streaming_reasoning.take(),
+                Self::Background(bg) => bg.streaming_reasoning.take(),
+            }
+        }
+    }
+
     /// Mark the session as actively processing a turn.
     pub fn set_processing(&mut self, processing: bool) {
         match self {

@@ -3,6 +3,8 @@
 //! Covers the date-suffix stripper and the alias → normalized-id map so
 //! renames/release bumps are caught by CI instead of visually in the TUI.
 
+#![cfg(feature = "tools-providers")]
+
 use crate::brain::provider::claude_cli::{
     ClaudeCliProvider, clear_learned_models, learned_alias, record_alias, strip_claude_date_suffix,
 };

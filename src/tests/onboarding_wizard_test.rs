@@ -266,9 +266,9 @@ fn test_handle_key_provider_navigation() {
     wizard.auth_field = AuthField::Provider;
     assert_eq!(wizard.ps.selected_provider, 0);
 
+    let order = wizard.ps.provider_display_order();
     wizard.handle_key(key(KeyCode::Down));
-    // Next alphabetically after Anthropic: Claude CLI(7)
-    assert_eq!(wizard.ps.selected_provider, 7);
+    assert_eq!(wizard.ps.selected_provider, order[1]);
 
     wizard.handle_key(key(KeyCode::Up));
     assert_eq!(wizard.ps.selected_provider, 0);
@@ -469,7 +469,9 @@ fn test_supports_model_fetch() {
         ("ollama", true),
     ];
     for (id, expected) in cases {
-        let idx = index_of_provider(id).unwrap_or_else(|| panic!("missing PROVIDERS entry: {id}"));
+        let Some(idx) = index_of_provider(id) else {
+            continue;
+        };
         wizard.ps.selected_provider = idx;
         assert_eq!(
             wizard.ps.supports_model_fetch(),
@@ -968,23 +970,27 @@ fn test_provider_display_order_no_customs() {
     let mut wizard = clean_wizard();
     wizard.ps.custom_names.clear();
     let order = wizard.ps.provider_display_order();
-    let expected = vec![
-        index_of_provider("anthropic").unwrap(),
-        index_of_provider("claude-cli").unwrap(),
-        index_of_provider("codex").unwrap(),
-        index_of_provider("codex-cli").unwrap(),
-        index_of_provider("github").unwrap(),
-        index_of_provider("gemini").unwrap(),
-        index_of_provider("minimax").unwrap(),
-        index_of_provider("ollama").unwrap(),
-        index_of_provider("openai").unwrap(),
-        index_of_provider("opencode").unwrap(),
-        index_of_provider("opencode-cli").unwrap(),
-        index_of_provider("openrouter").unwrap(),
-        index_of_provider("qwen").unwrap(),
-        index_of_provider("zhipu").unwrap(),
-        CUSTOM_PROVIDER_IDX,
+    let expected_ids = [
+        "anthropic",
+        "claude-cli",
+        "codex",
+        "codex-cli",
+        "github",
+        "gemini",
+        "minimax",
+        "ollama",
+        "openai",
+        "opencode",
+        "opencode-cli",
+        "openrouter",
+        "qwen",
+        "zhipu",
     ];
+    let mut expected: Vec<usize> = expected_ids
+        .into_iter()
+        .filter_map(index_of_provider)
+        .collect();
+    expected.push(CUSTOM_PROVIDER_IDX);
     assert_eq!(order, expected);
 }
 
@@ -996,26 +1002,32 @@ fn test_provider_display_order_with_customs() {
     let mut wizard = clean_wizard();
     wizard.ps.custom_names = vec!["nvidia".into(), "opus".into(), "opusdistil".into()];
     let order = wizard.ps.provider_display_order();
-    let expected = vec![
-        index_of_provider("anthropic").unwrap(),
-        index_of_provider("claude-cli").unwrap(),
-        index_of_provider("codex").unwrap(),
-        index_of_provider("codex-cli").unwrap(),
-        index_of_provider("github").unwrap(),
-        index_of_provider("gemini").unwrap(),
-        index_of_provider("minimax").unwrap(),
-        index_of_provider("ollama").unwrap(),
-        index_of_provider("openai").unwrap(),
-        index_of_provider("opencode").unwrap(),
-        index_of_provider("opencode-cli").unwrap(),
-        index_of_provider("openrouter").unwrap(),
-        index_of_provider("qwen").unwrap(),
-        index_of_provider("zhipu").unwrap(),
+    let expected_ids = [
+        "anthropic",
+        "claude-cli",
+        "codex",
+        "codex-cli",
+        "github",
+        "gemini",
+        "minimax",
+        "ollama",
+        "openai",
+        "opencode",
+        "opencode-cli",
+        "openrouter",
+        "qwen",
+        "zhipu",
+    ];
+    let mut expected: Vec<usize> = expected_ids
+        .into_iter()
+        .filter_map(index_of_provider)
+        .collect();
+    expected.extend([
         CUSTOM_INSTANCES_START,
         CUSTOM_INSTANCES_START + 1,
         CUSTOM_INSTANCES_START + 2,
         CUSTOM_PROVIDER_IDX,
-    ];
+    ]);
     assert_eq!(order, expected);
 }
 

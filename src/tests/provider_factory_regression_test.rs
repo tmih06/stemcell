@@ -4,6 +4,8 @@
 //! across the factory functions. They serve as a regression suite before
 //! refactoring the factory into a registry pattern.
 
+#![cfg(feature = "tools-providers")]
+
 use crate::brain::provider::factory::{
     active_provider_vision, create_provider, create_provider_by_name,
 };

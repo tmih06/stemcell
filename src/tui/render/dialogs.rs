@@ -3,6 +3,7 @@
 //! File picker, directory picker, model selector, usage dialog, restart dialog, and update prompt.
 
 use super::super::app::App;
+use super::input::truncate_to_chars;
 use ratatui::{
     Frame,
     layout::{Constraint, Direction, Layout, Rect},
@@ -308,17 +309,285 @@ pub(super) fn render_model_selector(f: &mut Frame, app: &App, area: Rect) {
 
     let selected_provider = &PROVIDERS[clamped_idx];
 
-    // Get models from fetched list, filtered by search text
+    let is_custom_selected = provider_idx >= CUSTOM_PROVIDER_IDX;
+
+    let unified_model_picker = !app.ps.showing_providers;
+    if unified_model_picker {
+        let dialog_model_options = app.ps.filtered_dialog_model_options();
+        let total = dialog_model_options.len();
+        let max_sel = if total > 0 { total - 1 } else { 0 };
+        let safe_selected = app.ps.selected_model.min(max_sel);
+        let current_model = app
+            .current_session
+            .as_ref()
+            .and_then(|s| s.model.clone())
+            .unwrap_or_else(|| app.provider_model());
+        let current_provider_idx = app
+            .current_session
+            .as_ref()
+            .and_then(|s| s.provider_name.as_deref())
+            .and_then(|name| {
+                crate::utils::providers::tui_index_for_id(name).or_else(|| {
+                    app.ps
+                        .custom_names
+                        .iter()
+                        .position(|custom_name| custom_name == name)
+                        .map(|idx| CUSTOM_INSTANCES_START + idx)
+                })
+            });
+
+        const MAX_VISIBLE_MODELS: usize = 10;
+        let content_lines = 8 + MAX_VISIBLE_MODELS as u16 + 2;
+        let max_height = area.height.saturating_mul(19) / 20;
+        let dialog_height = content_lines
+            .min(max_height)
+            .min(area.height.saturating_sub(2));
+        let dialog_width = 84u16.min(area.width * 9 / 10).max(52u16.min(area.width));
+
+        let v_chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Min(0),
+                Constraint::Length(dialog_height),
+                Constraint::Min(0),
+            ])
+            .split(area);
+        let h_chunks = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([
+                Constraint::Min(0),
+                Constraint::Length(dialog_width),
+                Constraint::Min(0),
+            ])
+            .split(v_chunks[1]);
+        let dialog_area = h_chunks[1];
+
+        let mut lines: Vec<Line> = Vec::new();
+        lines.push(Line::from(vec![
+            Span::styled(
+                "  Models",
+                Style::default()
+                    .fg(Color::Reset)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(
+                "  pick a model; provider switches with it",
+                Style::default()
+                    .fg(Color::DarkGray)
+                    .add_modifier(Modifier::ITALIC),
+            ),
+        ]));
+        lines.push(Line::from(""));
+
+        let search_cursor = "█";
+        let search_display = if app.ps.model_filter.is_empty() {
+            format!("  Search: model or provider{}", search_cursor)
+        } else {
+            format!("  Search: {}{}", app.ps.model_filter, search_cursor)
+        };
+        lines.push(Line::from(Span::styled(
+            search_display,
+            Style::default().fg(BRAND_BLUE),
+        )));
+        lines.push(Line::from(Span::styled(
+            "  Model                                                  Provider",
+            Style::default()
+                .fg(Color::DarkGray)
+                .add_modifier(Modifier::BOLD),
+        )));
+
+        let (start, end) = if total <= MAX_VISIBLE_MODELS {
+            (0, total)
+        } else {
+            let half = MAX_VISIBLE_MODELS / 2;
+            let s = safe_selected
+                .saturating_sub(half)
+                .min(total - MAX_VISIBLE_MODELS);
+            (s, s + MAX_VISIBLE_MODELS)
+        };
+
+        lines.push(Line::from(Span::styled(
+            if start > 0 {
+                format!("  ↑ {} more", start)
+            } else {
+                String::new()
+            },
+            Style::default().fg(Color::DarkGray),
+        )));
+
+        let provider_width = app
+            .ps
+            .dialog_model_options()
+            .iter()
+            .map(|option| option.provider_name.chars().count())
+            .max()
+            .unwrap_or(12)
+            .min(22);
+        let row_width = dialog_area.width.saturating_sub(10) as usize;
+        let gap_width = 2usize;
+        let model_width = row_width
+            .saturating_sub(provider_width)
+            .saturating_sub(gap_width)
+            .max(12);
+
+        if total == 0 {
+            lines.push(Line::from(Span::styled(
+                "  No models match the current search",
+                Style::default()
+                    .fg(Color::DarkGray)
+                    .add_modifier(Modifier::ITALIC),
+            )));
+            for _ in 1..MAX_VISIBLE_MODELS {
+                lines.push(Line::from(""));
+            }
+        }
+
+        // Reserve a 2-col gutter on the far right for the green "connected"
+        // tick so provider names stay right-aligned whether or not a tick is
+        // shown.
+        const TICK_GUTTER: usize = 2;
+        // Credential status is cached per render so Config::load() (and the
+        // CLI-binary probes inside provider_has_credentials) runs at most
+        // once per distinct provider currently in view.
+        let mut cred_cache: std::collections::HashMap<usize, bool> =
+            std::collections::HashMap::new();
+
+        for (offset, option) in dialog_model_options[start..end].iter().enumerate() {
+            let option = *option;
+            let i = start + offset;
+            let selected = i == safe_selected;
+            let active = current_provider_idx == Some(option.provider_idx)
+                && option.model_id == current_model;
+
+            let prefix = if selected { " > " } else { "   " };
+            let style = if selected {
+                Style::default()
+                    .fg(Color::Black)
+                    .bg(BRAND_BLUE)
+                    .add_modifier(Modifier::BOLD)
+            } else if active {
+                Style::default()
+                    .fg(Color::Gray)
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(Color::Reset)
+            };
+
+            let model_label = truncate_to_chars(&option.display_name, model_width).into_owned();
+            let provider_label =
+                truncate_to_chars(&option.provider_name, provider_width).into_owned();
+            let filler = " ".repeat(
+                row_width
+                    .saturating_sub(TICK_GUTTER)
+                    .saturating_sub(model_label.chars().count() + provider_label.chars().count()),
+            );
+            let row = format!("{model_label}{filler}{provider_label}");
+
+            // Right-aligned green tick for providers that are connected
+            // (API key present, OAuth token saved, or CLI binary on PATH).
+            // Providers you are not logged into show a blank gutter instead.
+            let configured = *cred_cache
+                .entry(option.provider_idx)
+                .or_insert_with(|| app.ps.provider_has_credentials(option.provider_idx));
+            let tick_span = if configured {
+                Span::styled(
+                    " ✓",
+                    if selected {
+                        Style::default().fg(Color::Green).bg(BRAND_BLUE)
+                    } else {
+                        Style::default().fg(Color::Green)
+                    },
+                )
+            } else {
+                Span::styled("  ", style)
+            };
+
+            lines.push(Line::from(vec![
+                Span::styled(prefix, style),
+                Span::styled(row, style),
+                tick_span,
+            ]));
+        }
+
+        let visible_count = end.saturating_sub(start);
+        if total > 0 {
+            for _ in visible_count..MAX_VISIBLE_MODELS {
+                lines.push(Line::from(""));
+            }
+        }
+        lines.push(Line::from(Span::styled(
+            if end < total {
+                format!("  ↓ {} more", total - end)
+            } else {
+                String::new()
+            },
+            Style::default().fg(Color::DarkGray),
+        )));
+
+        lines.push(Line::from(""));
+        lines.push(Line::from(vec![
+            Span::styled(
+                "[↑/↓]",
+                Style::default().fg(BRAND_GOLD).add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(" Move  ", Style::default().fg(Color::Reset)),
+            Span::styled(
+                "[Type]",
+                Style::default().fg(BRAND_GOLD).add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(" Search  ", Style::default().fg(Color::Reset)),
+            Span::styled(
+                "[Enter]",
+                Style::default().fg(BRAND_GOLD).add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(" Select  ", Style::default().fg(Color::Reset)),
+            Span::styled(
+                "[Esc]",
+                Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(" Cancel", Style::default().fg(Color::Reset)),
+        ]));
+
+        let widget = Paragraph::new(lines)
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .border_style(Style::default().fg(Color::Rgb(120, 120, 120)))
+                    .title(Span::styled(
+                        " Select Model ",
+                        Style::default()
+                            .fg(Color::Rgb(120, 120, 120))
+                            .add_modifier(Modifier::BOLD),
+                    )),
+            )
+            .wrap(Wrap { trim: false });
+
+        f.render_widget(Clear, dialog_area);
+        f.render_widget(widget, dialog_area);
+        return;
+    }
+
+    // Custom providers keep the existing fetch/paste flow. Built-ins use a
+    // flat searchable model catalogue inspired by opencode's model dialog.
     let filter = app.ps.model_filter.to_lowercase();
-    let display_models: Vec<&str> = app
+    let custom_display_models: Vec<&str> = app
         .ps
         .models
         .iter()
         .filter(|m| filter.is_empty() || m.to_lowercase().contains(&filter))
         .map(|s| s.as_ref())
         .collect();
+    let dialog_model_options = if is_custom_selected {
+        Vec::new()
+    } else {
+        app.ps.filtered_dialog_model_options()
+    };
 
-    let model_count = display_models.len();
+    let model_count = if is_custom_selected {
+        custom_display_models.len()
+    } else {
+        dialog_model_options.len()
+    };
     // For custom providers in mid-edit (user picked a model on field 3 then
     // advanced to field 4/5 but hasn't hit final save yet), prefer the
     // freshly-picked `custom_model` over `session.model` — otherwise the
@@ -336,11 +605,14 @@ pub(super) fn render_model_selector(f: &mut Frame, app: &App, area: Rect) {
             .and_then(|s| s.model.clone())
             .unwrap_or_else(|| app.provider_model())
     };
+    let current_provider_idx = app
+        .current_session
+        .as_ref()
+        .and_then(|s| s.provider_name.as_deref())
+        .and_then(crate::utils::providers::tui_index_for_id);
 
-    let custom_extra = app.ps.custom_names.len() as u16;
-    let is_custom_selected = provider_idx >= CUSTOM_PROVIDER_IDX;
     // static providers + custom_extra + "+ New Custom" + API key line + filter + models + footer + padding
-    let provider_lines = CUSTOM_PROVIDER_IDX as u16 + custom_extra + 1; // static + customs + new custom
+    let provider_lines = app.ps.provider_display_order().len() as u16;
     // Custom providers: text fields + optional model list when fetched
     // No models (PASTE mode): Base URL(2) + API Key(2) + Model text(1) + paste hint(1) + Name(2) + Context Window(1) + spacing(2) + help(2) = 13
     // With models: Base URL(2) + API Key(2) + filter(1) + models + ↑↓ indicators(2) + Name(2) + Context Window(1) + spacing(1) + help(1) = 12 + models
@@ -354,7 +626,7 @@ pub(super) fn render_model_selector(f: &mut Frame, app: &App, area: Rect) {
         // + up/down indicators when total exceeds the viewport
         11 + visible_models as u16 + if has_more_indicators { 2 } else { 0 }
     } else {
-        4 + model_count as u16 + 4 // key/filter chrome + model list + footer
+        8 + visible_models as u16 + if has_more_indicators { 2 } else { 0 }
     };
     let content_lines = provider_lines + form_lines;
     // Use up to 95% of the terminal so the last 1-3 form fields
@@ -749,26 +1021,8 @@ pub(super) fn render_model_selector(f: &mut Frame, app: &App, area: Rect) {
                     .add_modifier(Modifier::ITALIC),
             )));
         }
-    } else {
-        // Non-custom: filter/search model list
-        if model_focused {
-            let filter_cursor = if model_focused { "█" } else { "" };
-            let filter_display = if app.ps.model_filter.is_empty() {
-                format!("  / filter{}", filter_cursor)
-            } else {
-                format!("  / {}{}", app.ps.model_filter, filter_cursor)
-            };
-            lines.push(Line::from(Span::styled(
-                filter_display,
-                Style::default().fg(if model_focused {
-                    BRAND_BLUE
-                } else {
-                    Color::DarkGray
-                }),
-            )));
-        }
-
-        let total = display_models.len();
+    } else if is_custom {
+        let total = custom_display_models.len();
         let max_sel = if total > 0 { total - 1 } else { 0 };
         let safe_selected = app.ps.selected_model.min(max_sel);
         let (start, end) = if total <= MAX_VISIBLE_MODELS {
@@ -788,7 +1042,7 @@ pub(super) fn render_model_selector(f: &mut Frame, app: &App, area: Rect) {
             )));
         }
 
-        for (offset, model) in display_models[start..end].iter().enumerate() {
+        for (offset, model) in custom_display_models[start..end].iter().enumerate() {
             let i = start + offset;
             let selected = i == safe_selected;
             let active = *model == current_model;
@@ -819,6 +1073,116 @@ pub(super) fn render_model_selector(f: &mut Frame, app: &App, area: Rect) {
                 Span::styled(prefix, style),
                 Span::styled(label.to_string(), style),
                 Span::styled(suffix, Style::default().fg(Color::DarkGray)),
+            ]));
+        }
+
+        if end < total {
+            lines.push(Line::from(Span::styled(
+                format!("  ↓ {} more", total - end),
+                Style::default().fg(Color::DarkGray),
+            )));
+        }
+    } else {
+        let search_cursor = if model_focused { "█" } else { "" };
+        let search_display = if app.ps.model_filter.is_empty() {
+            format!("  Search: model or provider{}", search_cursor)
+        } else {
+            format!("  Search: {}{}", app.ps.model_filter, search_cursor)
+        };
+        lines.push(Line::from(Span::styled(
+            search_display,
+            Style::default().fg(if model_focused {
+                BRAND_BLUE
+            } else {
+                Color::DarkGray
+            }),
+        )));
+        lines.push(Line::from(Span::styled(
+            "  Model                                            Provider",
+            Style::default()
+                .fg(Color::DarkGray)
+                .add_modifier(Modifier::BOLD),
+        )));
+
+        let total = dialog_model_options.len();
+        let max_sel = if total > 0 { total - 1 } else { 0 };
+        let safe_selected = app.ps.selected_model.min(max_sel);
+        let (start, end) = if total <= MAX_VISIBLE_MODELS {
+            (0, total)
+        } else {
+            let half = MAX_VISIBLE_MODELS / 2;
+            let s = safe_selected
+                .saturating_sub(half)
+                .min(total - MAX_VISIBLE_MODELS);
+            (s, s + MAX_VISIBLE_MODELS)
+        };
+
+        if start > 0 {
+            lines.push(Line::from(Span::styled(
+                format!("  ↑ {} more", start),
+                Style::default().fg(Color::DarkGray),
+            )));
+        }
+
+        if total == 0 {
+            lines.push(Line::from(Span::styled(
+                "  No models match the current search",
+                Style::default()
+                    .fg(Color::DarkGray)
+                    .add_modifier(Modifier::ITALIC),
+            )));
+        }
+
+        let provider_width = dialog_model_options
+            .iter()
+            .map(|option| option.provider_name.chars().count())
+            .max()
+            .unwrap_or(12)
+            .min(20);
+        let row_width = dialog_area.width.saturating_sub(10) as usize;
+        let gap_width = 2usize;
+        let model_width = row_width
+            .saturating_sub(provider_width)
+            .saturating_sub(gap_width)
+            .max(8);
+
+        for (offset, option) in dialog_model_options[start..end].iter().enumerate() {
+            let i = start + offset;
+            let selected = i == safe_selected;
+            let active = current_provider_idx == Some(option.provider_idx)
+                && option.model_id == current_model;
+
+            let prefix = if selected && model_focused {
+                " > "
+            } else {
+                "   "
+            };
+
+            let style = if selected && model_focused {
+                Style::default()
+                    .fg(Color::Black)
+                    .bg(BRAND_BLUE)
+                    .add_modifier(Modifier::BOLD)
+            } else if active {
+                Style::default()
+                    .fg(Color::Gray)
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(Color::Reset)
+            };
+
+            let model_label = truncate_to_chars(&option.display_name, model_width).into_owned();
+            let provider_label =
+                truncate_to_chars(&option.provider_name, provider_width).into_owned();
+            let filler = " ".repeat(
+                row_width
+                    .saturating_sub(model_label.chars().count() + provider_label.chars().count()),
+            );
+            let row = format!("{model_label}{filler}{provider_label}");
+
+            lines.push(Line::from(vec![
+                Span::styled(prefix, style),
+                Span::styled(row, style),
             ]));
         }
 

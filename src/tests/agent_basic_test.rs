@@ -330,6 +330,37 @@ async fn test_stream_complete_text_only() {
 }
 
 #[tokio::test]
+async fn test_stream_complete_preserves_text_after_reasoning_block() {
+    let provider = Arc::new(MockProviderReasoningThenText);
+    let db = Database::connect_in_memory().await.unwrap();
+    db.run_migrations().await.unwrap();
+    let context = ServiceContext::new(db.pool().clone());
+    let agent_service = AgentService::new_for_test(provider, context).await;
+
+    let request = LLMRequest::new(
+        "mock-model".to_string(),
+        vec![Message::user("Answer after reasoning")],
+    );
+
+    let (response, reasoning) = agent_service
+        .stream_complete(Uuid::nil(), request, None, None, None, None, false)
+        .await
+        .unwrap();
+
+    assert_eq!(
+        reasoning.as_deref(),
+        Some("I checked the result carefully.")
+    );
+    assert!(
+        response.content.iter().any(
+            |block| matches!(block, ContentBlock::Text { text } if text == "Final visible answer.")
+        ),
+        "visible text must survive streamed reasoning blocks"
+    );
+    assert_eq!(response.stop_reason, Some(StopReason::EndTurn));
+}
+
+#[tokio::test]
 async fn test_stream_complete_with_tool_use() {
     let provider = Arc::new(MockProviderWithTools::new());
     let db = Database::connect_in_memory().await.unwrap();

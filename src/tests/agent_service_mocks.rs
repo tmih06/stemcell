@@ -241,6 +241,114 @@ impl Provider for MockProviderWithTools {
     }
 }
 
+/// Mock provider that streams reasoning first and visible text second.
+pub(crate) struct MockProviderReasoningThenText;
+
+#[async_trait]
+impl Provider for MockProviderReasoningThenText {
+    async fn complete(&self, _request: LLMRequest) -> crate::brain::provider::Result<LLMResponse> {
+        Ok(LLMResponse {
+            id: "reasoning-text-complete".to_string(),
+            model: "mock-model".to_string(),
+            content: vec![
+                ContentBlock::Thinking {
+                    thinking: "I checked the result carefully.".to_string(),
+                    signature: Some("sig-1".to_string()),
+                },
+                ContentBlock::Text {
+                    text: "Final visible answer.".to_string(),
+                },
+            ],
+            stop_reason: Some(StopReason::EndTurn),
+            usage: TokenUsage {
+                input_tokens: 12,
+                output_tokens: 24,
+                ..Default::default()
+            },
+            streaming_active_secs: None,
+        })
+    }
+
+    async fn stream(&self, _request: LLMRequest) -> crate::brain::provider::Result<ProviderStream> {
+        use crate::brain::provider::{ContentDelta, MessageDelta, StreamEvent, StreamMessage};
+
+        let events = vec![
+            Ok(StreamEvent::MessageStart {
+                message: StreamMessage {
+                    id: "reasoning-text-stream".to_string(),
+                    model: "mock-model".to_string(),
+                    role: Role::Assistant,
+                    usage: TokenUsage {
+                        input_tokens: 12,
+                        ..Default::default()
+                    },
+                },
+            }),
+            Ok(StreamEvent::ContentBlockStart {
+                index: 0,
+                content_block: ContentBlock::Thinking {
+                    thinking: String::new(),
+                    signature: Some("sig-1".to_string()),
+                },
+            }),
+            Ok(StreamEvent::ContentBlockDelta {
+                index: 0,
+                delta: ContentDelta::ReasoningDelta {
+                    text: "I checked the result carefully.".to_string(),
+                },
+            }),
+            Ok(StreamEvent::ContentBlockStop { index: 0 }),
+            Ok(StreamEvent::ContentBlockStart {
+                index: 1,
+                content_block: ContentBlock::Text {
+                    text: String::new(),
+                },
+            }),
+            Ok(StreamEvent::ContentBlockDelta {
+                index: 1,
+                delta: ContentDelta::TextDelta {
+                    text: "Final visible answer.".to_string(),
+                },
+            }),
+            Ok(StreamEvent::ContentBlockStop { index: 1 }),
+            Ok(StreamEvent::MessageDelta {
+                delta: MessageDelta {
+                    stop_reason: Some(StopReason::EndTurn),
+                    stop_sequence: None,
+                },
+                usage: TokenUsage {
+                    input_tokens: 12,
+                    output_tokens: 24,
+                    ..Default::default()
+                },
+            }),
+            Ok(StreamEvent::MessageStop),
+        ];
+
+        Ok(Box::pin(futures::stream::iter(events)))
+    }
+
+    fn name(&self) -> &str {
+        "mock-reasoning-then-text"
+    }
+
+    fn default_model(&self) -> &str {
+        "mock-model"
+    }
+
+    fn supported_models(&self) -> Vec<String> {
+        vec!["mock-model".to_string()]
+    }
+
+    fn context_window(&self, _model: &str) -> Option<u32> {
+        Some(4096)
+    }
+
+    fn calculate_cost(&self, _model: &str, _input: u32, _output: u32) -> f64 {
+        0.001
+    }
+}
+
 /// Mock tool that always succeeds, does NOT require approval
 pub(crate) struct MockTool;
 

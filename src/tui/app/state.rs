@@ -2016,18 +2016,9 @@ impl App {
                 // accumulator: foreground uses self.streaming_reasoning,
                 // background uses the sidecar's. Either way the take()
                 // clears the source so the next round starts fresh.
-                let reasoning_details = if let Some(r) = reasoning {
-                    Some(r)
-                } else {
+                let reasoning_details = {
                     let mut state = self.session_state_mut(session_id);
-                    match &mut state {
-                        super::background_session::SessionStateMut::Foreground(app) => {
-                            app.streaming_reasoning.take()
-                        }
-                        super::background_session::SessionStateMut::Background(bg) => {
-                            bg.streaming_reasoning.take()
-                        }
-                    }
+                    state.take_reasoning_for_intermediate(reasoning)
                 };
 
                 // Build a tool_group DisplayMessage helper.
@@ -2609,13 +2600,15 @@ impl App {
                         }
                     });
                     let target = saved_model.as_deref().unwrap_or(&self.default_model_name);
-                    let selected = models.iter().position(|m| m == target).unwrap_or(0);
                     self.ps.models = models;
                     // Merge config-persisted models (user-pasted ones
                     // that the endpoint doesn't list) on top of the
                     // fetched results so they survive the next fetch.
                     self.ps.merge_config_models_into_fetched();
-                    self.ps.selected_model = selected;
+                    self.ps.selected_model = self
+                        .ps
+                        .dialog_model_index_for(provider_idx, target)
+                        .unwrap_or(0);
                     self.ps.model_filter.clear();
                 }
             }
