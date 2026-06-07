@@ -20,14 +20,13 @@ pub type BaseUrlFn = Arc<dyn Fn() -> String + Send + Sync>;
 pub type AuthRefreshFn =
     Arc<dyn Fn() -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>> + Send + Sync>;
 
-pub const STRIP_OPEN_TAGS: &[&str] = &["<think>", "<!-- reasoning -->", "<!--"];
-pub const STRIP_CLOSE_TAGS: &[&[&str]] = &[
-    &["</think>"],
-    &["<!-- /reasoning -->", "</think>", "-->"],
-    &["-->"],
-];
-
-pub const THINK_BLOCK_MAX_BYTES: usize = 200_000;
+/// Cost from the user's `usage_pricing.toml` (embedded example as fallback).
+/// Returns 0 when the model isn't in the pricing table.
+fn pricing_cost(model: &str, input_tokens: u32, output_tokens: u32) -> f64 {
+    crate::usage::pricing::PricingConfig::load()
+        .map(|cfg| cfg.calculate_cost(model, input_tokens, output_tokens))
+        .unwrap_or(0.0)
+}
 
 /// Custom OpenAI-Compatible Provider
 #[derive(Clone)]
@@ -172,9 +171,7 @@ impl OpenAIProvider {
     /// across all callers — the TUI footer, `/usage`, and the Provider
     /// trait. Returns 0 when the model isn't in the pricing table.
     pub fn calculate_cost(&self, model: &str, input_tokens: u32, output_tokens: u32) -> f64 {
-        crate::usage::pricing::PricingConfig::load()
-            .map(|cfg| cfg.calculate_cost(model, input_tokens, output_tokens))
-            .unwrap_or(0.0)
+        pricing_cost(model, input_tokens, output_tokens)
     }
 
     /// Get the configured vision model name (if any).
@@ -214,11 +211,7 @@ impl OpenAIProvider {
             );
 
         let calculate_cost_fn: Option<crate::brain::provider::rig_adapter::CalculateCostFn> =
-            Some(Arc::new(move |model, input_tokens, output_tokens| {
-                crate::usage::pricing::PricingConfig::load()
-                    .map(|cfg| cfg.calculate_cost(model, input_tokens, output_tokens))
-                    .unwrap_or(0.0)
-            }));
+            Some(Arc::new(pricing_cost));
 
         crate::brain::provider::rig_adapter::RigAdapter {
             name: self.name,

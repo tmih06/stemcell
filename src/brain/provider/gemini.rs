@@ -33,7 +33,6 @@ pub fn sanitize_schema_for_gemini(schema: Value) -> Value {
 /// Google Gemini provider
 #[derive(Clone)]
 pub struct GeminiProvider {
-    _api_key: String,
     client: Client,
     model: String,
 }
@@ -44,7 +43,6 @@ impl GeminiProvider {
         let client = Client::new(&api_key).expect("Failed to initialize Rig Gemini client");
 
         Self {
-            _api_key: api_key.clone(),
             client,
             model: "gemini-2.0-flash".to_string(),
         }

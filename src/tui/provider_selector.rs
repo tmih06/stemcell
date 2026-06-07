@@ -27,6 +27,9 @@ pub struct ModelSelectorOption {
     pub display_name: String,
 }
 
+// Not a `matches!`: each arm yields a distinct `cfg!(feature = ...)`, so the
+// arms only collapse when those features happen to share a value.
+#[allow(clippy::match_like_matches_macro)]
 pub fn is_provider_compiled(id: &str) -> bool {
     match id {
         "claude-cli" => cfg!(feature = "provider-claude-cli"),

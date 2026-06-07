@@ -9,7 +9,6 @@ use std::sync::Arc;
 /// Anthropic provider for Claude models
 #[derive(Clone)]
 pub struct AnthropicProvider {
-    _api_key: String,
     client: Client,
     custom_default_model: Option<String>,
 }
@@ -21,7 +20,6 @@ impl AnthropicProvider {
         // we will implement extensions later.
 
         Self {
-            _api_key: api_key.clone(),
             client: rig_core::providers::anthropic::Client::new(&api_key).unwrap(),
             custom_default_model: None,
         }

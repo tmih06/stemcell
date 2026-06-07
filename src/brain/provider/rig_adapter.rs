@@ -18,6 +18,16 @@ pub type ContextWindowFn = Arc<dyn Fn(&str) -> Option<u32> + Send + Sync>;
 /// Computes request cost in USD from (model, input_tokens, output_tokens).
 pub type CalculateCostFn = Arc<dyn Fn(&str, u32, u32) -> f64 + Send + Sync>;
 
+/// A streamed chunk that produced no `StreamEvent`s still needs to keep the
+/// stream alive, so emit a `Ping` in that case.
+fn or_ping(events: Vec<Result<StreamEvent>>) -> Vec<Result<StreamEvent>> {
+    if events.is_empty() {
+        vec![Ok(StreamEvent::Ping)]
+    } else {
+        events
+    }
+}
+
 pub struct RigAdapter<C> {
     pub name: String,
     pub default_model: String,
@@ -466,45 +476,21 @@ where
             .map(move |chunk_res| match chunk_res {
                 Ok(chunk) => match chunk {
                     rig_core::streaming::StreamedAssistantContent::Text(t) => {
-                        let events = stream_state.push_filtered_text_chunk(&t.text);
-                        if events.is_empty() {
-                            vec![Ok(StreamEvent::Ping)]
-                        } else {
-                            events
-                        }
+                        or_ping(stream_state.push_filtered_text_chunk(&t.text))
                     }
                     rig_core::streaming::StreamedAssistantContent::Reasoning(reasoning) => {
-                        let events = stream_state.push_reasoning(
+                        or_ping(stream_state.push_reasoning(
                             reasoning_text(&reasoning),
                             reasoning.first_signature().map(String::from),
-                        );
-                        if events.is_empty() {
-                            vec![Ok(StreamEvent::Ping)]
-                        } else {
-                            events
-                        }
+                        ))
                     }
                     rig_core::streaming::StreamedAssistantContent::ReasoningDelta {
                         reasoning,
                         ..
-                    } => {
-                        let events = stream_state.push_reasoning(reasoning, None);
-                        if events.is_empty() {
-                            vec![Ok(StreamEvent::Ping)]
-                        } else {
-                            events
-                        }
-                    }
+                    } => or_ping(stream_state.push_reasoning(reasoning, None)),
                     rig_core::streaming::StreamedAssistantContent::ToolCall {
                         tool_call, ..
-                    } => {
-                        let events = stream_state.push_tool_call(tool_call);
-                        if events.is_empty() {
-                            vec![Ok(StreamEvent::Ping)]
-                        } else {
-                            events
-                        }
-                    }
+                    } => or_ping(stream_state.push_tool_call(tool_call)),
                     rig_core::streaming::StreamedAssistantContent::Final(res) => {
                         use rig_core::completion::GetTokenUsage;
                         let mut events = stream_state.finish_block();
