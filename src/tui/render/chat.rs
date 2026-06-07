@@ -963,56 +963,11 @@ pub(super) fn render_chat(f: &mut Frame, app: &mut App, area: Rect) {
     f.render_widget(Clear, area);
     f.render_widget(chat, area);
 
-    // Drag-selection highlight overlay: invert fg/bg for cells inside the
-    // selection rectangle (reading-order), clipped to the chat area.
-    if let (Some(a), Some(b)) = (app.drag_anchor, app.drag_current) {
-        let (start, end) = if (a.1, a.0) <= (b.1, b.0) {
-            (a, b)
-        } else {
-            (b, a)
-        };
-        let buf = f.buffer_mut();
-        let x0 = area.x;
-        let y0 = area.y;
-        let x1 = area.x.saturating_add(area.width);
-        let y1 = area.y.saturating_add(area.height);
-        let highlight = Style::default().add_modifier(Modifier::REVERSED);
-        if start.1 == end.1 {
-            let y = start.1;
-            if y >= y0 && y < y1 {
-                let sx = start.0.max(x0);
-                let ex = end.0.min(x1.saturating_sub(1));
-                for x in sx..=ex {
-                    if let Some(cell) = buf.cell_mut((x, y)) {
-                        cell.set_style(highlight);
-                    }
-                }
-            }
-        } else {
-            for y in start.1..=end.1 {
-                if y < y0 || y >= y1 {
-                    continue;
-                }
-                let sx = if y == start.1 { start.0 } else { x0 };
-                let ex = if y == end.1 {
-                    end.0.min(x1.saturating_sub(1))
-                } else {
-                    x1.saturating_sub(1)
-                };
-                for x in sx.max(x0)..=ex {
-                    if let Some(cell) = buf.cell_mut((x, y)) {
-                        cell.set_style(highlight);
-                    }
-                }
-            }
-        }
-    }
-
-    // Keyboard select-to-copy overlay: highlight the selected range (if any)
-    // and draw a caret block. Logical (line, col) → screen coords using the
-    // same padding as the paragraph (left=1, top=1) and the actual scroll
-    // offset computed above.
-    if app.keyboard_select_active {
+    // Selection highlight overlay (shared by keyboard select mode and mouse
+    // drag). Both store the selection in LOGICAL (line, col) coords so it
+    // survives scrolling. Logical → screen using the same padding as the
+    // paragraph (left=1, top=1) and the actual scroll offset computed above.
+    if app.keyboard_select_active || app.mouse_selecting {
         let content_left = area.x + 1;
         let content_top = area.y + 1;
         let visible_rows = area.height.saturating_sub(1) as usize;
@@ -1071,8 +1026,11 @@ pub(super) fn render_chat(f: &mut Frame, app: &mut App, area: Rect) {
         }
 
         // Draw the caret as a reversed block so it's visible even on an
-        // empty line or at end-of-line.
-        if let Some(row) = line_to_row(app.select_cursor.0) {
+        // empty line or at end-of-line. Mouse drag tracks the pointer, so
+        // skip the caret block there to avoid a distracting double-cursor.
+        if app.keyboard_select_active
+            && let Some(row) = line_to_row(app.select_cursor.0)
+        {
             let x = col_to_x(app.select_cursor.1).min(x_max.saturating_sub(1));
             if x >= content_left
                 && let Some(cell) = buf.cell_mut((x, row))

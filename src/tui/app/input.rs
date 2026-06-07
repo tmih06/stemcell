@@ -327,8 +327,8 @@ impl App {
     /// Left-click: select/highlight a message
     pub(crate) fn handle_click_select(&mut self, row: u16) {
         // A fresh click clears any in-flight drag selection and message highlight.
-        self.drag_anchor = None;
-        self.drag_current = None;
+        self.mouse_selecting = false;
+        self.select_anchor = None;
         let msg_idx = self.row_to_msg_idx(row);
         // Toggle: click same message deselects, click different selects
         if self.selected_message_idx == msg_idx {
@@ -338,31 +338,109 @@ impl App {
         }
     }
 
-    /// Left-button drag — update the live drag selection.
-    /// The anchor is the click position (captured on the first drag event
-    /// because crossterm does not deliver drags until the pointer moves).
-    pub(crate) fn handle_mouse_drag(&mut self, col: u16, row: u16) {
-        if self.drag_anchor.is_none() {
-            self.drag_anchor = Some((col, row));
-            // While drag-selecting we suppress the message highlight so the
-            // two visual cues don't fight.
-            self.selected_message_idx = None;
+    /// Map a screen pointer (col, row) to a LOGICAL (line, col) position in the
+    /// rendered transcript using the live scroll offset and chat padding.
+    /// Row is clamped into the visible band; the returned line is clamped to
+    /// the rendered range and the column to that line's length.
+    fn mouse_to_logical(&self, col: u16, row: u16) -> (usize, usize) {
+        let total = self.chat_total_lines();
+        if total == 0 {
+            return (0, 0);
         }
-        self.drag_current = Some((col, row));
+        let content_top = self.chat_area_y + 1; // Padding::new(1,1,1,0)
+        let visible = self.chat_visible_height().max(1);
+        // Clamp the row into the visible band so a pointer dragged above the
+        // top / below the bottom still maps to the first / last visible line.
+        let row_in_chat = (row.saturating_sub(content_top) as usize).min(visible - 1);
+        let line = (self.chat_render_scroll + row_in_chat).min(total - 1);
+        let content_left = self.chat_area_x + 1;
+        let col_in_line =
+            (col.saturating_sub(content_left) as usize).min(self.select_line_len(line));
+        (line, col_in_line)
+    }
+
+    /// Left-button drag — update the live logical selection. The anchor is the
+    /// click position (captured on the first drag event because crossterm does
+    /// not deliver drags until the pointer moves). When the pointer reaches the
+    /// top/bottom edge the viewport auto-scrolls and the selection extends into
+    /// the newly revealed lines; the Tick handler keeps this going while the
+    /// button is held stationary at an edge.
+    pub(crate) fn handle_mouse_drag(&mut self, col: u16, row: u16) {
+        if self.chat_total_lines() == 0 {
+            return;
+        }
+        if !self.mouse_selecting {
+            self.mouse_selecting = true;
+            self.selected_message_idx = None;
+            self.auto_scroll = false;
+            let pos = self.mouse_to_logical(col, row);
+            self.select_anchor = Some(pos);
+            self.select_cursor = pos;
+        }
+        self.mouse_drag_col = col;
+        self.mouse_drag_row = row;
+        self.update_mouse_drag_cursor();
+    }
+
+    /// Recompute the selection cursor from the stored drag pointer, applying
+    /// edge auto-scroll. Called from both drag events and Tick (so a held,
+    /// stationary pointer at an edge keeps scrolling). Returns true while a
+    /// mouse selection is active.
+    pub(crate) fn update_mouse_drag_cursor(&mut self) -> bool {
+        if !self.mouse_selecting {
+            return false;
+        }
+        let total = self.chat_total_lines();
+        let visible = self.chat_visible_height();
+        if total == 0 || visible == 0 {
+            return true;
+        }
+        let content_top = self.chat_area_y + 1;
+        let row = self.mouse_drag_row;
+        let top_edge = content_top;
+        let bottom_edge = content_top + visible.saturating_sub(1) as u16;
+        const STEP: usize = 2;
+
+        if row <= top_edge && self.chat_render_scroll > 0 {
+            // Above/at the top edge with hidden content above — scroll up and
+            // extend the selection to the start of the newly revealed top line.
+            let new_line = self.chat_render_scroll.saturating_sub(STEP);
+            self.select_cursor = (new_line, 0);
+            self.ensure_caret_visible();
+        } else if row >= bottom_edge {
+            // At/below the bottom edge — scroll down (if more below) and extend
+            // to the end of the bottom line.
+            let bottom_line = (self.chat_render_scroll + visible - 1).min(total - 1);
+            let max_top = total.saturating_sub(visible);
+            if self.chat_render_scroll < max_top {
+                let new_line = (bottom_line + STEP).min(total - 1);
+                self.select_cursor = (new_line, self.select_line_len(new_line));
+                self.ensure_caret_visible();
+            } else {
+                // Already at the bottom — just track the last line.
+                self.select_cursor = (bottom_line, self.select_line_len(bottom_line));
+            }
+        } else {
+            // Pointer inside the viewport — map directly, no scroll.
+            self.select_cursor = self.mouse_to_logical(self.mouse_drag_col, row);
+        }
+        true
     }
 
     /// Left-button released — finalize selection, extract text, copy, notify.
     pub(crate) fn handle_mouse_up(&mut self, col: u16, row: u16) {
         // If this was a plain click (no drag motion), treat it as a click-select.
-        let Some(anchor) = self.drag_anchor.take() else {
-            self.drag_current = None;
+        if !self.mouse_selecting {
             self.handle_click_select(row);
             return;
-        };
-        let end = (col, row);
-        self.drag_current = None;
+        }
+        self.mouse_drag_col = col;
+        self.mouse_drag_row = row;
+        self.update_mouse_drag_cursor();
+        self.mouse_selecting = false;
 
-        let text = self.extract_drag_selection(anchor, end);
+        let text = self.extract_keyboard_selection();
+        self.select_anchor = None;
         if text.trim().is_empty() {
             return;
         }
@@ -370,113 +448,6 @@ impl App {
             self.notification = Some("Copied to clipboard".to_string());
             self.notification_shown_at = Some(std::time::Instant::now());
         }
-    }
-
-    /// Turn a pair of terminal-screen coordinates into the plain-text that was
-    /// drawn between them. Strips leading chat padding and code-block gutter
-    /// (e.g. `"  1 │ "`) so the copied text matches what the user visually sees.
-    fn extract_drag_selection(&self, a: (u16, u16), b: (u16, u16)) -> String {
-        // Normalize so (start) precedes (end) in reading order.
-        let (start, end) = if (a.1, a.0) <= (b.1, b.0) {
-            (a, b)
-        } else {
-            (b, a)
-        };
-
-        let chat_left = self.chat_area_x;
-        let chat_top = self.chat_area_y;
-        let chat_height = self.chat_area_height as usize;
-        if chat_height == 0 {
-            return String::new();
-        }
-
-        // Screen row → logical line index in `chat_rendered_lines`.
-        // Render uses `Padding::new(1,1,1,0)` on the inner block, so the first
-        // line of text is drawn at `chat_top + 1`.
-        let top_pad = 1u16;
-        let row_to_line = |row: u16| -> Option<usize> {
-            let row_in_chat = row.checked_sub(chat_top + top_pad)? as usize;
-            if row_in_chat >= chat_height.saturating_sub(top_pad as usize) {
-                return None;
-            }
-            Some(self.chat_render_scroll + row_in_chat)
-        };
-
-        // Content starts one cell in (Padding left = 1).
-        let content_left = chat_left + 1;
-        let col_in_line = |col: u16| -> usize { col.saturating_sub(content_left) as usize };
-
-        let start_line = row_to_line(start.1);
-        let end_line = row_to_line(end.1);
-        let (Some(start_line), Some(end_line)) = (start_line, end_line) else {
-            return String::new();
-        };
-
-        let strip_gutter = |s: &str| -> String {
-            // Trim leading spaces first.
-            let trimmed = s.trim_start();
-            // Code-block lines look like "  1 │ fn main()" → after trim_start:
-            // "1 │ fn main()". Strip the "<digits> │ " prefix if present.
-            if let Some(rest) = trimmed.strip_prefix(|c: char| c.is_ascii_digit()) {
-                let rest = rest.trim_start_matches(|c: char| c.is_ascii_digit());
-                if let Some(after_bar) = rest.strip_prefix(" │ ") {
-                    return after_bar.to_string();
-                }
-                if let Some(after_bar) = rest.strip_prefix("│ ") {
-                    return after_bar.to_string();
-                }
-            }
-            trimmed.to_string()
-        };
-
-        // Helper to slice a line by display-column range (char-based is fine
-        // for monospaced ASCII; for multi-byte we fall back to char indices).
-        let slice_line = |line: &str, from: usize, to: usize| -> String {
-            let chars: Vec<char> = line.chars().collect();
-            let from = from.min(chars.len());
-            let to = to.min(chars.len());
-            if from >= to {
-                return String::new();
-            }
-            chars[from..to].iter().collect()
-        };
-
-        let mut out = String::new();
-        if start_line == end_line {
-            let Some(line) = self.chat_rendered_lines.get(start_line) else {
-                return String::new();
-            };
-            let from = col_in_line(start.0);
-            let to = col_in_line(end.0).max(from);
-            let piece = slice_line(line, from, to + 1);
-            out.push_str(&strip_gutter(&piece));
-        } else {
-            for (i, line_idx) in (start_line..=end_line).enumerate() {
-                let Some(line) = self.chat_rendered_lines.get(line_idx) else {
-                    continue;
-                };
-                let piece = if i == 0 {
-                    // First line: from start.col to EOL
-                    let from = col_in_line(start.0);
-                    slice_line(line, from, line.chars().count())
-                } else if line_idx == end_line {
-                    // Last line: from 0 to end.col (inclusive)
-                    let to = col_in_line(end.0) + 1;
-                    slice_line(line, 0, to)
-                } else {
-                    line.clone()
-                };
-                let cleaned = strip_gutter(&piece);
-                // Skip purely-whitespace lines to match opencode's "no empty lines" UX.
-                if !cleaned.trim().is_empty() {
-                    if !out.is_empty() {
-                        out.push('\n');
-                    }
-                    out.push_str(&cleaned);
-                }
-            }
-        }
-        out
     }
 
     /// Right-click: copy the clicked (or selected) message to clipboard
@@ -522,8 +493,7 @@ impl App {
         self.select_anchor = None;
         self.auto_scroll = false;
         // Clear any mouse drag-selection so the two don't fight.
-        self.drag_anchor = None;
-        self.drag_current = None;
+        self.mouse_selecting = false;
         self.selected_message_idx = None;
 
         // chat_render_scroll is the actual paragraph scroll offset (lines
@@ -701,8 +671,8 @@ impl App {
             self.input_drag_selecting = true;
             self.input_drag_anchor = Some((col, row));
             // Clear any chat drag selection
-            self.drag_anchor = None;
-            self.drag_current = None;
+            self.mouse_selecting = false;
+            self.select_anchor = None;
         }
         self.input_drag_current = Some((col, row));
     }

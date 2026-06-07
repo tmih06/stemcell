@@ -67,6 +67,8 @@ pub(super) fn render_help(f: &mut Frame, app: &App, area: Rect) {
         kv("Escape (x2)", "Cancel / abort immediately", cyan),
         kv("Page Up/Down", "Scroll history", cyan),
         kv("Ctrl+S", "Select mode (copy text)", cyan),
+        kv("Drag mouse", "Select text (auto-scrolls at edges)", cyan),
+        kv("Right-click", "Copy message", cyan),
         kv("@", "File picker", cyan),
         Line::from(""),
         section_header("SELECT MODE"),
