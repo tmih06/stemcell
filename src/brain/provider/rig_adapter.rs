@@ -165,6 +165,29 @@ fn build_tools(request: &LLMRequest) -> Vec<ToolDefinition> {
         .collect()
 }
 
+fn reasoning_text(reasoning: &Reasoning) -> String {
+    reasoning
+        .content
+        .iter()
+        .filter_map(|c| match c {
+            rig_core::completion::message::ReasoningContent::Text { text, .. } => {
+                Some(text.as_str())
+            }
+            rig_core::completion::message::ReasoningContent::Summary(s) => Some(s.as_str()),
+            _ => None,
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn flush_text_buffer(text_acc: &mut String, content_blocks: &mut Vec<ContentBlock>) {
+    if !text_acc.is_empty() {
+        content_blocks.push(ContentBlock::Text {
+            text: std::mem::take(text_acc),
+        });
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum StreamBlockKind {
     Text,
@@ -268,6 +291,22 @@ impl RigStreamState {
         events
     }
 
+    fn push_tool_call(&mut self, tool_call: ToolCall) -> Vec<Result<StreamEvent>> {
+        let mut events = self.finish_block();
+        let index = self.next_block_index;
+        self.next_block_index += 1;
+        events.push(Ok(StreamEvent::ContentBlockStart {
+            index,
+            content_block: ContentBlock::ToolUse {
+                id: tool_call.id,
+                name: tool_call.function.name,
+                input: tool_call.function.arguments,
+            },
+        }));
+        events.push(Ok(StreamEvent::ContentBlockStop { index }));
+        events
+    }
+
     fn push_filtered_text_chunk(&mut self, raw_text: &str) -> Vec<Result<StreamEvent>> {
         let (filtered_text, reasoning_text) =
             crate::brain::provider::streaming_utils::filter_think_tags(
@@ -331,6 +370,7 @@ where
         // not a dropped turn).
         let mut content_blocks: Vec<ContentBlock> = Vec::new();
         let mut text_acc = String::new();
+        let mut saw_tool_call = false;
 
         for choice in res.choice.into_iter() {
             match choice {
@@ -341,21 +381,8 @@ where
                     text_acc.push_str(&t.text);
                 }
                 AssistantContent::Reasoning(reasoning) => {
-                    // Collect the reasoning text from all variants
-                    let reasoning_text = reasoning
-                        .content
-                        .iter()
-                        .filter_map(|c| match c {
-                            rig_core::completion::message::ReasoningContent::Text {
-                                text, ..
-                            } => Some(text.as_str()),
-                            rig_core::completion::message::ReasoningContent::Summary(s) => {
-                                Some(s.as_str())
-                            }
-                            _ => None,
-                        })
-                        .collect::<Vec<_>>()
-                        .join("\n");
+                    flush_text_buffer(&mut text_acc, &mut content_blocks);
+                    let reasoning_text = reasoning_text(&reasoning);
                     if !reasoning_text.trim().is_empty() {
                         content_blocks.push(ContentBlock::Thinking {
                             thinking: reasoning_text,
@@ -363,18 +390,23 @@ where
                         });
                     }
                 }
+                AssistantContent::ToolCall(tool_call) => {
+                    flush_text_buffer(&mut text_acc, &mut content_blocks);
+                    saw_tool_call = true;
+                    content_blocks.push(ContentBlock::ToolUse {
+                        id: tool_call.id,
+                        name: tool_call.function.name,
+                        input: tool_call.function.arguments,
+                    });
+                }
                 _ => {
-                    // Ignore other variants (ToolCall, Image, etc.) in the
-                    // non-streaming response for now — they're handled
-                    // via the streaming path or by the tool_call
-                    // detection in the tool loop.
+                    // Ignore currently-unused variants like Image in the
+                    // non-streaming response.
                 }
             }
         }
 
-        if !text_acc.is_empty() {
-            content_blocks.push(ContentBlock::Text { text: text_acc });
-        }
+        flush_text_buffer(&mut text_acc, &mut content_blocks);
 
         let response_id = res.message_id.unwrap_or_else(|| "rig-response".into());
 
@@ -382,7 +414,11 @@ where
             id: response_id,
             model: request.model,
             content: content_blocks,
-            stop_reason: Some(StopReason::EndTurn),
+            stop_reason: Some(if saw_tool_call {
+                StopReason::ToolUse
+            } else {
+                StopReason::EndTurn
+            }),
             usage: TokenUsage::default(),
             streaming_active_secs: None,
         })
@@ -428,23 +464,8 @@ where
                         }
                     }
                     rig_core::streaming::StreamedAssistantContent::Reasoning(reasoning) => {
-                        let reasoning_text = reasoning
-                            .content
-                            .iter()
-                            .filter_map(|c| match c {
-                                rig_core::completion::message::ReasoningContent::Text {
-                                    text,
-                                    ..
-                                } => Some(text.as_str()),
-                                rig_core::completion::message::ReasoningContent::Summary(s) => {
-                                    Some(s.as_str())
-                                }
-                                _ => None,
-                            })
-                            .collect::<Vec<_>>()
-                            .join("\n");
                         let events = stream_state.push_reasoning(
-                            reasoning_text,
+                            reasoning_text(&reasoning),
                             reasoning.first_signature().map(String::from),
                         );
                         if events.is_empty() {
@@ -458,6 +479,16 @@ where
                         ..
                     } => {
                         let events = stream_state.push_reasoning(reasoning, None);
+                        if events.is_empty() {
+                            vec![Ok(StreamEvent::Ping)]
+                        } else {
+                            events
+                        }
+                    }
+                    rig_core::streaming::StreamedAssistantContent::ToolCall {
+                        tool_call, ..
+                    } => {
+                        let events = stream_state.push_tool_call(tool_call);
                         if events.is_empty() {
                             vec![Ok(StreamEvent::Ping)]
                         } else {
@@ -599,5 +630,36 @@ mod tests {
             &finish_events[0],
             Ok(StreamEvent::ContentBlockStop { index: 1 })
         ));
+    }
+
+    #[test]
+    fn stream_state_emits_tool_use_block_after_reasoning() {
+        let mut state = RigStreamState::default();
+        let _ = state.push_reasoning("Need a tool".to_string(), None);
+
+        let tool_events = state.push_tool_call(ToolCall::new(
+            "call_1".to_string(),
+            ToolFunction::new("lookup".to_string(), serde_json::json!({ "id": 1 })),
+        ));
+
+        assert_eq!(tool_events.len(), 3);
+        assert!(matches!(
+            &tool_events[0],
+            Ok(StreamEvent::ContentBlockStop { index: 0 })
+        ));
+        assert!(matches!(
+            &tool_events[1],
+            Ok(StreamEvent::ContentBlockStart {
+                index: 1,
+                content_block: ContentBlock::ToolUse { id, name, input },
+            }) if id == "call_1"
+                && name == "lookup"
+                && input == &serde_json::json!({ "id": 1 })
+        ));
+        assert!(matches!(
+            &tool_events[2],
+            Ok(StreamEvent::ContentBlockStop { index: 1 })
+        ));
+        assert!(state.finish_block().is_empty());
     }
 }
