@@ -14,6 +14,7 @@ mod plan_widget;
 pub(crate) mod plan_window;
 mod sessions;
 pub(crate) mod skills_dialog;
+pub(crate) mod statusline_dialog;
 mod tools;
 mod utils;
 
@@ -197,6 +198,12 @@ pub fn render(f: &mut Frame, app: &mut App) {
             let (title_area, content_area) = split_title_area(full_content_area);
             render_app_title(f, title_area);
             skills_dialog::draw(f, app, content_area);
+        }
+        AppMode::StatusLine => {
+            f.render_widget(Clear, full_content_area);
+            let (title_area, content_area) = split_title_area(full_content_area);
+            render_app_title(f, title_area);
+            statusline_dialog::draw(f, app, content_area);
         }
         AppMode::Settings => {
             let (title_area, content_area) = split_title_area(full_content_area);

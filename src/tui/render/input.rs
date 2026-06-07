@@ -884,20 +884,6 @@ pub(super) fn render_status_bar(f: &mut Frame, app: &App, area: Rect) {
     // and stays in the OS page cache, so the read cost is sub-millisecond.
     let git_branch = crate::utils::git_branch::current_branch(&app.working_directory);
 
-    // Active profile chip. Shown only when the user explicitly picked a
-    // profile (via `-p <name>` or the `OPENCRABS_PROFILE` env var). When
-    // `active_profile()` returns `None` the agent is using the base
-    // `~/.opencrabs/` directory — there is no real profile by that name
-    // on disk, so we OMIT the chip rather than invent a "default" label
-    // that doesn't exist anywhere. Closes issue #167.
-    let profile_chip = crate::config::profile::active_profile()
-        .map(|name| format!("  ·  profile: {name}"))
-        .unwrap_or_default();
-
-    let session_text = format!(" {}", session_name);
-    let provider_model_text = format!("  ·  {} / {}{}  ·  ", provider_str, model_str, profile_chip);
-    let sep_text = "  ·  ";
-
     // --- Approval policy (centre-left) ---
     let (policy_text, policy_color) = if app.approval_auto_always {
         ("⚡ yolo", Color::Red)
@@ -906,24 +892,6 @@ pub(super) fn render_status_bar(f: &mut Frame, app: &App, area: Rect) {
     } else {
         ("🔒 approve", Color::DarkGray)
     };
-
-    let mut spans = vec![
-        Span::styled(
-            session_text,
-            Style::default().fg(orange).add_modifier(Modifier::BOLD),
-        ),
-        Span::styled(
-            provider_model_text,
-            Style::default().fg(Color::Rgb(90, 110, 150)),
-        ),
-        Span::styled(short_dir, Style::default().fg(Color::Rgb(90, 110, 150))),
-    ];
-    if let Some(ref branch) = git_branch {
-        spans.push(Span::styled(
-            format!(" ({branch})"),
-            Style::default().fg(Color::Cyan),
-        ));
-    }
 
     // Tokens/sec footer field.
     //   - Live: output_tokens / active_streaming_window_secs (the
@@ -946,19 +914,66 @@ pub(super) fn render_status_bar(f: &mut Frame, app: &App, area: Rect) {
         None
     };
     let display_tps = live_tps.or(app.last_tps());
-    if let Some(tps) = display_tps {
-        spans.push(Span::styled("  ·  ", Style::default().fg(Color::DarkGray)));
-        spans.push(Span::styled(
-            format!("{:.0} tok/s", tps),
-            Style::default().fg(Color::Rgb(80, 200, 120)),
-        ));
+
+    // Build each visible field as an independent segment, then join with
+    // a `·` separator. Gating happens per-field via `app.statusline_fields`
+    // (toggled by `/statusline`). Building segments first — rather than
+    // baking separators into each field's text — keeps any hidden subset
+    // clean: a disabled field never leaves a dangling separator behind.
+    let blue = Color::Rgb(90, 110, 150);
+    let green = Color::Rgb(80, 200, 120);
+    let fields = &app.statusline_fields;
+    let mut segments: Vec<Vec<Span<'static>>> = Vec::new();
+
+    if fields.session_name {
+        segments.push(vec![Span::styled(
+            session_name,
+            Style::default().fg(orange).add_modifier(Modifier::BOLD),
+        )]);
     }
-
-    spans.push(Span::styled(sep_text, Style::default().fg(Color::DarkGray)));
-    spans.push(Span::styled(policy_text, Style::default().fg(policy_color)));
-
-    // Split pane indicator
-    if app.pane_manager.is_split() {
+    if fields.provider_model {
+        segments.push(vec![Span::styled(
+            format!("{} / {}", provider_str, model_str),
+            Style::default().fg(blue),
+        )]);
+    }
+    if fields.profile {
+        // Shown only when a profile is explicitly active (via `-p <name>`
+        // or `OPENCRABS_PROFILE`). `None` means the base `~/.opencrabs/`
+        // dir — no real profile to name — so the chip is omitted (#167).
+        if let Some(name) = crate::config::profile::active_profile() {
+            segments.push(vec![Span::styled(
+                format!("profile: {name}"),
+                Style::default().fg(blue),
+            )]);
+        }
+    }
+    if fields.working_dir {
+        segments.push(vec![Span::styled(short_dir, Style::default().fg(blue))]);
+    }
+    if fields.git_branch
+        && let Some(branch) = git_branch
+    {
+        segments.push(vec![Span::styled(
+            format!("({branch})"),
+            Style::default().fg(Color::Cyan),
+        )]);
+    }
+    if fields.tokens_per_sec
+        && let Some(tps) = display_tps
+    {
+        segments.push(vec![Span::styled(
+            format!("{:.0} tok/s", tps),
+            Style::default().fg(green),
+        )]);
+    }
+    if fields.approval_policy {
+        segments.push(vec![Span::styled(
+            policy_text,
+            Style::default().fg(policy_color),
+        )]);
+    }
+    if fields.split_pane && app.pane_manager.is_split() {
         let pane_count = app.pane_manager.pane_count();
         let focused_idx = app
             .pane_manager
@@ -967,11 +982,20 @@ pub(super) fn render_status_bar(f: &mut Frame, app: &App, area: Rect) {
             .position(|id| *id == app.pane_manager.focused)
             .map(|i| i + 1)
             .unwrap_or(1);
-        spans.push(Span::styled("  ·  ", Style::default().fg(Color::DarkGray)));
-        spans.push(Span::styled(
+        segments.push(vec![Span::styled(
             format!("[{}/{}]", focused_idx, pane_count),
-            Style::default().fg(Color::Rgb(80, 200, 120)),
-        ));
+            Style::default().fg(green),
+        )]);
+    }
+
+    // Interleave segments with the `·` separator and a single leading pad
+    // space so the bar doesn't hug the left edge.
+    let mut spans: Vec<Span> = vec![Span::raw(" ")];
+    for (i, seg) in segments.into_iter().enumerate() {
+        if i > 0 {
+            spans.push(Span::styled("  ·  ", Style::default().fg(Color::DarkGray)));
+        }
+        spans.extend(seg);
     }
 
     let line = Line::from(spans);

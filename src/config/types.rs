@@ -80,6 +80,11 @@ pub struct Config {
     /// token bloat sent to the LLM.
     #[serde(default)]
     pub tools: ToolsConfig,
+
+    /// TUI status bar field visibility. Toggled via the `/statusline`
+    /// checklist dialog.
+    #[serde(default)]
+    pub statusline: StatusLineConfig,
 }
 
 /// Brain-file behaviour configuration. Issue #164 added read-time stripping
@@ -682,6 +687,64 @@ pub struct ToolsConfig {
     /// this list is usually empty.
     #[serde(default)]
     pub enabled: Vec<String>,
+}
+
+/// TUI status bar field visibility. Each flag toggles one field in
+/// `render_status_bar` (`src/tui/render/input.rs`). All default to `true`
+/// (full status bar). Toggled interactively via the `/statusline` dialog,
+/// which persists each change with `Config::write_key("statusline", ...)`.
+///
+/// Example in config.toml:
+/// ```toml
+/// [statusline]
+/// git_branch = false
+/// tokens_per_sec = false
+/// ```
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StatusLineConfig {
+    /// Session name / title (left-most field).
+    #[serde(default = "default_true")]
+    pub session_name: bool,
+    /// `provider / model` chip.
+    #[serde(default = "default_true")]
+    pub provider_model: bool,
+    /// Active profile chip (only ever shown when a profile is active).
+    #[serde(default = "default_true")]
+    pub profile: bool,
+    /// Working directory (collapsed to `~`, truncated).
+    #[serde(default = "default_true")]
+    pub working_dir: bool,
+    /// `(branch)` suffix when inside a git repo.
+    #[serde(default = "default_true")]
+    pub git_branch: bool,
+    /// Live / last tokens-per-second rate.
+    #[serde(default = "default_true")]
+    pub tokens_per_sec: bool,
+    /// Approval policy indicator (approve / auto / yolo).
+    #[serde(default = "default_true")]
+    pub approval_policy: bool,
+    /// Split-pane `[n/m]` indicator (only shown when panes are split).
+    #[serde(default = "default_true")]
+    pub split_pane: bool,
+}
+
+fn default_true() -> bool {
+    true
+}
+
+impl Default for StatusLineConfig {
+    fn default() -> Self {
+        Self {
+            session_name: true,
+            provider_model: true,
+            profile: true,
+            working_dir: true,
+            git_branch: true,
+            tokens_per_sec: true,
+            approval_policy: true,
+            split_pane: true,
+        }
+    }
 }
 
 /// Cron job default settings.
@@ -2188,6 +2251,7 @@ impl Default for Config {
             memory: MemoryConfig::default(),
             brain: BrainConfig::default(),
             tools: ToolsConfig::default(),
+            statusline: StatusLineConfig::default(),
         }
     }
 }
@@ -2810,6 +2874,7 @@ impl Config {
             memory: overlay.memory,
             brain: overlay.brain,
             tools: overlay.tools,
+            statusline: overlay.statusline,
         }
     }
 

@@ -36,6 +36,14 @@ impl App {
         }
     }
 
+    /// Read persisted status-bar field visibility from config.toml.
+    /// Falls back to defaults (all fields shown) on load error.
+    pub(crate) fn read_statusline_from_config() -> crate::config::StatusLineConfig {
+        crate::config::Config::load()
+            .map(|cfg| cfg.statusline)
+            .unwrap_or_default()
+    }
+
     /// Create a new session
     pub(crate) async fn create_new_session(&mut self) -> Result<()> {
         // Inherit provider and model from the global agent service default.
@@ -805,6 +813,10 @@ impl App {
             }
             "/skills" => {
                 crate::tui::app::skills_dialog::actions::open(self);
+                true
+            }
+            "/statusline" => {
+                crate::tui::app::statusline_dialog::actions::open(self);
                 true
             }
             "/rtk" => {

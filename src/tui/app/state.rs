@@ -222,6 +222,10 @@ pub const SLASH_COMMANDS: &[SlashCommand] = &[
         name: "/rtk",
         description: "Show RTK token savings statistics",
     },
+    SlashCommand {
+        name: "/statusline",
+        description: "Toggle status bar fields",
+    },
 ];
 
 /// Approval option selected by the user
@@ -510,6 +514,15 @@ pub struct App {
     /// "single-struct field" pattern as MC.
     pub skills_dialog: crate::tui::app::skills_dialog::SkillsDialogState,
 
+    /// Statusline dialog state — checklist selection index. Same
+    /// "single-struct field" pattern as the skills dialog.
+    pub statusline_dialog: crate::tui::app::statusline_dialog::StatusLineDialogState,
+
+    /// Live status-bar field visibility flags. Read from config at startup
+    /// and mutated in place by the `/statusline` dialog (which also persists
+    /// each change to config.toml).
+    pub statusline_fields: crate::config::StatusLineConfig,
+
     /// Onboarding wizard state
     pub onboarding: Option<OnboardingWizard>,
     pub force_onboard: bool,
@@ -761,6 +774,8 @@ impl App {
             skills,
             mc: crate::tui::app::mission_control::McState::default(),
             skills_dialog: crate::tui::app::skills_dialog::SkillsDialogState::default(),
+            statusline_dialog: crate::tui::app::statusline_dialog::StatusLineDialogState::default(),
+            statusline_fields: Self::read_statusline_from_config(),
             onboarding: None,
             force_onboard: false,
             processing_sessions: HashSet::new(),
@@ -3316,6 +3331,9 @@ impl App {
             }
             AppMode::SkillsList => {
                 crate::tui::app::skills_dialog::input::handle_key(self, event).await;
+            }
+            AppMode::StatusLine => {
+                crate::tui::app::statusline_dialog::input::handle_key(self, event).await;
             }
         }
 
