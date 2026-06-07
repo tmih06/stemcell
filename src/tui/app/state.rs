@@ -2563,6 +2563,7 @@ impl App {
             }
             TuiEvent::ModelSelectorModelsFetched(provider_idx, models) => {
                 // Discard stale fetches from a previously-selected provider
+                let from_live_fetch = !models.is_empty();
                 let models = if models.is_empty() {
                     // Fetch returned empty — fall back to static PROVIDERS models
                     let provider = self.ps.current_provider();
@@ -2600,6 +2601,14 @@ impl App {
                         }
                     });
                     let target = saved_model.as_deref().unwrap_or(&self.default_model_name);
+                    // Persist genuinely-fetched lists (not the static fallback)
+                    // for built-in providers, so the next /models open is instant.
+                    if from_live_fetch
+                        && !provider_id.is_empty()
+                        && provider_idx < crate::tui::provider_selector::CUSTOM_PROVIDER_IDX
+                    {
+                        crate::startup::model_cache::store(provider_id, models.clone());
+                    }
                     self.ps.models = models;
                     // Merge config-persisted models (user-pasted ones
                     // that the endpoint doesn't list) on top of the

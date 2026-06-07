@@ -8,11 +8,22 @@
 //! Persisted to `startup_models_cache.json` in the opencrabs base dir,
 //! following the `claude_cli_models.json` precedent.
 
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-/// Provider name → its cached model list.
-pub type ModelCache = HashMap<String, Vec<String>>;
+/// How long a cached entry is considered fresh enough to skip a live fetch.
+pub const FRESH_TTL_SECS: u64 = 24 * 60 * 60;
+
+/// One provider's cached model list plus when it was fetched (epoch secs).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CachedEntry {
+    pub models: Vec<String>,
+    pub fetched_at: u64,
+}
+
+/// Provider name → its cached entry.
+pub type ModelCache = HashMap<String, CachedEntry>;
 
 /// Path to the cache file. Test builds use a temp-dir override.
 #[cfg(not(test))]
@@ -47,16 +58,32 @@ pub fn load() -> ModelCache {
         .unwrap_or_default()
 }
 
-/// Read the cached models for one provider, if present.
+/// Read the cached models for one provider, if present and non-empty.
 pub fn models_for(provider: &str) -> Option<Vec<String>> {
-    load().get(provider).cloned().filter(|m| !m.is_empty())
+    load()
+        .get(provider)
+        .map(|e| e.models.clone())
+        .filter(|m| !m.is_empty())
+}
+
+/// True when a non-empty entry exists and was fetched within `max_age_secs`.
+pub fn is_fresh(provider: &str, max_age_secs: u64) -> bool {
+    load().get(provider).is_some_and(|e| {
+        !e.models.is_empty() && now_epoch().saturating_sub(e.fetched_at) < max_age_secs
+    })
 }
 
 /// Insert/replace one provider's models and persist. Silently ignores IO
 /// errors — a failed write just means `/models` falls back to a live fetch.
 pub fn store(provider: &str, models: Vec<String>) {
     let mut cache = load();
-    cache.insert(provider.to_string(), models);
+    cache.insert(
+        provider.to_string(),
+        CachedEntry {
+            models,
+            fetched_at: now_epoch(),
+        },
+    );
     let path = cache_path();
     if let Ok(json) = serde_json::to_string_pretty(&cache) {
         if let Some(parent) = path.parent() {
@@ -64,6 +91,13 @@ pub fn store(provider: &str, models: Vec<String>) {
         }
         let _ = std::fs::write(&path, json);
     }
+}
+
+fn now_epoch() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs()
 }
 
 #[cfg(test)]
@@ -102,6 +136,39 @@ mod tests {
 
         store("ollama", vec![]);
         assert!(models_for("ollama").is_none());
+
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn freshness_respects_ttl() {
+        let dir = std::env::temp_dir().join(format!("oc-model-cache-fresh-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("startup_models_cache.json");
+        let _ = std::fs::remove_file(&path);
+        set_test_cache_path(path.clone());
+
+        // Missing → not fresh.
+        assert!(!is_fresh("openai", FRESH_TTL_SECS));
+
+        // Just-stored → fresh within a generous TTL.
+        store("openai", vec!["gpt-5".into()]);
+        assert!(is_fresh("openai", FRESH_TTL_SECS));
+
+        // Same entry is stale under a zero TTL.
+        assert!(!is_fresh("openai", 0));
+
+        // An entry with an ancient fetched_at is not fresh.
+        let mut cache = load();
+        cache.insert(
+            "anthropic".to_string(),
+            CachedEntry {
+                models: vec!["opus".into()],
+                fetched_at: 1,
+            },
+        );
+        std::fs::write(&path, serde_json::to_string_pretty(&cache).unwrap()).unwrap();
+        assert!(!is_fresh("anthropic", FRESH_TTL_SECS));
 
         let _ = std::fs::remove_file(&path);
     }

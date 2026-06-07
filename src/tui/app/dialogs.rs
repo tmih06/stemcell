@@ -254,13 +254,32 @@ impl App {
         self.ps.has_existing_key = api_key.is_some();
         self.ps.api_key_input.clear();
 
-        // Spawn async model fetch — dialog opens immediately, models arrive via event.
         // Custom providers default to PASTE mode: skip the auto-fetch and let
         // the user explicitly request the live /v1/models list by pressing
         // Enter on an empty model field. This avoids overwriting a typed
         // model with a stale list mid-input.
         let is_custom_provider = provider_idx >= CUSTOM_PROVIDER_IDX;
-        if !is_custom_provider {
+        let cache_id = super::onboarding::PROVIDERS.get(provider_idx).map(|p| p.id);
+
+        // Clear models until the cache pre-fill / fetch populates them.
+        self.ps.models.clear();
+
+        // Warm-start from the startup-jobs model cache so the list is populated
+        // instantly instead of waiting on a live fetch.
+        if !is_custom_provider
+            && let Some(id) = cache_id
+            && let Some(cached) = crate::startup::model_cache::models_for(id)
+        {
+            self.ps.models = cached;
+        }
+
+        // Only hit the network when the cache is missing or stale. A fresh cache
+        // means the dialog opens instantly with zero network. Ctrl+R forces a
+        // refresh regardless (see handle_model_selector_key).
+        let cache_fresh = cache_id.is_some_and(|id| {
+            crate::startup::model_cache::is_fresh(id, crate::startup::model_cache::FRESH_TTL_SECS)
+        });
+        if !is_custom_provider && !cache_fresh {
             let sender = self.event_sender();
             tokio::spawn(async move {
                 let models = super::onboarding::fetch_provider_models(
@@ -272,19 +291,6 @@ impl App {
                 .await;
                 let _ = sender.send(TuiEvent::ModelSelectorModelsFetched(provider_idx, models));
             });
-        }
-
-        // Clear models until fetch completes (or stays empty for custom)
-        self.ps.models.clear();
-
-        // Warm-start from the startup-jobs model cache so the list is populated
-        // instantly instead of waiting on the live fetch above. The background
-        // fetch still runs and overwrites with fresh data when it returns.
-        if !is_custom_provider
-            && let Some(id) = super::onboarding::PROVIDERS.get(provider_idx).map(|p| p.id)
-            && let Some(cached) = crate::startup::model_cache::models_for(id)
-        {
-            self.ps.models = cached;
         }
 
         self.ps.reload_config_models();
@@ -309,6 +315,47 @@ impl App {
         self.mode = AppMode::ModelSelector;
     }
 
+    /// Force a live refresh of the currently selected provider's model list,
+    /// bypassing cache freshness. Mirrors the fetch path used when the provider
+    /// changes; results arrive via `ModelSelectorModelsFetched` and are persisted
+    /// to the on-disk cache in that handler.
+    fn refresh_selected_provider_models(&mut self) {
+        let provider_idx = self.ps.selected_provider;
+        // Custom providers default to PASTE mode and never read the cache.
+        if provider_idx >= CUSTOM_PROVIDER_IDX {
+            return;
+        }
+        let provider_id = self.ps.provider_id();
+        let api_key = crate::config::Config::load().ok().and_then(|c| {
+            crate::utils::providers::config_for(&c.providers, provider_id)
+                .and_then(|p| p.api_key.clone())
+                .filter(|k| !k.is_empty())
+        });
+        let zhipu_et = if provider_id == "zhipu" {
+            Some(
+                if self.ps.zhipu_endpoint_type == 1 {
+                    "coding"
+                } else {
+                    "api"
+                }
+                .to_string(),
+            )
+        } else {
+            None
+        };
+        let sender = self.event_sender();
+        tokio::spawn(async move {
+            let models = super::onboarding::fetch_provider_models(
+                provider_idx,
+                api_key.as_deref(),
+                zhipu_et.as_deref(),
+                None,
+            )
+            .await;
+            let _ = sender.send(TuiEvent::ModelSelectorModelsFetched(provider_idx, models));
+        });
+    }
+
     /// Handle keys in model selector mode
     pub(crate) async fn handle_model_selector_key(
         &mut self,
@@ -325,6 +372,17 @@ impl App {
 
             if event.code == crossterm::event::KeyCode::Tab {
                 self.ps.focused_field = 2;
+                return Ok(());
+            }
+
+            // Ctrl+R: force a live refresh of the selected provider's model
+            // list, bypassing cache freshness.
+            if event.code == crossterm::event::KeyCode::Char('r')
+                && event
+                    .modifiers
+                    .contains(crossterm::event::KeyModifiers::CONTROL)
+            {
+                self.refresh_selected_provider_models();
                 return Ok(());
             }
 
