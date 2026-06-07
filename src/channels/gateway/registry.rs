@@ -27,6 +27,9 @@ pub struct SurfaceDeps {
     pub config_rx: tokio::sync::watch::Receiver<crate::config::Config>,
     pub shared_session_id: Arc<tokio::sync::Mutex<Option<uuid::Uuid>>>,
     pub db_pool: deadpool_sqlite::Pool,
+    /// The live TUI event sender, used by the TUI surface to route agent
+    /// responses back to the terminal renderer.
+    pub tui_event_tx: tokio::sync::mpsc::UnboundedSender<crate::tui::events::TuiEvent>,
 }
 
 /// Build the list of surfaces present in this build. The TUI is always present;
@@ -44,7 +47,18 @@ pub fn registered_surfaces(_deps: &SurfaceDeps) -> Vec<Arc<dyn Surface>> {
     #[allow(unused_mut)]
     let mut surfaces: Vec<Arc<dyn Surface>> = Vec::new();
 
-    // Surfaces are pushed here as they are migrated. See the doc comment above.
+    // The TUI is always compiled in — it is the local terminal frontend.
+    surfaces.push(
+        crate::channels::tui_surface::TuiSurface::new(_deps)
+            .with_event_sender(_deps.tui_event_tx.clone())
+            .into_arc(),
+    );
+
+    // Channels are pushed here as they are migrated:
+    // - Phase 3: Telegram (gated on `feature = "telegram"`).
+    // - Phase 4: Discord / Slack / WhatsApp / Trello.
+    // Un-migrated channels continue to run via the legacy `ChannelManager`
+    // path, untouched, so the build stays green at every step.
 
     surfaces
 }

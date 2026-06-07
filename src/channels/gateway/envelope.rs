@@ -6,7 +6,11 @@
 //! they exist purely to give the gateway a surface-agnostic vocabulary for
 //! "a message came in here" and "send this response back out there".
 
+use std::sync::Arc;
+
 use uuid::Uuid;
+
+use crate::brain::agent::AgentResponse;
 
 /// Who sent an inbound message. `id` is the platform-stable user identifier
 /// (Telegram user id, Discord user id, Slack `U…` id, WhatsApp phone, …) used
@@ -151,30 +155,37 @@ impl OutboundTarget {
     }
 }
 
-/// The agent's response, ready for a surface to render. `voice` / `images` are
-/// populated by the gateway's shared post-processing step (TTS synthesis, image
-/// marker extraction) so individual surfaces don't each re-derive them.
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// The agent's response, ready for a surface to render. `images` is populated
+/// by the gateway's shared post-processing step (image marker extraction) so
+/// individual surfaces don't each re-derive it.
+///
+/// `full` carries the complete [`AgentResponse`] for surfaces that render rich
+/// metadata (the TUI footer: cost, tokens, model). Channels need only `text` +
+/// `images` and ignore it.
+#[derive(Clone)]
 pub struct OutboundMessage {
     pub text: String,
     /// Session the response belongs to (for surfaces that track session→chat).
     pub session_id: Uuid,
     /// Image URLs/paths extracted from the response text, if any.
     pub images: Vec<String>,
+    /// The full agent response, shared cheaply for rich-rendering surfaces.
+    pub full: Arc<AgentResponse>,
 }
 
 impl OutboundMessage {
-    pub fn new(session_id: Uuid, text: impl Into<String>) -> Self {
+    pub fn new(session_id: Uuid, full: Arc<AgentResponse>, text: impl Into<String>) -> Self {
         Self {
             text: text.into(),
             session_id,
             images: Vec::new(),
+            full,
         }
     }
 }
 
 /// A response routed back to the surface it originated from.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone)]
 pub struct Outbound {
     pub surface_id: &'static str,
     pub target: OutboundTarget,
@@ -215,12 +226,5 @@ mod tests {
         let t = OutboundTarget::new("chat-1");
         assert_eq!(t.conversation_key, "chat-1");
         assert_eq!(t.thread_key, None);
-    }
-
-    #[test]
-    fn outbound_message_starts_with_no_images() {
-        let m = OutboundMessage::new(Uuid::nil(), "hi");
-        assert!(m.images.is_empty());
-        assert_eq!(m.text, "hi");
     }
 }

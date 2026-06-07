@@ -12,10 +12,28 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use tokio::task::JoinHandle;
+use uuid::Uuid;
 
 use super::bus::GatewayHandle;
 use super::envelope::{OutboundMessage, OutboundTarget};
+use crate::brain::agent::service::{ApprovalCallback, ProgressCallback, QuestionCallback};
 use crate::config::Config;
+
+/// Per-turn interactive callbacks a surface supplies so the shared agent loop
+/// can render progress, request tool approval, and ask follow-up questions on
+/// that surface's native UI (TUI dialogs, Telegram inline keyboards, Discord
+/// components, …). All optional: a non-interactive surface leaves them `None`
+/// and the agent loop falls back to its default (auto / no-op) behavior.
+///
+/// This is what lets the *one* bus pipeline serve every surface without the
+/// agent knowing which surface it's talking to — each surface declares how to
+/// surface interaction, the bus wires it in.
+#[derive(Clone, Default)]
+pub struct SurfaceCallbacks {
+    pub approval: Option<ApprovalCallback>,
+    pub progress: Option<ProgressCallback>,
+    pub question: Option<QuestionCallback>,
+}
 
 /// Whether a surface should currently be running, derived from config. Mirrors
 /// the per-channel `should_run` checks that `ChannelManager` did inline today
@@ -51,6 +69,15 @@ pub trait Surface: Send + Sync {
     /// arrive. Returns the listener `JoinHandle` so the gateway can abort it on
     /// shutdown or config-driven stop.
     async fn start(self: Arc<Self>, bus: GatewayHandle) -> JoinHandle<()>;
+
+    /// Supply the interactive callbacks for a turn on this surface, scoped to
+    /// the given conversation + session. The default returns no callbacks
+    /// (suitable for surfaces with no interactive UI). Interactive surfaces
+    /// (TUI, the chat channels) override this to wire approval / progress /
+    /// follow-up rendering to their native UI.
+    fn callbacks(&self, _conversation_key: &str, _session_id: Uuid) -> SurfaceCallbacks {
+        SurfaceCallbacks::default()
+    }
 
     /// Deliver an agent response back out this surface to `target`.
     async fn deliver(

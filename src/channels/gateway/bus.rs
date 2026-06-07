@@ -107,6 +107,15 @@ impl Core {
 
         // 3. Run the agent turn exactly like a TUI message — no channel tools,
         //    no per-surface branching. `channel` is the opaque surface id.
+        //    The originating surface supplies its interactive callbacks
+        //    (progress / approval / follow-up) so the shared loop renders on
+        //    that surface's native UI.
+        let cb = self
+            .surfaces
+            .get(inbound.surface_id)
+            .map(|s| s.callbacks(&inbound.conversation_key, session_id))
+            .unwrap_or_default();
+
         let response = match self
             .ctx
             .agent
@@ -116,9 +125,9 @@ impl Core {
                 inbound.display_text.clone(),
                 None,
                 None,
-                None,
-                None,
-                None,
+                cb.approval,
+                cb.progress,
+                cb.question,
                 inbound.surface_id,
                 Some(inbound.conversation_key.as_str()),
             )
@@ -152,6 +161,7 @@ impl Core {
                 text: clean_text,
                 session_id,
                 images,
+                full: Arc::new(response),
             },
         })
     }

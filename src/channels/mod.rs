@@ -7,6 +7,7 @@ pub mod commands;
 mod factory;
 pub mod gateway;
 pub mod manager;
+pub mod tui_surface;
 pub mod session_init;
 pub mod session_resolve;
 #[cfg(test)]

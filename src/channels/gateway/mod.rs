@@ -25,4 +25,4 @@ pub use envelope::{
     Routing, SenderRef,
 };
 pub use registry::{registered_surfaces, SurfaceDeps};
-pub use surface::{Surface, SurfaceStatus};
+pub use surface::{Surface, SurfaceCallbacks, SurfaceStatus};
