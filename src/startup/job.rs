@@ -16,7 +16,6 @@ use std::time::Duration;
 #[derive(Clone)]
 pub struct StartupContext {
     pub config: crate::config::Config,
-    pub db_pool: crate::db::Pool,
 }
 
 /// A unit of startup work.

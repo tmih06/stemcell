@@ -8,24 +8,11 @@
 //! Persisted to `startup_models_cache.json` in the opencrabs base dir,
 //! following the `claude_cli_models.json` precedent.
 
-use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-/// Cached model list for a single provider.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CachedModels {
-    pub models: Vec<String>,
-    /// Epoch seconds when this list was fetched.
-    pub fetched_at: u64,
-}
-
-/// Whole cache: provider name → cached models.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct ModelCache {
-    #[serde(flatten)]
-    pub providers: HashMap<String, CachedModels>,
-}
+/// Provider name → its cached model list.
+pub type ModelCache = HashMap<String, Vec<String>>;
 
 /// Path to the cache file. Test builds use a temp-dir override.
 #[cfg(not(test))]
@@ -62,24 +49,14 @@ pub fn load() -> ModelCache {
 
 /// Read the cached models for one provider, if present.
 pub fn models_for(provider: &str) -> Option<Vec<String>> {
-    load()
-        .providers
-        .get(provider)
-        .map(|c| c.models.clone())
-        .filter(|m| !m.is_empty())
+    load().get(provider).cloned().filter(|m| !m.is_empty())
 }
 
 /// Insert/replace one provider's models and persist. Silently ignores IO
 /// errors — a failed write just means `/models` falls back to a live fetch.
 pub fn store(provider: &str, models: Vec<String>) {
     let mut cache = load();
-    cache.providers.insert(
-        provider.to_string(),
-        CachedModels {
-            models,
-            fetched_at: now_epoch(),
-        },
-    );
+    cache.insert(provider.to_string(), models);
     let path = cache_path();
     if let Ok(json) = serde_json::to_string_pretty(&cache) {
         if let Some(parent) = path.parent() {
@@ -87,13 +64,6 @@ pub fn store(provider: &str, models: Vec<String>) {
         }
         let _ = std::fs::write(&path, json);
     }
-}
-
-fn now_epoch() -> u64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs()
 }
 
 #[cfg(test)]

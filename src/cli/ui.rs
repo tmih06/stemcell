@@ -113,7 +113,7 @@ async fn cmd_chat_inner(
     // Kick off startup jobs in the background (config/env checks, model-list
     // cache warming). Non-blocking — the TUI stays interactive while they run,
     // and a failing job logs but never aborts boot.
-    crate::startup::spawn(config.clone(), db.pool().clone());
+    crate::startup::spawn(config.clone());
 
     // Spawn RSI background engine (digest + periodic analysis)
     let (rsi_tx, mut rsi_rx) = tokio::sync::mpsc::unbounded_channel();

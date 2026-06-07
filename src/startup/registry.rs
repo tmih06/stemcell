@@ -92,12 +92,9 @@ mod tests {
     use crate::startup::job::StartupJob;
     use async_trait::async_trait;
 
-    async fn test_ctx() -> Arc<StartupContext> {
-        // In-memory pool; these jobs never touch it, but StartupContext needs one.
-        let db = crate::db::Database::connect_in_memory().await.unwrap();
+    fn test_ctx() -> Arc<StartupContext> {
         Arc::new(StartupContext {
             config: crate::config::Config::default(),
-            db_pool: db.pool().clone(),
         })
     }
 
@@ -137,7 +134,7 @@ mod tests {
     #[tokio::test]
     async fn empty_registry_returns_no_outcomes() {
         let jobs = StartupJobs::new();
-        let outcomes = jobs.run_all(test_ctx().await).await;
+        let outcomes = jobs.run_all(test_ctx()).await;
         assert!(outcomes.is_empty());
     }
 
@@ -145,7 +142,7 @@ mod tests {
     async fn ok_and_fail_jobs_both_recorded() {
         let mut jobs = StartupJobs::new();
         jobs.register(Arc::new(OkJob)).register(Arc::new(FailJob));
-        let outcomes = jobs.run_all(test_ctx().await).await;
+        let outcomes = jobs.run_all(test_ctx()).await;
 
         assert_eq!(outcomes.len(), 2);
         let ok = outcomes.iter().find(|o| o.name == "ok-job").unwrap();
@@ -164,7 +161,7 @@ mod tests {
     async fn panicking_job_becomes_failed_outcome() {
         let mut jobs = StartupJobs::new();
         jobs.register(Arc::new(PanicJob)).register(Arc::new(OkJob));
-        let outcomes = jobs.run_all(test_ctx().await).await;
+        let outcomes = jobs.run_all(test_ctx()).await;
 
         // Both jobs accounted for; the panic did not abort the runner.
         assert_eq!(outcomes.len(), 2);

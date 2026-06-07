@@ -25,31 +25,24 @@ impl StartupJob for FetchModelsJob {
             return Ok(());
         }
 
-        // Resolve TUI provider index + API key + base_url, mirroring how the
-        // /models dialog resolves the provider it caches under.
-        let (provider_index, api_key, base_url) =
-            if let Some(name) = provider.strip_prefix("custom:") {
-                let c = config.providers.custom_by_name(name).ok_or_else(|| {
-                    anyhow::anyhow!("custom provider '{name}' vanished from config")
-                })?;
-                (
-                    crate::tui::provider_selector::CUSTOM_PROVIDER_IDX,
-                    c.api_key.clone(),
-                    c.base_url.clone(),
-                )
-            } else {
-                let idx = crate::utils::providers::tui_index_for_id(&provider)
-                    .ok_or_else(|| anyhow::anyhow!("no TUI index for provider '{provider}'"))?;
-                let api_key = crate::utils::providers::config_for(&config.providers, &provider)
-                    .and_then(|p| p.api_key.clone());
-                (idx, api_key, None)
-            };
+        // Only built-in providers are warm-started: the /models dialog reads the
+        // cache solely for built-ins (custom providers default to paste mode and
+        // never read it), so caching custom entries would be write-only.
+        if provider.starts_with("custom:") {
+            tracing::debug!("[startup] fetch-models: custom provider, skipping cache warm");
+            return Ok(());
+        }
+
+        let provider_index = crate::utils::providers::tui_index_for_id(&provider)
+            .ok_or_else(|| anyhow::anyhow!("no TUI index for provider '{provider}'"))?;
+        let api_key = crate::utils::providers::config_for(&config.providers, &provider)
+            .and_then(|p| p.api_key.clone());
 
         let models = crate::tui::onboarding::fetch_provider_models(
             provider_index,
             api_key.as_deref(),
             None,
-            base_url.as_deref(),
+            None,
         )
         .await;
 

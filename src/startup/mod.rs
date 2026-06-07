@@ -30,8 +30,8 @@ pub fn default_jobs() -> StartupJobs {
 
 /// Spawn all built-in startup jobs in the background. Returns immediately —
 /// the TUI does not wait for jobs to finish.
-pub fn spawn(config: crate::config::Config, db_pool: crate::db::Pool) {
-    let ctx = Arc::new(StartupContext { config, db_pool });
+pub fn spawn(config: crate::config::Config) {
+    let ctx = Arc::new(StartupContext { config });
     let queue = default_jobs();
     tokio::spawn(async move {
         let outcomes = queue.run_all(ctx).await;
