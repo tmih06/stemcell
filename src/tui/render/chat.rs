@@ -1007,4 +1007,81 @@ pub(super) fn render_chat(f: &mut Frame, app: &mut App, area: Rect) {
             }
         }
     }
+
+    // Keyboard select-to-copy overlay: highlight the selected range (if any)
+    // and draw a caret block. Logical (line, col) → screen coords using the
+    // same padding as the paragraph (left=1, top=1) and the actual scroll
+    // offset computed above.
+    if app.keyboard_select_active {
+        let content_left = area.x + 1;
+        let content_top = area.y + 1;
+        let visible_rows = area.height.saturating_sub(1) as usize;
+        let buf = f.buffer_mut();
+        let x_max = area.x.saturating_add(area.width);
+
+        // Map a logical line to its screen row, if currently visible.
+        let line_to_row = |line: usize| -> Option<u16> {
+            if line < actual_scroll_offset {
+                return None;
+            }
+            let row_in_chat = line - actual_scroll_offset;
+            if row_in_chat >= visible_rows {
+                return None;
+            }
+            Some(content_top + row_in_chat as u16)
+        };
+        // Char column → screen x for a given line (monospace approximation,
+        // consistent with the mouse selection path).
+        let col_to_x = |col: usize| -> u16 { content_left.saturating_add(col as u16) };
+
+        let sel_style = Style::default().add_modifier(Modifier::REVERSED);
+
+        // Paint the selection range cells.
+        if let Some(anchor) = app.select_anchor {
+            let (start, end) = if anchor <= app.select_cursor {
+                (anchor, app.select_cursor)
+            } else {
+                (app.select_cursor, anchor)
+            };
+            for line in start.0..=end.0 {
+                let Some(row) = line_to_row(line) else {
+                    continue;
+                };
+                let line_len = app
+                    .chat_rendered_lines
+                    .get(line)
+                    .map(|l| l.chars().count())
+                    .unwrap_or(0);
+                let from = if line == start.0 { start.1 } else { 0 };
+                let to = if line == end.0 {
+                    (end.1 + 1).min(line_len)
+                } else {
+                    line_len
+                };
+                for col in from..to {
+                    let x = col_to_x(col);
+                    if x >= content_left && x < x_max {
+                        if let Some(cell) = buf.cell_mut((x, row)) {
+                            cell.set_style(sel_style);
+                        }
+                    }
+                }
+            }
+        }
+
+        // Draw the caret as a reversed block so it's visible even on an
+        // empty line or at end-of-line.
+        if let Some(row) = line_to_row(app.select_cursor.0) {
+            let x = col_to_x(app.select_cursor.1).min(x_max.saturating_sub(1));
+            if x >= content_left
+                && let Some(cell) = buf.cell_mut((x, row))
+            {
+                cell.set_style(
+                    Style::default()
+                        .add_modifier(Modifier::REVERSED)
+                        .add_modifier(Modifier::BOLD),
+                );
+            }
+        }
+    }
 }

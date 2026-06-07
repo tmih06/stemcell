@@ -620,6 +620,18 @@ pub struct App {
     /// Drag selection: current point in terminal-screen coords (col, row), updated during drag.
     pub drag_current: Option<(u16, u16)>,
 
+    /// Keyboard select-to-copy mode. Entered with Ctrl+S, exited with Esc.
+    /// While active, arrow keys move a caret through the rendered transcript,
+    /// Shift+arrows (or `v`) extend a selection, and y/c/Enter copies it.
+    pub keyboard_select_active: bool,
+    /// Caret position in LOGICAL coords: (line index into `chat_rendered_lines`,
+    /// char column within that line). The viewport auto-scrolls to keep this
+    /// visible as it nears the top/bottom edge.
+    pub select_cursor: (usize, usize),
+    /// Selection anchor in the same (line, col) logical coords. `None` means no
+    /// active selection (caret only); a range is anchor..=cursor in reading order.
+    pub select_anchor: Option<(usize, usize)>,
+
     /// Input area screen coordinates (set each render frame)
     pub input_area_x: u16,
     pub input_area_y: u16,
@@ -796,6 +808,9 @@ impl App {
             chat_rendered_lines: Vec::new(),
             drag_anchor: None,
             drag_current: None,
+            keyboard_select_active: false,
+            select_cursor: (0, 0),
+            select_anchor: None,
             input_area_x: 0,
             input_area_y: 0,
             input_area_width: 0,

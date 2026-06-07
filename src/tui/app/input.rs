@@ -497,6 +497,193 @@ impl App {
         }
     }
 
+    /// Number of transcript rows visible in the chat viewport.
+    /// Mirrors `visible_height` in `render_chat` (one row of top padding,
+    /// no border rows), used by keyboard-select auto-scroll.
+    fn chat_visible_height(&self) -> usize {
+        (self.chat_area_height.saturating_sub(1)) as usize
+    }
+
+    /// Total number of logical lines currently rendered in the transcript.
+    fn chat_total_lines(&self) -> usize {
+        self.chat_rendered_lines.len()
+    }
+
+    /// Enter keyboard select-to-copy mode. Drops the caret at the
+    /// bottom-most visible non-empty line so the user starts where they're
+    /// looking, then disables auto-scroll so the viewport stays put while
+    /// they navigate.
+    pub(crate) fn enter_keyboard_select(&mut self) {
+        let total = self.chat_total_lines();
+        if total == 0 {
+            return;
+        }
+        self.keyboard_select_active = true;
+        self.select_anchor = None;
+        self.auto_scroll = false;
+        // Clear any mouse drag-selection so the two don't fight.
+        self.drag_anchor = None;
+        self.drag_current = None;
+        self.selected_message_idx = None;
+
+        // chat_render_scroll is the actual paragraph scroll offset (lines
+        // hidden above the viewport). Start the caret on the last visible row.
+        let visible = self.chat_visible_height().max(1);
+        let last_visible = (self.chat_render_scroll + visible.saturating_sub(1)).min(total - 1);
+        // Walk upward to the nearest non-empty line for a sensible start.
+        let mut line = last_visible;
+        while line > self.chat_render_scroll
+            && self
+                .chat_rendered_lines
+                .get(line)
+                .is_none_or(|l| l.trim().is_empty())
+        {
+            line -= 1;
+        }
+        self.select_cursor = (line, 0);
+        self.notification =
+            Some("Select mode — arrows move, Shift+arrows select, y copies, Esc exits".to_string());
+        self.notification_shown_at = Some(std::time::Instant::now());
+    }
+
+    /// Leave keyboard select mode, clearing the caret and selection.
+    pub(crate) fn exit_keyboard_select(&mut self) {
+        self.keyboard_select_active = false;
+        self.select_anchor = None;
+    }
+
+    /// Char length of a rendered logical line (0 if out of range).
+    fn select_line_len(&self, line: usize) -> usize {
+        self.chat_rendered_lines
+            .get(line)
+            .map(|l| l.chars().count())
+            .unwrap_or(0)
+    }
+
+    /// Scroll the viewport so the caret line stays visible, auto-scrolling
+    /// when the caret reaches within `margin` rows of the top or bottom edge.
+    /// `scroll_offset` is stored as distance-from-bottom (0 == pinned to
+    /// newest), matching the rest of the TUI, so we convert through the
+    /// render-time `chat_render_scroll` (lines hidden above the viewport).
+    fn ensure_caret_visible(&mut self) {
+        let total = self.chat_total_lines();
+        let visible = self.chat_visible_height();
+        if total == 0 || visible == 0 {
+            return;
+        }
+        let max_top = total.saturating_sub(visible); // max lines-hidden-above
+        let margin = 2usize.min(visible / 2);
+        let caret = self.select_cursor.0.min(total.saturating_sub(1));
+
+        // Current top (lines hidden above the viewport).
+        let mut top = self.chat_render_scroll.min(max_top);
+
+        // Scroll up if caret is at/above the top margin.
+        if caret < top + margin {
+            top = caret.saturating_sub(margin);
+        }
+        // Scroll down if caret is at/below the bottom margin.
+        let bottom_visible = top + visible.saturating_sub(1);
+        if caret + margin > bottom_visible {
+            top = (caret + margin + 1).saturating_sub(visible);
+        }
+        top = top.min(max_top);
+
+        // Convert top (from-top) back to scroll_offset (from-bottom).
+        self.scroll_offset = max_top.saturating_sub(top);
+        self.auto_scroll = false;
+    }
+
+    /// Move the caret by (dy lines, dx chars). When `extend` is true the
+    /// selection anchor is established (if absent) before moving so the
+    /// range grows; otherwise any selection is collapsed to the caret.
+    /// Always auto-scrolls to keep the caret on screen.
+    pub(crate) fn select_move(&mut self, dy: isize, dx: isize, extend: bool) {
+        let total = self.chat_total_lines();
+        if total == 0 {
+            return;
+        }
+        if extend {
+            if self.select_anchor.is_none() {
+                self.select_anchor = Some(self.select_cursor);
+            }
+        } else {
+            self.select_anchor = None;
+        }
+
+        let (mut line, mut col) = self.select_cursor;
+
+        // Horizontal movement, wrapping across line boundaries.
+        if dx > 0 {
+            let len = self.select_line_len(line);
+            if col < len {
+                col += 1;
+            } else if line + 1 < total {
+                line += 1;
+                col = 0;
+            }
+        } else if dx < 0 {
+            if col > 0 {
+                col -= 1;
+            } else if line > 0 {
+                line -= 1;
+                col = self.select_line_len(line);
+            }
+        }
+
+        // Vertical movement, clamping the column to the new line length.
+        if dy < 0 {
+            line = line.saturating_sub((-dy) as usize);
+        } else if dy > 0 {
+            line = (line + dy as usize).min(total.saturating_sub(1));
+        }
+        col = col.min(self.select_line_len(line));
+
+        self.select_cursor = (line, col);
+        self.ensure_caret_visible();
+    }
+
+    /// Jump the caret to the start (col 0) or end (last char) of its line.
+    pub(crate) fn select_line_edge(&mut self, end: bool, extend: bool) {
+        if extend {
+            if self.select_anchor.is_none() {
+                self.select_anchor = Some(self.select_cursor);
+            }
+        } else {
+            self.select_anchor = None;
+        }
+        let line = self.select_cursor.0;
+        self.select_cursor.1 = if end { self.select_line_len(line) } else { 0 };
+    }
+
+    /// Page the caret up/down by the visible height, extending if requested.
+    pub(crate) fn select_page(&mut self, down: bool, extend: bool) {
+        let page = self.chat_visible_height().max(1) as isize;
+        self.select_move(if down { page } else { -page }, 0, extend);
+    }
+
+    /// Extract and copy the current keyboard selection (or the caret's whole
+    /// line if there's no active selection). Returns to caret-only state but
+    /// stays in select mode so the user can keep copying.
+    pub(crate) fn copy_keyboard_selection(&mut self) {
+        let text = self.extract_keyboard_selection();
+        if text.trim().is_empty() {
+            return;
+        }
+        if Self::copy_to_clipboard(&text) {
+            self.notification = Some("Copied to clipboard".to_string());
+            self.notification_shown_at = Some(std::time::Instant::now());
+        }
+        self.select_anchor = None;
+    }
+
+    /// Build the plain text spanned by the keyboard selection. With no anchor,
+    /// copies the caret's full line. Strips the code-block gutter so copied
+    /// text matches what the user sees (same rule as the mouse path).
+    fn extract_keyboard_selection(&self) -> String {
+        extract_selection_text(&self.chat_rendered_lines, self.select_anchor, self.select_cursor)
+    }
+
     /// Handle mouse drag in the input area — track text selection.
     pub(crate) fn handle_input_mouse_drag(&mut self, col: u16, row: u16) {
         if self.input_area_height == 0 {
@@ -764,6 +951,43 @@ impl App {
     ) -> Result<()> {
         use super::events::keys;
         use crossterm::event::{KeyCode, KeyModifiers};
+
+        // Keyboard select-to-copy mode intercepts everything. Entered via
+        // Ctrl+S (below); arrows move the caret, Shift+arrows extend the
+        // selection, y/c/Enter copy, Esc exits. The viewport auto-scrolls
+        // as the caret nears the top/bottom edge.
+        if self.keyboard_select_active {
+            let shift = event.modifiers.contains(KeyModifiers::SHIFT);
+            match event.code {
+                KeyCode::Esc => self.exit_keyboard_select(),
+                KeyCode::Up => self.select_move(-1, 0, shift),
+                KeyCode::Down => self.select_move(1, 0, shift),
+                KeyCode::Left => self.select_move(0, -1, shift),
+                KeyCode::Right => self.select_move(0, 1, shift),
+                KeyCode::Home => self.select_line_edge(false, shift),
+                KeyCode::End => self.select_line_edge(true, shift),
+                KeyCode::PageUp => self.select_page(false, shift),
+                KeyCode::PageDown => self.select_page(true, shift),
+                // Start/extend selection from the caret (vim-style visual toggle).
+                KeyCode::Char('v') | KeyCode::Char('V') => {
+                    if self.select_anchor.is_some() {
+                        self.select_anchor = None;
+                    } else {
+                        self.select_anchor = Some(self.select_cursor);
+                    }
+                }
+                // Copy and stay in select mode.
+                KeyCode::Char('y') | KeyCode::Char('c') | KeyCode::Enter => {
+                    self.copy_keyboard_selection();
+                }
+                // Ctrl+S again toggles select mode off.
+                KeyCode::Char('s') if event.modifiers.contains(KeyModifiers::CONTROL) => {
+                    self.exit_keyboard_select();
+                }
+                _ => {}
+            }
+            return Ok(());
+        }
 
         // Intercept keys when /approve menu is pending
         if self.has_pending_approve_menu() {
@@ -1507,6 +1731,11 @@ impl App {
                 self.error_message = Some("Press Esc again to clear input".to_string());
                 self.error_message_shown_at = Some(std::time::Instant::now());
             }
+        } else if event.code == KeyCode::Char('s') && event.modifiers == KeyModifiers::CONTROL {
+            // Ctrl+S — enter keyboard select-to-copy mode. The actual
+            // navigation/copy keys are handled by the intercept block at the
+            // top of this function once the mode is active.
+            self.enter_keyboard_select();
         } else if event.code == KeyCode::Char('o') && event.modifiers == KeyModifiers::CONTROL {
             // Ctrl+O is a global expand/collapse toggle. With no focused block
             // in the transcript, use the newest expandable item to decide
@@ -1951,5 +2180,135 @@ impl App {
         }
 
         Ok(())
+    }
+}
+
+/// Strip the chat padding and code-block gutter (e.g. `"  1 │ "`) from a
+/// rendered line so copied text matches what the user visually sees.
+fn strip_select_gutter(s: &str) -> String {
+    let trimmed = s.trim_start();
+    if let Some(rest) = trimmed.strip_prefix(|c: char| c.is_ascii_digit()) {
+        let rest = rest.trim_start_matches(|c: char| c.is_ascii_digit());
+        if let Some(after_bar) = rest.strip_prefix(" │ ") {
+            return after_bar.to_string();
+        }
+        if let Some(after_bar) = rest.strip_prefix("│ ") {
+            return after_bar.to_string();
+        }
+    }
+    trimmed.to_string()
+}
+
+/// Pure extraction of a keyboard selection over `lines`. With no `anchor`,
+/// returns the caret line's full (gutter-stripped) text. With an anchor, the
+/// range `anchor..=cursor` (normalized to reading order) is joined by `\n`,
+/// dropping purely-whitespace interior lines. Factored out of
+/// `App::extract_keyboard_selection` so it's unit-testable without an `App`.
+fn extract_selection_text(
+    lines: &[String],
+    anchor: Option<(usize, usize)>,
+    cursor: (usize, usize),
+) -> String {
+    if lines.is_empty() {
+        return String::new();
+    }
+    let slice = |line: &str, from: usize, to: usize| -> String {
+        let chars: Vec<char> = line.chars().collect();
+        let from = from.min(chars.len());
+        let to = to.min(chars.len());
+        if from >= to {
+            return String::new();
+        }
+        chars[from..to].iter().collect()
+    };
+
+    let Some(anchor) = anchor else {
+        let line = cursor.0.min(lines.len() - 1);
+        return strip_select_gutter(lines.get(line).map(|s| s.as_str()).unwrap_or(""));
+    };
+
+    let (start, end) = if anchor <= cursor {
+        (anchor, cursor)
+    } else {
+        (cursor, anchor)
+    };
+
+    if start.0 == end.0 {
+        let line = lines.get(start.0).map(|s| s.as_str()).unwrap_or("");
+        return strip_select_gutter(&slice(line, start.1, end.1 + 1));
+    }
+
+    let mut out = String::new();
+    for line_idx in start.0..=end.0 {
+        let Some(line) = lines.get(line_idx) else {
+            continue;
+        };
+        let piece = if line_idx == start.0 {
+            slice(line, start.1, line.chars().count())
+        } else if line_idx == end.0 {
+            slice(line, 0, end.1 + 1)
+        } else {
+            line.clone()
+        };
+        let cleaned = strip_select_gutter(&piece);
+        if !cleaned.trim().is_empty() {
+            if !out.is_empty() {
+                out.push('\n');
+            }
+            out.push_str(&cleaned);
+        }
+    }
+    out
+}
+
+#[cfg(test)]
+mod select_tests {
+    use super::extract_selection_text;
+
+    fn lines() -> Vec<String> {
+        vec![
+            "  hello world".to_string(),
+            "  second line here".to_string(),
+            "".to_string(),
+            "  1 │ fn main() {}".to_string(),
+        ]
+    }
+
+    #[test]
+    fn caret_only_copies_whole_line_stripped() {
+        let l = lines();
+        // No anchor → whole line at caret, leading padding trimmed.
+        assert_eq!(extract_selection_text(&l, None, (0, 3)), "hello world");
+    }
+
+    #[test]
+    fn single_line_range_is_inclusive() {
+        let l = lines();
+        // Cols are into the rendered (padded) line. "  hello world"
+        // chars: 0,1=spaces; 2='h'. Select cols 2..=6 → "hello".
+        let text = extract_selection_text(&l, Some((0, 2)), (0, 6));
+        assert_eq!(text, "hello");
+    }
+
+    #[test]
+    fn multi_line_range_joins_with_newline_and_skips_blanks() {
+        let l = lines();
+        // From line 0 col 2 through line 3 col 17. The blank line 2 is
+        // dropped; the code gutter "1 │ " is stripped from line 3.
+        let text = extract_selection_text(&l, Some((0, 2)), (3, 20));
+        assert_eq!(text, "hello world\nsecond line here\nfn main() {}");
+    }
+
+    #[test]
+    fn anchor_after_cursor_is_normalized() {
+        let l = lines();
+        // Anchor below cursor → still reading-order result.
+        let text = extract_selection_text(&l, Some((1, 18)), (0, 2));
+        assert_eq!(text, "hello world\nsecond line here");
+    }
+
+    #[test]
+    fn empty_lines_yields_empty() {
+        assert_eq!(extract_selection_text(&[], None, (0, 0)), "");
     }
 }
