@@ -24,12 +24,9 @@
 //!    `raw_config_custom_provider_names()` so the orphan check is true.
 
 use crate::config::Config;
-use std::sync::Mutex;
 
-// Serialize tests that mutate $HOME so they don't race other tests
-// that touch Config::load. Same pattern as
-// `custom_provider_no_models_test`.
-static HOME_LOCK: Mutex<()> = Mutex::new(());
+// Shared across all $HOME-mutating test modules — see `tests::HOME_ENV_LOCK`.
+use crate::tests::HOME_ENV_LOCK as HOME_LOCK;
 
 struct HomeGuard {
     prev_home: Option<std::ffi::OsString>,

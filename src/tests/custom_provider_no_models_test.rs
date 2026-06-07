@@ -15,11 +15,9 @@
 //! exercise the contract via a temp-config + HOME-override harness.
 
 use crate::channels::commands::models_for_provider;
-use std::sync::Mutex;
 
-// Serialize tests that mutate $HOME so they don't race with each other
-// or with other tests in the suite that touch Config::load.
-static HOME_LOCK: Mutex<()> = Mutex::new(());
+// Shared across all $HOME-mutating test modules — see `tests::HOME_ENV_LOCK`.
+use crate::tests::HOME_ENV_LOCK as HOME_LOCK;
 
 struct HomeGuard {
     prev_home: Option<std::ffi::OsString>,

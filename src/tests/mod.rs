@@ -1,3 +1,9 @@
+/// Serializes every test that overrides `$HOME`/`$USERPROFILE` to drive
+/// `Config::load`. These tests live in separate modules but compile into one
+/// binary and mutate the same process-global env, so they must share a single
+/// lock — per-module mutexes don't exclude each other and the tests race.
+pub static HOME_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 pub mod agent_approval_policies_test;
 pub mod agent_basic_test;
 pub mod agent_context_tracking_test;
