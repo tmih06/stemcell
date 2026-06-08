@@ -505,9 +505,10 @@ impl App {
             line -= 1;
         }
         self.select_cursor = (line, 0);
-        self.notification =
-            Some("Select mode — arrows move, Shift+arrows select, y copies, Esc exits".to_string());
-        self.notification_shown_at = Some(std::time::Instant::now());
+        self.set_notification(
+            "Select mode — arrows move, Shift+arrows select, y copies, Esc exits",
+            false,
+        );
     }
 
     /// Leave keyboard select mode, clearing the caret and selection.
@@ -558,6 +559,16 @@ impl App {
         self.auto_scroll = false;
     }
 
+    /// Prepare the anchor for a caret move: when extending, drop an anchor at
+    /// the current cursor if none exists; otherwise collapse any selection.
+    fn prime_select_anchor(&mut self, extend: bool) {
+        if extend {
+            self.select_anchor.get_or_insert(self.select_cursor);
+        } else {
+            self.select_anchor = None;
+        }
+    }
+
     /// Move the caret by (dy lines, dx chars). When `extend` is true the
     /// selection anchor is established (if absent) before moving so the
     /// range grows; otherwise any selection is collapsed to the caret.
@@ -567,13 +578,7 @@ impl App {
         if total == 0 {
             return;
         }
-        if extend {
-            if self.select_anchor.is_none() {
-                self.select_anchor = Some(self.select_cursor);
-            }
-        } else {
-            self.select_anchor = None;
-        }
+        self.prime_select_anchor(extend);
 
         let (mut line, mut col) = self.select_cursor;
 
@@ -609,13 +614,7 @@ impl App {
 
     /// Jump the caret to the start (col 0) or end (last char) of its line.
     pub(crate) fn select_line_edge(&mut self, end: bool, extend: bool) {
-        if extend {
-            if self.select_anchor.is_none() {
-                self.select_anchor = Some(self.select_cursor);
-            }
-        } else {
-            self.select_anchor = None;
-        }
+        self.prime_select_anchor(extend);
         let line = self.select_cursor.0;
         self.select_cursor.1 = if end { self.select_line_len(line) } else { 0 };
     }
@@ -774,80 +773,89 @@ impl App {
         buf[from.min(to)..from.max(to)].to_string()
     }
 
+    /// Set a transient notification, recording whether it's an error (which
+    /// the renderer styles red). Centralizes the three notification fields so
+    /// they never drift out of sync.
+    pub(crate) fn set_notification(&mut self, msg: impl Into<String>, is_error: bool) {
+        self.notification = Some(msg.into());
+        self.notification_is_error = is_error;
+        self.notification_shown_at = Some(std::time::Instant::now());
+    }
+
     /// Copy `text` and set a count-based notification. Reports a distinct
     /// message on failure so the user knows whether the clipboard tool ran.
     fn copy_and_notify(&mut self, text: &str) {
         let chars = text.chars().count();
         let lines = text.lines().count().max(1);
-        let msg = if Self::copy_to_clipboard(text) {
-            format!("Copied {chars} chars, {lines} lines")
+        if Self::copy_to_clipboard(text) {
+            self.set_notification(format!("Copied {chars} chars, {lines} lines"), false);
         } else {
-            "Copy failed: no clipboard tool (wl-copy/xclip/xsel)".to_string()
-        };
-        self.notification = Some(msg);
-        self.notification_shown_at = Some(std::time::Instant::now());
+            self.set_notification("Copy failed: clipboard unavailable", true);
+        }
     }
 
-    /// Copy text to system clipboard
+    /// Copy text to system clipboard.
+    ///
+    /// Tries local clipboard tools first, then falls back to an OSC 52 escape
+    /// sequence written to the controlling terminal. OSC 52 is what makes copy
+    /// work over SSH / inside tmux, where no local clipboard tool is reachable:
+    /// the *local* terminal emulator interprets the sequence and sets its own
+    /// clipboard. A tool that spawns but fails (e.g. xclip with no DISPLAY) is
+    /// not treated as success, so we still reach the OSC 52 fallback.
     fn copy_to_clipboard(text: &str) -> bool {
         use std::io::Write;
         use std::process::{Command, Stdio};
 
-        // Try pbcopy (macOS)
-        if let Ok(mut child) = Command::new("pbcopy")
-            .stdin(Stdio::piped())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .spawn()
-        {
-            if let Some(ref mut stdin) = child.stdin {
-                let _ = stdin.write_all(text.as_bytes());
+        // Try each tool in preference order: pbcopy (macOS), wl-copy (Wayland),
+        // then xclip / xsel (X11). The first one that actually succeeds wins.
+        let candidates: [(&str, &[&str]); 4] = [
+            ("pbcopy", &[]),
+            ("wl-copy", &[]),
+            ("xclip", &["-selection", "clipboard"]),
+            ("xsel", &["--clipboard", "--input"]),
+        ];
+
+        for (cmd, args) in candidates {
+            if let Ok(mut child) = Command::new(cmd)
+                .args(args)
+                .stdin(Stdio::piped())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .spawn()
+            {
+                // Take stdin so it drops (closing the pipe) before we wait —
+                // otherwise the child blocks reading stdin and wait() hangs.
+                if let Some(mut stdin) = child.stdin.take() {
+                    let _ = stdin.write_all(text.as_bytes());
+                }
+                if child.wait().is_ok_and(|s| s.success()) {
+                    return true;
+                }
             }
-            return child.wait().is_ok_and(|s| s.success());
         }
 
-        // Try wl-copy (Linux / Wayland)
-        if let Ok(mut child) = Command::new("wl-copy")
-            .stdin(Stdio::piped())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .spawn()
-        {
-            if let Some(ref mut stdin) = child.stdin {
-                let _ = stdin.write_all(text.as_bytes());
-            }
-            return child.wait().is_ok_and(|s| s.success());
-        }
+        Self::copy_via_osc52(text)
+    }
 
-        // Try xclip (Linux / X11)
-        if let Ok(mut child) = Command::new("xclip")
-            .args(["-selection", "clipboard"])
-            .stdin(Stdio::piped())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .spawn()
-        {
-            if let Some(ref mut stdin) = child.stdin {
-                let _ = stdin.write_all(text.as_bytes());
-            }
-            return child.wait().is_ok_and(|s| s.success());
-        }
+    /// Emit an OSC 52 clipboard-set sequence to the controlling terminal.
+    /// Format: `ESC ] 52 ; c ; <base64-payload> BEL`. Written to `/dev/tty`
+    /// so it reaches the terminal even though crossterm owns stdout, and so a
+    /// redirected stdout doesn't swallow it. Returns false if the tty can't be
+    /// opened or the write fails.
+    fn copy_via_osc52(text: &str) -> bool {
+        use base64::Engine;
+        use std::io::Write;
 
-        // Try xsel (Linux fallback)
-        if let Ok(mut child) = Command::new("xsel")
-            .args(["--clipboard", "--input"])
-            .stdin(Stdio::piped())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .spawn()
-        {
-            if let Some(ref mut stdin) = child.stdin {
-                let _ = stdin.write_all(text.as_bytes());
-            }
-            return child.wait().is_ok_and(|s| s.success());
-        }
-
-        false
+        let payload = base64::engine::general_purpose::STANDARD.encode(text.as_bytes());
+        let seq = format!("\x1b]52;c;{payload}\x07");
+        std::fs::OpenOptions::new()
+            .write(true)
+            .open("/dev/tty")
+            .and_then(|mut tty| {
+                tty.write_all(seq.as_bytes())?;
+                tty.flush()
+            })
+            .is_ok()
     }
 
     /// Delete the word before the cursor (for Ctrl+Backspace and Alt+Backspace)

@@ -412,9 +412,11 @@ pub struct App {
     pub error_message: Option<String>,
     /// When error_message was set — used to auto-dismiss after 2.5s
     pub error_message_shown_at: Option<std::time::Instant>,
-    /// Transient notification (non-error, e.g. "Copied to clipboard")
+    /// Transient notification (e.g. "Copied to clipboard")
     pub notification: Option<String>,
     pub notification_shown_at: Option<std::time::Instant>,
+    /// Whether the active notification is an error (styled red instead of cyan).
+    pub notification_is_error: bool,
     /// Currently selected message index (left-click to select, right-click to copy)
     pub selected_message_idx: Option<usize>,
     /// Set to true when IntermediateText arrives during the current response cycle.
@@ -743,6 +745,7 @@ impl App {
             error_message_shown_at: None,
             notification: None,
             notification_shown_at: None,
+            notification_is_error: false,
             selected_message_idx: None,
             intermediate_text_received: false,
             build_lines: Vec::new(),
@@ -2989,12 +2992,14 @@ impl App {
         // works as an escape hatch when the TUI is hogging mouse events.
         if event.code == KeyCode::F(12) {
             self.mouse_capture_enabled = !self.mouse_capture_enabled;
-            self.notification = Some(if self.mouse_capture_enabled {
-                "Mouse capture ON (F12 to enable text selection)".to_string()
-            } else {
-                "Mouse capture OFF — drag to select, F12 to re-enable".to_string()
-            });
-            self.notification_shown_at = Some(std::time::Instant::now());
+            self.set_notification(
+                if self.mouse_capture_enabled {
+                    "Mouse capture ON (F12 to enable text selection)"
+                } else {
+                    "Mouse capture OFF — drag to select, F12 to re-enable"
+                },
+                false,
+            );
             return Ok(());
         }
 
