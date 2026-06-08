@@ -27,9 +27,11 @@ pub struct DiscordAgent {
     discord_state: Arc<DiscordState>,
     config_rx: tokio::sync::watch::Receiver<Config>,
     channel_msg_repo: ChannelMessageRepository,
+    gateway: crate::channels::gateway::bus::GatewayHandle,
 }
 
 impl DiscordAgent {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         agent_service: Arc<AgentService>,
         service_context: ServiceContext,
@@ -37,6 +39,7 @@ impl DiscordAgent {
         discord_state: Arc<DiscordState>,
         config_rx: tokio::sync::watch::Receiver<Config>,
         channel_msg_repo: ChannelMessageRepository,
+        gateway: crate::channels::gateway::bus::GatewayHandle,
     ) -> Self {
         Self {
             agent_service,
@@ -45,6 +48,7 @@ impl DiscordAgent {
             discord_state,
             config_rx,
             channel_msg_repo,
+            gateway,
         }
     }
 
@@ -74,6 +78,7 @@ impl DiscordAgent {
             let discord_state = self.discord_state;
             let config_rx = self.config_rx;
             let channel_msg_repo = self.channel_msg_repo;
+            let gateway = self.gateway;
 
             let intents = GatewayIntents::GUILD_MESSAGES
                 | GatewayIntents::DIRECT_MESSAGES
@@ -87,6 +92,7 @@ impl DiscordAgent {
                 discord_state: discord_state.clone(),
                 config_rx: config_rx.clone(),
                 channel_msg_repo: channel_msg_repo.clone(),
+                gateway: gateway.clone(),
             };
 
             let mut client = match Client::builder(&token, intents)
@@ -134,6 +140,7 @@ struct Handler {
     discord_state: Arc<DiscordState>,
     config_rx: tokio::sync::watch::Receiver<Config>,
     channel_msg_repo: ChannelMessageRepository,
+    gateway: crate::channels::gateway::bus::GatewayHandle,
 }
 
 #[async_trait]
@@ -167,6 +174,7 @@ impl EventHandler for Handler {
             self.discord_state.clone(),
             self.config_rx.clone(),
             self.channel_msg_repo.clone(),
+            self.gateway.clone(),
         )
         .await;
     }

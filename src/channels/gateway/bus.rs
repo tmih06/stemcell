@@ -37,14 +37,29 @@ use crate::services::SessionService;
 /// Cloning is cheap (an `mpsc::Sender` clone).
 #[derive(Clone)]
 pub struct GatewayHandle {
-    inbound_tx: mpsc::UnboundedSender<Inbound>,
+    inbound_tx: mpsc::Sender<Inbound>,
 }
 
 impl GatewayHandle {
     /// Publish an inbound message to the gateway pipeline. Returns `false` if
-    /// the gateway loop has shut down (receiver dropped).
+    /// the message could not be enqueued — either the gateway loop has shut
+    /// down (receiver dropped) or the bounded queue is full (backpressure). A
+    /// full queue means the agent is not keeping up; dropping is preferable to
+    /// growing memory without bound, and the surface can decide whether to
+    /// retry or surface an error to the user.
     pub fn publish_inbound(&self, inbound: Inbound) -> bool {
-        self.inbound_tx.send(inbound).is_ok()
+        match self.inbound_tx.try_send(inbound) {
+            Ok(()) => true,
+            Err(mpsc::error::TrySendError::Full(dropped)) => {
+                tracing::warn!(
+                    "gateway: inbound queue full, dropping {} message from conversation {}",
+                    dropped.surface_id,
+                    dropped.conversation_key
+                );
+                false
+            }
+            Err(mpsc::error::TrySendError::Closed(_)) => false,
+        }
     }
 }
 
@@ -72,9 +87,15 @@ impl Core {
     async fn process(&self, inbound: &Inbound) -> Option<Outbound> {
         let cfg = self.ctx.config_rx.borrow().clone();
 
-        // 1. Allowlist — drop messages the surface's config says to ignore.
-        if let AllowlistDecision::Ignore { reason } =
-            super::services::allowlist::evaluate(inbound, &cfg)
+        // A surface that resolved its own session has already applied its
+        // platform gating before publishing (Telegram/Discord/Slack
+        // respond_to, Trello @mention, WhatsApp allowed_phones), so re-running
+        // the shared allowlist here would double-gate. The gateway re-applies
+        // the shared allowlist only for surfaces that defer session resolution
+        // to it (no hint).
+        if inbound.session_hint.is_none()
+            && let AllowlistDecision::Ignore { reason } =
+                super::services::allowlist::evaluate(inbound, &cfg)
         {
             tracing::debug!(
                 "gateway: ignoring {} message from {}: {}",
@@ -85,24 +106,29 @@ impl Core {
             return None;
         }
 
-        // 2. Resolve (or create) the session for this conversation.
-        let session_id = match super::services::session::resolve_for_inbound(
-            &self.ctx.session_service,
-            inbound,
-            &cfg,
-        )
-        .await
-        {
-            Ok(id) => id,
-            Err(e) => {
-                tracing::error!(
-                    "gateway: session resolve failed for {} conversation {}: {}",
-                    inbound.surface_id,
-                    inbound.conversation_key,
-                    e
-                );
-                return None;
-            }
+        // 2. Resolve (or create) the session for this conversation. A surface
+        //    that owns session semantics the keyed resolver can't reproduce
+        //    supplies the id directly via `session_hint`.
+        let session_id = match inbound.session_hint {
+            Some(id) => id,
+            None => match super::services::session::resolve_for_inbound(
+                &self.ctx.session_service,
+                inbound,
+                &cfg,
+            )
+            .await
+            {
+                Ok(id) => id,
+                Err(e) => {
+                    tracing::error!(
+                        "gateway: session resolve failed for {} conversation {}: {}",
+                        inbound.surface_id,
+                        inbound.conversation_key,
+                        e
+                    );
+                    return None;
+                }
+            },
         };
 
         // 3. Run the agent turn exactly like a TUI message — no channel tools,
@@ -124,7 +150,7 @@ impl Core {
                 inbound.text.clone(),
                 inbound.display_text.clone(),
                 None,
-                None,
+                cb.cancel_token.clone(),
                 cb.approval,
                 cb.progress,
                 cb.question,
@@ -185,9 +211,15 @@ impl Core {
     }
 }
 
+/// Capacity of the bounded inbound queue. Sized to absorb normal bursts (many
+/// conversations sending at once) while still applying backpressure — once the
+/// agent falls this far behind, [`GatewayHandle::publish_inbound`] drops rather
+/// than letting memory grow without bound.
+const INBOUND_QUEUE_CAPACITY: usize = 256;
+
 /// The running gateway: owns the inbound receiver and the shared [`Core`].
 pub struct Gateway {
-    inbound_rx: mpsc::UnboundedReceiver<Inbound>,
+    inbound_rx: mpsc::Receiver<Inbound>,
     handle: GatewayHandle,
     core: Arc<Core>,
     /// Listener tasks for surfaces that have been started, keyed by surface id.
@@ -201,7 +233,7 @@ impl Gateway {
     /// surfaces. The surfaces come from the cfg-gated
     /// [`registry`](super::registry) so an off channel is simply absent here.
     pub fn new(ctx: GatewayContext, surfaces: Vec<Arc<dyn Surface>>) -> Self {
-        let (inbound_tx, inbound_rx) = mpsc::unbounded_channel();
+        let (inbound_tx, inbound_rx) = mpsc::channel(INBOUND_QUEUE_CAPACITY);
         let map = surfaces.into_iter().map(|s| (s.id(), s)).collect();
         Self {
             inbound_rx,
@@ -252,8 +284,14 @@ impl Gateway {
     }
 
     /// Run the inbound→agent→outbound loop until all inbound senders drop.
-    /// Each message is processed on its own spawned task so a slow agent turn
-    /// on one conversation doesn't block others.
+    ///
+    /// Messages in **different** conversations are processed concurrently (each
+    /// on its own spawned task) so a slow agent turn on one conversation doesn't
+    /// block others. Messages in the **same** conversation are serialized in
+    /// arrival order: each task awaits the previous task for its conversation
+    /// before running, so two quick messages in one chat can't have their agent
+    /// turns or deliveries interleave/reorder. The chain is keyed on
+    /// `(surface_id, conversation_key)`.
     ///
     /// The loop also watches the config watch channel and re-[`reconcile`]s
     /// surfaces on change, so toggling `channels.telegram.enabled` at runtime
@@ -261,6 +299,11 @@ impl Gateway {
     /// the old `ChannelManager` config-reload callback.
     pub async fn run(mut self) {
         let mut config_rx = self.core.ctx.config_rx.clone();
+        // Tail task per conversation. A new message for a conversation awaits
+        // the existing tail before processing, preserving per-conversation
+        // FIFO. Owned solely by this loop task, so no locking is needed.
+        let mut chains: HashMap<(&'static str, String), tokio::task::JoinHandle<()>> =
+            HashMap::new();
         loop {
             tokio::select! {
                 maybe_inbound = self.inbound_rx.recv() => {
@@ -269,11 +312,25 @@ impl Gateway {
                         return;
                     };
                     let core = self.core.clone();
-                    tokio::spawn(async move {
+                    let key = (inbound.surface_id, inbound.conversation_key.clone());
+                    // Chain onto this conversation's previous task (if any) so
+                    // processing is strictly ordered within the conversation.
+                    let prev = chains.remove(&key);
+                    let task = tokio::spawn(async move {
+                        if let Some(prev) = prev {
+                            // Ignore a panicked predecessor — we still want this
+                            // message processed; ordering is best-effort across
+                            // a crash, strict otherwise.
+                            let _ = prev.await;
+                        }
                         if let Some(outbound) = core.process(&inbound).await {
                             core.deliver(outbound).await;
                         }
                     });
+                    chains.insert(key, task);
+                    // Drop completed chain tails so the map doesn't grow with
+                    // the number of conversations ever seen.
+                    chains.retain(|_, h| !h.is_finished());
                 }
                 changed = config_rx.changed() => {
                     if changed.is_err() {

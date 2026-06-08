@@ -34,20 +34,14 @@ pub struct TuiSurface {
 }
 
 impl TuiSurface {
-    /// Construct from the shared surface deps. The TUI event sender is attached
-    /// separately via [`with_event_sender`](TuiSurface::with_event_sender)
-    /// because it is owned by the TUI app, not the gateway deps.
-    pub fn new(_deps: &SurfaceDeps) -> Self {
-        // Placeholder sender replaced by `with_event_sender` during wiring.
-        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
-        Self { event_tx: tx }
-    }
-
-    /// Attach the live TUI event sender (called in `cli/ui.rs` once the TUI app
-    /// exists).
-    pub fn with_event_sender(mut self, event_tx: UnboundedSender<TuiEvent>) -> Self {
-        self.event_tx = event_tx;
-        self
+    /// Construct from the shared surface deps. The TUI event sender lives on
+    /// [`SurfaceDeps::tui_event_tx`] — taking it here (rather than attaching it
+    /// in a later builder step) means the surface can never be left holding a
+    /// dead channel.
+    pub fn new(deps: &SurfaceDeps) -> Self {
+        Self {
+            event_tx: deps.tui_event_tx.clone(),
+        }
     }
 
     /// Wrap in an `Arc` for registry insertion.

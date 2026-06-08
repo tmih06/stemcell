@@ -1,21 +1,26 @@
 //! Trello Comment Handler
 //!
-//! Routes incoming card comments to the AI agent and posts responses back as comments.
+//! Routes incoming card comments onto the gateway bus and (via the Trello
+//! surface's `deliver`) posts agent responses back as card comments.
 
 use super::client::TrelloClient;
 use super::models::Action;
-use crate::brain::agent::AgentService;
+use crate::channels::gateway::bus::GatewayHandle;
+use crate::channels::gateway::envelope::{Inbound, SenderRef};
 use crate::services::SessionService;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use uuid::Uuid;
 
-/// Process a single Trello card comment: route to AI and post the response back.
+/// Process a single Trello card comment: resolve its session and publish it
+/// onto the gateway bus. The gateway runs the agent turn and routes the
+/// response back through [`TrelloSurface::deliver`], which calls
+/// [`post_reply`].
 #[allow(clippy::too_many_arguments)]
 pub async fn process_comment(
     comment: &Action,
     client: &TrelloClient,
-    agent: Arc<AgentService>,
+    gateway: &GatewayHandle,
     session_svc: SessionService,
     shared_session: Arc<Mutex<Option<Uuid>>>,
     owner_member_id: Option<&str>,
@@ -182,59 +187,48 @@ pub async fn process_comment(
     let display_text = format!("{commenter_name}: {text}");
 
     tracing::info!(
-        "Trello: comment on '{}' from {} — routing to agent (session {})",
+        "Trello: comment on '{}' from {} — publishing to gateway (session {})",
         card_name,
         commenter_name,
         session_id
     );
 
-    // Trello is poll-based with no interactive approval UI — auto-approve all tools.
-    let approval_cb: crate::brain::agent::ApprovalCallback =
-        Arc::new(|_info| Box::pin(async { Ok((true, false)) }));
+    // Publish onto the bus. The conversation_key is the card id, so the
+    // gateway addresses the response back to this card via the surface's
+    // `deliver`. The session was resolved here (owner shares the TUI session;
+    // non-owners key per-commenter), so it rides along as `session_hint` and
+    // the gateway honors it rather than re-resolving from the card id.
+    let mut inbound = Inbound::new(
+        "trello",
+        card_id,
+        SenderRef::new(commenter_id.clone(), commenter_name.clone()),
+        message,
+    );
+    inbound.display_text = Some(display_text);
+    inbound.session_hint = Some(session_id);
 
-    // Trello cards don't host buttons; follow_up_question has no
-    // rendering surface here so the tool itself surfaces a clear error
-    // back to the agent.
-    let response = match agent
-        .send_message_with_tools_and_display(
-            session_id,
-            message,
-            Some(display_text),
-            None,
-            None,
-            Some(approval_cb),
-            None,
-            None,
-            "trello",
-            Some(&card_id),
-        )
-        .await
-    {
-        Ok(r) => r,
-        Err(e) => {
-            tracing::error!("Trello: agent error for card '{}': {}", card_name, e);
-            return;
-        }
-    };
-
-    let reply = response.content.trim().to_string();
-    if reply.is_empty() {
-        return;
+    if !gateway.publish_inbound(inbound) {
+        tracing::warn!("Trello: gateway rejected inbound (queue full or closed) for card");
     }
+}
 
-    // Extract <<IMG:path>> markers — upload each as a card attachment and embed inline.
-    let (text_only, img_paths) = crate::utils::extract_img_markers(&reply);
+/// Post an agent reply back to a Trello card: upload any inline images as card
+/// attachments, embed them in markdown, then post the (chunked) comment. Shared
+/// by the Trello surface's `deliver`; this is the outbound half the gateway
+/// drives after running the agent turn.
+pub async fn post_reply(client: &TrelloClient, card_id: &str, text: &str, images: &[String]) {
+    // Embed extracted image markers as uploaded card attachments.
     let mut image_embeds: Vec<String> = Vec::new();
-    for img_path in img_paths {
-        match tokio::fs::read(&img_path).await {
+    for img_path in images {
+        match tokio::fs::read(img_path).await {
             Ok(bytes) => {
-                let filename = std::path::Path::new(&img_path)
+                let filename = std::path::Path::new(img_path)
                     .file_name()
                     .map(|n| n.to_string_lossy().to_string())
                     .unwrap_or_else(|| "image.png".to_string());
                 let mime = crate::utils::file_extract::mime_from_ext(&filename);
                 match client
-                    .add_attachment_to_card(&card_id, bytes, &filename, mime)
+                    .add_attachment_to_card(card_id, bytes, &filename, mime)
                     .await
                 {
                     Ok(att_url) => {
@@ -251,23 +245,20 @@ pub async fn process_comment(
         }
     }
 
-    let final_reply = match (text_only.trim().is_empty(), image_embeds.is_empty()) {
+    let trimmed = text.trim();
+    let final_reply = match (trimmed.is_empty(), image_embeds.is_empty()) {
         (true, true) => return,
         (true, false) => image_embeds.join("\n"),
-        (false, true) => text_only.trim().to_string(),
-        (false, false) => format!("{}\n\n{}", text_only.trim(), image_embeds.join("\n")),
+        (false, true) => trimmed.to_string(),
+        (false, false) => format!("{}\n\n{}", trimmed, image_embeds.join("\n")),
     };
 
     // Split at ~4000 chars on newlines (Trello limit is ~16 384 chars per comment,
     // but we keep chunks short so they read well in the card activity feed).
     let chunks = split_comment(&final_reply, 4000);
     for chunk in chunks {
-        if let Err(e) = client.add_comment_to_card(&card_id, &chunk).await {
-            tracing::error!(
-                "Trello: failed to post reply on card '{}': {}",
-                card_name,
-                e
-            );
+        if let Err(e) = client.add_comment_to_card(card_id, &chunk).await {
+            tracing::error!("Trello: failed to post reply on card '{}': {}", card_id, e);
         }
     }
 }

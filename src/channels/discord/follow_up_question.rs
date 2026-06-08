@@ -25,7 +25,7 @@ use crate::utils::truncate_str;
 /// (issue #142).
 pub(crate) fn make_question_callback(
     state: Arc<super::DiscordState>,
-    intermediate_handles: Arc<std::sync::Mutex<Vec<tokio::task::JoinHandle<()>>>>,
+    intermediate_handles: Option<Arc<std::sync::Mutex<Vec<tokio::task::JoinHandle<()>>>>>,
 ) -> QuestionCallback {
     Arc::new(move |info: FollowUpQuestionInfo| {
         let state = state.clone();
@@ -89,13 +89,16 @@ pub(crate) fn make_question_callback(
 
             // Flush in-flight intermediate text spawns before posting
             // the question, so the user sees context above the buttons
-            // instead of below (issue #142).
-            let pending = {
-                let mut g = intermediate_handles.lock().expect("poisoned");
-                std::mem::take(&mut *g)
-            };
-            for h in pending {
-                let _ = h.await;
+            // instead of below (issue #142). On the gateway path there is
+            // no live progress loop, so `intermediate_handles` is None.
+            if let Some(ref intermediate_handles) = intermediate_handles {
+                let pending = {
+                    let mut g = intermediate_handles.lock().expect("poisoned");
+                    std::mem::take(&mut *g)
+                };
+                for h in pending {
+                    let _ = h.await;
+                }
             }
 
             if let Err(e) = ChannelId::new(channel_id)

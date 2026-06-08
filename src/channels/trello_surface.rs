@@ -21,7 +21,6 @@ use crate::config::Config;
 /// The Trello surface.
 pub struct TrelloSurface {
     state: Arc<TrelloState>,
-    agent: Arc<crate::brain::agent::AgentService>,
     service_context: crate::services::ServiceContext,
     shared_session_id: Arc<tokio::sync::Mutex<Option<uuid::Uuid>>>,
     config_rx: tokio::sync::watch::Receiver<Config>,
@@ -31,7 +30,6 @@ impl TrelloSurface {
     pub fn new(deps: &SurfaceDeps, state: Arc<TrelloState>) -> Self {
         Self {
             state,
-            agent: deps.agent.clone(),
             service_context: deps.service_context.clone(),
             shared_session_id: deps.shared_session_id.clone(),
             config_rx: deps.config_rx.clone(),
@@ -65,7 +63,7 @@ impl Surface for TrelloSurface {
         }
     }
 
-    async fn start(self: Arc<Self>, _bus: GatewayHandle) -> JoinHandle<()> {
+    async fn start(self: Arc<Self>, bus: GatewayHandle) -> JoinHandle<()> {
         let (api_key, api_token, board_ids, poll_interval_secs, idle_hours, allowed_users) = {
             let cfg = self.config_rx.borrow();
             let tr = &cfg.channels.trello;
@@ -83,7 +81,7 @@ impl Surface for TrelloSurface {
             return tokio::spawn(async {});
         };
         let agent = crate::channels::trello::TrelloAgent::new(
-            self.agent.clone(),
+            bus,
             self.service_context.clone(),
             allowed_users,
             self.shared_session_id.clone(),
@@ -106,10 +104,15 @@ impl Surface for TrelloSurface {
             .await
             .ok_or_else(|| anyhow::anyhow!("Trello not connected — no credentials in state"))?;
         let client = crate::channels::trello::TrelloClient::new(&api_key, &api_token);
-        client
-            .add_comment_to_card(&target.conversation_key, &message.text)
-            .await
-            .map_err(|e| anyhow::anyhow!("Trello comment failed: {e}"))?;
+        // The card id is the conversation_key; post the agent reply back as a
+        // comment (uploading any inline images as attachments first).
+        crate::channels::trello::handler::post_reply(
+            &client,
+            &target.conversation_key,
+            &message.text,
+            &message.images,
+        )
+        .await;
         Ok(())
     }
 }

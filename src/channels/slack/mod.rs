@@ -39,6 +39,24 @@ pub struct SlackState {
     pending_questions: Mutex<HashMap<String, PendingSlackQuestion>>,
     /// Per-session cancel tokens for aborting in-flight agent tasks via /stop
     cancel_tokens: Mutex<HashMap<Uuid, CancellationToken>>,
+    /// Per-channel delivery context stashed on publish, read back by the
+    /// surface's `deliver` to reproduce thread routing + group-record + TTS.
+    delivery_ctx: Mutex<HashMap<String, SlackDeliveryContext>>,
+}
+
+/// Per-turn delivery context the listener stashes on publish so the gateway's
+/// `deliver` can reproduce non-streaming reply behavior: thread routing,
+/// channel-message recording, and TTS voice replies. Keyed by channel id.
+#[derive(Clone)]
+pub struct SlackDeliveryContext {
+    /// Thread timestamp to reply into, when the inbound was in a thread.
+    pub thread_ts: Option<String>,
+    /// Channel name recorded alongside the bot reply for context.
+    pub channel_name: String,
+    /// True when the inbound was a voice attachment — drives the TTS reply.
+    pub is_voice: bool,
+    /// Voice config snapshot captured at receive time.
+    pub voice_config: crate::config::VoiceConfig,
 }
 
 impl Default for SlackState {
@@ -57,6 +75,7 @@ impl SlackState {
             pending_approvals: Mutex::new(HashMap::new()),
             pending_questions: Mutex::new(HashMap::new()),
             cancel_tokens: Mutex::new(HashMap::new()),
+            delivery_ctx: Mutex::new(HashMap::new()),
         }
     }
 
@@ -185,5 +204,15 @@ impl SlackState {
         {
             tokens.remove(&session_id);
         }
+    }
+
+    /// Stash per-turn delivery context for a channel before publishing inbound.
+    pub async fn set_delivery_context(&self, channel_id: String, ctx: SlackDeliveryContext) {
+        self.delivery_ctx.lock().await.insert(channel_id, ctx);
+    }
+
+    /// Take (remove) the delivery context for a channel when delivering.
+    pub async fn take_delivery_context(&self, channel_id: &str) -> Option<SlackDeliveryContext> {
+        self.delivery_ctx.lock().await.remove(channel_id)
     }
 }

@@ -33,6 +33,11 @@ pub struct SurfaceCallbacks {
     pub approval: Option<ApprovalCallback>,
     pub progress: Option<ProgressCallback>,
     pub question: Option<QuestionCallback>,
+    /// Cancellation token for this turn. A surface that supports interrupting an
+    /// in-flight turn (e.g. Telegram `/stop`) registers the token with its own
+    /// state here so its command handler can fire it; the bus threads it into
+    /// the agent call. `None` means the turn is not interruptible.
+    pub cancel_token: Option<tokio_util::sync::CancellationToken>,
 }
 
 /// Whether a surface should currently be running, derived from config. Mirrors

@@ -58,11 +58,8 @@ pub struct SurfaceDeps {
 pub fn registered_surfaces(_deps: &SurfaceDeps) -> Vec<Arc<dyn Surface>> {
     // The TUI is always compiled in — it is the local terminal frontend.
     #[allow(unused_mut)]
-    let mut surfaces: Vec<Arc<dyn Surface>> = vec![
-        crate::channels::tui_surface::TuiSurface::new(_deps)
-            .with_event_sender(_deps.tui_event_tx.clone())
-            .into_arc(),
-    ];
+    let mut surfaces: Vec<Arc<dyn Surface>> =
+        vec![crate::channels::tui_surface::TuiSurface::new(_deps).into_arc()];
 
     // Each channel surface, gated on its feature — the single source-exclusion
     // point for channels.

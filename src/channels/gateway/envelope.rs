@@ -83,6 +83,13 @@ pub struct Inbound {
     /// semantics (what a DM is, whether the bot was mentioned); the shared
     /// allowlist service applies the policy (`respond_to`, allowlists) on top.
     pub routing: Routing,
+    /// Session the surface has already resolved for this conversation, when it
+    /// owns session semantics the gateway's keyed resolver can't reproduce
+    /// (e.g. the owner sharing the live TUI session, or Trello keying sessions
+    /// per-commenter while replies target the card). `Some` means "use exactly
+    /// this session"; `None` defers to
+    /// [`session::resolve_for_inbound`](super::services::session::resolve_for_inbound).
+    pub session_hint: Option<Uuid>,
 }
 
 /// Platform-determined facts the shared allowlist policy needs. Each surface
@@ -126,6 +133,7 @@ impl Inbound {
             reply_ctx: None,
             attachments: Vec::new(),
             routing: Routing::default(),
+            session_hint: None,
         }
     }
 
