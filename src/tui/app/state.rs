@@ -132,97 +132,223 @@ pub struct SlashCommand {
     pub description: &'static str,
 }
 
-/// Available slash commands for autocomplete
+/// Available slash commands for autocomplete.
+///
+/// Descriptions double as a search index: the autocomplete filter matches
+/// the query against both the command name and its description, so each
+/// description deliberately embeds synonyms and the equivalent command
+/// names from other coding tools (Claude Code, Codex, Cursor, Aider,
+/// Gemini CLI, etc.). A user who types the command they know from another
+/// tool — `/resume`, `/session`, `/chat`, `/clear`, `/exit` — lands on the
+/// nearest matching command here. Keep these keyword-rich.
 pub const SLASH_COMMANDS: &[SlashCommand] = &[
     SlashCommand {
         name: "/help",
-        description: "Show available commands",
+        description: "Show available commands, shortcuts and usage — help, ?, commands, menu",
     },
     SlashCommand {
         name: "/models",
-        description: "Switch model",
+        description: "Switch model or AI provider — model, llm, provider, switch, change, /model",
     },
     SlashCommand {
         name: "/usage",
-        description: "Session usage stats",
+        description: "Session usage, token count and cost — usage, tokens, cost, stats, /cost, /tokens",
     },
     SlashCommand {
         name: "/onboard",
-        description: "Run setup wizard",
+        description: "Run setup wizard, configure settings and preferences — onboard, setup, config, settings, init, /config, /settings",
     },
     SlashCommand {
         name: "/onboard:provider",
-        description: "Jump to AI provider setup",
+        description: "Set up AI provider, API key, login and auth — provider, apikey, login, auth, /login, /auth",
     },
     SlashCommand {
         name: "/onboard:workspace",
-        description: "Jump to workspace settings",
+        description: "Configure workspace, project and directory settings — workspace, project, folder, directory",
     },
     SlashCommand {
         name: "/onboard:channels",
-        description: "Setup Telegram, Slack, Discord, WhatsApp, Trello",
+        description: "Set up Telegram, Slack, Discord, WhatsApp, Trello integrations — channels, integrations, bots, connect",
     },
     SlashCommand {
         name: "/onboard:voice",
-        description: "Jump to voice STT/TTS setup",
+        description: "Set up voice, speech-to-text and text-to-speech — voice, stt, tts, speech, audio, mic",
     },
     SlashCommand {
         name: "/onboard:image",
-        description: "Jump to image handling setup (vision + generation)",
+        description: "Set up image handling, vision and generation — image, vision, picture, photo, generate",
     },
     SlashCommand {
         name: "/onboard:brain",
-        description: "Jump to brain/persona setup",
+        description: "Set up brain, persona, system prompt and instructions — brain, persona, prompt, instructions, /agents, /memory",
     },
     SlashCommand {
         name: "/doctor",
-        description: "Run connection health check",
+        description: "Run connection health check and diagnostics — doctor, health, diagnose, status, check, /status",
     },
     SlashCommand {
         name: "/new",
-        description: "Start a new session",
+        description: "Start a new session, clear chat and reset context — new, clear, reset, fresh, start over, /clear, /reset",
     },
     SlashCommand {
         name: "/sessions",
-        description: "List all sessions",
+        description: "List, resume and switch sessions or chats — sessions, resume, history, conversations, /resume, /session, /chat, /chats, /history",
     },
     SlashCommand {
         name: "/approve",
-        description: "Tool approval policy",
+        description: "Tool approval and permission policy — approve, permissions, allow, trust, /permissions, /allowed-tools",
     },
     SlashCommand {
         name: "/compact",
-        description: "Compact context now",
+        description: "Compact, summarize and shrink context now — compact, summarize, condense, shrink, /summary",
     },
     SlashCommand {
         name: "/rebuild",
-        description: "Build & restart from source",
+        description: "Build and restart from source — rebuild, build, recompile, restart from source",
     },
     SlashCommand {
         name: "/evolve",
-        description: "Download latest release & restart",
+        description: "Download latest release, update and upgrade — evolve, update, upgrade, latest, release, /update, /upgrade",
     },
     SlashCommand {
         name: "/whisper",
-        description: "Speak anywhere, paste to clipboard",
+        description: "Speak anywhere, dictate and paste to clipboard — whisper, dictate, voice, speak, transcribe",
     },
     SlashCommand {
         name: "/cd",
-        description: "Change working directory",
+        description: "Change working directory or folder — cd, directory, folder, path, chdir, cwd",
     },
     SlashCommand {
         name: "/mission-control",
-        description: "RSI proposals, activity, schedule",
+        description: "RSI proposals, activity log and schedule — mission control, dashboard, activity, schedule, tasks, jobs",
     },
     SlashCommand {
         name: "/skills",
-        description: "Browse and run loaded skills",
+        description: "Browse and run loaded skills — skills, commands, prompts, tools, run, /prompts",
     },
     SlashCommand {
         name: "/rtk",
-        description: "Show RTK token savings statistics",
+        description: "Show RTK token savings statistics — rtk, tokens, savings, stats, analytics",
+    },
+    SlashCommand {
+        name: "/quit",
+        description: "Exit and quit the app — quit, exit, close, leave, bye, /exit, /q, ctrl+c",
     },
 ];
+
+/// True if `query` is a prefix of any whitespace/punctuation-delimited word in
+/// `haystack`, compared ASCII-case-insensitively. Word-boundary matching
+/// (rather than a raw substring search) keeps description-only autocomplete
+/// hits relevant: typing `co` matches "connect" and "condense" but not the "co"
+/// buried inside "record". Allocation-free — descriptions are matched in place.
+fn word_prefix_match(haystack: &str, query: &str) -> bool {
+    haystack.split(|c: char| !c.is_alphanumeric()).any(|word| {
+        word.len() >= query.len()
+            && word.as_bytes()[..query.len()].eq_ignore_ascii_case(query.as_bytes())
+    })
+}
+
+/// Resolve a combined autocomplete index into the command name it points at.
+/// The index space is `0..N` built-ins, `N..M` user commands, then skills
+/// (returned as their `/<slug>` form). Returns `None` for out-of-range indices.
+fn slash_name_at<'a>(
+    idx: usize,
+    user_commands: &'a [UserCommand],
+    skills: &'a [crate::brain::skills::Skill],
+) -> Option<&'a str> {
+    let base_user = SLASH_COMMANDS.len();
+    let base_skill = base_user + user_commands.len();
+    if idx < base_user {
+        Some(SLASH_COMMANDS[idx].name)
+    } else if idx < base_skill {
+        user_commands.get(idx - base_user).map(|c| c.name.as_str())
+    } else {
+        skills.get(idx - base_skill).map(|s| s.slash_name.as_str())
+    }
+}
+
+/// Filter slash commands for autocomplete and return combined indices into the
+/// `(built-ins, user commands, skills)` index space used by [`App::slash_command_name`].
+///
+/// Matches the query against each command **name** (prefix) and, once ≥2 chars
+/// are typed after the slash, its **description** (word-boundary prefix). The
+/// descriptions embed cross-tool synonyms (e.g. `/sessions` mentions "resume",
+/// "chat", "history"), so a user typing the command they know from another tool
+/// still finds the nearest equivalent. Name-prefix matches rank above
+/// description-only matches, then ties break alphabetically by name.
+///
+/// User commands and skills that shadow a built-in `/name` are skipped, as are
+/// skills shadowed by a user command of the same name.
+fn filter_slash_commands(
+    input_buffer: &str,
+    user_commands: &[UserCommand],
+    skills: &[crate::brain::skills::Skill],
+) -> Vec<usize> {
+    let input = input_buffer.trim_start();
+    if !input.starts_with('/') || input.contains(' ') || input.is_empty() {
+        return Vec::new();
+    }
+
+    let prefix = input.to_lowercase();
+    // Only search descriptions once the user has typed ≥2 chars after the
+    // slash, so a lone "/" doesn't match every description.
+    let desc_query = prefix.trim_start_matches('/');
+    let desc_search = (desc_query.len() >= 2).then_some(desc_query);
+
+    // A command's description matches if the query is a word-boundary prefix of
+    // it. Only consulted when the name didn't already hit (callers short-circuit
+    // with `name_hit ||`), so this stays off the common prefix-typing path.
+    let desc_hit = |description: &str| {
+        desc_search
+            .map(|q| word_prefix_match(description, q))
+            .unwrap_or(false)
+    };
+    let shadows_builtin = |name: &str| SLASH_COMMANDS.iter().any(|b| b.name == name);
+
+    // (combined_index, name_prefix_match) — name matches sort first.
+    let mut matches: Vec<(usize, bool)> = Vec::new();
+
+    // Built-in commands: indices 0..SLASH_COMMANDS.len()
+    for (i, cmd) in SLASH_COMMANDS.iter().enumerate() {
+        let name_hit = cmd.name.starts_with(&prefix);
+        if name_hit || desc_hit(cmd.description) {
+            matches.push((i, name_hit));
+        }
+    }
+
+    // User-defined commands, skipping those that shadow a built-in name.
+    let base_user = SLASH_COMMANDS.len();
+    for (i, ucmd) in user_commands.iter().enumerate() {
+        if shadows_builtin(&ucmd.name) {
+            continue;
+        }
+        let name_hit = ucmd.name.to_lowercase().starts_with(&prefix);
+        if name_hit || desc_hit(&ucmd.description) {
+            matches.push((base_user + i, name_hit));
+        }
+    }
+
+    // Skills, skipping those shadowed by a built-in or a user command of the
+    // same `/<name>`. `slash_name` already carries the leading slash.
+    let base_skill = SLASH_COMMANDS.len() + user_commands.len();
+    for (i, skill) in skills.iter().enumerate() {
+        if shadows_builtin(&skill.slash_name)
+            || user_commands.iter().any(|c| c.name == skill.slash_name)
+        {
+            continue;
+        }
+        let name_hit = skill.slash_name.to_lowercase().starts_with(&prefix);
+        if name_hit || desc_hit(&skill.description) {
+            matches.push((base_skill + i, name_hit));
+        }
+    }
+
+    matches.sort_by(|a, b| {
+        let name = |idx| slash_name_at(idx, user_commands, skills).unwrap_or("");
+        b.1.cmp(&a.1).then_with(|| name(a.0).cmp(name(b.0)))
+    });
+    matches.into_iter().map(|(idx, _)| idx).collect()
+}
 
 /// Approval option selected by the user
 #[derive(Debug, Clone, PartialEq)]
@@ -3582,81 +3708,13 @@ impl App {
         // Stay in AppMode::Chat — no mode switch
     }
 
-    /// Update slash command autocomplete suggestions (built-in + user-defined)
+    /// Update slash command autocomplete suggestions from the input buffer.
+    /// See [`filter_slash_commands`] for matching and ranking rules.
     pub(crate) fn update_slash_suggestions(&mut self) {
-        let input = self.input_buffer.trim_start();
-        if input.starts_with('/') && !input.contains(' ') && !input.is_empty() {
-            let prefix = input.to_lowercase();
-
-            // Built-in commands: indices 0..SLASH_COMMANDS.len()
-            self.slash_filtered = SLASH_COMMANDS
-                .iter()
-                .enumerate()
-                .filter(|(_, cmd)| cmd.name.starts_with(&prefix))
-                .map(|(i, _)| i)
-                .collect();
-
-            // User-defined commands: indices starting at SLASH_COMMANDS.len()
-            // Skip user commands that shadow a built-in name
-            let base_user = SLASH_COMMANDS.len();
-            for (i, ucmd) in self.user_commands.iter().enumerate() {
-                if ucmd.name.to_lowercase().starts_with(&prefix)
-                    && !SLASH_COMMANDS.iter().any(|b| b.name == ucmd.name)
-                {
-                    self.slash_filtered.push(base_user + i);
-                }
-            }
-
-            // Skills: indices starting at SLASH_COMMANDS.len() + user_commands.len()
-            // Skip skills shadowed by a built-in or a user command of the same
-            // `/<name>`. The skill's precomputed `slash_name` already carries
-            // the leading slash for direct comparison.
-            let base_skill = SLASH_COMMANDS.len() + self.user_commands.len();
-            for (i, skill) in self.skills.iter().enumerate() {
-                let lower = skill.slash_name.to_lowercase();
-                if lower.starts_with(&prefix)
-                    && !SLASH_COMMANDS.iter().any(|b| b.name == skill.slash_name)
-                    && !self
-                        .user_commands
-                        .iter()
-                        .any(|c| c.name == skill.slash_name)
-                {
-                    self.slash_filtered.push(base_skill + i);
-                }
-            }
-
-            // Sort suggestions alphabetically by command name. Inline the
-            // index → name resolution to avoid an immutable borrow of self
-            // inside the sort_by closure (which holds a mutable borrow of
-            // self.slash_filtered).
-            let n_builtin = SLASH_COMMANDS.len();
-            let n_user = self.user_commands.len();
-            let name_at = |idx: usize| -> &str {
-                if idx < n_builtin {
-                    SLASH_COMMANDS[idx].name
-                } else if idx < n_builtin + n_user {
-                    self.user_commands
-                        .get(idx - n_builtin)
-                        .map(|c| c.name.as_str())
-                        .unwrap_or("")
-                } else {
-                    self.skills
-                        .get(idx - n_builtin - n_user)
-                        .map(|s| s.slash_name.as_str())
-                        .unwrap_or("")
-                }
-            };
-            self.slash_filtered
-                .sort_by(|&a, &b| name_at(a).cmp(name_at(b)));
-
-            self.slash_suggestions_active = !self.slash_filtered.is_empty();
-            // Clamp selected index
-            if self.slash_selected_index >= self.slash_filtered.len() {
-                self.slash_selected_index = 0;
-            }
-        } else {
-            self.slash_suggestions_active = false;
-            self.slash_filtered.clear();
+        self.slash_filtered =
+            filter_slash_commands(&self.input_buffer, &self.user_commands, &self.skills);
+        self.slash_suggestions_active = !self.slash_filtered.is_empty();
+        if self.slash_selected_index >= self.slash_filtered.len() {
             self.slash_selected_index = 0;
         }
     }
@@ -3664,19 +3722,7 @@ impl App {
     /// Get the name of a slash command by its combined index
     /// (0..N built-ins, N..M user commands, M.. skills as `/<slug>`).
     pub fn slash_command_name(&self, index: usize) -> Option<&str> {
-        let n_builtin = SLASH_COMMANDS.len();
-        let n_user = self.user_commands.len();
-        if index < n_builtin {
-            Some(SLASH_COMMANDS[index].name)
-        } else if index < n_builtin + n_user {
-            self.user_commands
-                .get(index - n_builtin)
-                .map(|c| c.name.as_str())
-        } else {
-            self.skills
-                .get(index - n_builtin - n_user)
-                .map(|s| s.slash_name.as_str())
-        }
+        slash_name_at(index, &self.user_commands, &self.skills)
     }
 
     /// Get the description of a slash command by its combined index
@@ -3804,5 +3850,68 @@ mod tests {
             display_msg.details,
             Some("I need to analyze this carefully...".to_string())
         );
+    }
+
+    fn names(
+        query: &str,
+        user: &[UserCommand],
+        skills: &[crate::brain::skills::Skill],
+    ) -> Vec<String> {
+        filter_slash_commands(query, user, skills)
+            .into_iter()
+            .map(|idx| slash_name_at(idx, user, skills).unwrap().to_string())
+            .collect()
+    }
+
+    #[test]
+    fn word_prefix_match_respects_word_boundaries() {
+        assert!(word_prefix_match("compact condense shrink", "co"));
+        assert!(word_prefix_match("download latest release", "rel"));
+        // "co" must not match inside "record" — it isn't at a word boundary.
+        assert!(!word_prefix_match("record audio", "co"));
+        // Slash-prefixed synonyms split on '/', so the bare query still hits.
+        assert!(word_prefix_match("start over /clear /reset", "clear"));
+    }
+
+    #[test]
+    fn description_only_query_surfaces_nearest_command() {
+        // "/resume" is no built-in's name, but it lives in /sessions' synonyms.
+        let out = names("/resume", &[], &[]);
+        assert!(
+            out.contains(&"/sessions".to_string()),
+            "expected /sessions for /resume, got {out:?}"
+        );
+        // Likewise "/clear" should surface /new.
+        let out = names("/clear", &[], &[]);
+        assert!(
+            out.contains(&"/new".to_string()),
+            "expected /new for /clear, got {out:?}"
+        );
+    }
+
+    #[test]
+    fn name_prefix_matches_rank_above_description_only() {
+        // "/co" prefixes /compact by name; it also appears (word-prefix) in
+        // other descriptions like /onboard:channels ("connect") and /compact's
+        // own "condense". The name-prefix hit must come first.
+        let out = names("/co", &[], &[]);
+        assert_eq!(
+            out.first(),
+            Some(&"/compact".to_string()),
+            "name-prefix hit should rank first, got {out:?}"
+        );
+        assert!(
+            out.len() > 1,
+            "expected description-only hits too, got {out:?}"
+        );
+    }
+
+    #[test]
+    fn lone_slash_does_not_match_descriptions() {
+        // A single "/" yields only name-prefix hits (every command), never
+        // description-only noise. All built-ins start with "/", so the count
+        // equals the built-in count exactly.
+        let out = names("/", &[], &[]);
+        assert_eq!(out.len(), SLASH_COMMANDS.len());
     }
 }
