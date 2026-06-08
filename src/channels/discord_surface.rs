@@ -198,7 +198,10 @@ impl Surface for DiscordSurface {
             );
             let repo = crate::db::ChannelMessageRepository::new(self.db_pool.clone());
             if let Err(e) = repo.insert(&cm).await {
-                tracing::warn!("Discord: failed to record bot reply in channel_messages: {}", e);
+                tracing::warn!(
+                    "Discord: failed to record bot reply in channel_messages: {}",
+                    e
+                );
             }
         }
 

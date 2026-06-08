@@ -181,11 +181,12 @@ impl Surface for TelegramSurface {
 
         // Resolve the forum topic: stashed thread id wins, then explicit
         // thread_key, then the most recent topic seen for this chat (#130).
-        let thread_id = match dctx
-            .as_ref()
-            .and_then(|d| d.thread_id)
-            .or_else(|| target.thread_key.as_deref().and_then(|s| s.parse::<i32>().ok()))
-        {
+        let thread_id = match dctx.as_ref().and_then(|d| d.thread_id).or_else(|| {
+            target
+                .thread_key
+                .as_deref()
+                .and_then(|s| s.parse::<i32>().ok())
+        }) {
             Some(tid) => Some(teloxide::types::ThreadId(teloxide::types::MessageId(tid))),
             None => crate::channels::telegram::send::latest_thread_id_for_chat(chat_id).await,
         };
@@ -257,7 +258,10 @@ impl Surface for TelegramSurface {
             .with_thread(thread_str, None);
             let repo = crate::db::ChannelMessageRepository::new(self.db_pool.clone());
             if let Err(e) = repo.insert(&cm).await {
-                tracing::warn!("Telegram: failed to record bot reply in channel_messages: {}", e);
+                tracing::warn!(
+                    "Telegram: failed to record bot reply in channel_messages: {}",
+                    e
+                );
             }
         }
 
@@ -287,9 +291,13 @@ impl Surface for TelegramSurface {
             message.full.tokens_per_second,
         );
         if !footer.trim().is_empty()
-            && let Err(e) =
-                crate::channels::telegram::send::message_in_thread(&bot, ChatId(chat_id), thread_id, &footer)
-                    .await
+            && let Err(e) = crate::channels::telegram::send::message_in_thread(
+                &bot,
+                ChatId(chat_id),
+                thread_id,
+                &footer,
+            )
+            .await
         {
             tracing::warn!("Telegram: failed to send ctx footer: {}", e);
         }

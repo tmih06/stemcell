@@ -146,7 +146,10 @@ impl Surface for SlackSurface {
         let session = client.open_session(&api_token);
         let channel = SlackChannelId::new(target.conversation_key.clone());
 
-        let dctx = self.state.take_delivery_context(&target.conversation_key).await;
+        let dctx = self
+            .state
+            .take_delivery_context(&target.conversation_key)
+            .await;
         let is_voice = dctx.as_ref().map(|d| d.is_voice).unwrap_or(false);
         let thread_ts = dctx
             .as_ref()
@@ -223,7 +226,10 @@ impl Surface for SlackSurface {
             );
             let repo = crate::db::ChannelMessageRepository::new(self.db_pool.clone());
             if let Err(e) = repo.insert(&cm).await {
-                tracing::warn!("Slack: failed to record bot reply in channel_messages: {}", e);
+                tracing::warn!(
+                    "Slack: failed to record bot reply in channel_messages: {}",
+                    e
+                );
             }
         }
 

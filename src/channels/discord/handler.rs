@@ -564,8 +564,9 @@ pub(crate) async fn handle_message(
     };
 
     // Tell the LLM its text response is automatically delivered to the chat.
-    let agent_input =
-        format!("[Channel: Discord — your text response is automatically sent to this channel.]\n{agent_input}");
+    let agent_input = format!(
+        "[Channel: Discord — your text response is automatically sent to this channel.]\n{agent_input}"
+    );
 
     // ── Publish onto the gateway bus ───────────────────────────────────────────
     // The gateway runs the agent turn and routes the response back through

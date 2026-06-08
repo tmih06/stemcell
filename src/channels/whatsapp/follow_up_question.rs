@@ -17,9 +17,7 @@ use crate::brain::agent::{AgentError, FollowUpQuestionInfo, QuestionCallback};
 /// them, so this fetches both (plus the client) from the per-session delivery
 /// context the listener stashed. There is no live progress loop on the gateway
 /// path, so no intermediate flush.
-pub(crate) fn make_surface_question_callback(
-    state: Arc<super::WhatsAppState>,
-) -> QuestionCallback {
+pub(crate) fn make_surface_question_callback(state: Arc<super::WhatsAppState>) -> QuestionCallback {
     Arc::new(move |info: FollowUpQuestionInfo| {
         let state = state.clone();
         Box::pin(async move {

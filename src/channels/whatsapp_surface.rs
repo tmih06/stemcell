@@ -92,9 +92,11 @@ impl Surface for WhatsAppSurface {
         });
 
         crate::channels::gateway::surface::SurfaceCallbacks {
-            approval: Some(crate::channels::whatsapp::handler::make_surface_approval_callback(
-                self.state.clone(),
-            )),
+            approval: Some(
+                crate::channels::whatsapp::handler::make_surface_approval_callback(
+                    self.state.clone(),
+                ),
+            ),
             progress: None,
             question: Some(
                 crate::channels::whatsapp::follow_up_question::make_surface_question_callback(

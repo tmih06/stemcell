@@ -912,7 +912,10 @@ pub(crate) async fn deliver_reply(
             None,
         );
         if let Err(e) = channel_msg_repo.insert(&cm).await {
-            tracing::warn!("WhatsApp: failed to record bot reply in channel_messages: {}", e);
+            tracing::warn!(
+                "WhatsApp: failed to record bot reply in channel_messages: {}",
+                e
+            );
         }
     }
 
@@ -957,8 +960,11 @@ pub(crate) async fn deliver_reply(
     }
 
     // Context-budget footer.
-    let footer =
-        crate::utils::format_ctx_footer(response.context_tokens, ctx_max, response.tokens_per_second);
+    let footer = crate::utils::format_ctx_footer(
+        response.context_tokens,
+        ctx_max,
+        response.tokens_per_second,
+    );
     if !footer.trim().is_empty() {
         let footer_msg = waproto::whatsapp::Message {
             conversation: Some(footer),
@@ -992,7 +998,9 @@ pub(crate) fn make_surface_approval_callback(state: Arc<WhatsAppState>) -> Appro
                 // session_id. Find the one stashed context whose session is
                 // active by scanning is unnecessary: the approval fires inside a
                 // single in-flight turn, so look it up by the session's chat.
-                state.delivery_context_for_session(tool_info.session_id).await,
+                state
+                    .delivery_context_for_session(tool_info.session_id)
+                    .await,
             ) else {
                 tracing::warn!("WhatsApp approval: no client/context — denying");
                 return Ok((false, false));
