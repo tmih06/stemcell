@@ -203,7 +203,11 @@ async fn cmd_chat_inner(
             while let Some(notification) = rsi_rx.recv().await {
                 let msg = match notification {
                     crate::brain::rsi::RsiNotification::DigestWritten { total_events } => {
-                        format!("RSI: digest written ({total_events} events)")
+                        // Passive metric — surface in the input-box status line,
+                        // not as a transcript alert.
+                        let _ = rsi_event_sender
+                            .send(TuiEvent::RsiDigestWritten { total_events });
+                        continue;
                     }
                     crate::brain::rsi::RsiNotification::CycleStarted => {
                         "RSI: analyzing feedback patterns...".to_string()

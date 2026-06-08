@@ -25,6 +25,7 @@ pub fn default_jobs() -> StartupJobs {
         .register(Arc::new(jobs::CheckConfigJob))
         .register(Arc::new(jobs::CheckEnvsJob))
         .register(Arc::new(jobs::RsiStatusJob))
+        .register(Arc::new(jobs::RsiProposalsJob))
         .register(Arc::new(jobs::FetchModelsJob));
     queue
 }
