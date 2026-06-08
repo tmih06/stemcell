@@ -490,19 +490,6 @@ pub(super) fn render_input(f: &mut Frame, app: &App, area: Rect) {
         .title_bottom(context_title)
         .border_style(border_style);
 
-    // RSI digest event count — passive metric on the bottom-left, mirroring
-    // the ctx indicator on the bottom-right. Only shown once RSI has written
-    // its first digest this session.
-    if let Some(events) = app.rsi_digest_events {
-        block = block.title_bottom(
-            Line::from(Span::styled(
-                format!(" rsi: {events} events "),
-                Style::default().fg(Color::Rgb(120, 120, 120)),
-            ))
-            .alignment(Alignment::Left),
-        );
-    }
-
     if !app.attachments.is_empty() {
         block = block.title(attach_title);
     }

@@ -170,11 +170,6 @@ pub enum TuiEvent {
     /// (toggled with Ctrl+O). Emitted once, when all startup jobs complete.
     StartupInfo { summary: String, details: String },
 
-    /// RSI wrote its feedback digest (total ledger event count). Surfaced in
-    /// the input-box status line rather than the transcript — it's a passive
-    /// metric, not an actionable alert.
-    RsiDigestWritten { total_events: i64 },
-
     /// Sticky fallback just swapped the active provider/model. Carries the
     /// originating session id so a fallback in session A doesn't update
     /// the footer or current session record while the user is looking at

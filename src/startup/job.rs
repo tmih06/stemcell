@@ -16,6 +16,9 @@ use std::time::Duration;
 #[derive(Clone)]
 pub struct StartupContext {
     pub config: crate::config::Config,
+    /// Database pool, for jobs that read/write app state (e.g. the RSI
+    /// feedback digest). `None` in unit tests that don't need it.
+    pub pool: Option<crate::db::Pool>,
 }
 
 /// A unit of startup work.

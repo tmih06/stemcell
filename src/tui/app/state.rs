@@ -694,10 +694,6 @@ pub struct App {
     /// session write to the maps only; they don't touch these fields.
     pub context_max_tokens: u32,
     pub last_input_tokens: Option<u32>,
-    /// Total RSI feedback-ledger event count from the last digest write.
-    /// Shown passively in the input-box status line. `None` until the RSI
-    /// engine reports its first digest (~boot + a few seconds).
-    pub rsi_digest_events: Option<i64>,
     /// Per-session ctx indicators. Keyed by session_id so that a
     /// background turn's token updates don't leak into the other pane's
     /// ctx display. Without isolation, two panes racing to update
@@ -933,7 +929,6 @@ impl App {
             context_max_tokens: agent_service
                 .context_window_for_model(&agent_service.provider_model()),
             last_input_tokens: None,
-            rsi_digest_events: None,
             streaming_output_tokens: 0,
             tps_tracker: StreamingTpsTracker::default(),
             active_tool_group: None,
@@ -3000,11 +2995,6 @@ impl App {
                 // One collapsed line in the transcript; Ctrl+O expands the
                 // per-job details. Pushed globally (boot isn't session-scoped).
                 self.push_collapsible_system_message(summary, details);
-            }
-            TuiEvent::RsiDigestWritten { total_events } => {
-                // Passive metric — stored for the input-box status line, not
-                // pushed to the transcript.
-                self.rsi_digest_events = Some(total_events);
             }
             TuiEvent::ProviderSwitched {
                 session_id,

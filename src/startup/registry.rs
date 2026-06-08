@@ -96,6 +96,7 @@ mod tests {
     fn test_ctx() -> Arc<StartupContext> {
         Arc::new(StartupContext {
             config: crate::config::Config::default(),
+            pool: None,
         })
     }
 

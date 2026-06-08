@@ -187,8 +187,6 @@ pub async fn write_startup_digest(pool: crate::db::Pool) {
 pub enum RsiNotification {
     /// RSI cycle started
     CycleStarted,
-    /// Digest written at startup
-    DigestWritten { total_events: i64 },
     /// Template sync completed (upstream brain files updated)
     TemplateSyncComplete { summary: String },
     /// Template sync failed
@@ -501,14 +499,11 @@ pub fn spawn_rsi_engine(
             }
         }
 
-        // 2. Write startup digest
-        write_startup_digest(pool_clone.clone()).await;
+        // The boot digest write is owned by the `rsi-digest` startup job
+        // (see src/startup/jobs/rsi_digest.rs) so its event count can be
+        // reported in the startup-info line. The periodic cycle below still
+        // refreshes the digest on each analysis run.
         let repo = FeedbackLedgerRepository::new(pool_clone.clone());
-        if let Ok(total) = repo.total_count().await {
-            let _ = notification_tx.send(RsiNotification::DigestWritten {
-                total_events: total,
-            });
-        }
 
         // 2. Periodic analysis + autonomous improvement cycle
         //

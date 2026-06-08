@@ -26,6 +26,7 @@ pub fn default_jobs() -> StartupJobs {
         .register(Arc::new(jobs::CheckEnvsJob))
         .register(Arc::new(jobs::RsiStatusJob))
         .register(Arc::new(jobs::RsiProposalsJob))
+        .register(Arc::new(jobs::RsiDigestJob))
         .register(Arc::new(jobs::FetchModelsJob));
     queue
 }
@@ -36,9 +37,13 @@ pub fn default_jobs() -> StartupJobs {
 /// per-job details body (expandable with Ctrl+O).
 pub fn spawn(
     config: crate::config::Config,
+    pool: crate::db::Pool,
     event_sender: tokio::sync::mpsc::UnboundedSender<crate::tui::events::TuiEvent>,
 ) {
-    let ctx = Arc::new(StartupContext { config });
+    let ctx = Arc::new(StartupContext {
+        config,
+        pool: Some(pool),
+    });
     let queue = default_jobs();
     tokio::spawn(async move {
         let outcomes = queue.run_all(ctx).await;

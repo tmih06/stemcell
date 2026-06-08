@@ -193,7 +193,7 @@ async fn cmd_chat_inner(
     // snapshot, model-list cache warming). Non-blocking — the TUI stays
     // interactive while they run, a failing job logs but never aborts boot,
     // and the completed report arrives as a collapsible startup-info line.
-    crate::startup::spawn(config.clone(), event_sender.clone());
+    crate::startup::spawn(config.clone(), db.pool().clone(), event_sender.clone());
 
     // Forward RSI notifications to TUI as system messages
     {
@@ -202,13 +202,6 @@ async fn cmd_chat_inner(
             use crate::tui::events::TuiEvent;
             while let Some(notification) = rsi_rx.recv().await {
                 let msg = match notification {
-                    crate::brain::rsi::RsiNotification::DigestWritten { total_events } => {
-                        // Passive metric — surface in the input-box status line,
-                        // not as a transcript alert.
-                        let _ = rsi_event_sender
-                            .send(TuiEvent::RsiDigestWritten { total_events });
-                        continue;
-                    }
                     crate::brain::rsi::RsiNotification::CycleStarted => {
                         "RSI: analyzing feedback patterns...".to_string()
                     }
