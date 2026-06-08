@@ -34,10 +34,6 @@ impl StartupJobs {
     /// `Failed` outcome — one bad job never takes down the runner or its
     /// siblings. Every outcome is logged.
     pub async fn run_all(self, ctx: Arc<StartupContext>) -> Vec<JobOutcome> {
-        if self.jobs.is_empty() {
-            return Vec::new();
-        }
-
         let mut set: JoinSet<JobOutcome> = JoinSet::new();
         for job in self.jobs {
             let ctx = ctx.clone();

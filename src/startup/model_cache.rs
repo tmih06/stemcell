@@ -73,6 +73,20 @@ pub fn is_fresh(provider: &str, max_age_secs: u64) -> bool {
     })
 }
 
+/// One-load warm-start lookup: returns the provider's cached models (if present
+/// and non-empty) and whether the entry is fresh within `max_age_secs`. Folds
+/// what would otherwise be back-to-back [`models_for`] + [`is_fresh`] calls into
+/// a single disk read + parse on the `/models` open path.
+pub fn warm_start(provider: &str, max_age_secs: u64) -> (Option<Vec<String>>, bool) {
+    match load().get(provider) {
+        Some(e) if !e.models.is_empty() => {
+            let fresh = now_epoch().saturating_sub(e.fetched_at) < max_age_secs;
+            (Some(e.models.clone()), fresh)
+        }
+        _ => (None, false),
+    }
+}
+
 /// Insert/replace one provider's models and persist. Silently ignores IO
 /// errors — a failed write just means `/models` falls back to a live fetch.
 pub fn store(provider: &str, models: Vec<String>) {

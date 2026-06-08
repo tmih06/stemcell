@@ -261,24 +261,21 @@ impl App {
         let is_custom_provider = provider_idx >= CUSTOM_PROVIDER_IDX;
         let cache_id = super::onboarding::PROVIDERS.get(provider_idx).map(|p| p.id);
 
-        // Clear models until the cache pre-fill / fetch populates them.
-        self.ps.models.clear();
-
-        // Warm-start from the startup-jobs model cache so the list is populated
-        // instantly instead of waiting on a live fetch.
-        if !is_custom_provider
-            && let Some(id) = cache_id
-            && let Some(cached) = crate::startup::model_cache::models_for(id)
-        {
-            self.ps.models = cached;
-        }
+        // Warm-start from the startup-jobs model cache in a single disk read:
+        // pre-fill the list so the dialog populates instantly, and learn whether
+        // the entry is fresh enough to skip the live fetch below.
+        let (cached_models, cache_fresh) = match cache_id {
+            Some(id) if !is_custom_provider => crate::startup::model_cache::warm_start(
+                id,
+                crate::startup::model_cache::FRESH_TTL_SECS,
+            ),
+            _ => (None, false),
+        };
+        self.ps.models = cached_models.unwrap_or_default();
 
         // Only hit the network when the cache is missing or stale. A fresh cache
         // means the dialog opens instantly with zero network. Ctrl+R forces a
         // refresh regardless (see handle_model_selector_key).
-        let cache_fresh = cache_id.is_some_and(|id| {
-            crate::startup::model_cache::is_fresh(id, crate::startup::model_cache::FRESH_TTL_SECS)
-        });
         if !is_custom_provider && !cache_fresh {
             let sender = self.event_sender();
             tokio::spawn(async move {
@@ -331,18 +328,7 @@ impl App {
                 .and_then(|p| p.api_key.clone())
                 .filter(|k| !k.is_empty())
         });
-        let zhipu_et = if provider_id == "zhipu" {
-            Some(
-                if self.ps.zhipu_endpoint_type == 1 {
-                    "coding"
-                } else {
-                    "api"
-                }
-                .to_string(),
-            )
-        } else {
-            None
-        };
+        let zhipu_et = self.ps.zhipu_endpoint_str();
         let sender = self.event_sender();
         tokio::spawn(async move {
             let models = super::onboarding::fetch_provider_models(
