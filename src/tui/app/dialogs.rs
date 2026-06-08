@@ -290,7 +290,11 @@ impl App {
             });
         }
 
-        self.ps.reload_config_models();
+        // Merge config-persisted models on top of the warm-started list and
+        // rebuild the options cache. On a fresh-cache open no fetch fires, so
+        // this is the only thing that populates the dialog — and it preserves
+        // user-pasted models the provider endpoint omits.
+        self.ps.merge_config_models_into_fetched();
 
         if provider_idx != CUSTOM_PROVIDER_IDX {
             let initial_model = self
