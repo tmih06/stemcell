@@ -69,9 +69,14 @@ impl StartupJobs {
 fn log_outcome(outcome: &JobOutcome) {
     match outcome.status {
         JobStatus::Ok => tracing::info!(
-            "[startup] job '{}' ok in {:?}",
+            "[startup] job '{}' ok in {:?}{}",
             outcome.name,
-            outcome.duration
+            outcome.duration,
+            outcome
+                .message
+                .as_deref()
+                .map(|m| format!(": {m}"))
+                .unwrap_or_default()
         ),
         JobStatus::Failed => tracing::warn!(
             "[startup] job '{}' failed in {:?}: {}",
@@ -100,8 +105,8 @@ mod tests {
         fn name(&self) -> &'static str {
             "ok-job"
         }
-        async fn run(&self, _ctx: &StartupContext) -> anyhow::Result<()> {
-            Ok(())
+        async fn run(&self, _ctx: &StartupContext) -> anyhow::Result<Option<String>> {
+            Ok(Some("did the thing".to_string()))
         }
     }
 
@@ -111,7 +116,7 @@ mod tests {
         fn name(&self) -> &'static str {
             "fail-job"
         }
-        async fn run(&self, _ctx: &StartupContext) -> anyhow::Result<()> {
+        async fn run(&self, _ctx: &StartupContext) -> anyhow::Result<Option<String>> {
             anyhow::bail!("deliberate failure")
         }
     }
@@ -122,7 +127,7 @@ mod tests {
         fn name(&self) -> &'static str {
             "panic-job"
         }
-        async fn run(&self, _ctx: &StartupContext) -> anyhow::Result<()> {
+        async fn run(&self, _ctx: &StartupContext) -> anyhow::Result<Option<String>> {
             panic!("deliberate panic")
         }
     }
@@ -143,6 +148,7 @@ mod tests {
         assert_eq!(outcomes.len(), 2);
         let ok = outcomes.iter().find(|o| o.name == "ok-job").unwrap();
         assert_eq!(ok.status, JobStatus::Ok);
+        assert_eq!(ok.message.as_deref(), Some("did the thing"));
         let fail = outcomes.iter().find(|o| o.name == "fail-job").unwrap();
         assert_eq!(fail.status, JobStatus::Failed);
         assert!(

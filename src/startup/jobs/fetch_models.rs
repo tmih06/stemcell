@@ -16,7 +16,7 @@ impl StartupJob for FetchModelsJob {
         "fetch-models"
     }
 
-    async fn run(&self, ctx: &StartupContext) -> anyhow::Result<()> {
+    async fn run(&self, ctx: &StartupContext) -> anyhow::Result<Option<String>> {
         let config = &ctx.config;
 
         // Warm every provider the user has a usable credential for, so switching
@@ -25,9 +25,11 @@ impl StartupJob for FetchModelsJob {
         let providers = crate::utils::providers::configured_providers(&config.providers);
         if providers.is_empty() {
             tracing::debug!("[startup] fetch-models: no configured providers, skipping");
-            return Ok(());
+            return Ok(Some("no configured providers".to_string()));
         }
 
+        let mut warmed: Vec<String> = Vec::new();
+        let mut total_models = 0usize;
         for (provider, _display) in providers {
             // Custom providers default to paste mode and never read the cache,
             // so warming them would be write-only.
@@ -60,8 +62,17 @@ impl StartupJob for FetchModelsJob {
             let count = models.len();
             model_cache::store(&provider, models);
             tracing::info!("[startup] fetch-models: cached {count} models for '{provider}'");
+            total_models += count;
+            warmed.push(provider);
         }
 
-        Ok(())
+        if warmed.is_empty() {
+            return Ok(Some("no model lists warmed".to_string()));
+        }
+        Ok(Some(format!(
+            "cached {total_models} models for {} provider(s): {}",
+            warmed.len(),
+            warmed.join(", ")
+        )))
     }
 }

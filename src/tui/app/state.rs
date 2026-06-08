@@ -1329,14 +1329,9 @@ impl App {
             );
         }
 
-        // Notify user about unknown config keys (possible typos)
-        let typo_warnings = crate::config::Config::take_typo_warnings();
-        if !typo_warnings.is_empty() {
-            self.push_system_message(format!(
-                "⚠️ Unknown keys in config.toml (possible typos): {}",
-                typo_warnings.join(", ")
-            ));
-        }
+        // Unknown config keys (possible typos) are surfaced by the
+        // `check-config` startup job and folded into the collapsible startup
+        // info line, so they are not pushed as a separate message here.
 
         // Notify user if DB integrity check failed
         if crate::db::db_integrity_failed() {
@@ -3006,6 +3001,11 @@ impl App {
                 if session_id == Uuid::nil() || self.is_current_session(session_id) {
                     self.push_system_message(text);
                 }
+            }
+            TuiEvent::StartupInfo { summary, details } => {
+                // One collapsed line in the transcript; Ctrl+O expands the
+                // per-job details. Pushed globally (boot isn't session-scoped).
+                self.push_collapsible_system_message(summary, details);
             }
             TuiEvent::ProviderSwitched {
                 session_id,

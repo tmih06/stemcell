@@ -26,7 +26,11 @@ pub trait StartupJob: Send + Sync {
 
     /// Run the job. Returning `Err` is non-fatal — it becomes a `Failed`
     /// outcome that is logged but never propagated.
-    async fn run(&self, ctx: &StartupContext) -> anyhow::Result<()>;
+    ///
+    /// `Ok(Some(note))` carries a one-line, human-readable summary of what the
+    /// job did (e.g. `"cached 42 models"`); it is surfaced in the collapsible
+    /// startup-info line. `Ok(None)` means "nothing worth reporting".
+    async fn run(&self, ctx: &StartupContext) -> anyhow::Result<Option<String>>;
 }
 
 /// Terminal status of a job run.
@@ -42,19 +46,24 @@ pub struct JobOutcome {
     pub name: &'static str,
     pub status: JobStatus,
     pub duration: Duration,
-    /// Error text when `status == Failed`, otherwise `None`.
+    /// On `Ok`, a one-line report note (if the job produced one). On `Failed`,
+    /// the error text.
     pub message: Option<String>,
 }
 
 impl JobOutcome {
     /// Build an outcome from a job's `Result` and elapsed time.
-    pub fn from_result(name: &'static str, res: anyhow::Result<()>, duration: Duration) -> Self {
+    pub fn from_result(
+        name: &'static str,
+        res: anyhow::Result<Option<String>>,
+        duration: Duration,
+    ) -> Self {
         match res {
-            Ok(()) => Self {
+            Ok(note) => Self {
                 name,
                 status: JobStatus::Ok,
                 duration,
-                message: None,
+                message: note,
             },
             Err(e) => Self {
                 name,

@@ -110,11 +110,6 @@ async fn cmd_chat_inner(
     // Create service context
     let service_context = ServiceContext::new(db.pool().clone());
 
-    // Kick off startup jobs in the background (config/env checks, model-list
-    // cache warming). Non-blocking — the TUI stays interactive while they run,
-    // and a failing job logs but never aborts boot.
-    crate::startup::spawn(config.clone());
-
     // Spawn RSI background engine (digest + periodic analysis)
     let (rsi_tx, mut rsi_rx) = tokio::sync::mpsc::unbounded_channel();
     crate::brain::rsi::spawn_rsi_engine(db.pool().clone(), config, rsi_tx);
@@ -193,6 +188,12 @@ async fn cmd_chat_inner(
 
     // Get event sender from app
     let event_sender = app.event_sender();
+
+    // Kick off startup jobs in the background (config/env checks, RSI boot
+    // snapshot, model-list cache warming). Non-blocking — the TUI stays
+    // interactive while they run, a failing job logs but never aborts boot,
+    // and the completed report arrives as a collapsible startup-info line.
+    crate::startup::spawn(config.clone(), event_sender.clone());
 
     // Forward RSI notifications to TUI as system messages
     {
