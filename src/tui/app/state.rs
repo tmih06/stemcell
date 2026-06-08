@@ -538,9 +538,11 @@ pub struct App {
     pub error_message: Option<String>,
     /// When error_message was set — used to auto-dismiss after 2.5s
     pub error_message_shown_at: Option<std::time::Instant>,
-    /// Transient notification (non-error, e.g. "Copied to clipboard")
+    /// Transient notification (e.g. "Copied to clipboard")
     pub notification: Option<String>,
     pub notification_shown_at: Option<std::time::Instant>,
+    /// Whether the active notification is an error (styled red instead of cyan).
+    pub notification_is_error: bool,
     /// Currently selected message index (left-click to select, right-click to copy)
     pub selected_message_idx: Option<usize>,
     /// Set to true when IntermediateText arrives during the current response cycle.
@@ -741,10 +743,30 @@ pub struct App {
     /// Indexed by logical line (matches `chat_line_to_msg` / `chat_render_scroll`).
     pub chat_rendered_lines: Vec<String>,
 
-    /// Drag selection: anchor point in terminal-screen coords (col, row), set on first drag event.
-    pub drag_anchor: Option<(u16, u16)>,
-    /// Drag selection: current point in terminal-screen coords (col, row), updated during drag.
-    pub drag_current: Option<(u16, u16)>,
+    /// Mouse drag selection over the chat transcript. Unlike the input-box
+    /// drag (which works on the small fixed input area), this reuses the
+    /// LOGICAL `select_anchor`/`select_cursor` (line, col) model so the
+    /// selection survives scrolling and can extend across the whole
+    /// transcript. `mouse_selecting` is true while the button is held.
+    pub mouse_selecting: bool,
+    /// Last drag pointer position in screen coords, kept so the Tick handler
+    /// can keep auto-scrolling while the button is held stationary at an edge
+    /// (crossterm stops emitting drag events when the pointer doesn't move).
+    pub mouse_drag_col: u16,
+    pub mouse_drag_row: u16,
+
+    /// Keyboard select-to-copy mode. Entered with Ctrl+S, exited with Esc.
+    /// While active, arrow keys move a caret through the rendered transcript,
+    /// Shift+arrows (or `v`) extend a selection, and y/c/Enter copies it.
+    pub keyboard_select_active: bool,
+    /// Caret/selection position in LOGICAL coords: (line index into
+    /// `chat_rendered_lines`, char column within that line). Shared by both
+    /// the keyboard caret and the mouse drag. The viewport auto-scrolls to
+    /// keep this visible as it nears the top/bottom edge.
+    pub select_cursor: (usize, usize),
+    /// Selection anchor in the same (line, col) logical coords. `None` means no
+    /// active selection (caret only); a range is anchor..=cursor in reading order.
+    pub select_anchor: Option<(usize, usize)>,
 
     /// Input area screen coordinates (set each render frame)
     pub input_area_x: u16,
@@ -849,6 +871,7 @@ impl App {
             error_message_shown_at: None,
             notification: None,
             notification_shown_at: None,
+            notification_is_error: false,
             selected_message_idx: None,
             intermediate_text_received: false,
             build_lines: Vec::new(),
@@ -920,8 +943,12 @@ impl App {
             chat_area_width: 0,
             chat_area_height: 0,
             chat_rendered_lines: Vec::new(),
-            drag_anchor: None,
-            drag_current: None,
+            mouse_selecting: false,
+            mouse_drag_col: 0,
+            mouse_drag_row: 0,
+            keyboard_select_active: false,
+            select_cursor: (0, 0),
+            select_anchor: None,
             input_area_x: 0,
             input_area_y: 0,
             input_area_width: 0,
@@ -1655,10 +1682,7 @@ impl App {
                         || (row >= self.input_area_y
                             && row < self.input_area_y + self.input_area_height)
                     {
-                        if self.handle_input_mouse_up(col, row) {
-                            self.notification = Some("Copied to clipboard".to_string());
-                            self.notification_shown_at = Some(std::time::Instant::now());
-                        }
+                        self.handle_input_mouse_up(col, row);
                     } else {
                         self.handle_mouse_up(col, row);
                     }
@@ -2041,6 +2065,14 @@ impl App {
             TuiEvent::Tick => {
                 // Update animation frame for spinner
                 self.animation_frame = self.animation_frame.wrapping_add(1);
+
+                // While a chat mouse drag is held at the top/bottom edge,
+                // crossterm stops emitting drag events once the pointer is
+                // stationary — so keep auto-scrolling and extending the
+                // selection on each tick from the last known pointer position.
+                if self.mouse_selecting {
+                    self.update_mouse_drag_cursor();
+                }
 
                 // Resolve deferred health checks (shows Pending for one frame first)
                 if let Some(ref mut wizard) = self.onboarding
@@ -3086,12 +3118,14 @@ impl App {
         // works as an escape hatch when the TUI is hogging mouse events.
         if event.code == KeyCode::F(12) {
             self.mouse_capture_enabled = !self.mouse_capture_enabled;
-            self.notification = Some(if self.mouse_capture_enabled {
-                "Mouse capture ON (F12 to enable text selection)".to_string()
-            } else {
-                "Mouse capture OFF — drag to select, F12 to re-enable".to_string()
-            });
-            self.notification_shown_at = Some(std::time::Instant::now());
+            self.set_notification(
+                if self.mouse_capture_enabled {
+                    "Mouse capture ON (F12 to enable text selection)"
+                } else {
+                    "Mouse capture OFF — drag to select, F12 to re-enable"
+                },
+                false,
+            );
             return Ok(());
         }
 
