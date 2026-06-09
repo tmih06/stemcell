@@ -165,6 +165,11 @@ pub enum TuiEvent {
     /// aren't currently focused on.
     SystemMessage { session_id: Uuid, text: String },
 
+    /// Collapsible startup-jobs report. `summary` is the one-line content
+    /// shown in the transcript; `details` is the expandable per-job body
+    /// (toggled with Ctrl+O). Emitted once, when all startup jobs complete.
+    StartupInfo { summary: String, details: String },
+
     /// Sticky fallback just swapped the active provider/model. Carries the
     /// originating session id so a fallback in session A doesn't update
     /// the footer or current session record while the user is looking at

@@ -1329,14 +1329,9 @@ impl App {
             );
         }
 
-        // Notify user about unknown config keys (possible typos)
-        let typo_warnings = crate::config::Config::take_typo_warnings();
-        if !typo_warnings.is_empty() {
-            self.push_system_message(format!(
-                "⚠️ Unknown keys in config.toml (possible typos): {}",
-                typo_warnings.join(", ")
-            ));
-        }
+        // Unknown config keys (possible typos) are surfaced by the
+        // `check-config` startup job and folded into the collapsible startup
+        // info line, so they are not pushed as a separate message here.
 
         // Notify user if DB integrity check failed
         if crate::db::db_integrity_failed() {
@@ -1347,21 +1342,10 @@ impl App {
             );
         }
 
-        // Notify user if the autonomous RSI loop has filed proposals
-        // they haven't reviewed yet. The banner points at the
-        // direct-action path (Mission Control's Inbox panel, where
-        // `a` applies and `r` rejects) first, then mentions the
-        // agent-driven path as a fallback for users who prefer the
-        // chat surface.
-        let pending = crate::brain::rsi_proposals::ProposalsStore::new().pending_count();
-        if pending > 0 {
-            self.push_system_message(format!(
-                "🔧 RSI proposed {pending} new item(s) (tools / commands / skills). \
-                 Open Mission Control with `/mission-control` → Inbox to review \
-                 (press `a` to apply, `r` to reject), or ask me to \"show proposed\" \
-                 / \"implement proposed\" if you'd rather work from the chat."
-            ));
-        }
+        // Pending RSI proposals are reported by the `rsi-status` startup job
+        // and folded into the collapsible startup-info line (with a pointer to
+        // Mission Control's Inbox), so they are not pushed as a separate banner
+        // here.
 
         Ok(())
     }
@@ -2721,6 +2705,7 @@ impl App {
             }
             TuiEvent::ModelSelectorModelsFetched(provider_idx, models) => {
                 // Discard stale fetches from a previously-selected provider
+                let from_live_fetch = !models.is_empty();
                 let models = if models.is_empty() {
                     // Fetch returned empty — fall back to static PROVIDERS models
                     let provider = self.ps.current_provider();
@@ -2758,6 +2743,14 @@ impl App {
                         }
                     });
                     let target = saved_model.as_deref().unwrap_or(&self.default_model_name);
+                    // Persist genuinely-fetched lists (not the static fallback)
+                    // for built-in providers, so the next /models open is instant.
+                    if from_live_fetch
+                        && !provider_id.is_empty()
+                        && provider_idx < crate::tui::provider_selector::CUSTOM_PROVIDER_IDX
+                    {
+                        crate::startup::model_cache::store(provider_id, models.clone());
+                    }
                     self.ps.models = models;
                     // Merge config-persisted models (user-pasted ones
                     // that the endpoint doesn't list) on top of the
@@ -2997,6 +2990,11 @@ impl App {
                 if session_id == Uuid::nil() || self.is_current_session(session_id) {
                     self.push_system_message(text);
                 }
+            }
+            TuiEvent::StartupInfo { summary, details } => {
+                // One collapsed line in the transcript; Ctrl+O expands the
+                // per-job details. Pushed globally (boot isn't session-scoped).
+                self.push_collapsible_system_message(summary, details);
             }
             TuiEvent::ProviderSwitched {
                 session_id,

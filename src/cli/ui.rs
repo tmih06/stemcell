@@ -189,6 +189,12 @@ async fn cmd_chat_inner(
     // Get event sender from app
     let event_sender = app.event_sender();
 
+    // Kick off startup jobs in the background (config/env checks, RSI boot
+    // snapshot, model-list cache warming). Non-blocking — the TUI stays
+    // interactive while they run, a failing job logs but never aborts boot,
+    // and the completed report arrives as a collapsible startup-info line.
+    crate::startup::spawn(config.clone(), db.pool().clone(), event_sender.clone());
+
     // Forward RSI notifications to TUI as system messages
     {
         let rsi_event_sender = event_sender.clone();
@@ -196,9 +202,6 @@ async fn cmd_chat_inner(
             use crate::tui::events::TuiEvent;
             while let Some(notification) = rsi_rx.recv().await {
                 let msg = match notification {
-                    crate::brain::rsi::RsiNotification::DigestWritten { total_events } => {
-                        format!("RSI: digest written ({total_events} events)")
-                    }
                     crate::brain::rsi::RsiNotification::CycleStarted => {
                         "RSI: analyzing feedback patterns...".to_string()
                     }
