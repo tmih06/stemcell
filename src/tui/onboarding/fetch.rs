@@ -527,7 +527,16 @@ pub async fn fetch_provider_models(
                 let mut entries = body.data;
                 // Sort newest first (by created timestamp descending)
                 entries.sort_by_key(|e| std::cmp::Reverse(e.created));
-                entries.into_iter().map(|m| m.id).collect()
+                // The chat TUI is the main interface, so drop non-chat models
+                // (image / audio / embedding / moderation / …) that providers'
+                // /v1/models endpoints mix in.  OpenAI's endpoint is untyped
+                // and the worst offender (dall-e, whisper, tts, embeddings),
+                // but the id-based filter is safe for every provider here.
+                entries
+                    .into_iter()
+                    .map(|m| m.id)
+                    .filter(|id| crate::startup::model_cache::is_chat_capable_model_id(id))
+                    .collect()
             }
             Err(_) => Vec::new(),
         },

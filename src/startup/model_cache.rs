@@ -15,6 +15,75 @@ use std::path::PathBuf;
 /// How long a cached entry is considered fresh enough to skip a live fetch.
 pub const FRESH_TTL_SECS: u64 = 24 * 60 * 60;
 
+/// The chat TUI is the main interface, so the model picker should only list
+/// models capable of conversation + tool use.  Provider APIs and catalogs mix
+/// in embedding, image, audio, rerank, moderation, and video models that are
+/// useless in a chat picker.  Most of those carry a recognizable token in
+/// their id, so we drop them by id pattern — provider-agnostic, applied to
+/// every auto-discovered list (cache + live fetch).
+///
+/// This only filters auto-discovered lists; models a user explicitly puts in
+/// `config.toml` are never run through it.
+pub fn is_chat_capable_model_id(id: &str) -> bool {
+    let id = id.to_ascii_lowercase();
+
+    // Exact non-chat families (prefix match).
+    const NON_CHAT_PREFIXES: &[&str] = &[
+        "dall-e",
+        "whisper",
+        "tts",
+        "text-embedding",
+        "text-moderation",
+        "omni-moderation",
+        "sora",
+        "gpt-image",
+        "babbage",
+        "davinci",
+        "computer-use",
+        "imagen",
+        "veo-",
+        "stable-diffusion",
+        "stable-image",
+        "textembedding",
+        "multimodalembedding",
+    ];
+    if NON_CHAT_PREFIXES.iter().any(|p| id.starts_with(p)) {
+        return false;
+    }
+
+    // Non-chat capability tokens that appear anywhere in the id.  These cover
+    // cross-provider naming (bedrock `cohere.embed-*`, `amazon.titan-embed-*`,
+    // `*.rerank-*`, `stability.*` / `nova-canvas` image models, vertex/gemini
+    // embedding + image ids, openai size-prefixed `…/gpt-image-*` variants,
+    // `-audio` / `-realtime` / `-transcribe` / `-search`, etc.).  Note `image`
+    // catches image-generation models — chat vision models use `vision`, not
+    // `image`, in their ids, so multimodal chat models are not affected.
+    const NON_CHAT_SUBSTRINGS: &[&str] = &[
+        "embed",
+        "embedding",
+        "-tts",
+        "-audio",
+        "-transcribe",
+        "-realtime",
+        "-search",
+        "rerank",
+        "moderation",
+        "image",
+        "diffusion",
+        "upscale",
+        "canvas",
+        "outpaint",
+        "inpaint",
+        "stability.",
+        "imagegeneration",
+    ];
+    if NON_CHAT_SUBSTRINGS.iter().any(|s| id.contains(s)) {
+        return false;
+    }
+
+    true
+}
+
 /// One provider's cached model list plus when it was fetched (epoch secs).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CachedEntry {
@@ -51,11 +120,22 @@ pub(crate) fn set_test_cache_path(path: PathBuf) {
 }
 
 /// Load the cache from disk, or an empty cache if missing/corrupt.
+///
+/// Non-chat models (embedding / image / audio / rerank / …) are filtered out
+/// on read so that a cache written by an older build — or any entry that
+/// slipped through — never surfaces bloat in the picker.  See
+/// [`is_chat_capable_model_id`].
 pub fn load() -> ModelCache {
-    std::fs::read_to_string(cache_path())
+    let mut cache: ModelCache = std::fs::read_to_string(cache_path())
         .ok()
         .and_then(|s| serde_json::from_str(&s).ok())
-        .unwrap_or_default()
+        .unwrap_or_default();
+    for entry in cache.values_mut() {
+        entry
+            .models
+            .retain(|m| is_chat_capable_model_id(m));
+    }
+    cache
 }
 
 /// Read the cached models for one provider, if present and non-empty.
@@ -89,8 +169,16 @@ pub fn warm_start(provider: &str, max_age_secs: u64) -> (Option<Vec<String>>, bo
 
 /// Insert/replace one provider's models and persist. Silently ignores IO
 /// errors — a failed write just means `/models` falls back to a live fetch.
+///
+/// Non-chat models are filtered out before persisting (see
+/// [`is_chat_capable_model_id`]) so a manual Ctrl+R refresh writes a clean,
+/// chat-only list back to the cache.
 pub fn store(provider: &str, models: Vec<String>) {
     let mut cache = load();
+    let models: Vec<String> = models
+        .into_iter()
+        .filter(|m| is_chat_capable_model_id(m))
+        .collect();
     cache.insert(
         provider.to_string(),
         CachedEntry {

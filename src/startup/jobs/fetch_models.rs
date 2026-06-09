@@ -127,6 +127,23 @@ impl StartupJob for FetchModelsJob {
 
 // ── ModelDB catalog ─────────────────────────────────────────────────────────
 
+/// The chat TUI is the main interface, so the model picker should only list
+/// models capable of conversation + tool use.  ModelDB tags each model with a
+/// `model_type`; we keep the conversational ones and drop everything else
+/// (image, embedding, audio, rerank, video_generation, ocr, moderation, …).
+///
+/// `chat` is the standard conversational type.  `responses` is OpenAI's
+/// Responses-API surface for the GPT-5 / o-series models (the `chatgpt`
+/// provider exposes *only* this type), which are fully chat + tool-use
+/// capable.  Legacy text `completion` models are excluded — they predate the
+/// chat/tool-use contract the TUI depends on.
+///
+/// A missing `model_type` is treated as conversational so that providers/feeds
+/// that omit the field are not silently emptied.
+pub(crate) fn is_conversational_model_type(model_type: Option<&str>) -> bool {
+    matches!(model_type, None | Some("chat") | Some("responses"))
+}
+
 /// ModelDB provider_id → our internal provider ID.
 const MDB_PROVIDER_MAP: &[(&str, &str)] = &[
     ("anthropic", "anthropic"),
@@ -175,7 +192,8 @@ fn needs_modeldb_refresh() -> bool {
 /// Only returns entries for providers in [`modeldb_known_ids`].  Unknown
 /// providers are silently dropped so the on-disk cache stays lean.
 async fn fetch_modeldb_catalog() -> HashMap<String, Vec<String>> {
-    let url = "https://modeldb.axiom.co/api/v1/models?project=model_id,provider_id";
+    let url =
+        "https://modeldb.axiom.co/api/v1/models?project=model_id,provider_id,model_type";
     let client = match reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(30))
         .build()
@@ -206,6 +224,15 @@ async fn fetch_modeldb_catalog() -> HashMap<String, Vec<String>> {
             Some(p) if !p.is_empty() => p,
             _ => continue,
         };
+
+        // The chat TUI is the main interface, so only keep models capable of
+        // conversation + tool use.  ModelDB tags each model with a `model_type`
+        // (chat / image / embedding / audio / rerank / video_generation / …);
+        // everything that isn't a conversational type is bloat in the picker.
+        let model_type = entry.get("model_type").and_then(|v| v.as_str());
+        if !is_conversational_model_type(model_type) {
+            continue;
+        }
 
         let our_id = match overrides.get(raw_provider).copied() {
             Some(id) => id,
