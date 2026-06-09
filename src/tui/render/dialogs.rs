@@ -571,24 +571,8 @@ pub(super) fn render_model_selector(f: &mut Frame, app: &mut App, area: Rect) {
         // Show refresh spinner or success message
         if app.ps.is_refreshing {
             // Braille spinner animation
-            const SPINNER_FRAMES: &[char] = &['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
-            let frame_idx = app
-                .ps
-                .refresh_start
-                .map(|start| (start.elapsed().as_millis() / 100) as usize % SPINNER_FRAMES.len())
-                .unwrap_or(0);
-            let spinner = SPINNER_FRAMES[frame_idx];
-
-            let elapsed_str = if let Some(start) = app.ps.refresh_start {
-                let elapsed = start.elapsed();
-                if elapsed.as_secs() >= 1 {
-                    format!("{:.1}s", elapsed.as_secs_f64())
-                } else {
-                    format!("{}ms", elapsed.as_millis())
-                }
-            } else {
-                String::new()
-            };
+            let spinner = crate::tui::onboarding_render::refresh_spinner_frame(app.ps.refresh_start);
+            let elapsed = crate::tui::onboarding_render::refresh_elapsed_label(app.ps.refresh_start);
 
             lines.push(Line::from(""));
             lines.push(Line::from(vec![
@@ -596,14 +580,15 @@ pub(super) fn render_model_selector(f: &mut Frame, app: &mut App, area: Rect) {
                     format!("  {} Fetching models", spinner),
                     Style::default().fg(BRAND_GOLD).add_modifier(Modifier::BOLD),
                 ),
-                if !elapsed_str.is_empty() {
-                    Span::styled(
-                        format!(" ({})", elapsed_str),
-                        Style::default().fg(Color::DarkGray),
-                    )
-                } else {
-                    Span::raw("")
-                },
+                elapsed.map_or_else(
+                    || Span::raw(""),
+                    |label| {
+                        Span::styled(
+                            format!(" ({})", label),
+                            Style::default().fg(Color::DarkGray),
+                        )
+                    },
+                ),
             ]));
         } else if let Some((ref msg, shown_at)) = app.ps.refresh_message {
             // Auto-dismiss after 3 seconds
@@ -1432,24 +1417,8 @@ pub(super) fn render_model_selector(f: &mut Frame, app: &mut App, area: Rect) {
 
     // Show refresh spinner or success message for per-provider view
     if app.ps.is_refreshing {
-        const SPINNER_FRAMES: &[char] = &['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
-        let frame_idx = app
-            .ps
-            .refresh_start
-            .map(|start| (start.elapsed().as_millis() / 100) as usize % SPINNER_FRAMES.len())
-            .unwrap_or(0);
-        let spinner = SPINNER_FRAMES[frame_idx];
-
-        let elapsed_str = if let Some(start) = app.ps.refresh_start {
-            let elapsed = start.elapsed();
-            if elapsed.as_secs() >= 1 {
-                format!("{:.1}s", elapsed.as_secs_f64())
-            } else {
-                format!("{}ms", elapsed.as_millis())
-            }
-        } else {
-            String::new()
-        };
+        let spinner = crate::tui::onboarding_render::refresh_spinner_frame(app.ps.refresh_start);
+        let elapsed = crate::tui::onboarding_render::refresh_elapsed_label(app.ps.refresh_start);
 
         lines.push(Line::from(vec![
             Span::styled(
@@ -1458,14 +1427,15 @@ pub(super) fn render_model_selector(f: &mut Frame, app: &mut App, area: Rect) {
                     .fg(Color::Rgb(215, 100, 20))
                     .add_modifier(Modifier::BOLD),
             ),
-            if !elapsed_str.is_empty() {
-                Span::styled(
-                    format!(" ({})", elapsed_str),
-                    Style::default().fg(Color::DarkGray),
-                )
-            } else {
-                Span::raw("")
-            },
+            elapsed.map_or_else(
+                || Span::raw(""),
+                |label| {
+                    Span::styled(
+                        format!(" ({})", label),
+                        Style::default().fg(Color::DarkGray),
+                    )
+                },
+            ),
         ]));
     } else if let Some((ref msg, shown_at)) = app.ps.refresh_message {
         if shown_at.elapsed().as_secs() < 3 {

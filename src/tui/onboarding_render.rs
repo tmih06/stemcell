@@ -21,7 +21,7 @@ const BRAND_BLUE: Color = Color::Rgb(120, 120, 120);
 const BRAND_GOLD: Color = Color::Rgb(215, 100, 20);
 const ACCENT_GOLD: Color = Color::Rgb(215, 100, 20);
 
-fn refresh_spinner_frame(start: Option<std::time::Instant>) -> char {
+pub(crate) fn refresh_spinner_frame(start: Option<std::time::Instant>) -> char {
     const SPINNER_FRAMES: &[char] = &['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
     let frame_idx = start
         .map(|started_at| (started_at.elapsed().as_millis() / 100) as usize % SPINNER_FRAMES.len())
@@ -29,7 +29,7 @@ fn refresh_spinner_frame(start: Option<std::time::Instant>) -> char {
     SPINNER_FRAMES[frame_idx]
 }
 
-fn refresh_elapsed_label(start: Option<std::time::Instant>) -> Option<String> {
+pub(crate) fn refresh_elapsed_label(start: Option<std::time::Instant>) -> Option<String> {
     start.map(|started_at| {
         let elapsed = started_at.elapsed();
         if elapsed.as_secs() >= 1 {

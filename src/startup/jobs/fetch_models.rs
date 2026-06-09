@@ -160,21 +160,17 @@ const MDB_PROVIDER_MAP: &[(&str, &str)] = &[
     ("vertex", "vertex"),
 ];
 
-/// The internal provider IDs we expect ModelDB to cover.
+/// The internal provider IDs we expect ModelDB to cover, derived from the
+/// distinct values of [`MDB_PROVIDER_MAP`] so the two never drift (e.g.
+/// `openai` is reached via both `openai` and `chatgpt`).
 fn modeldb_known_ids() -> Vec<&'static str> {
-    vec![
-        "anthropic",
-        "openai",
-        "gemini",
-        "minimax",
-        "qwen",
-        "zhipu",
-        "openrouter",
-        "github",
-        "ollama",
-        "bedrock",
-        "vertex",
-    ]
+    let mut ids: Vec<&'static str> = Vec::new();
+    for (_, our_id) in MDB_PROVIDER_MAP {
+        if !ids.contains(our_id) {
+            ids.push(our_id);
+        }
+    }
+    ids
 }
 
 /// True when at least one known provider has a stale or missing cache entry,
