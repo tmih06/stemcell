@@ -460,9 +460,7 @@ pub fn spawn_rsi_engine(
     #[cfg(feature = "tools-rsi")]
     let config_clone = config.clone();
     tokio::spawn(async move {
-        let _ = ready_rx
-            .wait_for(|ready| *ready)
-            .await;
+        let _ = ready_rx.wait_for(|ready| *ready).await;
 
         // 1. Check for upstream template sync (version gate)
         let sync_state = crate::brain::rsi_sync::SyncState::load();

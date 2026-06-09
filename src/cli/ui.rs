@@ -197,7 +197,12 @@ async fn cmd_chat_inner(
     // snapshot, model-list cache warming). Non-blocking — the TUI stays
     // interactive while they run, a failing job logs but never aborts boot,
     // and the completed report arrives as a collapsible startup-info line.
-    crate::startup::spawn(config.clone(), db.pool().clone(), event_sender.clone(), startup_ready_tx);
+    crate::startup::spawn(
+        config.clone(),
+        db.pool().clone(),
+        event_sender.clone(),
+        startup_ready_tx,
+    );
 
     // Forward RSI notifications to TUI as system messages
     {
