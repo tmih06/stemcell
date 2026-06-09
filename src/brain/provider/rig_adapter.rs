@@ -564,16 +564,14 @@ where
     }
 
     async fn fetch_models(&self) -> Vec<String> {
-        match &self.fetch_models_fn {
-            Some(f) => {
-                let fetched = f().await;
-                if fetched.is_empty() {
-                    self.supported_models.clone()
-                } else {
-                    fetched
-                }
-            }
-            None => self.supported_models.clone(),
+        let fetched = match &self.fetch_models_fn {
+            Some(f) => f().await,
+            None => Vec::new(),
+        };
+        if fetched.is_empty() {
+            self.supported_models.clone()
+        } else {
+            fetched
         }
     }
 

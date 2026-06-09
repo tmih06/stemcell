@@ -214,13 +214,15 @@ impl OpenAIProvider {
             Some(Arc::new(pricing_cost));
 
         // Live model fetcher: query the provider's own `/v1/models` (or
-        // Ollama `/api/tags`) endpoint, cached on disk with a TTL keyed by
-        // base URL. Keeps custom/OpenAI-compatible providers' model lists
-        // current without the user hand-editing config.
+        // Ollama `/api/tags`) endpoint, cached on disk keyed by the provider
+        // id (`self.name`) so the runtime path shares the same cache slot the
+        // startup `fetch-models` job warms — both key by provider id, not URL.
+        let fetch_cache_key = self.name.clone();
         let fetch_base_url = self.base_url.clone();
         let fetch_api_key = self.api_key.clone();
         let fetch_models_fn: crate::brain::provider::rig_adapter::FetchModelsFn =
             Arc::new(move || {
+                let cache_key = fetch_cache_key.clone();
                 let base_url = fetch_base_url.clone();
                 let api_key = fetch_api_key.clone();
                 Box::pin(async move {
@@ -228,7 +230,7 @@ impl OpenAIProvider {
                         DEFAULT_MODEL_CACHE_TTL, cached_or_fetch, fetch_models_from_endpoint,
                     };
                     let key = (!api_key.is_empty()).then_some(api_key.clone());
-                    cached_or_fetch(&base_url, DEFAULT_MODEL_CACHE_TTL, || {
+                    cached_or_fetch(&cache_key, DEFAULT_MODEL_CACHE_TTL, || {
                         fetch_models_from_endpoint(&base_url, key.as_deref())
                     })
                     .await
