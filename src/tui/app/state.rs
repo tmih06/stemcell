@@ -1748,13 +1748,16 @@ impl App {
                                     None
                                 };
                             wizard.ps.models_fetching = true;
+                            wizard.ps.is_refreshing = true;
+                            wizard.ps.refresh_start = Some(std::time::Instant::now());
+                            wizard.ps.refresh_message = None;
                             let sender = self.event_sender();
                             tokio::spawn(async move {
                                 let models = super::onboarding::fetch_provider_models(
                                     provider_idx,
                                     api_key.as_deref(),
-                                    base_url.as_deref(),
                                     None,
+                                    base_url.as_deref(),
                                 )
                                 .await;
                                 let _ = sender.send(TuiEvent::OnboardingModelsFetched(models));
@@ -1856,8 +1859,8 @@ impl App {
                                     let models = super::onboarding::fetch_provider_models(
                                         provider_idx,
                                         api_key.as_deref(),
-                                        Some(&base_url),
                                         None,
+                                        Some(&base_url),
                                     )
                                     .await;
                                     let _ = sender.send(TuiEvent::ModelSelectorModelsFetched(
@@ -1883,12 +1886,12 @@ impl App {
                                     let models = super::onboarding::fetch_provider_models(
                                         provider_idx,
                                         Some(&api_key),
+                                        None,
                                         if base_url.is_empty() {
                                             None
                                         } else {
                                             Some(&base_url)
                                         },
-                                        None,
                                     )
                                     .await;
                                     let _ = sender.send(TuiEvent::ModelSelectorModelsFetched(
@@ -2694,9 +2697,16 @@ impl App {
             TuiEvent::OnboardingModelsFetched(models) => {
                 if let Some(ref mut wizard) = self.onboarding {
                     wizard.ps.models_fetching = false;
-                    if !models.is_empty() {
+                    wizard.ps.is_refreshing = false;
+                    wizard.ps.refresh_start = None;
+                    let fetched_count = models.len();
+                    if fetched_count > 0 {
                         wizard.ps.models = models;
                         wizard.ps.resolve_selected_model_index();
+                        wizard.ps.refresh_message = Some((
+                            format!("✓ Refreshed {} models", fetched_count),
+                            std::time::Instant::now(),
+                        ));
                     } else {
                         // Fetch returned empty — fall back to static PROVIDERS models
                         let provider = wizard.ps.current_provider();
@@ -2704,6 +2714,13 @@ impl App {
                             wizard.ps.models =
                                 provider.models.iter().map(|s| s.to_string()).collect();
                             wizard.ps.resolve_selected_model_index();
+                            wizard.ps.refresh_message = Some((
+                                format!("✓ Loaded {} built-in models", wizard.ps.models.len()),
+                                std::time::Instant::now(),
+                            ));
+                        } else {
+                            wizard.ps.refresh_message =
+                                Some(("No models returned".to_string(), std::time::Instant::now()));
                         }
                     }
                 }
@@ -2713,8 +2730,9 @@ impl App {
                 self.ps.is_refreshing = false;
                 self.ps.refresh_start = None;
 
-                // Discard stale fetches from a previously-selected provider
-                let from_live_fetch = !models.is_empty();
+                // Distinguish raw endpoint results from fallback/merged list sizes.
+                let fetched_count = models.len();
+                let from_live_fetch = fetched_count > 0;
                 let models = if models.is_empty() {
                     // Fetch returned empty — fall back to static PROVIDERS models
                     let provider = self.ps.current_provider();
@@ -2726,63 +2744,90 @@ impl App {
                 } else {
                     models
                 };
-                if self.mode == AppMode::ModelSelector
-                    && !models.is_empty()
-                    && provider_idx == self.ps.selected_provider
+                if self.mode == AppMode::ModelSelector && provider_idx == self.ps.selected_provider
                 {
-                    // Read the provider's saved default_model from config
-                    let provider_id = crate::tui::onboarding::PROVIDERS
-                        .get(provider_idx)
-                        .map(|p| p.id)
-                        .unwrap_or("");
-                    let saved_model = crate::config::Config::load().ok().and_then(|c| {
-                        if provider_idx >= crate::tui::provider_selector::CUSTOM_INSTANCES_START {
-                            let ci = provider_idx
-                                - crate::tui::provider_selector::CUSTOM_INSTANCES_START;
-                            self.ps.custom_names.get(ci).and_then(|name| {
-                                c.providers
-                                    .custom_by_name(name)
-                                    .and_then(|p| p.default_model.clone())
-                            })
-                        } else if !provider_id.is_empty() {
-                            crate::utils::providers::config_for(&c.providers, provider_id)
-                                .and_then(|p| p.default_model.clone())
-                        } else {
-                            None
+                    if models.is_empty() {
+                        if elapsed.is_some() {
+                            self.ps.refresh_message =
+                                Some(("No models returned".to_string(), std::time::Instant::now()));
                         }
-                    });
-                    let target = saved_model.as_deref().unwrap_or(&self.default_model_name);
-                    // Persist genuinely-fetched lists (not the static fallback)
-                    // for built-in providers, so the next /models open is instant.
-                    if from_live_fetch
-                        && !provider_id.is_empty()
-                        && provider_idx < crate::tui::provider_selector::CUSTOM_PROVIDER_IDX
-                    {
-                        crate::startup::model_cache::store(provider_id, models.clone());
-                    }
-                    self.ps.models = models;
-                    // Merge config-persisted models (user-pasted ones
-                    // that the endpoint doesn't list) on top of the
-                    // fetched results so they survive the next fetch.
-                    self.ps.merge_config_models_into_fetched();
-                    self.ps.selected_model = self
-                        .ps
-                        .dialog_model_index_for(provider_idx, target)
-                        .unwrap_or(0);
-                    self.ps.model_filter.clear();
-
-                    // Show success message with model count and elapsed time
-                    if let Some(duration) = elapsed {
-                        let model_count = self.ps.models.len();
-                        let time_str = if duration.as_secs() >= 1 {
-                            format!("{:.1}s", duration.as_secs_f64())
+                    } else {
+                        // Read the provider's saved default_model from config
+                        let provider_id = crate::tui::onboarding::PROVIDERS
+                            .get(provider_idx)
+                            .map(|p| p.id)
+                            .unwrap_or("");
+                        let saved_model = crate::config::Config::load().ok().and_then(|c| {
+                            if provider_idx >= crate::tui::provider_selector::CUSTOM_INSTANCES_START
+                            {
+                                let ci = provider_idx
+                                    - crate::tui::provider_selector::CUSTOM_INSTANCES_START;
+                                self.ps.custom_names.get(ci).and_then(|name| {
+                                    c.providers
+                                        .custom_by_name(name)
+                                        .and_then(|p| p.default_model.clone())
+                                })
+                            } else if !provider_id.is_empty() {
+                                crate::utils::providers::config_for(&c.providers, provider_id)
+                                    .and_then(|p| p.default_model.clone())
+                            } else {
+                                None
+                            }
+                        });
+                        let target = saved_model.as_deref().unwrap_or(&self.default_model_name);
+                        // Persist genuinely-fetched lists (not the static fallback)
+                        // for built-in providers, so the next /models open is instant.
+                        if from_live_fetch
+                            && !provider_id.is_empty()
+                            && provider_idx < crate::tui::provider_selector::CUSTOM_PROVIDER_IDX
+                        {
+                            crate::startup::model_cache::store(provider_id, models.clone());
+                        }
+                        self.ps.models = models;
+                        // Merge config-persisted models (user-pasted ones
+                        // that the endpoint doesn't list) on top of the
+                        // fetched results so they survive the next fetch.
+                        self.ps.merge_config_models_into_fetched();
+                        if elapsed.is_some() {
+                            // Manual Ctrl+R refresh: keep the current search term so
+                            // the user stays in the same filtered list view.
+                            self.ps.selected_model = 0;
                         } else {
-                            format!("{}ms", duration.as_millis())
+                            self.ps.selected_model = self
+                                .ps
+                                .dialog_model_index_for(provider_idx, target)
+                                .unwrap_or(0);
+                            self.ps.model_filter.clear();
+                        }
+
+                        let picker_total = self.ps.dialog_model_options().len();
+                        let picker_matches = self.ps.dialog_model_count();
+                        let picker_summary = if self.ps.model_filter.trim().is_empty() {
+                            format!("{} models available", picker_total)
+                        } else {
+                            format!("{} matches / {} total", picker_matches, picker_total)
                         };
-                        self.ps.refresh_message = Some((
-                            format!("✓ Fetched {} models in {}", model_count, time_str),
-                            std::time::Instant::now(),
-                        ));
+
+                        // Show success message with model count and elapsed time
+                        if let Some(duration) = elapsed {
+                            let time_str = if duration.as_secs() >= 1 {
+                                format!("{:.1}s", duration.as_secs_f64())
+                            } else {
+                                format!("{}ms", duration.as_millis())
+                            };
+                            let msg = if from_live_fetch {
+                                format!(
+                                    "✓ Picker updated: {} ({} fetched in {})",
+                                    picker_summary, fetched_count, time_str
+                                )
+                            } else {
+                                format!(
+                                    "✓ Picker updated: {} (using built-in provider list)",
+                                    picker_summary
+                                )
+                            };
+                            self.ps.refresh_message = Some((msg, std::time::Instant::now()));
+                        }
                     }
                 }
             }
@@ -2808,6 +2853,10 @@ impl App {
                     wizard.auth_field = super::onboarding::AuthField::Model;
                     wizard.ps.models.clear();
                     wizard.ps.selected_model = 0;
+                    wizard.ps.models_fetching = true;
+                    wizard.ps.is_refreshing = true;
+                    wizard.ps.refresh_start = Some(std::time::Instant::now());
+                    wizard.ps.refresh_message = None;
                     // Trigger model fetch using the OAuth token
                     let token = oauth_token.clone();
                     let sender = self.event_sender();
@@ -2846,6 +2895,10 @@ impl App {
                     wizard.auth_field = super::onboarding::AuthField::Model;
                     wizard.ps.models.clear();
                     wizard.ps.selected_model = 0;
+                    wizard.ps.models_fetching = true;
+                    wizard.ps.is_refreshing = true;
+                    wizard.ps.refresh_start = Some(std::time::Instant::now());
+                    wizard.ps.refresh_message = None;
                     // Enable the provider in config
                     let _ = crate::config::Config::write_key("providers.codex", "enabled", "true");
                     // Trigger model fetch
@@ -2877,8 +2930,11 @@ impl App {
                             None,
                         )
                         .await;
-                        let _ =
-                            sender.send(TuiEvent::ModelSelectorModelsFetched(provider_idx, models, None));
+                        let _ = sender.send(TuiEvent::ModelSelectorModelsFetched(
+                            provider_idx,
+                            models,
+                            None,
+                        ));
                     });
                 }
             }

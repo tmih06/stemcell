@@ -146,8 +146,17 @@ const MDB_PROVIDER_MAP: &[(&str, &str)] = &[
 /// The internal provider IDs we expect ModelDB to cover.
 fn modeldb_known_ids() -> Vec<&'static str> {
     vec![
-        "anthropic", "openai", "gemini", "minimax", "qwen", "zhipu",
-        "openrouter", "github", "ollama", "bedrock", "vertex",
+        "anthropic",
+        "openai",
+        "gemini",
+        "minimax",
+        "qwen",
+        "zhipu",
+        "openrouter",
+        "github",
+        "ollama",
+        "bedrock",
+        "vertex",
     ]
 }
 

@@ -286,7 +286,11 @@ impl App {
                     None,
                 )
                 .await;
-                let _ = sender.send(TuiEvent::ModelSelectorModelsFetched(provider_idx, models, None));
+                let _ = sender.send(TuiEvent::ModelSelectorModelsFetched(
+                    provider_idx,
+                    models,
+                    None,
+                ));
             });
         }
 
@@ -321,28 +325,40 @@ impl App {
     /// changes; results arrive via `ModelSelectorModelsFetched` and are persisted
     /// to the on-disk cache in that handler.
     fn refresh_selected_provider_models(&mut self) {
-        // Re-read the on-disk model cache so ALL providers' cached models
-        // (from ModelDB / credentialed API fetches) appear immediately.
-        self.ps.models = crate::startup::model_cache::models_for(self.ps.provider_id())
-            .unwrap_or_default();
-        self.ps.rebuild_dialog_model_options_cache();
-
         let provider_idx = self.ps.selected_provider;
-        if provider_idx >= CUSTOM_PROVIDER_IDX {
-            return;
-        }
 
         // Set refreshing state to show spinner and block input
         self.ps.is_refreshing = true;
         self.ps.refresh_start = Some(std::time::Instant::now());
         self.ps.refresh_message = None;
 
-        let provider_id = self.ps.provider_id();
-        let api_key = crate::config::Config::load().ok().and_then(|c| {
-            crate::utils::providers::config_for(&c.providers, provider_id)
-                .and_then(|p| p.api_key.clone())
-                .filter(|k| !k.is_empty())
-        });
+        // Built-ins can warm from the shared cache while the live refresh is
+        // in flight. Custom providers keep the current list on screen.
+        if provider_idx < CUSTOM_PROVIDER_IDX {
+            self.ps.models =
+                crate::startup::model_cache::models_for(self.ps.provider_id()).unwrap_or_default();
+            self.ps.rebuild_dialog_model_options_cache();
+        }
+
+        let (api_key, base_url) = if provider_idx >= CUSTOM_PROVIDER_IDX {
+            (
+                self.ps.resolve_api_key(),
+                Some(self.ps.base_url.clone()).filter(|url| !url.trim().is_empty()),
+            )
+        } else {
+            let provider_id = self.ps.provider_id();
+            let cfg = crate::config::Config::load().ok().and_then(|c| {
+                crate::utils::providers::config_for(&c.providers, provider_id).cloned()
+            });
+            (
+                cfg.as_ref()
+                    .and_then(|p| p.api_key.clone())
+                    .filter(|k| !k.is_empty()),
+                cfg.as_ref()
+                    .and_then(|p| p.base_url.clone())
+                    .filter(|url| !url.trim().is_empty()),
+            )
+        };
         let zhipu_et = self.ps.zhipu_endpoint_str();
         let sender = self.event_sender();
         tokio::spawn(async move {
@@ -351,10 +367,13 @@ impl App {
                 provider_idx,
                 api_key.as_deref(),
                 zhipu_et.as_deref(),
-                None,
+                base_url.as_deref(),
             )
             .await;
             let elapsed = start.elapsed();
+            if elapsed < std::time::Duration::from_millis(250) {
+                tokio::time::sleep(std::time::Duration::from_millis(250) - elapsed).await;
+            }
             let _ = sender.send(TuiEvent::ModelSelectorModelsFetched(
                 provider_idx,
                 models,
@@ -393,9 +412,7 @@ impl App {
 
             // Ctrl+R: force a live refresh of the selected provider's model
             // list, bypassing cache freshness.
-            if event.code == crossterm::event::KeyCode::Char('r')
-                && event.modifiers == crossterm::event::KeyModifiers::CONTROL
-            {
+            if keys::is_refresh_models(&event) {
                 self.refresh_selected_provider_models();
                 return Ok(());
             }
@@ -452,9 +469,7 @@ impl App {
 
         // Ctrl+R: force a live refresh of the selected provider's model
         // list and re-read the disk cache for all providers.
-        if event.code == crossterm::event::KeyCode::Char('r')
-            && event.modifiers.contains(crossterm::event::KeyModifiers::CONTROL)
-        {
+        if keys::is_refresh_models(&event) {
             self.refresh_selected_provider_models();
             return Ok(());
         }
@@ -581,8 +596,11 @@ impl App {
                             None,
                         )
                         .await;
-                        let _ =
-                            sender.send(TuiEvent::ModelSelectorModelsFetched(provider_idx, models, None));
+                        let _ = sender.send(TuiEvent::ModelSelectorModelsFetched(
+                            provider_idx,
+                            models,
+                            None,
+                        ));
                     });
                 }
                 self.ps.models.clear();
@@ -2359,6 +2377,9 @@ impl App {
                         None
                     };
                     wizard.ps.models_fetching = true;
+                    wizard.ps.is_refreshing = true;
+                    wizard.ps.refresh_start = Some(std::time::Instant::now());
+                    wizard.ps.refresh_message = None;
 
                     // Capture zhipu endpoint type from wizard state (not yet saved to config)
                     let zhipu_et = if wizard.ps.provider_id() == "zhipu" {

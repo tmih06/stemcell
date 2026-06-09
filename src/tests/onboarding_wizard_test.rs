@@ -384,6 +384,95 @@ fn test_model_selection() {
 }
 
 #[test]
+fn test_ctrl_r_refreshes_built_in_model_fetch() {
+    let mut wizard = clean_wizard();
+    wizard.step = OnboardingStep::ProviderAuth;
+    wizard.auth_field = AuthField::Model;
+    wizard.ps.models = vec!["gpt-4.1".into(), "gpt-4.1-mini".into()];
+    wizard.ps.model_filter = "gpt-4".to_string();
+
+    let action = wizard.handle_key(key_mod(
+        KeyCode::Char('r'),
+        crossterm::event::KeyModifiers::CONTROL,
+    ));
+
+    assert_eq!(action, WizardAction::FetchModels);
+    assert_eq!(wizard.ps.models.len(), 2);
+    assert_eq!(wizard.ps.model_filter, "gpt-4");
+}
+
+#[test]
+fn test_raw_ctrl_r_refresh_does_not_pollute_built_in_filter() {
+    let mut wizard = clean_wizard();
+    wizard.step = OnboardingStep::ProviderAuth;
+    wizard.auth_field = AuthField::Model;
+    wizard.ps.models = vec!["gpt-4.1".into()];
+    wizard.ps.model_filter = "gpt".to_string();
+
+    let action = wizard.handle_key(key(KeyCode::Char('\x12')));
+
+    assert_eq!(action, WizardAction::FetchModels);
+    assert_eq!(wizard.ps.models.len(), 1);
+    assert_eq!(wizard.ps.model_filter, "gpt");
+}
+
+#[test]
+fn test_ctrl_r_refreshes_custom_model_fetch() {
+    use crate::tui::provider_selector::CUSTOM_PROVIDER_IDX;
+
+    let mut wizard = clean_wizard();
+    wizard.step = OnboardingStep::ProviderAuth;
+    wizard.ps.selected_provider = CUSTOM_PROVIDER_IDX;
+    wizard.ps.base_url = "http://localhost:11434".to_string();
+    wizard.auth_field = AuthField::CustomModel;
+    wizard.ps.models = vec!["llama3.2".into(), "qwen2.5-coder".into()];
+    wizard.ps.model_filter = "llama".to_string();
+
+    let action = wizard.handle_key(key_mod(
+        KeyCode::Char('r'),
+        crossterm::event::KeyModifiers::CONTROL,
+    ));
+
+    assert_eq!(action, WizardAction::FetchModels);
+    assert_eq!(wizard.ps.models.len(), 2);
+    assert_eq!(wizard.ps.model_filter, "llama");
+}
+
+#[test]
+fn test_built_in_model_picker_locks_while_fetching() {
+    let mut wizard = clean_wizard();
+    wizard.step = OnboardingStep::ProviderAuth;
+    wizard.auth_field = AuthField::Model;
+    wizard.ps.models_fetching = true;
+    wizard.ps.models = vec!["gpt-4.1".into(), "gpt-4.1-mini".into()];
+    wizard.ps.model_filter = "gpt".to_string();
+    wizard.ps.selected_model = 1;
+
+    let action = wizard.handle_key(key(KeyCode::Down));
+
+    assert_eq!(action, WizardAction::None);
+    assert_eq!(wizard.ps.selected_model, 1);
+    assert_eq!(wizard.ps.model_filter, "gpt");
+}
+
+#[test]
+fn test_custom_model_picker_locks_while_fetching() {
+    let mut wizard = clean_wizard();
+    wizard.step = OnboardingStep::ProviderAuth;
+    wizard.auth_field = AuthField::CustomModel;
+    wizard.ps.models_fetching = true;
+    wizard.ps.models = vec!["llama3.2".into(), "qwen2.5-coder".into()];
+    wizard.ps.model_filter = "llama".to_string();
+    wizard.ps.selected_model = 0;
+
+    let action = wizard.handle_key(key(KeyCode::Char('j')));
+
+    assert_eq!(action, WizardAction::None);
+    assert_eq!(wizard.ps.selected_model, 0);
+    assert_eq!(wizard.ps.model_filter, "llama");
+}
+
+#[test]
 fn test_workspace_path_default() {
     let wizard = OnboardingWizard::new();
     // Should have a default workspace path
