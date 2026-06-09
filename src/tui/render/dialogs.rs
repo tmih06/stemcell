@@ -415,14 +415,7 @@ pub(super) fn render_model_selector(f: &mut Frame, app: &App, area: Rect) {
             Style::default().fg(Color::DarkGray),
         )));
 
-        let provider_width = app
-            .ps
-            .dialog_model_options()
-            .iter()
-            .map(|option| option.provider_name.chars().count())
-            .max()
-            .unwrap_or(12)
-            .min(22);
+        let provider_width = app.ps.max_provider_width.max(12);
         let row_width = dialog_area.width.saturating_sub(10) as usize;
         let gap_width = 2usize;
         let model_width = row_width

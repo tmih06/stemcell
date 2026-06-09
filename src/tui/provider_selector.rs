@@ -112,6 +112,9 @@ pub struct ProviderSelectorState {
     pub codex_user_code: Option<String>,
     /// Codex OAuth device flow: current status
     pub codex_device_flow_status: crate::tui::onboarding::CodexDeviceFlowStatus,
+    /// Max provider name width (chars), computed during rebuild so the
+    /// renderer doesn't scan all options every frame.
+    pub max_provider_width: usize,
 }
 
 impl ProviderSelectorState {
@@ -328,6 +331,12 @@ impl ProviderSelectorState {
                         .cmp(&b.model_id.to_ascii_lowercase())
                 })
         });
+        self.max_provider_width = options
+            .iter()
+            .map(|option| option.provider_name.chars().count())
+            .max()
+            .unwrap_or(12)
+            .min(22);
         self.dialog_model_options_cache = options;
     }
 
