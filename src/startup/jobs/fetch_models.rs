@@ -47,6 +47,21 @@ impl StartupJob for FetchModelsJob {
         // Pass 1: seed the cache from ModelDB (modeldb.axiom.co) — a free,
         // no-auth, hourly-synced LiteLLM catalog with 2700+ models from 90
         // providers.  Only fetches when at least one known provider is stale.
+        let ttl = model_cache::FRESH_TTL_SECS;
+        let credentials = crate::utils::providers::configured_providers(&creds);
+
+        // Snapshot which credentialed providers were already fresh BEFORE this
+        // run seeds anything.  Pass 2 below uses this — not the live cache — to
+        // decide what to skip, so a ModelDB entry Pass 1 just wrote this run is
+        // not mistaken for a cache that's still fresh from a previous startup.
+        // Without this, Pass 1 makes every ModelDB-covered provider look fresh
+        // and Pass 2's authoritative live fetch never runs.
+        let pre_run_fresh: HashSet<String> = credentials
+            .iter()
+            .map(|(provider, _)| provider.clone())
+            .filter(|provider| model_cache::is_fresh(provider, ttl))
+            .collect();
+
         let mut warmed: HashSet<String> = HashSet::new();
         if needs_modeldb_refresh() {
             for (pid, models) in fetch_modeldb_catalog().await {
@@ -66,16 +81,15 @@ impl StartupJob for FetchModelsJob {
 
         // Pass 2: for each credentialled provider, fetch from its own live
         // API.  Authoritative results overwrite the ModelDB-derived data.
-        // Skip if the cache is already fresh (within 24 hours).
-        let ttl = model_cache::FRESH_TTL_SECS;
-        let credentials = crate::utils::providers::configured_providers(&creds);
+        // Skip only providers whose cache was already fresh before this run
+        // (within 24 hours) — see `pre_run_fresh` above.
         for (provider, _display) in &credentials {
             if provider.starts_with("custom:") {
                 continue;
             }
 
-            // Skip if cache is fresh
-            if model_cache::is_fresh(provider, ttl) {
+            // Skip if the cache was already fresh at the start of this run.
+            if pre_run_fresh.contains(provider) {
                 warmed.insert(provider.clone());
                 continue;
             }
