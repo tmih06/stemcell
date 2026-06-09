@@ -391,11 +391,10 @@ impl App {
                 return Ok(());
             }
 
-            // 'r': force a live refresh of the selected provider's model
-            // list, bypassing cache freshness. Only works when search is empty
-            // to avoid conflict with typing 'r' in the search filter.
+            // Ctrl+R: force a live refresh of the selected provider's model
+            // list, bypassing cache freshness.
             if event.code == crossterm::event::KeyCode::Char('r')
-                && self.ps.model_filter.is_empty()
+                && event.modifiers == crossterm::event::KeyModifiers::CONTROL
             {
                 self.refresh_selected_provider_models();
                 return Ok(());
@@ -451,12 +450,10 @@ impl App {
         let is_custom_field_3 =
             self.ps.focused_field == 3 && self.ps.selected_provider >= CUSTOM_PROVIDER_IDX;
 
-        // 'r': force a live refresh of the selected provider's model
+        // Ctrl+R: force a live refresh of the selected provider's model
         // list and re-read the disk cache for all providers.
-        // Only works when focused on provider list (field 0) to avoid
-        // conflict with typing in API key or model fields.
         if event.code == crossterm::event::KeyCode::Char('r')
-            && self.ps.focused_field == 0
+            && event.modifiers.contains(crossterm::event::KeyModifiers::CONTROL)
         {
             self.refresh_selected_provider_models();
             return Ok(());
