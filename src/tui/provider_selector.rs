@@ -112,6 +112,15 @@ pub struct ProviderSelectorState {
     pub codex_user_code: Option<String>,
     /// Codex OAuth device flow: current status
     pub codex_device_flow_status: crate::tui::onboarding::CodexDeviceFlowStatus,
+    /// Max provider name width (chars), computed during rebuild so the
+    /// renderer doesn't scan all options every frame.
+    pub max_provider_width: usize,
+    /// Whether a manual refresh (Ctrl+R) is in progress
+    pub is_refreshing: bool,
+    /// When the current refresh started (for elapsed time display)
+    pub refresh_start: Option<std::time::Instant>,
+    /// Success message from last refresh + when it was shown (auto-dismiss)
+    pub refresh_message: Option<(String, std::time::Instant)>,
 }
 
 impl ProviderSelectorState {
@@ -218,12 +227,26 @@ impl ProviderSelectorState {
             .collect()
     }
 
-    fn dialog_models_for_provider(&self, idx: usize, config: Option<&Config>) -> Vec<String> {
+    fn dialog_models_for_provider(
+        &self,
+        idx: usize,
+        config: Option<&Config>,
+        cache: &crate::startup::model_cache::ModelCache,
+    ) -> Vec<String> {
         let mut models = Vec::new();
 
         if idx < CUSTOM_PROVIDER_IDX {
             let provider = &PROVIDERS[idx];
 
+            // Models cached by the startup job (ModelDB / credentialed API).
+            if let Some(entry) = cache.get(provider.id) {
+                for model in &entry.models {
+                    push_unique_model(&mut models, model.clone());
+                }
+            }
+
+            // Fetched models for the currently selected provider (live fetch
+            // from this session, or warm-start loaded at dialog open).
             if idx == self.selected_provider {
                 for model in &self.models {
                     push_unique_model(&mut models, model.clone());
@@ -269,6 +292,7 @@ impl ProviderSelectorState {
 
     pub fn rebuild_dialog_model_options_cache(&mut self) {
         let config = Config::load().ok();
+        let model_cache = crate::startup::model_cache::load();
         let mut options: Vec<ModelSelectorOption> = Vec::new();
 
         for idx in self.provider_display_order() {
@@ -288,7 +312,7 @@ impl ProviderSelectorState {
                     .cloned()
                     .unwrap_or_else(|| "custom".to_string())
             };
-            for model_id in self.dialog_models_for_provider(idx, config.as_ref()) {
+            for model_id in self.dialog_models_for_provider(idx, config.as_ref(), &model_cache) {
                 options.push(ModelSelectorOption {
                     provider_idx: idx,
                     provider_name: provider_name.clone(),
@@ -313,6 +337,12 @@ impl ProviderSelectorState {
                         .cmp(&b.model_id.to_ascii_lowercase())
                 })
         });
+        self.max_provider_width = options
+            .iter()
+            .map(|option| option.provider_name.chars().count())
+            .max()
+            .unwrap_or(12)
+            .min(22);
         self.dialog_model_options_cache = options;
     }
 
