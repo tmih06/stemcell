@@ -19,10 +19,23 @@ impl StartupJob for FetchModelsJob {
     async fn run(&self, ctx: &StartupContext) -> anyhow::Result<Option<String>> {
         let config = &ctx.config;
 
+        // Merge API keys from keys.toml so that API-key providers the user
+        // has credentials for are discovered (not just always-enabled CLI
+        // providers like codex / opencode-cli).  The context config may not
+        // have keys merged yet (e.g. when loaded via --config), but the
+        // startup warm-up should still cover all credentialed providers.
+        let creds = {
+            let mut p = config.providers.clone();
+            if let Ok(keys) = crate::config::load_keys_from_file() {
+                p = crate::config::merge_provider_keys(p, keys.providers);
+            }
+            p
+        };
+
         // Warm every provider the user has a usable credential for, so switching
         // providers in the /models dialog is also instant — not just the active
         // one. configured_providers() already filters to credentialed providers.
-        let providers = crate::utils::providers::configured_providers(&config.providers);
+        let providers = crate::utils::providers::configured_providers(&creds);
         if providers.is_empty() {
             tracing::debug!("[startup] fetch-models: no configured providers, skipping");
             return Ok(Some("no configured providers".to_string()));
@@ -41,7 +54,7 @@ impl StartupJob for FetchModelsJob {
                 tracing::warn!("[startup] fetch-models: no TUI index for '{provider}', skipping");
                 continue;
             };
-            let api_key = crate::utils::providers::config_for(&config.providers, &provider)
+            let api_key = crate::utils::providers::config_for(&creds, &provider)
                 .and_then(|p| p.api_key.clone());
 
             let models = crate::tui::onboarding::fetch_provider_models(
