@@ -188,8 +188,7 @@ fn needs_modeldb_refresh() -> bool {
 /// Only returns entries for providers in [`modeldb_known_ids`].  Unknown
 /// providers are silently dropped so the on-disk cache stays lean.
 async fn fetch_modeldb_catalog() -> HashMap<String, Vec<String>> {
-    let url =
-        "https://modeldb.axiom.co/api/v1/models?project=model_id,provider_id,model_type";
+    let url = "https://modeldb.axiom.co/api/v1/models?project=model_id,provider_id,model_type";
     let client = match reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(30))
         .build()

@@ -571,8 +571,10 @@ pub(super) fn render_model_selector(f: &mut Frame, app: &mut App, area: Rect) {
         // Show refresh spinner or success message
         if app.ps.is_refreshing {
             // Braille spinner animation
-            let spinner = crate::tui::onboarding_render::refresh_spinner_frame(app.ps.refresh_start);
-            let elapsed = crate::tui::onboarding_render::refresh_elapsed_label(app.ps.refresh_start);
+            let spinner =
+                crate::tui::onboarding_render::refresh_spinner_frame(app.ps.refresh_start);
+            let elapsed =
+                crate::tui::onboarding_render::refresh_elapsed_label(app.ps.refresh_start);
 
             lines.push(Line::from(""));
             lines.push(Line::from(vec![

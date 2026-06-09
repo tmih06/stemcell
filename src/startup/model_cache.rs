@@ -131,9 +131,7 @@ pub fn load() -> ModelCache {
         .and_then(|s| serde_json::from_str(&s).ok())
         .unwrap_or_default();
     for entry in cache.values_mut() {
-        entry
-            .models
-            .retain(|m| is_chat_capable_model_id(m));
+        entry.models.retain(|m| is_chat_capable_model_id(m));
     }
     cache
 }
