@@ -542,6 +542,11 @@ pub(super) fn render_model_selector(f: &mut Frame, app: &App, area: Rect) {
             ),
             Span::styled(" Select  ", Style::default().fg(Color::Reset)),
             Span::styled(
+                "[Ctrl+R]",
+                Style::default().fg(BRAND_GOLD).add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(" Refresh  ", Style::default().fg(Color::Reset)),
+            Span::styled(
                 "[Esc]",
                 Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
             ),
@@ -1286,6 +1291,7 @@ pub(super) fn render_model_selector(f: &mut Frame, app: &App, area: Rect) {
                         ("[↑/↓]", "Select"),
                         ("[Enter]", "Use"),
                         ("[Esc]", "Type custom"),
+                        ("[Ctrl+R]", "Refresh"),
                     ]
                 }
             }
@@ -1305,6 +1311,7 @@ pub(super) fn render_model_selector(f: &mut Frame, app: &App, area: Rect) {
                 ("[Type]", "Filter"),
                 ("[↑/↓]", "Select"),
                 ("[Enter]", "Confirm"),
+                ("[Ctrl+R]", "Refresh"),
             ],
             _ => vec![],
         }
