@@ -795,6 +795,10 @@ impl App {
                 });
                 true
             }
+            "/quit" | "/exit" | "/q" => {
+                let _ = self.event_sender().send(TuiEvent::Quit);
+                true
+            }
             "/help" => {
                 self.mode = AppMode::Help;
                 true
@@ -1864,7 +1868,29 @@ impl App {
         }
     }
 
-    /// Send a message to the agent
+    /// Push a system message whose `details` body is collapsed by default and
+    /// toggled with Ctrl+O (see `ctrl_o_toggle_target`). Used for the startup
+    /// jobs report: a one-line `content` summary plus an expandable per-job
+    /// `details` body. An empty `details` degrades to a plain system message.
+    pub(crate) fn push_collapsible_system_message(&mut self, content: String, details: String) {
+        let details = (!details.trim().is_empty()).then_some(details);
+        self.messages.push(DisplayMessage {
+            id: Uuid::new_v4(),
+            role: "system".to_string(),
+            content,
+            timestamp: chrono::Utc::now(),
+            token_count: None,
+            cost: None,
+            approval: None,
+            approve_menu: None,
+            details,
+            expanded: false,
+            tool_group: None,
+        });
+        if self.auto_scroll {
+            self.scroll_offset = 0;
+        }
+    }
     pub(crate) async fn send_message(&mut self, content: String) -> Result<()> {
         tracing::info!(
             "[send_message] START is_processing={} has_session={} content_len={}",

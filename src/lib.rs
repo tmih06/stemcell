@@ -60,6 +60,7 @@ pub mod error;
 pub mod logging;
 pub mod memory;
 pub mod services;
+pub mod startup;
 pub mod tui;
 pub mod utils;
 

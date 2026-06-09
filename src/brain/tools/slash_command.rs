@@ -685,6 +685,7 @@ impl SlashCommandTool {
                 "/settings",
                 "/onboard",
                 "/whisper",
+                "/quit",
             ];
             Ok(ToolResult::error(format!(
                 "Unknown command: '{}'. Built-in: {}. User-defined: {}",
