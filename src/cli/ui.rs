@@ -110,9 +110,13 @@ async fn cmd_chat_inner(
     // Create service context
     let service_context = ServiceContext::new(db.pool().clone());
 
+    // Readiness signal: startup jobs signal completion so the RSI engine
+    // waits for actual readiness instead of a hardcoded sleep.
+    let (startup_ready_tx, startup_ready_rx) = tokio::sync::watch::channel(false);
+
     // Spawn RSI background engine (digest + periodic analysis)
     let (rsi_tx, mut rsi_rx) = tokio::sync::mpsc::unbounded_channel();
-    crate::brain::rsi::spawn_rsi_engine(db.pool().clone(), config, rsi_tx);
+    crate::brain::rsi::spawn_rsi_engine(db.pool().clone(), config, rsi_tx, startup_ready_rx);
 
     // Get working directory
     let working_directory = std::env::current_dir().unwrap_or_default();
@@ -193,7 +197,7 @@ async fn cmd_chat_inner(
     // snapshot, model-list cache warming). Non-blocking — the TUI stays
     // interactive while they run, a failing job logs but never aborts boot,
     // and the completed report arrives as a collapsible startup-info line.
-    crate::startup::spawn(config.clone(), db.pool().clone(), event_sender.clone());
+    crate::startup::spawn(config.clone(), db.pool().clone(), event_sender.clone(), startup_ready_tx);
 
     // Forward RSI notifications to TUI as system messages
     {

@@ -39,6 +39,7 @@ pub fn spawn(
     config: crate::config::Config,
     pool: crate::db::Pool,
     event_sender: tokio::sync::mpsc::UnboundedSender<crate::tui::events::TuiEvent>,
+    ready_tx: tokio::sync::watch::Sender<bool>,
 ) {
     let ctx = Arc::new(StartupContext {
         config,
@@ -59,6 +60,7 @@ pub fn spawn(
 
         let (summary, details) = render_startup_info(&outcomes, failed);
         let _ = event_sender.send(crate::tui::events::TuiEvent::StartupInfo { summary, details });
+        let _ = ready_tx.send(true);
     });
 }
 
