@@ -286,7 +286,7 @@ impl App {
                     None,
                 )
                 .await;
-                let _ = sender.send(TuiEvent::ModelSelectorModelsFetched(provider_idx, models));
+                let _ = sender.send(TuiEvent::ModelSelectorModelsFetched(provider_idx, models, None));
             });
         }
 
@@ -331,6 +331,12 @@ impl App {
         if provider_idx >= CUSTOM_PROVIDER_IDX {
             return;
         }
+
+        // Set refreshing state to show spinner and block input
+        self.ps.is_refreshing = true;
+        self.ps.refresh_start = Some(std::time::Instant::now());
+        self.ps.refresh_message = None;
+
         let provider_id = self.ps.provider_id();
         let api_key = crate::config::Config::load().ok().and_then(|c| {
             crate::utils::providers::config_for(&c.providers, provider_id)
@@ -340,6 +346,7 @@ impl App {
         let zhipu_et = self.ps.zhipu_endpoint_str();
         let sender = self.event_sender();
         tokio::spawn(async move {
+            let start = std::time::Instant::now();
             let models = super::onboarding::fetch_provider_models(
                 provider_idx,
                 api_key.as_deref(),
@@ -347,7 +354,12 @@ impl App {
                 None,
             )
             .await;
-            let _ = sender.send(TuiEvent::ModelSelectorModelsFetched(provider_idx, models));
+            let elapsed = start.elapsed();
+            let _ = sender.send(TuiEvent::ModelSelectorModelsFetched(
+                provider_idx,
+                models,
+                Some(elapsed),
+            ));
         });
     }
 
@@ -357,6 +369,15 @@ impl App {
         event: crossterm::event::KeyEvent,
     ) -> Result<()> {
         use super::events::keys;
+
+        // Block all input except Esc while refreshing
+        if self.ps.is_refreshing {
+            if keys::is_cancel(&event) {
+                self.ps.is_refreshing = false;
+                self.ps.refresh_start = None;
+            }
+            return Ok(());
+        }
 
         let unified_model_picker = !self.ps.showing_providers;
         if unified_model_picker {
@@ -565,7 +586,7 @@ impl App {
                         )
                         .await;
                         let _ =
-                            sender.send(TuiEvent::ModelSelectorModelsFetched(provider_idx, models));
+                            sender.send(TuiEvent::ModelSelectorModelsFetched(provider_idx, models, None));
                     });
                 }
                 self.ps.models.clear();

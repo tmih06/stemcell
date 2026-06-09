@@ -135,8 +135,8 @@ pub enum TuiEvent {
     /// Onboarding wizard received fetched model list from provider API
     OnboardingModelsFetched(Vec<String>),
 
-    /// Model selector (/models) received fetched model list (provider_index, models)
-    ModelSelectorModelsFetched(usize, Vec<String>),
+    /// Model selector (/models) received fetched model list (provider_index, models, elapsed_time)
+    ModelSelectorModelsFetched(usize, Vec<String>, Option<std::time::Duration>),
 
     /// WhatsApp QR code data received during onboarding pairing
     WhatsAppQrCode(String),

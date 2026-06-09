@@ -1784,6 +1784,7 @@ impl App {
                                 let _ = sender.send(TuiEvent::ModelSelectorModelsFetched(
                                     provider_idx,
                                     models,
+                                    None,
                                 ));
                             });
                         }
@@ -1808,6 +1809,7 @@ impl App {
                                 let _ = sender.send(TuiEvent::ModelSelectorModelsFetched(
                                     provider_idx,
                                     models,
+                                    None,
                                 ));
                             });
                         }
@@ -1833,6 +1835,7 @@ impl App {
                                 let _ = sender.send(TuiEvent::ModelSelectorModelsFetched(
                                     provider_idx,
                                     models,
+                                    None,
                                 ));
                             });
                         }
@@ -1860,6 +1863,7 @@ impl App {
                                     let _ = sender.send(TuiEvent::ModelSelectorModelsFetched(
                                         provider_idx,
                                         models,
+                                        None,
                                     ));
                                 });
                             }
@@ -1890,6 +1894,7 @@ impl App {
                                     let _ = sender.send(TuiEvent::ModelSelectorModelsFetched(
                                         provider_idx,
                                         models,
+                                        None,
                                     ));
                                 });
                             }
@@ -2703,7 +2708,11 @@ impl App {
                     }
                 }
             }
-            TuiEvent::ModelSelectorModelsFetched(provider_idx, models) => {
+            TuiEvent::ModelSelectorModelsFetched(provider_idx, models, elapsed) => {
+                // Clear refreshing state
+                self.ps.is_refreshing = false;
+                self.ps.refresh_start = None;
+
                 // Discard stale fetches from a previously-selected provider
                 let from_live_fetch = !models.is_empty();
                 let models = if models.is_empty() {
@@ -2761,6 +2770,20 @@ impl App {
                         .dialog_model_index_for(provider_idx, target)
                         .unwrap_or(0);
                     self.ps.model_filter.clear();
+
+                    // Show success message with model count and elapsed time
+                    if let Some(duration) = elapsed {
+                        let model_count = self.ps.models.len();
+                        let time_str = if duration.as_secs() >= 1 {
+                            format!("{:.1}s", duration.as_secs_f64())
+                        } else {
+                            format!("{}ms", duration.as_millis())
+                        };
+                        self.ps.refresh_message = Some((
+                            format!("✓ Fetched {} models in {}", model_count, time_str),
+                            std::time::Instant::now(),
+                        ));
+                    }
                 }
             }
             TuiEvent::GitHubDeviceCode(code) => {
@@ -2855,7 +2878,7 @@ impl App {
                         )
                         .await;
                         let _ =
-                            sender.send(TuiEvent::ModelSelectorModelsFetched(provider_idx, models));
+                            sender.send(TuiEvent::ModelSelectorModelsFetched(provider_idx, models, None));
                     });
                 }
             }

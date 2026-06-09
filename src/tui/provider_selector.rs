@@ -115,6 +115,12 @@ pub struct ProviderSelectorState {
     /// Max provider name width (chars), computed during rebuild so the
     /// renderer doesn't scan all options every frame.
     pub max_provider_width: usize,
+    /// Whether a manual refresh (Ctrl+R) is in progress
+    pub is_refreshing: bool,
+    /// When the current refresh started (for elapsed time display)
+    pub refresh_start: Option<std::time::Instant>,
+    /// Success message from last refresh + when it was shown (auto-dismiss)
+    pub refresh_message: Option<(String, std::time::Instant)>,
 }
 
 impl ProviderSelectorState {

@@ -287,7 +287,7 @@ pub(super) fn render_directory_picker(f: &mut Frame, app: &App, area: Rect) {
 }
 
 /// Render the model selector dialog - matches onboarding ProviderAuth style
-pub(super) fn render_model_selector(f: &mut Frame, app: &App, area: Rect) {
+pub(super) fn render_model_selector(f: &mut Frame, app: &mut App, area: Rect) {
     use crate::tui::onboarding::PROVIDERS;
     use crate::tui::provider_selector::{CUSTOM_INSTANCES_START, CUSTOM_PROVIDER_IDX};
 
@@ -545,6 +545,55 @@ pub(super) fn render_model_selector(f: &mut Frame, app: &App, area: Rect) {
             ),
             Span::styled(" Cancel", Style::default().fg(Color::Reset)),
         ]));
+
+        // Show refresh spinner or success message
+        if app.ps.is_refreshing {
+            // Braille spinner animation
+            const SPINNER_FRAMES: &[char] = &['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
+            let frame_idx = (std::time::Instant::now().elapsed().as_millis() / 100) as usize % SPINNER_FRAMES.len();
+            let spinner = SPINNER_FRAMES[frame_idx];
+
+            let elapsed_str = if let Some(start) = app.ps.refresh_start {
+                let elapsed = start.elapsed();
+                if elapsed.as_secs() >= 1 {
+                    format!("{:.1}s", elapsed.as_secs_f64())
+                } else {
+                    format!("{}ms", elapsed.as_millis())
+                }
+            } else {
+                String::new()
+            };
+
+            lines.push(Line::from(""));
+            lines.push(Line::from(vec![
+                Span::styled(
+                    format!("  {} Fetching models", spinner),
+                    Style::default()
+                        .fg(BRAND_GOLD)
+                        .add_modifier(Modifier::BOLD),
+                ),
+                if !elapsed_str.is_empty() {
+                    Span::styled(
+                        format!(" ({})", elapsed_str),
+                        Style::default().fg(Color::DarkGray),
+                    )
+                } else {
+                    Span::raw("")
+                },
+            ]));
+        } else if let Some((ref msg, shown_at)) = app.ps.refresh_message {
+            // Auto-dismiss after 3 seconds
+            if shown_at.elapsed().as_secs() < 3 {
+                lines.push(Line::from(""));
+                lines.push(Line::from(Span::styled(
+                    format!("  {}", msg),
+                    Style::default().fg(Color::Green),
+                )));
+            } else {
+                // Clear expired message
+                app.ps.refresh_message = None;
+            }
+        }
 
         let widget = Paragraph::new(lines)
             .block(
@@ -1325,6 +1374,50 @@ pub(super) fn render_model_selector(f: &mut Frame, app: &App, area: Rect) {
         ));
     }
     lines.push(Line::from(help_spans));
+
+    // Show refresh spinner or success message for per-provider view
+    if app.ps.is_refreshing {
+        const SPINNER_FRAMES: &[char] = &['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
+        let frame_idx = (std::time::Instant::now().elapsed().as_millis() / 100) as usize % SPINNER_FRAMES.len();
+        let spinner = SPINNER_FRAMES[frame_idx];
+
+        let elapsed_str = if let Some(start) = app.ps.refresh_start {
+            let elapsed = start.elapsed();
+            if elapsed.as_secs() >= 1 {
+                format!("{:.1}s", elapsed.as_secs_f64())
+            } else {
+                format!("{}ms", elapsed.as_millis())
+            }
+        } else {
+            String::new()
+        };
+
+        lines.push(Line::from(vec![
+            Span::styled(
+                format!("   {} Fetching models", spinner),
+                Style::default()
+                    .fg(Color::Rgb(215, 100, 20))
+                    .add_modifier(Modifier::BOLD),
+            ),
+            if !elapsed_str.is_empty() {
+                Span::styled(
+                    format!(" ({})", elapsed_str),
+                    Style::default().fg(Color::DarkGray),
+                )
+            } else {
+                Span::raw("")
+            },
+        ]));
+    } else if let Some((ref msg, shown_at)) = app.ps.refresh_message {
+        if shown_at.elapsed().as_secs() < 3 {
+            lines.push(Line::from(Span::styled(
+                format!("   {}", msg),
+                Style::default().fg(Color::Green),
+            )));
+        } else {
+            app.ps.refresh_message = None;
+        }
+    }
 
     f.render_widget(Clear, dialog_area);
     let dialog = Paragraph::new(lines).block(
