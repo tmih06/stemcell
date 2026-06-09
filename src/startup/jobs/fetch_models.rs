@@ -1,7 +1,7 @@
 //! Startup job: fetch every known provider's model list and warm the on-disk
 //! cache so the `/models` dialog opens instantly.
 //!
-//! Strategy (two passes):
+//! Strategy (two passes, both respect 24h cache freshness):
 //!
 //! 1. Fetch **ModelDB** (modeldb.axiom.co) — a free, no-auth, hourly-synced
 //!    LiteLLM catalog with 2700+ models from 90 providers.  Model IDs are
@@ -10,6 +10,7 @@
 //! 2. For each credentialled provider, fetch from its **own** live API so
 //!    authoritative results overwrite the ModelDB-derived data.
 //!
+//! Both passes skip providers whose cache entries are fresh (within 24h).
 //! Network-bound — exactly the kind of slow work that belongs in a background
 //! startup job. On failure it logs and leaves any prior cache intact.
 
@@ -64,12 +65,21 @@ impl StartupJob for FetchModelsJob {
         }
 
         // Pass 2: for each credentialled provider, fetch from its own live
-        // API.  Authoritative results overwrite the OpenRouter-derived data.
+        // API.  Authoritative results overwrite the ModelDB-derived data.
+        // Skip if the cache is already fresh (within 24 hours).
+        let ttl = model_cache::FRESH_TTL_SECS;
         let credentials = crate::utils::providers::configured_providers(&creds);
         for (provider, _display) in &credentials {
             if provider.starts_with("custom:") {
                 continue;
             }
+
+            // Skip if cache is fresh
+            if model_cache::is_fresh(provider, ttl) {
+                warmed.insert(provider.clone());
+                continue;
+            }
+
             let Some(provider_index) = crate::utils::providers::tui_index_for_id(provider) else {
                 tracing::warn!("[startup] fetch-models: no TUI index for '{provider}', skipping");
                 continue;
