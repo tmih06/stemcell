@@ -321,8 +321,13 @@ impl App {
     /// changes; results arrive via `ModelSelectorModelsFetched` and are persisted
     /// to the on-disk cache in that handler.
     fn refresh_selected_provider_models(&mut self) {
+        // Re-read the on-disk model cache so ALL providers' cached models
+        // (from ModelDB / credentialed API fetches) appear immediately.
+        self.ps.models = crate::startup::model_cache::models_for(self.ps.provider_id())
+            .unwrap_or_default();
+        self.ps.rebuild_dialog_model_options_cache();
+
         let provider_idx = self.ps.selected_provider;
-        // Custom providers default to PASTE mode and never read the cache.
         if provider_idx >= CUSTOM_PROVIDER_IDX {
             return;
         }
@@ -425,6 +430,17 @@ impl App {
         let is_zhipu = self.ps.provider_id() == "zhipu";
         let is_custom_field_3 =
             self.ps.focused_field == 3 && self.ps.selected_provider >= CUSTOM_PROVIDER_IDX;
+
+        // Ctrl+R: force a live refresh of the selected provider's model
+        // list and re-read the disk cache for all providers.
+        if event.code == crossterm::event::KeyCode::Char('r')
+            && event
+                .modifiers
+                .contains(crossterm::event::KeyModifiers::CONTROL)
+        {
+            self.refresh_selected_provider_models();
+            return Ok(());
+        }
 
         if keys::is_cancel(&event) {
             // Custom field 3 in LIST mode: Esc drops back to PASTE mode

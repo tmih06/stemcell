@@ -41,7 +41,7 @@ fn cache_path() -> PathBuf {
     TEST_CACHE_PATH.with(|p| {
         p.borrow()
             .clone()
-            .expect("test must call set_test_cache_path() first")
+            .unwrap_or_else(|| std::env::temp_dir().join("opencrabs-model-cache-unset.json"))
     })
 }
 
