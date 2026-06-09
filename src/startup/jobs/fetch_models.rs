@@ -32,10 +32,17 @@ impl StartupJob for FetchModelsJob {
             p
         };
 
-        // Warm every provider the user has a usable credential for, so switching
-        // providers in the /models dialog is also instant — not just the active
-        // one. configured_providers() already filters to credentialed providers.
-        let providers = crate::utils::providers::configured_providers(&creds);
+        // Collect providers to warm: start with those that have a key or
+        // are always-available CLI providers, then augment with providers
+        // that expose a public model-listing endpoint (no key required).
+        let mut providers = crate::utils::providers::configured_providers(&creds);
+
+        // OpenRouter's GET /api/v1/models is public — always warm it so
+        // the model cache is populated even before the user adds a key.
+        if !providers.iter().any(|(id, _)| id == "openrouter") {
+            providers.push(("openrouter".to_string(), "OpenRouter".to_string()));
+        }
+
         if providers.is_empty() {
             tracing::debug!("[startup] fetch-models: no configured providers, skipping");
             return Ok(Some("no configured providers".to_string()));
