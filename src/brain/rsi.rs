@@ -454,13 +454,13 @@ pub fn spawn_rsi_engine(
     pool: crate::db::Pool,
     #[allow(unused_variables)] config: &Config,
     notification_tx: mpsc::UnboundedSender<RsiNotification>,
+    mut ready_rx: tokio::sync::watch::Receiver<bool>,
 ) {
     let pool_clone = pool.clone();
     #[cfg(feature = "tools-rsi")]
     let config_clone = config.clone();
     tokio::spawn(async move {
-        // Delay to let the app fully start
-        tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+        let _ = ready_rx.wait_for(|ready| *ready).await;
 
         // 1. Check for upstream template sync (version gate)
         let sync_state = crate::brain::rsi_sync::SyncState::load();
