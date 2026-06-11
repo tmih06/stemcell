@@ -163,7 +163,7 @@ Re-read config.toml + keys.toml
 Deserialize → validate
   │
   ▼
-Apply: update ChannelManager, provider, etc.
+Apply: broadcast config to gateway (surface reconcile), provider, etc.
   │
   ▼
 Log: "Config hot-reloaded"

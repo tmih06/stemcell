@@ -24,12 +24,14 @@
 
 ## Adding a New Channel
 
-1. Create directory `src/channels/<name>/`
-2. Implement handler, send, and connection logic
-3. Optionally add tool files in `src/brain/tools/` for `<name>_connect.rs` and `<name>_send.rs`
-4. Register in `src/channels/factory.rs` and `src/channels/manager.rs`
-5. Add feature flags in `Cargo.toml`
-6. Add per-channel session resolution in `src/channels/session_resolve.rs`
+Channels are surfaces on the gateway bus, not agent tools.
+
+1. Create directory `src/channels/<name>/` for the platform receive/render logic (handler, agent wrapper)
+2. Add a surface adapter `src/channels/<name>_surface.rs` implementing the `Surface` trait (`id`/`status`/`start`/`callbacks`/`deliver`)
+3. Add one `#[cfg(feature = "<name>")]` push in `src/channels/gateway/registry.rs` (`registered_surfaces`) and any state field it needs on `SurfaceDeps`
+4. Add the allowlist policy mapping in `src/channels/gateway/services/allowlist.rs` if the channel gates senders
+5. Add feature flags in `Cargo.toml` and the toggle in `build_toggles.toml`
+6. Session resolution is shared via `src/channels/gateway/services/session.rs` (keyed on `surface_id + conversation_key`) — no per-channel manager wiring needed
 7. Add tests
 8. Update [Source Map](source-map.md), [Flows](flows.md)
 

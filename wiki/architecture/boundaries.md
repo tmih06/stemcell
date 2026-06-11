@@ -74,19 +74,21 @@ deadpool-sqlite connection pool
 ## Channel Boundary
 
 ```
-ChannelFactory (src/channels/factory.rs)
-  → ChannelManager (src/channels/manager.rs)
-    → Telegram (teloxide) — src/channels/telegram/
-    → Discord (serenity) — src/channels/discord/
-    → Slack (slack-morphism Socket Mode) — src/channels/slack/
-    → WhatsApp (whatsapp-rust) — src/channels/whatsapp/
-    → Trello (REST API) — src/channels/trello/
+Gateway (src/channels/gateway/bus.rs)
+  → registered_surfaces (src/channels/gateway/registry.rs) — cfg-gated
+    → TUI — src/channels/tui_surface.rs
+    → Telegram (teloxide) — src/channels/telegram_surface.rs + telegram/
+    → Discord (serenity) — src/channels/discord_surface.rs + discord/
+    → Slack (slack-morphism Socket Mode) — src/channels/slack_surface.rs + slack/
+    → WhatsApp (whatsapp-rust) — src/channels/whatsapp_surface.rs + whatsapp/
+    → Trello (REST API) — src/channels/trello_surface.rs + trello/
     → Voice (STT/TTS) — src/channels/voice/
 ```
 
-- Channels receive messages → session_resolve → AgentService → response → send back
-- Each channel is feature-gated in `Cargo.toml`
-- Session resolution maps platform+chat to session IDs (`src/channels/session_resolve.rs`)
+- Surfaces publish `Inbound` to the bus → allowlist → session_resolve → AgentService → `Outbound` → `Surface::deliver` back out the same surface
+- The agent is surface-agnostic: no channel tools, no per-surface branches in the agent loop
+- Each channel is feature-gated in `Cargo.toml`; the registry is the single cfg-gated surface list
+- Session resolution maps `surface_id + conversation_key` to session IDs (`src/channels/gateway/services/session.rs`, re-exporting `src/channels/session_resolve.rs`)
 
 ## A2A Boundary
 

@@ -23,6 +23,7 @@ Every project-owned top-level source area in `src/`. Single crate with one binar
 | `src/brain/tools/hashline/` | Partial | [Brain](subsystems/brain/index.md) | Editing semantics |
 | `src/brain/mission_control/` | ✓ | [Brain/Flows](subsystems/brain/flows.md) | — |
 | `src/channels/` (root) | ✓ | [Channels](subsystems/channels/index.md) | — |
+| `src/channels/gateway/` | ✓ | [Channels](subsystems/channels/index.md) | — |
 | `src/channels/telegram/` | ✓ | [Channels](subsystems/channels/index.md) | — |
 | `src/channels/discord/` | ✓ | [Channels](subsystems/channels/index.md) | — |
 | `src/channels/slack/` | ✓ | [Channels](subsystems/channels/index.md) | — |

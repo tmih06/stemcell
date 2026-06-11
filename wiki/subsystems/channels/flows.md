@@ -1,91 +1,93 @@
 # Channels — Flows
 
-## Channel Connection Flow
+## Surface Lifecycle (Startup + Reconcile)
+
+The gateway owns surface lifecycle. `cli/ui.rs` builds `SurfaceDeps`, calls `registered_surfaces()` (the cfg-gated list), constructs the `Gateway`, and spawns its run loop. On startup and on every config change, `Gateway::reconcile` starts surfaces that are `Ready` and aborts listeners for surfaces that became `Inactive`.
 
 ```
-Start
+cli/ui.rs startup
   │
   ▼
-Feature check ──No──▶ Skip (channel disabled)
-  │
- Yes
-  ▼
-ChannelFactory::create(config)
+SurfaceDeps { agent, config_rx, per-channel state, … }
   │
   ▼
-ChannelManager::connect(channel)
-  │
-  ├──▶ Telegram:  teloxide::Bot::new → start_polling → update listener
-  ├──▶ Discord:  serenity::Client::new → start → event handler
-  ├──▶ Slack:    slack-morphism socket mode → connect → event stream
-  ├──▶ WhatsApp: whatsapp-rust QR pairing → connect → message stream
-  ├──▶ Trello:   HTTP client → optional polling interval
-  └──▶ Voice:    (called by Telegram/other channels, not standalone)
+registered_surfaces(&deps)  ──▶  Vec<Arc<dyn Surface>>
+  │                               (TUI always; each channel cfg-gated)
+  ▼
+Gateway::new(ctx, surfaces)
   │
   ▼
-generate_connection_greeting()
+Gateway::reconcile(config)
+  │
+  ├── Surface::status(cfg) == Ready && not running ──▶ Surface::start(bus) → listener task
+  └── status == Inactive   && running             ──▶ abort listener
   │
   ▼
-Handler loop (message receive)
+tokio::spawn(gateway.run())   ── single inbound→agent→outbound loop
 ```
+
+A channel toggled off in `build_toggles.toml` is compiled out entirely (no `pub mod`, no Cargo dependency), so it never appears in `registered_surfaces` — there is nothing to start.
+
+## Inbound → Agent → Outbound (General)
+
+The single pipeline every surface shares.
+
+```
+Surface receives native message
+  │
+  ▼
+Build Inbound { surface_id, conversation_key, sender, text, routing, … }
+  │
+  ▼
+GatewayHandle::publish_inbound(inbound)   ── bounded mpsc; drops on backpressure
+  │
+  ▼
+Gateway run loop ── Core::process(inbound):
+  │
+  ├── allowlist::decide(surface_id, inbound, cfg)
+  │      └── Ignore { reason } ──▶ drop (debug log only)
+  │
+  ├── session::resolve_for_inbound(surface_id, conversation_key)
+  │      ├── TUI: conversation_key IS the session id (no DB lookup)
+  │      └── Channel: suffix-stable resolve/create, honoring idle timeout
+  │
+  ├── AgentService turn (with surface-supplied callbacks: approval/progress/question)
+  │      └── error / cancelled ──▶ drop
+  │
+  ▼
+Build Outbound addressed back to surface_id
+  │
+  ▼
+Surface::deliver(target, message)
+  └── platform render: text chunking, image attachments, channel_messages
+      recording, TTS voice reply, context-budget footer
+```
+
+The agent turn is identical regardless of origin surface — the agent only ever sees the opaque `channel` string it already records.
 
 ## Telegram Update Flow
 
 ```
-Telegram Polling
+Telegram polling (teloxide)
   │
   ▼
-Update received (teloxide)
+handler.rs — update received
   │
-  ▼
-handler.rs::handle_update
+  ├──▶ /command → command handling
   │
-  ├──▶ /command → CommandHandler
-  │
-  └──▶ Text/Photo/Voice
+  └──▶ Text / Photo / Voice
+         │
+         ├── voice note → voice::transcribe (STT)
          │
          ▼
-       session_resolve.rs
-         ├── Owner DM → shared TUI session
-         └── Group    → per-group session
+       Build Inbound (session_hint resolved here for owner DM ↔ TUI session)
          │
          ▼
-       AgentService::process_message
+       GatewayHandle::publish_inbound
          │
-         ├──▶ STT (voice notes) → transcribe
-         │
-         └──▶ LLM call
-              │
-              ▼
-            Response
-              │
-              ▼
-            send.rs::reply_text / reply_photo / reply_voice
-```
-
-## Channel Message Flow (General)
-
-```
-Channel receive
-  │
-  ▼
-Handler::handle_message
-  │
-  ▼
-session_resolve::resolve(channel, user, chat)
-  │
-  ├── Existing session? → resume
-  └── New session?      → session_init → create
-  │
-  ▼
-AgentService::process_message(text, context)
-  │
-  ├── Tool calls → execute → continue
-  │
-  └── Response
-       │
-       ▼
-     Channel send reply
+         ▼
+       … shared pipeline … → TelegramSurface::deliver
+         └── send.rs: reply_text / reply_photo / reply_voice
 ```
 
 ## Voice STT/TTS Flow
@@ -94,7 +96,7 @@ AgentService::process_message(text, context)
 Audio input (voice note, microphone)
   │
   ▼
-transcribe_audio(bytes, voice_config)
+voice::transcribe(bytes, voice_config)
   │
   ├── Primary STT provider
   │   ├── voicebox_stt
@@ -105,13 +107,10 @@ transcribe_audio(bytes, voice_config)
   │   (user-configured order, e.g. ["groq", "openai_compatible", "local"])
   │
   ▼
-Text
+Text  ──▶ Inbound ──▶ gateway pipeline ──▶ Response text
   │
   ▼
-AgentService → LLM → Response text
-  │
-  ▼
-synthesize_speech(text, voice_config)
+voice::synthesize(text, voice_config)   ── invoked in Surface::deliver
   │
   ├── voicebox_tts
   ├── openai_tts
@@ -130,11 +129,17 @@ Optional polling (or command-triggered)
 client.rs::fetch_board / fetch_list / fetch_card
   │
   ▼
-handler.rs → agent.rs → LLM interprets action
+handler.rs → Inbound → gateway pipeline → agent interprets action
   │
   ▼
 client.rs::perform_action (create/update/move card, etc.)
   │
   ▼
-Response formatted as message
+TrelloSurface::deliver — response formatted as message
 ```
+
+## Related
+
+- [Index](index.md)
+- [Source Map](source-map.md)
+- [Tests](tests.md)

@@ -54,9 +54,9 @@ mod tests {
 }
 ```
 
-### Channel integration tests
+### Gateway + channel integration tests
 
-`tests.rs` exercises the full `ChannelFactory` → `ChannelManager` pipeline with mocked configs to verify connection lifecycle, greeting generation, and session init/resolve paths.
+`tests.rs` and the inline `gateway/` test modules exercise the surface-agnostic pipeline: surface `status`/`reconcile` lifecycle, the allowlist policy keyed by `surface_id`, suffix-stable session resolution, and `Surface` object-safety. The `ChannelFactory` is verified for agent construction and greeting generation.
 
 ## Continuous Integration
 

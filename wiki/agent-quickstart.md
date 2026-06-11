@@ -18,7 +18,7 @@ These files have broad impact. Change with extreme care:
 | `src/brain/tools/registry.rs` | Tool registration — every tool must be registered here |
 | `src/config/types.rs` | Config struct — 126KB, every subsystem depends on it |
 | `src/db/database.rs` | Database pool & init — affects all persistence |
-| `src/channels/manager.rs` | Channel lifecycle — manages all messaging platform connections |
+| `src/channels/gateway/bus.rs` | Channel gateway — the single inbound→agent→outbound bus and surface lifecycle |
 
 ## Verification Commands
 

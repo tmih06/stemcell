@@ -129,16 +129,6 @@
 | `src/brain/tools/load_brain_file.rs` | Load brain file |
 | `src/brain/tools/write_stemcell_file.rs` | Write stemcell file |
 | `src/brain/tools/a2a_send.rs` | A2A send |
-| `src/brain/tools/telegram_connect.rs` | Telegram connect |
-| `src/brain/tools/telegram_send.rs` | Telegram send |
-| `src/brain/tools/whatsapp_connect.rs` | WhatsApp connect |
-| `src/brain/tools/whatsapp_send.rs` | WhatsApp send |
-| `src/brain/tools/discord_connect.rs` | Discord connect |
-| `src/brain/tools/discord_send.rs` | Discord send |
-| `src/brain/tools/slack_connect.rs` | Slack connect |
-| `src/brain/tools/slack_send.rs` | Slack send |
-| `src/brain/tools/trello_connect.rs` | Trello connect |
-| `src/brain/tools/trello_send.rs` | Trello send |
 | `src/brain/tools/browser/manager.rs` | CDP browser manager (48KB) |
 | `src/brain/tools/browser/navigate.rs` | Browser navigation |
 | `src/brain/tools/browser/screenshot.rs` | Browser screenshot |
@@ -176,14 +166,20 @@
 
 | File | Responsibility |
 |------|---------------|
-| `src/channels/manager.rs` | Channel lifecycle manager |
-| `src/channels/factory.rs` | Channel factory |
+| `src/channels/factory.rs` | Channel agent factory |
 | `src/channels/mod.rs` | Module root |
 | `src/channels/commands.rs` | Channel commands (42KB) |
 | `src/channels/session_init.rs` | Channel session init |
 | `src/channels/session_resolve.rs` | Channel session resolution |
 | `src/channels/greeting.rs` | Channel greeting messages |
 | `src/channels/tests.rs` | Channel tests |
+| `src/channels/gateway/` | Unified gateway bus: surfaces, envelope, registry, shared services |
+| `src/channels/tui_surface.rs` | TUI surface adapter |
+| `src/channels/telegram_surface.rs` | Telegram surface adapter |
+| `src/channels/discord_surface.rs` | Discord surface adapter |
+| `src/channels/slack_surface.rs` | Slack surface adapter |
+| `src/channels/whatsapp_surface.rs` | WhatsApp surface adapter |
+| `src/channels/trello_surface.rs` | Trello surface adapter |
 | `src/channels/telegram/` | Telegram bot handlers |
 | `src/channels/discord/` | Discord bot handlers |
 | `src/channels/slack/` | Slack bot handlers |
