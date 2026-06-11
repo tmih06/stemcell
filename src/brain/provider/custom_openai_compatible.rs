@@ -102,6 +102,16 @@ impl OpenAIProvider {
     }
 
     pub fn with_body_transform(self, _transform: BodyTransformFn) -> Self {
+        // NOT WIRED: rig-core builds and serializes the request body itself,
+        // so there is no safe hook to apply a body transform without
+        // reimplementing rig's request encoding. Qwen body shaping and the
+        // local-model thinking toggle are dropped on this path. Warn rather
+        // than silently no-op.
+        tracing::warn!(
+            provider = %self.name,
+            "with_body_transform is not applied on the rig path; request body \
+             transforms (e.g. Qwen shaping, local thinking toggle) are dropped"
+        );
         self
     }
 
@@ -111,6 +121,14 @@ impl OpenAIProvider {
     }
 
     pub fn with_rate_limiter(self, _limiter: Arc<RateLimiter>) -> Self {
+        // NOT WIRED: rate limiting would need to wrap the completion/stream
+        // call inside RigAdapter; it is dropped on this path. Warn so :free
+        // model pacing regressions are visible.
+        tracing::warn!(
+            provider = %self.name,
+            "with_rate_limiter is not applied on the rig path; request pacing \
+             (e.g. OpenRouter :free) is dropped"
+        );
         self
     }
     pub fn with_vision_model(mut self, vm: String) -> Self {
@@ -125,7 +143,15 @@ impl OpenAIProvider {
         self.configured_models = models;
         self
     }
-    pub fn with_cache_enabled(self, _cache: bool) -> Self {
+    pub fn with_cache_enabled(self, cache: bool) -> Self {
+        // NOT WIRED: prompt/response caching is not implemented on the rig
+        // path. Only warn when the caller actually asked for it.
+        if cache {
+            tracing::warn!(
+                provider = %self.name,
+                "with_cache_enabled is not applied on the rig path; caching is dropped"
+            );
+        }
         self
     }
     pub fn with_cache_ttl(self, _ttl: u32) -> Self {
@@ -188,6 +214,7 @@ impl OpenAIProvider {
         let api_key = self.api_key.clone();
         let base_url = self.base_url.clone();
         let token_fn = self.token_fn.clone();
+        let extra_headers = self.extra_headers.clone();
         let configured_cw = self.configured_context_window;
 
         let client_builder = Arc::new(move || {
@@ -196,11 +223,32 @@ impl OpenAIProvider {
             } else {
                 api_key.clone()
             };
-            CompletionsClient::builder()
+            let mut builder = CompletionsClient::builder()
                 .api_key(key)
-                .base_url(base_url.clone())
-                .build()
-                .expect("Failed to create OpenAI client")
+                .base_url(base_url.clone());
+            // Custom headers (Copilot vscode telemetry, OpenRouter X-Title /
+            // HTTP-Referer, Qwen DashScope, codex ChatGPT-Account-Id, ...) must
+            // reach every request. rig stores these on the client and appends
+            // them to outgoing requests; the bearer api_key header is only
+            // inserted when not already present, so none of these collide.
+            if !extra_headers.is_empty() {
+                let mut header_map = reqwest::header::HeaderMap::new();
+                for (name, value) in &extra_headers {
+                    match (
+                        reqwest::header::HeaderName::from_bytes(name.as_bytes()),
+                        reqwest::header::HeaderValue::from_str(value),
+                    ) {
+                        (Ok(hn), Ok(hv)) => {
+                            header_map.insert(hn, hv);
+                        }
+                        _ => tracing::warn!(
+                            "Skipping invalid custom header for provider request: {name}"
+                        ),
+                    }
+                }
+                builder = builder.http_headers(header_map);
+            }
+            builder.build().expect("Failed to create OpenAI client")
         });
 
         let context_window_fn: Option<crate::brain::provider::rig_adapter::ContextWindowFn> =

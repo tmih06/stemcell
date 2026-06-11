@@ -227,12 +227,6 @@ fn init_minimal_logging(config: LogConfig) -> Result<LoggerGuard, Box<dyn std::e
     Ok(LoggerGuard::empty())
 }
 
-/// Convenience function to setup logging from CLI args
-pub fn setup_from_cli(debug: bool) -> Result<LoggerGuard, Box<dyn std::error::Error>> {
-    let config = LogConfig::new().with_debug_mode(debug);
-    init_logging(config)
-}
-
 /// Get the path to the current log file (if debug mode is enabled)
 pub fn get_log_path() -> Option<PathBuf> {
     let log_dir = crate::config::stemcell_home().join("logs");

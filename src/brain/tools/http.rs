@@ -3,7 +3,7 @@
 //! Make HTTP requests to external APIs (REST endpoints, webhooks, etc.)
 
 use super::error::{Result, ToolError};
-use super::r#trait::{Tool, ToolCapability, ToolExecutionContext, ToolResult};
+use super::r#trait::{Tool, ToolCapability, ToolExecutionContext, ToolResult, parse_input};
 use async_trait::async_trait;
 use reqwest::{Client, Method, header::HeaderMap};
 use serde::{Deserialize, Serialize};
@@ -135,8 +135,7 @@ impl Tool for HttpClientTool {
     }
 
     fn validate_input(&self, input: &Value) -> Result<()> {
-        let input: HttpInput = serde_json::from_value(input.clone())
-            .map_err(|e| ToolError::InvalidInput(format!("Invalid input: {}", e)))?;
+        let input: HttpInput = parse_input(input)?;
 
         // Validate URL
         if !input.url.starts_with("http://") && !input.url.starts_with("https://") {
@@ -169,7 +168,7 @@ impl Tool for HttpClientTool {
     }
 
     async fn execute(&self, input: Value, _context: &ToolExecutionContext) -> Result<ToolResult> {
-        let input: HttpInput = serde_json::from_value(input)?;
+        let input: HttpInput = parse_input(&input)?;
 
         let method = parse_method(&input.method)?;
 

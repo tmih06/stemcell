@@ -55,25 +55,19 @@ pub async fn handle_send_message(
     let task = Task {
         id: task_id.clone(),
         context_id: Some(context_id.clone()),
-        status: TaskStatus {
-            state: TaskState::Working,
-            message: Some(Message {
-                message_id: Some(Uuid::new_v4().to_string()),
-                context_id: Some(context_id.clone()),
-                task_id: Some(task_id.clone()),
-                role: Role::Agent,
-                parts: vec![Part::text(format!(
-                    "Task created. Processing: {}",
-                    if user_text.len() > 100 {
-                        format!("{}...", &user_text[..user_text.floor_char_boundary(100)])
-                    } else {
-                        user_text.clone()
-                    }
-                ))],
-                metadata: None,
-            }),
-            timestamp: Some(chrono::Utc::now().to_rfc3339()),
-        },
+        status: Task::status_message(
+            TaskState::Working,
+            context_id.clone(),
+            task_id.clone(),
+            format!(
+                "Task created. Processing: {}",
+                if user_text.len() > 100 {
+                    format!("{}...", &user_text[..user_text.floor_char_boundary(100)])
+                } else {
+                    user_text.clone()
+                }
+            ),
+        ),
         artifacts: vec![],
         history: vec![send_params.message.clone()],
         metadata: None,
@@ -193,18 +187,12 @@ async fn process_task(
         Ok(response) => {
             let mut tasks = store.write().await;
             if let Some(task) = tasks.get_mut(&task_id) {
-                task.status = TaskStatus {
-                    state: TaskState::Completed,
-                    message: Some(Message {
-                        message_id: Some(Uuid::new_v4().to_string()),
-                        context_id: Some(context_id),
-                        task_id: Some(task_id.clone()),
-                        role: Role::Agent,
-                        parts: vec![Part::text("Task completed.")],
-                        metadata: None,
-                    }),
-                    timestamp: Some(chrono::Utc::now().to_rfc3339()),
-                };
+                task.status = Task::status_message(
+                    TaskState::Completed,
+                    context_id,
+                    task_id.clone(),
+                    "Task completed.",
+                );
                 task.artifacts.push(Artifact {
                     artifact_id: Some(Uuid::new_v4().to_string()),
                     name: Some("response".to_string()),
@@ -239,18 +227,12 @@ async fn update_task_failed(
 ) {
     let mut tasks = store.write().await;
     if let Some(task) = tasks.get_mut(task_id) {
-        task.status = TaskStatus {
-            state: TaskState::Failed,
-            message: Some(Message {
-                message_id: Some(Uuid::new_v4().to_string()),
-                context_id: Some(context_id.to_string()),
-                task_id: Some(task_id.to_string()),
-                role: Role::Agent,
-                parts: vec![Part::text(format!("Task failed: {}", error_msg))],
-                metadata: None,
-            }),
-            timestamp: Some(chrono::Utc::now().to_rfc3339()),
-        };
+        task.status = Task::status_message(
+            TaskState::Failed,
+            context_id.to_string(),
+            task_id.to_string(),
+            format!("Task failed: {}", error_msg),
+        );
         persistence::upsert_task(pool, task).await;
     }
 }

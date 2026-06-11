@@ -69,7 +69,7 @@ deadpool-sqlite connection pool
 - 24 migrations in `src/migrations/`
 - Connection pool managed by deadpool-sqlite with `rt_tokio_1` feature
 - Models in `src/db/models.rs`
-- Retry logic in `src/db/retry.rs`
+- Contention handled by SQLite WAL mode and a 30s `busy_timeout` (set in `src/db/database.rs`)
 
 ## Channel Boundary
 
@@ -119,7 +119,7 @@ build_toggles.toml
   → Python resolver (src/scripts/tool_features.py)
   → Produces --features list
 build.rs
-  → Cross-checks via OPENCRABS_EXPECTED_FEATURES env var
+  → Cross-checks via STEMCELL_EXPECTED_FEATURES env var
   → Validates resolved features match expected set
 ```
 

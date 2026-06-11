@@ -3,7 +3,7 @@
 //! Modify Jupyter notebook files (.ipynb) cell by cell.
 
 use super::error::{Result, ToolError};
-use super::r#trait::{Tool, ToolCapability, ToolExecutionContext, ToolResult};
+use super::r#trait::{Tool, ToolCapability, ToolExecutionContext, ToolResult, parse_input};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -152,13 +152,12 @@ impl Tool for NotebookEditTool {
     }
 
     fn validate_input(&self, input: &Value) -> Result<()> {
-        let _: NotebookInput = serde_json::from_value(input.clone())
-            .map_err(|e| ToolError::InvalidInput(format!("Invalid input: {}", e)))?;
+        let _: NotebookInput = parse_input(input)?;
         Ok(())
     }
 
     async fn execute(&self, input: Value, context: &ToolExecutionContext) -> Result<ToolResult> {
-        let input: NotebookInput = serde_json::from_value(input)?;
+        let input: NotebookInput = parse_input(&input)?;
 
         // Resolve path (tilde expansion + absolute/relative resolution).
         let path = super::error::resolve_tool_path(&input.path, &context.working_dir());

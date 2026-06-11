@@ -116,8 +116,13 @@ See `config.toml.example` and `keys.toml.example` for the full list.
 
 ## Error Types
 
-File: `src/error/types.rs` — `StemCellError` enum with `ErrorCode`.
+Errors are defined per subsystem rather than in a single shared module:
+- `src/brain/provider/error.rs` — `ProviderError`
+- `src/brain/tools/error.rs` — `ToolError`
+- `src/brain/agent/error.rs` — `AgentError` (with `format_user_error`)
+
+Cross-cutting code uses `anyhow::Result` and `thiserror`-derived enums.
 
 ## Module Organization
 
-File: `src/lib.rs` — declares all public modules: `app`, `brain`, `cli`, `config`, `db`, `error`, `logging`, `memory`, `services`, `startup`, `tui`, `utils`, `a2a`, `channels`, `cron`, `rtk`, `usage`.
+File: `src/lib.rs` — declares all public modules: `brain`, `cli`, `config`, `db`, `logging`, `memory`, `services`, `startup`, `tui`, `utils`, `a2a`, `channels`, `cron`, `rtk`, `usage`.

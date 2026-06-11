@@ -3,7 +3,7 @@
 //! Manage conversation context, store session variables, and maintain state.
 
 use super::error::{Result, ToolError};
-use super::r#trait::{Tool, ToolCapability, ToolExecutionContext, ToolResult};
+use super::r#trait::{Tool, ToolCapability, ToolExecutionContext, ToolResult, parse_input};
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -203,13 +203,12 @@ impl Tool for ContextTool {
     }
 
     fn validate_input(&self, input: &Value) -> Result<()> {
-        let _: ContextInput = serde_json::from_value(input.clone())
-            .map_err(|e| ToolError::InvalidInput(format!("Invalid input: {}", e)))?;
+        let _: ContextInput = parse_input(input)?;
         Ok(())
     }
 
     async fn execute(&self, input: Value, context: &ToolExecutionContext) -> Result<ToolResult> {
-        let input: ContextInput = serde_json::from_value(input)?;
+        let input: ContextInput = parse_input(&input)?;
         let store_path = get_store_path(context);
         let session_id_str = context.session_id.to_string();
         let mut store = ContextStore::load(&store_path, &session_id_str).await?;
