@@ -12,19 +12,19 @@
 *.pdb
 
 # Configuration and data
-opencrab.toml
-opencrab.json
-opencrab.db
-opencrab.db-shm
-opencrab.db-wal
+stemcell.toml
+stemcell.json
+stemcell.db
+stemcell.db-shm
+stemcell.db-wal
 *.log
 
 # User data directories
-.opencrab/
-.opencrabs/
-.local/share/opencrab/
-.config/opencrab/
-/opencrabs
+.stemcell/
+.stemcell/
+.local/share/stemcell/
+.config/stemcell/
+/stemcell
 
 # Environment variables
 .env
@@ -56,7 +56,7 @@ Desktop.ini
 
 
 # GitHub workflows (temporarily ignored)
-.github/workflows/opencrabs-review.yml
+.github/workflows/stemcell-review.yml
 
 # Release artifacts
 /dist/
@@ -75,7 +75,7 @@ src/patches/
 src/tasks/
 tasks/
 ~/
-.opencrabs_*.json
+.stemcell_*.json
 PLAN.md
 COST_ESTIMATE.md
 src/plans/

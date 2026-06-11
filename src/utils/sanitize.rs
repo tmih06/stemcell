@@ -188,7 +188,7 @@ fn find_case_insensitive(haystack: &str, needle: &str) -> Option<usize> {
 
 /// Recursively replace the user's home directory path with `~` in all strings.
 ///
-/// Transforms `/Users/adolfousierstudio/srv/rs/stemcell` → `~/srv/rs/stemcell`
+/// Transforms `/Users/tmih06studio/srv/rs/stemcell` → `~/srv/rs/stemcell`
 /// This makes tool call displays much cleaner in the TUI and channels.
 fn shrink_home_paths(value: &Value) -> Value {
     // Cross-platform home directory detection:

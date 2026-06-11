@@ -92,6 +92,12 @@ pub const KNOWN_PROVIDERS: &[ProviderMeta] = &[
         needs_api_key: true,
     },
     ProviderMeta {
+        id: "opencode_zen_free",
+        display_name: "OpenCode Zen Free",
+        config_section: "providers.opencode_zen_free",
+        needs_api_key: false,
+    },
+    ProviderMeta {
         id: "qwen",
         display_name: "Qwen",
         config_section: "providers.qwen",

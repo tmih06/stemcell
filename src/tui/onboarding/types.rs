@@ -257,11 +257,21 @@ pub const PROVIDERS: &[ProviderInfo] = &[
     ProviderInfo {
         id: "opencode",
         name: "OpenCode",
-        models: &[], // Fetched from opencode.ai API
+        models: &[],
         key_label: "API Key",
         help_lines: &[
             "Go and Zen plans — opencode.ai",
             "Get key from opencode.ai/settings",
+        ],
+    },
+    ProviderInfo {
+        id: "opencode_zen_free",
+        name: "OpenCode Zen Free",
+        models: &[],
+        key_label: "",
+        help_lines: &[
+            "Free models from opencode.ai — no login required",
+            "No API key needed",
         ],
     },
     ProviderInfo {

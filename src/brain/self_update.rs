@@ -12,7 +12,7 @@ use std::path::PathBuf;
 use uuid::Uuid;
 
 /// GitHub repo URL for auto-cloning when source is not available locally.
-const REPO_URL: &str = "https://github.com/adolfousier/stemcell.git";
+const REPO_URL: &str = "https://github.com/tmih06/stemcell.git";
 
 /// Handles building, testing, and restarting StemCell from source.
 pub struct SelfUpdater {

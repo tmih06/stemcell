@@ -1044,6 +1044,10 @@ pub struct ProviderConfigs {
     #[serde(default)]
     pub qwen: Option<ProviderConfig>,
 
+    /// OpenCode Zen Free API
+    #[serde(default)]
+    pub opencode_zen_free: Option<ProviderConfig>,
+
     /// Ollama — local or cloud (api.ollama.com). Auto-detects local models via /api/tags.
     #[serde(default)]
     pub ollama: Option<ProviderConfig>,
@@ -1132,6 +1136,12 @@ impl ProviderConfigs {
             ("codex", "Codex OAuth", false, self.codex.as_ref()),
             // OpenCode API — OAuth-backed but registered as a regular provider
             ("opencode", "OpenCode", false, self.opencode.as_ref()),
+            (
+                "opencode_zen_free",
+                "OpenCode Zen Free",
+                false,
+                self.opencode_zen_free.as_ref(),
+            ),
             // API providers — require api_key in addition to enabled
             ("qwen", "Qwen", true, self.qwen.as_ref()),
             ("minimax", "Minimax", true, self.minimax.as_ref()),

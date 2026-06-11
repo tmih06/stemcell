@@ -547,7 +547,7 @@ pub struct RuntimeInfo {
 /// `Working directory:` line.
 ///
 /// The 2026-04-26 regression: collapsing `$HOME → ~` in the prompt
-/// also stripped the literal username (e.g. `adolfousierstudio`) the
+/// also stripped the literal username (e.g. `tmih06studio`) the
 /// model used to parrot back when constructing absolute paths. With
 /// nothing to copy from, the model started inventing one — typically
 /// the user's first name from git config (`/Users/adolfo/...`),

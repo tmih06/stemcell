@@ -1120,7 +1120,7 @@ fn phantom_no_tools_scope_is_prose_lead_in() {
     let unsloth_style_markdown_bash = "\
         Let me check the git log since 0.3.10.\n\n\
         ```bash\n\
-        cd /Users/adolfousierstudio/srv/rs/stemcell && git log --oneline 0.3.10..HEAD\n\
+        cd /Users/tmih06studio/srv/rs/stemcell && git log --oneline 0.3.10..HEAD\n\
         ```";
     assert!(
         has_phantom_tool_intent_no_tools(unsloth_style_markdown_bash),

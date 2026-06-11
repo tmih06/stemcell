@@ -1,4 +1,4 @@
-//! Error types and error codes for OpenCrabs.
+//! Error types and error codes for Stemcell.
 
 use thiserror::Error;
 

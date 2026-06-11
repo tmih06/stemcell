@@ -427,6 +427,41 @@ pub async fn fetch_provider_models(
             }
             req.send().await
         }
+        "opencode_zen_free" => {
+            // OpenCode Zen Free API
+            // Filter models dynamically based on cost from models.dev, matching OpenCode's source
+            let req = client.get("https://models.dev/api.json");
+            match req.send().await {
+                Ok(resp) if resp.status().is_success() => {
+                    if let Ok(json) = resp.json::<serde_json::Value>().await {
+                        if let Some(models) =
+                            json.pointer("/opencode/models").and_then(|v| v.as_object())
+                        {
+                            let mut free_models: Vec<String> = models
+                                .iter()
+                                .filter_map(|(id, model)| {
+                                    let is_free = model
+                                        .get("cost")
+                                        .and_then(|c| c.get("input"))
+                                        .and_then(|i| i.as_f64())
+                                        .map_or(true, |input| input == 0.0);
+                                    if is_free { Some(id.clone()) } else { None }
+                                })
+                                .collect();
+                            free_models.sort();
+                            tracing::info!(
+                                "[fetch_provider_models] OpenCode Zen Free: fetched {} free models",
+                                free_models.len()
+                            );
+                            return free_models;
+                        }
+                    }
+                }
+                Ok(resp) => tracing::warn!("models.dev API returned {}", resp.status()),
+                Err(e) => tracing::warn!("models.dev fetch failed: {}", e),
+            }
+            return Vec::new();
+        }
         "zhipu" => {
             // z.ai GLM — /api/paas/v4/models or /api/coding/paas/v4/models
             // Use passed endpoint_type (from wizard state), fall back to config, then default "api"

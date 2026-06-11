@@ -4,7 +4,7 @@
 //! emitted Cursor/Aider-style fenced blocks like
 //!
 //! ```text
-//! ```dart|CODE_EDIT_BLOCK|/Users/adolfousierstudio/srv/dart/.../estimate_model.dart
+//! ```dart|CODE_EDIT_BLOCK|/Users/tmih06studio/srv/dart/.../estimate_model.dart
 //! enum EstimateType { ... }
 //! ```
 //! ```
@@ -146,7 +146,7 @@ fn handles_leading_whitespace_on_fence() {
 #[test]
 fn extracts_path_from_complex_real_world_path() {
     // The actual incident: a deeply nested macOS path.
-    let path = "/Users/adolfousierstudio/srv/dart/estimerstravaux/lib/models/estimate_model.dart";
+    let path = "/Users/tmih06studio/srv/dart/estimerstravaux/lib/models/estimate_model.dart";
     let input = format!(
         "Extending the data model.\n\n\
          ```dart|CODE_EDIT_BLOCK|{path}\n\
