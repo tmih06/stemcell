@@ -384,6 +384,8 @@ pub enum AppMode {
     MissionControl,
     /// Skills picker — filterable list of loaded skills (triggered by /skills)
     SkillsList,
+    /// Status bar field toggle checklist (triggered by /statusline)
+    StatusLine,
 }
 
 /// Event handler for the TUI
