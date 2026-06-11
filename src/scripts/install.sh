@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# OpenCrabs — one-line install
-# curl -fsSL https://raw.githubusercontent.com/adolfousier/opencrabs/main/src/scripts/install.sh | bash
+# StemCell — one-line install
+# curl -fsSL https://raw.githubusercontent.com/tmih06/stemcell/main/src/scripts/install.sh | bash
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -41,7 +41,7 @@ else
 fi
 
 info "Detecting latest release..."
-TAG=$(curl -fsSL https://api.github.com/repos/adolfousier/opencrabs/releases/latest \
+TAG=$(curl -fsSL https://api.github.com/repos/tmih06/stemcell/releases/latest \
   | grep -o '"tag_name": *"[^"]*"' \
   | head -1 \
   | cut -d'"' -f4)
@@ -50,22 +50,22 @@ if [ -z "$TAG" ]; then
   error "Could not determine latest release tag"
 fi
 
-FILENAME="opencrabs-${TAG}-${OS}-${ARCH}.tar.gz"
-DOWNLOAD_URL="https://github.com/adolfousier/opencrabs/releases/download/${TAG}/${FILENAME}"
+FILENAME="stemcell-${TAG}-${OS}-${ARCH}.tar.gz"
+DOWNLOAD_URL="https://github.com/tmih06/stemcell/releases/download/${TAG}/${FILENAME}"
 
 info "Downloading ${TAG} for ${OS}-${ARCH}..."
 TMPDIR=$(mktemp -d)
 trap 'rm -rf "$TMPDIR"' EXIT
 
 if ! curl -fsSL "$DOWNLOAD_URL" -o "${TMPDIR}/${FILENAME}"; then
-  error "Failed to download ${FILENAME}\n   URL: ${DOWNLOAD_URL}\n   Check https://github.com/adolfousier/opencrabs/releases for available releases"
+  error "Failed to download ${FILENAME}\n   URL: ${DOWNLOAD_URL}\n   Check https://github.com/tmih06/stemcell/releases for available releases"
 fi
 
 info "Extracting..."
 tar xzf "${TMPDIR}/${FILENAME}" -C "$TMPDIR"
 
 info "Installing to ${INSTALL_DIR}..."
-$SUDO install -m 755 "${TMPDIR}/opencrabs" "${INSTALL_DIR}/opencrabs"
+$SUDO install -m 755 "${TMPDIR}/stemcell" "${INSTALL_DIR}/stemcell"
 
-info "OpenCrabs ${TAG} installed to ${INSTALL_DIR}/opencrabs"
-info "Run 'opencrabs' to get started!"
+info "StemCell ${TAG} installed to ${INSTALL_DIR}/stemcell"
+info "Run 'stemcell' to get started!"

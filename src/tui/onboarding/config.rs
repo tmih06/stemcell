@@ -176,7 +176,7 @@ impl OnboardingWizard {
         };
 
         // Check 2: Config path writable
-        let config_path = crate::config::opencrabs_home().join("config.toml");
+        let config_path = crate::config::stemcell_home().join("config.toml");
         self.health_results[1].1 = if let Some(parent) = config_path.parent() {
             if parent.exists() || std::fs::create_dir_all(parent).is_ok() {
                 HealthStatus::Pass
@@ -1075,7 +1075,7 @@ fn install_systemd_service() -> Result<(), String> {
 
     let service_content = format!(
         r#"[Unit]
-Description=OpenCrabs AI Orchestration Agent
+Description=StemCell AI Orchestration Agent
 After=network.target
 
 [Service]
@@ -1090,18 +1090,18 @@ WantedBy=default.target
         exe_path.display()
     );
 
-    let service_path = service_dir.join("opencrabs.service");
+    let service_path = service_dir.join("stemcell.service");
     std::fs::write(&service_path, service_content)
         .map_err(|e| format!("Failed to write service file: {}", e))?;
 
     // Enable and start the service
     std::process::Command::new("systemctl")
-        .args(["--user", "enable", "opencrabs"])
+        .args(["--user", "enable", "stemcell"])
         .output()
         .map_err(|e| format!("Failed to enable service: {}", e))?;
 
     std::process::Command::new("systemctl")
-        .args(["--user", "start", "opencrabs"])
+        .args(["--user", "start", "stemcell"])
         .output()
         .map_err(|e| format!("Failed to start service: {}", e))?;
 
@@ -1126,7 +1126,7 @@ fn install_launchagent() -> Result<(), String> {
 <plist version="1.0">
 <dict>
     <key>Label</key>
-    <string>com.opencrabs.agent</string>
+    <string>com.stemcell.agent</string>
     <key>ProgramArguments</key>
     <array>
         <string>{}</string>
@@ -1142,7 +1142,7 @@ fn install_launchagent() -> Result<(), String> {
         exe_path.display()
     );
 
-    let plist_path = agents_dir.join("com.opencrabs.agent.plist");
+    let plist_path = agents_dir.join("com.stemcell.agent.plist");
     std::fs::write(&plist_path, plist_content)
         .map_err(|e| format!("Failed to write plist: {}", e))?;
 

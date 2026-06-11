@@ -1,4 +1,4 @@
-# OpenCrabs default RTK filters — copy to ~/.rtk/filters.toml (or your
+# Stemcell default RTK filters — copy to ~/.rtk/filters.toml (or your
 # project's `.rtk/filters.toml`) and run `rtk trust` to activate.
 #
 # Each filter matches a command-shape via `match_command` (regex) and

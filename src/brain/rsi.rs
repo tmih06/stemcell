@@ -1,7 +1,7 @@
 //! RSI (Recursive Self-Improvement) background engine.
 //!
 //! Runs as a background task after startup:
-//! 1. Writes a digest of feedback_ledger stats to `~/.opencrabs/rsi/digest.md`
+//! 1. Writes a digest of feedback_ledger stats to `~/.stemcell/rsi/digest.md`
 //! 2. Periodically analyzes feedback and applies improvements autonomously
 //! 3. Emits TUI notifications when improvements are applied
 //!
@@ -30,9 +30,9 @@ const RSI_MAX_TOOL_ITERATIONS: usize = 10;
 /// At 1 hour per cycle, 24 cycles = once per day.
 const DEDUP_SCAN_EVERY_N_CYCLES: u64 = 24;
 
-/// Ensure `~/.opencrabs/rsi/` and `~/.opencrabs/rsi/history/` exist.
+/// Ensure `~/.stemcell/rsi/` and `~/.stemcell/rsi/history/` exist.
 fn ensure_rsi_dirs() -> std::io::Result<PathBuf> {
-    let home = crate::config::opencrabs_home();
+    let home = crate::config::stemcell_home();
     let rsi_dir = home.join("rsi");
     let history_dir = rsi_dir.join("history");
     std::fs::create_dir_all(&history_dir)?;
@@ -54,7 +54,7 @@ pub(crate) fn hash_opportunities(opps: &[String]) -> String {
     format!("{:x}", hasher.finalize())
 }
 
-/// Write the startup digest to `~/.opencrabs/rsi/digest.md`.
+/// Write the startup digest to `~/.stemcell/rsi/digest.md`.
 /// Called once at boot after DB is ready.
 pub async fn write_startup_digest(pool: crate::db::Pool) {
     let repo = FeedbackLedgerRepository::new(pool);
@@ -187,8 +187,6 @@ pub async fn write_startup_digest(pool: crate::db::Pool) {
 pub enum RsiNotification {
     /// RSI cycle started
     CycleStarted,
-    /// Digest written at startup
-    DigestWritten { total_events: i64 },
     /// Template sync completed (upstream brain files updated)
     TemplateSyncComplete { summary: String },
     /// Template sync failed
@@ -223,7 +221,7 @@ fn build_rsi_tool_registry() -> Arc<crate::brain::tools::ToolRegistry> {
 /// The system prompt for the RSI agent.
 #[cfg(feature = "tools-rsi")]
 pub(crate) const RSI_AGENT_PROMPT: &str = "\
-You are the RSI (Recursive Self-Improvement) engine for OpenCrabs. \
+You are the RSI (Recursive Self-Improvement) engine for StemCell. \
 Your job is to analyze system feedback and autonomously apply improvements to brain files.
 
 ## Analysis Steps
@@ -307,7 +305,7 @@ self_heal events, same root cause), update the existing rule to document the new
 - Tighten the wording if the model keeps slipping past it.
 
 **Do NOT bump inline counters** (e.g. do NOT write `Violations: 6 → 7`). The feedback ledger SQLite
-database (~/.opencrabs/feedback.db) is the canonical source of truth for event counts. SOUL.md
+database (~/.stemcell/feedback.db) is the canonical source of truth for event counts. SOUL.md
 counters are decorative and go stale — they are not read by the runtime. Only the DB is queried
 by feedback_analyze and the tool_loop.rs runtime.
 
@@ -317,10 +315,10 @@ evidence appends, not counter bumps.
 
 ## Proposing New Tools / Commands (rsi_propose)
 
-You can also propose NEW dynamic tools (~/.opencrabs/tools.toml) or NEW slash \
-commands (~/.opencrabs/commands.toml) when feedback shows the agent worked around \
+You can also propose NEW dynamic tools (~/.stemcell/tools.toml) or NEW slash \
+commands (~/.stemcell/commands.toml) when feedback shows the agent worked around \
 a missing capability. Use `rsi_propose` for this. You do NOT install — proposals \
-land in an inbox at ~/.opencrabs/rsi/proposed_*.toml. The user (or the user-facing \
+land in an inbox at ~/.stemcell/rsi/proposed_*.toml. The user (or the user-facing \
 agent on their behalf) reviews and applies via the `rsi_proposals` tool.
 
 When to propose a tool (kind='tool'):
@@ -389,7 +387,7 @@ async fn run_rsi_agent_cycle(
 
     let service_ctx = ServiceContext::new(pool);
     let tool_registry = build_rsi_tool_registry();
-    let brain_path = crate::config::opencrabs_home();
+    let brain_path = crate::config::stemcell_home();
 
     let agent = AgentService::new(provider, service_ctx.clone(), config)
         .await
@@ -456,13 +454,13 @@ pub fn spawn_rsi_engine(
     pool: crate::db::Pool,
     #[allow(unused_variables)] config: &Config,
     notification_tx: mpsc::UnboundedSender<RsiNotification>,
+    mut ready_rx: tokio::sync::watch::Receiver<bool>,
 ) {
     let pool_clone = pool.clone();
     #[cfg(feature = "tools-rsi")]
     let config_clone = config.clone();
     tokio::spawn(async move {
-        // Delay to let the app fully start
-        tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+        let _ = ready_rx.wait_for(|ready| *ready).await;
 
         // 1. Check for upstream template sync (version gate)
         let sync_state = crate::brain::rsi_sync::SyncState::load();
@@ -501,14 +499,11 @@ pub fn spawn_rsi_engine(
             }
         }
 
-        // 2. Write startup digest
-        write_startup_digest(pool_clone.clone()).await;
+        // The boot digest write is owned by the `rsi-digest` startup job
+        // (see src/startup/jobs/rsi_digest.rs) so its event count can be
+        // reported in the startup-info line. The periodic cycle below still
+        // refreshes the digest on each analysis run.
         let repo = FeedbackLedgerRepository::new(pool_clone.clone());
-        if let Ok(total) = repo.total_count().await {
-            let _ = notification_tx.send(RsiNotification::DigestWritten {
-                total_events: total,
-            });
-        }
 
         // 2. Periodic analysis + autonomous improvement cycle
         //
@@ -518,7 +513,7 @@ pub fn spawn_rsi_engine(
         // Without this, frequent restarts prevent RSI from ever firing.
         let last_cycle_path = dirs::home_dir()
             .unwrap_or_default()
-            .join(".opencrabs/rsi/last_cycle");
+            .join(".stemcell/rsi/last_cycle");
         // Hash of the previous cycle's `opportunities` Vec. When the new
         // cycle's hash matches, the RSI engine skips re-emitting the same
         // top-N corrections / errors / tool-failure descriptions to the
@@ -526,7 +521,7 @@ pub fn spawn_rsi_engine(
         // would just write "Converged. No improvements applied." again).
         let opportunities_hash_path = dirs::home_dir()
             .unwrap_or_default()
-            .join(".opencrabs/rsi/last_opportunities_hash");
+            .join(".stemcell/rsi/last_opportunities_hash");
         let initial_delay = if let Ok(meta) = std::fs::metadata(&last_cycle_path) {
             let elapsed = meta
                 .modified()
@@ -552,7 +547,7 @@ pub fn spawn_rsi_engine(
 
         let cycle_number_path = dirs::home_dir()
             .unwrap_or_default()
-            .join(".opencrabs/rsi/cycle_number");
+            .join(".stemcell/rsi/cycle_number");
 
         let mut first_iteration = true;
         let mut last_seen_count: i64 = 0;
@@ -610,11 +605,11 @@ pub fn spawn_rsi_engine(
             let window_since = (chrono::Utc::now() - chrono::Duration::days(7))
                 .format("%Y-%m-%dT%H:%M:%SZ")
                 .to_string();
-            // Resolve the opencrabs source repo once per cycle so we
+            // Resolve the stemcell source repo once per cycle so we
             // can ask `git log` whether a given tool's failures already
             // have a fix commit between them and now. Returns None when
             // we can't find a checkout (installed binary launched from
-            // an unrelated cwd, no OPENCRABS_SRC env var) — we then
+            // an unrelated cwd, no STEMCELL_SRC env var) — we then
             // skip the git-context check, falling back to the
             // window-only behaviour.
             let source_repo = crate::brain::rsi_git_history::resolve_source_repo();
@@ -892,7 +887,7 @@ pub fn spawn_rsi_engine(
             cycle_number += 1;
             let _ = std::fs::write(&cycle_number_path, cycle_number.to_string());
             if cycle_number.is_multiple_of(DEDUP_SCAN_EVERY_N_CYCLES) {
-                let brain_path = crate::config::opencrabs_home();
+                let brain_path = crate::config::stemcell_home();
                 let store = crate::brain::rsi_proposals::ProposalsStore::new();
                 let filed = crate::brain::dedup_scan::file_dedup_proposals(&brain_path, &store);
                 if filed > 0 {

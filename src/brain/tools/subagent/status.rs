@@ -1,7 +1,7 @@
 //! Sub-agent progress streaming via JSON status files.
 //!
 //! Each sub-agent writes its state/progress to
-//! `<opencrabs_home>/tmp/subagents/<agent_id>.json`. The main orchestrator
+//! `<stemcell_home>/tmp/subagents/<agent_id>.json`. The main orchestrator
 //! can `read_file` these at any time for real-time visibility — no
 //! `session_search` needed.
 //!
@@ -21,9 +21,7 @@ pub fn status_dir() -> PathBuf {
             return p;
         }
     }
-    crate::config::opencrabs_home()
-        .join("tmp")
-        .join("subagents")
+    crate::config::stemcell_home().join("tmp").join("subagents")
 }
 
 #[cfg(test)]
@@ -285,7 +283,7 @@ mod tests {
     /// nukes its dir).
     fn isolate(tag: &str) {
         let dir = std::env::temp_dir().join(format!(
-            "opencrabs-subagent-test-{}-{}",
+            "stemcell-subagent-test-{}-{}",
             tag,
             std::process::id()
         ));
@@ -296,7 +294,7 @@ mod tests {
     #[test]
     fn status_dir_returns_correct_path() {
         // No isolation: this test verifies the *default* path.
-        let home = crate::config::opencrabs_home();
+        let home = crate::config::stemcell_home();
         let expected = home.join("tmp").join("subagents");
         assert_eq!(status_dir(), expected);
     }

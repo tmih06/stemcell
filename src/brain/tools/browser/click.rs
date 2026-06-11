@@ -115,7 +115,7 @@ impl Tool for BrowserClickTool {
                                 "No visible element matched text '{text}'. \
                                  Use `browser_find` with mode=\"text\" pattern=\"{text}\" \
                                  to enumerate candidates, then click by the returned \
-                                 `[data-opencrabs-match=\"N\"]` selector."
+                                 `[data-stemcell-match=\"N\"]` selector."
                             )));
                         }
                     }
@@ -191,7 +191,7 @@ impl Tool for BrowserClickTool {
                 } else {
                     " Try `browser_find` with mode=\"text\"/\"aria\"/\"role\" \
                      to locate the element, then click by the returned \
-                     `[data-opencrabs-match=\"N\"]` selector. Or use \
+                     `[data-stemcell-match=\"N\"]` selector. Or use \
                      `text=Label` directly if you know the visible text."
                 };
                 return Ok(ToolResult::error(format!(

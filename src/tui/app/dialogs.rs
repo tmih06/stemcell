@@ -254,13 +254,29 @@ impl App {
         self.ps.has_existing_key = api_key.is_some();
         self.ps.api_key_input.clear();
 
-        // Spawn async model fetch — dialog opens immediately, models arrive via event.
         // Custom providers default to PASTE mode: skip the auto-fetch and let
         // the user explicitly request the live /v1/models list by pressing
         // Enter on an empty model field. This avoids overwriting a typed
         // model with a stale list mid-input.
         let is_custom_provider = provider_idx >= CUSTOM_PROVIDER_IDX;
-        if !is_custom_provider {
+        let cache_id = super::onboarding::PROVIDERS.get(provider_idx).map(|p| p.id);
+
+        // Warm-start from the startup-jobs model cache in a single disk read:
+        // pre-fill the list so the dialog populates instantly, and learn whether
+        // the entry is fresh enough to skip the live fetch below.
+        let (cached_models, cache_fresh) = match cache_id {
+            Some(id) if !is_custom_provider => crate::startup::model_cache::warm_start(
+                id,
+                crate::startup::model_cache::FRESH_TTL_SECS,
+            ),
+            _ => (None, false),
+        };
+        self.ps.models = cached_models.unwrap_or_default();
+
+        // Only hit the network when the cache is missing or stale. A fresh cache
+        // means the dialog opens instantly with zero network. Ctrl+R forces a
+        // refresh regardless (see handle_model_selector_key).
+        if !is_custom_provider && !cache_fresh {
             let sender = self.event_sender();
             tokio::spawn(async move {
                 let models = super::onboarding::fetch_provider_models(
@@ -270,13 +286,19 @@ impl App {
                     None,
                 )
                 .await;
-                let _ = sender.send(TuiEvent::ModelSelectorModelsFetched(provider_idx, models));
+                let _ = sender.send(TuiEvent::ModelSelectorModelsFetched(
+                    provider_idx,
+                    models,
+                    None,
+                ));
             });
         }
 
-        // Clear models until fetch completes (or stays empty for custom)
-        self.ps.models.clear();
-        self.ps.reload_config_models();
+        // Merge config-persisted models on top of the warm-started list and
+        // rebuild the options cache. On a fresh-cache open no fetch fires, so
+        // this is the only thing that populates the dialog — and it preserves
+        // user-pasted models the provider endpoint omits.
+        self.ps.merge_config_models_into_fetched();
 
         if provider_idx != CUSTOM_PROVIDER_IDX {
             let initial_model = self
@@ -298,12 +320,83 @@ impl App {
         self.mode = AppMode::ModelSelector;
     }
 
+    /// Force a live refresh of the currently selected provider's model list,
+    /// bypassing cache freshness. Mirrors the fetch path used when the provider
+    /// changes; results arrive via `ModelSelectorModelsFetched` and are persisted
+    /// to the on-disk cache in that handler.
+    fn refresh_selected_provider_models(&mut self) {
+        let provider_idx = self.ps.selected_provider;
+
+        // Set refreshing state to show spinner and block input
+        self.ps.is_refreshing = true;
+        self.ps.refresh_start = Some(std::time::Instant::now());
+        self.ps.refresh_message = None;
+
+        // Built-ins can warm from the shared cache while the live refresh is
+        // in flight. Custom providers keep the current list on screen.
+        if provider_idx < CUSTOM_PROVIDER_IDX {
+            self.ps.models =
+                crate::startup::model_cache::models_for(self.ps.provider_id()).unwrap_or_default();
+            self.ps.rebuild_dialog_model_options_cache();
+        }
+
+        let (api_key, base_url) = if provider_idx >= CUSTOM_PROVIDER_IDX {
+            (
+                self.ps.resolve_api_key(),
+                Some(self.ps.base_url.clone()).filter(|url| !url.trim().is_empty()),
+            )
+        } else {
+            let provider_id = self.ps.provider_id();
+            let cfg = crate::config::Config::load().ok().and_then(|c| {
+                crate::utils::providers::config_for(&c.providers, provider_id).cloned()
+            });
+            (
+                cfg.as_ref()
+                    .and_then(|p| p.api_key.clone())
+                    .filter(|k| !k.is_empty()),
+                cfg.as_ref()
+                    .and_then(|p| p.base_url.clone())
+                    .filter(|url| !url.trim().is_empty()),
+            )
+        };
+        let zhipu_et = self.ps.zhipu_endpoint_str();
+        let sender = self.event_sender();
+        tokio::spawn(async move {
+            let start = std::time::Instant::now();
+            let models = super::onboarding::fetch_provider_models(
+                provider_idx,
+                api_key.as_deref(),
+                zhipu_et.as_deref(),
+                base_url.as_deref(),
+            )
+            .await;
+            let elapsed = start.elapsed();
+            if elapsed < std::time::Duration::from_millis(250) {
+                tokio::time::sleep(std::time::Duration::from_millis(250) - elapsed).await;
+            }
+            let _ = sender.send(TuiEvent::ModelSelectorModelsFetched(
+                provider_idx,
+                models,
+                Some(elapsed),
+            ));
+        });
+    }
+
     /// Handle keys in model selector mode
     pub(crate) async fn handle_model_selector_key(
         &mut self,
         event: crossterm::event::KeyEvent,
     ) -> Result<()> {
         use super::events::keys;
+
+        // Block all input except Esc while refreshing
+        if self.ps.is_refreshing {
+            if keys::is_cancel(&event) {
+                self.ps.is_refreshing = false;
+                self.ps.refresh_start = None;
+            }
+            return Ok(());
+        }
 
         let unified_model_picker = !self.ps.showing_providers;
         if unified_model_picker {
@@ -314,6 +407,13 @@ impl App {
 
             if event.code == crossterm::event::KeyCode::Tab {
                 self.ps.focused_field = 2;
+                return Ok(());
+            }
+
+            // Ctrl+R: force a live refresh of the selected provider's model
+            // list, bypassing cache freshness.
+            if keys::is_refresh_models(&event) {
+                self.refresh_selected_provider_models();
                 return Ok(());
             }
 
@@ -366,6 +466,13 @@ impl App {
         let is_zhipu = self.ps.provider_id() == "zhipu";
         let is_custom_field_3 =
             self.ps.focused_field == 3 && self.ps.selected_provider >= CUSTOM_PROVIDER_IDX;
+
+        // Ctrl+R: force a live refresh of the selected provider's model
+        // list and re-read the disk cache for all providers.
+        if keys::is_refresh_models(&event) {
+            self.refresh_selected_provider_models();
+            return Ok(());
+        }
 
         if keys::is_cancel(&event) {
             // Custom field 3 in LIST mode: Esc drops back to PASTE mode
@@ -489,8 +596,11 @@ impl App {
                             None,
                         )
                         .await;
-                        let _ =
-                            sender.send(TuiEvent::ModelSelectorModelsFetched(provider_idx, models));
+                        let _ = sender.send(TuiEvent::ModelSelectorModelsFetched(
+                            provider_idx,
+                            models,
+                            None,
+                        ));
                     });
                 }
                 self.ps.models.clear();
@@ -1068,6 +1178,9 @@ impl App {
         if let Some(ref mut p) = config.providers.opencode {
             p.enabled = false;
         }
+        if let Some(ref mut p) = config.providers.opencode_zen_free {
+            p.enabled = false;
+        }
         if let Some(ref mut p) = config.providers.qwen {
             p.enabled = false;
         }
@@ -1324,6 +1437,17 @@ impl App {
                     ..Default::default()
                 });
             }
+            "opencode_zen_free" => {
+                config.providers.opencode_zen_free = Some(ProviderConfig {
+                    enabled: true,
+                    api_key: None,
+                    base_url: None,
+                    default_model: Some(default_model.to_string()),
+                    models: vec![],
+                    vision_model: None,
+                    ..Default::default()
+                });
+            }
             "qwen" => {
                 let merged = config.providers.qwen.clone().unwrap_or_default();
                 config.providers.qwen = Some(ProviderConfig {
@@ -1408,6 +1532,7 @@ impl App {
             "codex-cli" => "providers.codex_cli",
             "codex" => "providers.codex",
             "opencode" => "providers.opencode",
+            "opencode_zen_free" => "providers.opencode_zen_free",
             "qwen" => "providers.qwen",
             "ollama" => "providers.ollama",
             "" => {
@@ -1471,6 +1596,7 @@ impl App {
             "providers.codex_cli",
             "providers.codex",
             "providers.opencode",
+            "providers.opencode_zen_free",
             "providers.qwen",
             "providers.ollama",
         ] {
@@ -2267,6 +2393,9 @@ impl App {
                         None
                     };
                     wizard.ps.models_fetching = true;
+                    wizard.ps.is_refreshing = true;
+                    wizard.ps.refresh_start = Some(std::time::Instant::now());
+                    wizard.ps.refresh_message = None;
 
                     // Capture zhipu endpoint type from wizard state (not yet saved to config)
                     let zhipu_et = if wizard.ps.provider_id() == "zhipu" {
@@ -2399,7 +2528,7 @@ impl App {
                     // ChannelManager (re)starts the single agent bot.
                     #[cfg(feature = "whatsapp")]
                     {
-                        let wa_dir = crate::config::opencrabs_home().join("whatsapp");
+                        let wa_dir = crate::config::stemcell_home().join("whatsapp");
                         let _ = std::fs::remove_file(wa_dir.join("session.db"));
                         let _ = std::fs::remove_file(wa_dir.join("session.db-wal"));
                         let _ = std::fs::remove_file(wa_dir.join("session.db-shm"));
@@ -2452,7 +2581,7 @@ impl App {
                                 Ok(Err(e)) => {
                                     // Broadcast channel closed — agent crashed or failed to start
                                     let msg = format!(
-                                        "WhatsApp agent stopped unexpectedly: {}. Check logs at ~/.opencrabs/logs/",
+                                        "WhatsApp agent stopped unexpectedly: {}. Check logs at ~/.stemcell/logs/",
                                         e
                                     );
                                     tracing::error!("{}", msg);
@@ -3288,7 +3417,7 @@ impl App {
 
 /// Download WhisperCrabs binary if not cached, return the path to the binary.
 pub(crate) async fn ensure_whispercrabs() -> Result<PathBuf> {
-    let bin_dir = crate::config::opencrabs_home().join("bin");
+    let bin_dir = crate::config::stemcell_home().join("bin");
     std::fs::create_dir_all(&bin_dir)?;
 
     let binary_name = if cfg!(target_os = "windows") {
@@ -3313,10 +3442,10 @@ pub(crate) async fn ensure_whispercrabs() -> Result<PathBuf> {
 
     // Download latest release via GitHub API
     let client = reqwest::Client::new();
-    let release_url = "https://api.github.com/repos/adolfousier/whispercrabs/releases/latest";
+    let release_url = "https://api.github.com/repos/tmih06/whispercrabs/releases/latest";
     let release: serde_json::Value = client
         .get(release_url)
-        .header("User-Agent", "opencrabs")
+        .header("User-Agent", "stemcell")
         .send()
         .await?
         .json()
@@ -3340,7 +3469,7 @@ pub(crate) async fn ensure_whispercrabs() -> Result<PathBuf> {
     // Download the archive
     let bytes = client
         .get(download_url)
-        .header("User-Agent", "opencrabs")
+        .header("User-Agent", "stemcell")
         .send()
         .await?
         .bytes()

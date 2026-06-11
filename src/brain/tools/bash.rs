@@ -18,7 +18,7 @@ use uuid::Uuid;
 ///
 /// Without this, programs that bypass `stdin` and open `/dev/tty` directly
 /// (ssh password prompt, sudo's getpass fallback, gnu readline) steal the
-/// parent's TTY — when the parent is the OpenCrabs TUI, that means the
+/// parent's TTY — when the parent is the StemCell TUI, that means the
 /// child reads the user's keystrokes, switches the terminal into no-echo
 /// mode, and emits escape sequences into the rendered chat (cursor keys
 /// turn into `[[[[[`). Restart fixes it because the TTY mode is reset.
@@ -1083,7 +1083,7 @@ impl SshAskpass {
 
         // 1. Password file (mode 0600, owner-only).
         let mut pw_file = tempfile::Builder::new()
-            .prefix("opencrabs-ssh-pw-")
+            .prefix("stemcell-ssh-pw-")
             .tempfile()?;
         pw_file.write_all(password.as_bytes())?;
         pw_file.flush()?;
@@ -1101,7 +1101,7 @@ impl SshAskpass {
         let pw_path = pw_file.path().to_string_lossy().to_string();
         let script_body = format!("#!/bin/sh\nexec cat {}\n", posix_single_quote(&pw_path));
         let mut script_file = tempfile::Builder::new()
-            .prefix("opencrabs-ssh-askpass-")
+            .prefix("stemcell-ssh-askpass-")
             .suffix(".sh")
             .tempfile()?;
         script_file.write_all(script_body.as_bytes())?;

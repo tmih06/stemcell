@@ -155,6 +155,5 @@ fn build_proposals_tool(app: &App) -> Option<RsiProposalsTool> {
 }
 
 fn notify(app: &mut App, message: &str) {
-    app.notification = Some(message.to_string());
-    app.notification_shown_at = Some(std::time::Instant::now());
+    app.set_notification(message, false);
 }

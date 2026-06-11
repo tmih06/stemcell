@@ -17,7 +17,7 @@
 //!   img2img is NOT supported on this backend.
 //!
 //! Both backends save the result as a PNG file in
-//! `~/.opencrabs/images/` and return the path.
+//! `~/.stemcell/images/` and return the path.
 
 use super::r#trait::{Tool, ToolCapability, ToolExecutionContext, ToolResult};
 use async_trait::async_trait;
@@ -165,7 +165,7 @@ impl Tool for GenerateImageTool {
             .unwrap_or_else(|| format!("{}.png", uuid::Uuid::new_v4().simple()));
 
         // Ensure images directory exists
-        let images_dir = crate::config::opencrabs_home().join("images");
+        let images_dir = crate::config::stemcell_home().join("images");
         if let Err(e) = tokio::fs::create_dir_all(&images_dir).await {
             return Ok(ToolResult::error(format!(
                 "Failed to create images directory: {}",

@@ -1,6 +1,6 @@
 //! Onboarding Wizard
 //!
-//! A 7-step TUI-based onboarding wizard for first-time OpenCrabs users.
+//! A 7-step TUI-based onboarding wizard for first-time StemCell users.
 //! Handles mode selection, provider/auth setup, workspace, gateway,
 //! channels, daemon installation, and health check.
 

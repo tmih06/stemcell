@@ -1,8 +1,8 @@
-//! # OpenCrabs
+//! # StemCell
 //!
 //! The autonomous, self-improving AI agent. Single Rust binary. Every channel.
 //!
-//! OpenCrabs is a high-performance AI orchestration agent with a modern TUI,
+//! StemCell is a high-performance AI orchestration agent with a modern TUI,
 //! multi-channel messaging (Telegram, Discord, Slack, WhatsApp), and an
 //! extensible tool system — all in one statically-linked binary.
 //!
@@ -29,13 +29,13 @@
 //!
 //! ```bash
 //! # Interactive TUI mode
-//! opencrabs
+//! stemcell
 //!
 //! # Non-interactive (pipe-friendly)
-//! opencrabs run "explain this code"
+//! stemcell run "explain this code"
 //!
 //! # With auto-approve
-//! opencrabs run --auto-approve "refactor this file"
+//! stemcell run --auto-approve "refactor this file"
 //! ```
 //!
 //! ## Architecture
@@ -58,6 +58,7 @@ pub mod db;
 pub mod logging;
 pub mod memory;
 pub mod services;
+pub mod startup;
 pub mod tui;
 pub mod utils;
 

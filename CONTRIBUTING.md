@@ -1,6 +1,6 @@
-# Contributing to OpenCrabs
+# Contributing to StemCell
 
-Thank you for your interest in contributing to OpenCrabs! We welcome contributions from the community — but we have clear standards to keep the project moving forward efficiently.
+Thank you for your interest in contributing to StemCell! We welcome contributions from the community — but we have clear standards to keep the project moving forward efficiently.
 
 ## Before You Do Anything
 
@@ -16,7 +16,7 @@ Found a bug? Open an issue — **do not submit a PR yet**.
 - Clear, descriptive title
 - Steps to reproduce (exact commands, config, inputs)
 - Expected vs. actual behavior
-- Environment: OS, Rust version (`rustc --version`), OpenCrabs version (`opencrabs --version`)
+- Environment: OS, Rust version (`rustc --version`), StemCell version (`stemcell --version`)
 - Full error messages and logs (redact API keys)
 - Screenshots if it's a TUI/visual issue
 
@@ -27,7 +27,7 @@ Have an idea for a new feature? Open an issue with the `enhancement` label.
 **What to include:**
 - What problem does this solve?
 - How should it work from the user's perspective?
-- Why is this useful to OpenCrabs users broadly (not just your use case)?
+- Why is this useful to StemCell users broadly (not just your use case)?
 
 **What NOT to do:**
 - Do not submit a PR with stub/placeholder code for a feature that doesn't exist yet
@@ -77,8 +77,8 @@ PRs are welcome for:
 
 ```bash
 # Clone your fork
-git clone https://github.com/YOUR_USERNAME/opencrabs.git
-cd opencrabs
+git clone https://github.com/YOUR_USERNAME/stemcell.git
+cd stemcell
 
 # Iterate locally
 cargo clippy --all-features         # USE THIS — never `cargo check` or `cargo build`
@@ -107,7 +107,7 @@ cargo run --all-features -- -p hermes    # named profile
 
 `cargo run` compiles a debug build and launches the TUI directly. Debug builds compile ~5x faster than release, and the extra instrumentation (full backtraces, debug assertions) makes any regression you introduce surface immediately. The debug binary is what you want when chasing a bug — release optimizations strip frames that make panics impossible to read.
 
-**Brain files just work.** `cargo run` resolves `~/.opencrabs/` (or `~/.opencrabs/profiles/<name>/` with `-p`) the same way the installed binary does. Your existing config, brain files, sessions, and memory are all picked up — no copy step, no env var override needed.
+**Brain files just work.** `cargo run` resolves `~/.stemcell/` (or `~/.stemcell/profiles/<name>/` with `-p`) the same way the installed binary does. Your existing config, brain files, sessions, and memory are all picked up — no copy step, no env var override needed.
 
 #### When You Actually Want a Release Build
 
@@ -118,10 +118,10 @@ Reach for `cargo build --release` only when:
   ```bash
   git pull origin main
   cargo build --release --all-features
-  # macOS / Linux: replace ~/.cargo/bin/opencrabs (or wherever your install lives)
-  cp target/release/opencrabs ~/.cargo/bin/opencrabs
+  # macOS / Linux: replace ~/.cargo/bin/stemcell (or wherever your install lives)
+  cp target/release/stemcell ~/.cargo/bin/stemcell
   ```
-  The release binary reads the same `~/.opencrabs/` as `cargo run`, so your brain files, sessions, and config carry over seamlessly.
+  The release binary reads the same `~/.stemcell/` as `cargo run`, so your brain files, sessions, and config carry over seamlessly.
 
 For everything else — bug hunting, feature work, test-driven development — stay on `cargo run`. Release builds are a deployment step, not a dev loop.
 
@@ -228,4 +228,4 @@ A well-written bug report or feature request is worth more than a stub PR. Serio
 
 ## License
 
-By contributing to OpenCrabs, you agree that your contributions will be licensed under the MIT License. See [LICENSE.md](LICENSE.md) for details.
+By contributing to StemCell, you agree that your contributions will be licensed under the MIT License. See [LICENSE.md](LICENSE.md) for details.

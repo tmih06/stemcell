@@ -104,7 +104,7 @@ impl Tool for HashlineEditTool {
         if brain_file_safety::is_protected_path(&path) {
             return Ok(ToolResult::error(format!(
                 "Refusing to edit protected brain file '{}' with hashline_edit. \
-                 Use the `write_opencrabs_file` tool instead.",
+                 Use the `write_stemcell_file` tool instead.",
                 path.display()
             )));
         }

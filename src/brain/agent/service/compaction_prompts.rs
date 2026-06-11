@@ -15,7 +15,7 @@
 //!   compaction at all. Right for formal / corporate / customer-facing
 //!   deployments where dropping mid-session profanity is inappropriate.
 //!   Selected by setting `[agent] silent_compaction = true` in
-//!   `~/.opencrabs/config.toml`.
+//!   `~/.stemcell/config.toml`.
 //!
 //! Why a dedicated module: tool_loop.rs already carries the four
 //! compaction sites + a lot of other state. Inlining the prompt

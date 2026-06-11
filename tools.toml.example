@@ -1,5 +1,5 @@
-# OpenCrabs Dynamic Tools
-# Copy to ~/.opencrabs/tools.toml and customize.
+# StemCell Dynamic Tools
+# Copy to ~/.stemcell/tools.toml and customize.
 #
 # These are runtime-defined tools the agent can call autonomously.
 # Unlike commands.toml (user-triggered slash commands), these appear
@@ -130,14 +130,14 @@ required = true
 
 # --- Built-in tools (no config needed) ---
 #
-# OpenCrabs ships 40+ compiled-in tools that appear automatically in
+# StemCell ships 40+ compiled-in tools that appear automatically in
 # the LLM tool list — file/code (read_file, write_file, edit_file,
 # bash, ls, glob, grep, ...), search (memory_search, session_search,
 # web_search, exa_search, brave_search), channel I/O (telegram_send,
 # discord_send, slack_send, trello_send, channel_search, a2a_send),
 # agent/session (plan, task_manager, config_manager, cron_manage,
 # rename_session, follow_up_question, slash_command, load_brain_file,
-# write_opencrabs_file), and RSI (feedback_record, feedback_analyze,
+# write_stemcell_file), and RSI (feedback_record, feedback_analyze,
 # self_improve). See the "Tool System" section in README.md for the
 # full catalog.
 #

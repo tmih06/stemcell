@@ -12,7 +12,7 @@ mod cli {
     #[test]
     fn test_cron_add_full() {
         let cli = Cli::try_parse_from([
-            "opencrabs",
+            "stemcell",
             "cron",
             "add",
             "--name",
@@ -65,7 +65,7 @@ mod cli {
     #[test]
     fn test_cron_add_minimal() {
         let cli = Cli::try_parse_from([
-            "opencrabs",
+            "stemcell",
             "cron",
             "add",
             "--name",
@@ -105,7 +105,7 @@ mod cli {
     fn test_cron_add_message_alias() {
         // --message should work as alias for --prompt
         let cli = Cli::try_parse_from([
-            "opencrabs",
+            "stemcell",
             "cron",
             "add",
             "--name",
@@ -131,7 +131,7 @@ mod cli {
     fn test_cron_add_deliver_alias() {
         // --deliver should work as alias for --deliver-to
         let cli = Cli::try_parse_from([
-            "opencrabs",
+            "stemcell",
             "cron",
             "add",
             "--name",
@@ -158,7 +158,7 @@ mod cli {
     #[test]
     fn test_cron_add_missing_name() {
         let result = Cli::try_parse_from([
-            "opencrabs",
+            "stemcell",
             "cron",
             "add",
             "--cron",
@@ -172,13 +172,7 @@ mod cli {
     #[test]
     fn test_cron_add_missing_cron() {
         let result = Cli::try_parse_from([
-            "opencrabs",
-            "cron",
-            "add",
-            "--name",
-            "Test",
-            "--prompt",
-            "Test",
+            "stemcell", "cron", "add", "--name", "Test", "--prompt", "Test",
         ]);
         assert!(result.is_err());
     }
@@ -186,7 +180,7 @@ mod cli {
     #[test]
     fn test_cron_add_missing_prompt() {
         let result = Cli::try_parse_from([
-            "opencrabs",
+            "stemcell",
             "cron",
             "add",
             "--name",
@@ -199,7 +193,7 @@ mod cli {
 
     #[test]
     fn test_cron_list() {
-        let cli = Cli::try_parse_from(["opencrabs", "cron", "list"]).unwrap();
+        let cli = Cli::try_parse_from(["stemcell", "cron", "list"]).unwrap();
         assert!(matches!(
             cli.command,
             Some(Commands::Cron {
@@ -210,7 +204,7 @@ mod cli {
 
     #[test]
     fn test_cron_remove() {
-        let cli = Cli::try_parse_from(["opencrabs", "cron", "remove", "my-job-id"]).unwrap();
+        let cli = Cli::try_parse_from(["stemcell", "cron", "remove", "my-job-id"]).unwrap();
         match cli.command {
             Some(Commands::Cron {
                 operation: CronCommands::Remove { id },
@@ -221,7 +215,7 @@ mod cli {
 
     #[test]
     fn test_cron_enable() {
-        let cli = Cli::try_parse_from(["opencrabs", "cron", "enable", "my-job-id"]).unwrap();
+        let cli = Cli::try_parse_from(["stemcell", "cron", "enable", "my-job-id"]).unwrap();
         match cli.command {
             Some(Commands::Cron {
                 operation: CronCommands::Enable { id },
@@ -232,7 +226,7 @@ mod cli {
 
     #[test]
     fn test_cron_disable() {
-        let cli = Cli::try_parse_from(["opencrabs", "cron", "disable", "my-job-id"]).unwrap();
+        let cli = Cli::try_parse_from(["stemcell", "cron", "disable", "my-job-id"]).unwrap();
         match cli.command {
             Some(Commands::Cron {
                 operation: CronCommands::Disable { id },
@@ -243,25 +237,25 @@ mod cli {
 
     #[test]
     fn test_cron_remove_missing_id() {
-        let result = Cli::try_parse_from(["opencrabs", "cron", "remove"]);
+        let result = Cli::try_parse_from(["stemcell", "cron", "remove"]);
         assert!(result.is_err());
     }
 
     #[test]
     fn test_cron_missing_subcommand() {
-        let result = Cli::try_parse_from(["opencrabs", "cron"]);
+        let result = Cli::try_parse_from(["stemcell", "cron"]);
         assert!(result.is_err());
     }
 
     #[test]
     fn test_cron_invalid_subcommand() {
-        let result = Cli::try_parse_from(["opencrabs", "cron", "invalid"]);
+        let result = Cli::try_parse_from(["stemcell", "cron", "invalid"]);
         assert!(result.is_err());
     }
 
     #[test]
     fn test_cron_with_debug_flag() {
-        let cli = Cli::try_parse_from(["opencrabs", "--debug", "cron", "list"]).unwrap();
+        let cli = Cli::try_parse_from(["stemcell", "--debug", "cron", "list"]).unwrap();
         assert!(cli.debug);
         assert!(matches!(
             cli.command,

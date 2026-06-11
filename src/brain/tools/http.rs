@@ -183,7 +183,7 @@ impl Tool for HttpClientTool {
         // explicit `User-Agent` in the tool input replaces ours.
         let client = Client::builder()
             .timeout(StdDuration::from_secs(input.timeout_secs))
-            .user_agent(concat!("opencrabs/", env!("CARGO_PKG_VERSION")))
+            .user_agent(concat!("stemcell/", env!("CARGO_PKG_VERSION")))
             .redirect(if input.follow_redirects {
                 reqwest::redirect::Policy::limited(10)
             } else {

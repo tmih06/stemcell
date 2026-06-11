@@ -2,7 +2,7 @@
 //!
 //! Spawns the `claude` CLI binary as a text completion backend and reads
 //! its NDJSON stream output, converting it to standard `StreamEvent`s.
-//! OpenCrabs handles all tools, memory, and context locally.
+//! StemCell handles all tools, memory, and context locally.
 
 use super::error::{ProviderError, Result};
 use super::r#trait::{Provider, ProviderStream};
@@ -19,12 +19,12 @@ use tokio::io::AsyncWriteExt;
 /// On-disk path for the learned alias → resolved-version map.
 #[cfg(not(test))]
 fn learned_models_path() -> std::path::PathBuf {
-    crate::config::profile::base_opencrabs_dir().join("claude_cli_models.json")
+    crate::config::profile::base_stemcell_dir().join("claude_cli_models.json")
 }
 
 /// Load the persisted alias map from disk (production), or start empty
 /// (tests, so they never depend on or mutate the developer's real
-/// ~/.opencrabs/claude_cli_models.json).
+/// ~/.stemcell/claude_cli_models.json).
 #[cfg(not(test))]
 fn load_learned_models() -> HashMap<String, String> {
     std::fs::read_to_string(learned_models_path())
@@ -259,7 +259,7 @@ impl ClaudeCliProvider {
                                     _ => "png",
                                 };
                                 let tmp = std::env::temp_dir().join(format!(
-                                    "opencrabs_cli_img_{}.{}",
+                                    "stemcell_cli_img_{}.{}",
                                     uuid::Uuid::new_v4(),
                                     ext
                                 ));
@@ -486,7 +486,7 @@ impl Provider for ClaudeCliProvider {
 
         // Each CLI spawn gets a fresh session ID. We manage conversation context
         // ourselves (context.rs), so we don't need the CLI to maintain session state.
-        // Reusing OpenCrabs session IDs caused "Session ID already in use" errors
+        // Reusing StemCell session IDs caused "Session ID already in use" errors
         // when concurrent requests (TUI + Telegram/Slack) shared the same session.
         let session_id_str = uuid::Uuid::new_v4().to_string();
 
@@ -1270,7 +1270,7 @@ impl Provider for ClaudeCliProvider {
     fn cli_manages_context(&self) -> bool {
         // We send Claude CLI the full conversation each turn via stdin.
         // Claude CLI's internal session state in ~/.claude/ is irrelevant —
-        // what matters is what we feed it. So OpenCrabs owns the context
+        // what matters is what we feed it. So StemCell owns the context
         // and MUST run its own compaction; otherwise local tiktoken
         // estimates climb without bound (484k/200k = 242% reported by
         // user 2026-05-04) because tool-result messages pile up across
@@ -1375,7 +1375,7 @@ async fn emit_full_block(
     let _ = tx.send(Ok(StreamEvent::ContentBlockStop { index })).await;
 }
 
-/// Normalize Claude Code CLI tool names to OpenCrabs format.
+/// Normalize Claude Code CLI tool names to StemCell format.
 fn normalize_cli_tool_name(name: &str) -> String {
     match name {
         "Bash" => "bash".to_string(),
@@ -1419,7 +1419,7 @@ fn offset_block_index(event: StreamEvent, offset: usize) -> StreamEvent {
     }
 }
 
-/// Normalize tool names in stream events from CLI to OpenCrabs format.
+/// Normalize tool names in stream events from CLI to StemCell format.
 fn normalize_stream_event(event: StreamEvent) -> StreamEvent {
     match event {
         StreamEvent::ContentBlockStart {

@@ -807,7 +807,7 @@ fn format_tool_description_case_insensitive_query() {
 // ── Gaslighting Refusal Detection ───────────────────────────────────────
 //
 // These tests use verbatim phrase fragments harvested from real dialagram
-// qwen-thinking SSE streams today (see ~/.opencrabs/logs/opencrabs.2026-04-08).
+// qwen-thinking SSE streams today (see ~/.stemcell/logs/stemcell.2026-04-08).
 // Every incident was an assistant turn where a refusal Text block arrived
 // alongside a valid ToolUse block that executed successfully — the
 // `is_gaslighting_preamble` predicate must return true for each so the
@@ -892,7 +892,7 @@ fn does_not_strip_legit_screenshot_description() {
     // "screenshot" + refusal words buried in the body. Legit responses
     // start with "It's a..." / "The ..." / "This shows...", NEVER with
     // "I can't". Must NOT be flagged.
-    let legit = "It's a terminal screenshot of your OpenCrabs TUI session.\n\n\
+    let legit = "It's a terminal screenshot of your StemCell TUI session.\n\n\
                  You're in the middle of a debug/commit flow:\n\
                  - Clippy confirmed checks passed and suggested git commands \
                    to commit changes related to forwarding `reasoning_content` \
@@ -1067,7 +1067,7 @@ fn phantom_tool_intent_false_positives() {
     assert!(!has_phantom_tool_intent(
         "The file src/main.rs contains the entry point for the application. \
          It initializes the TUI and starts the event loop. The config is loaded \
-         from ~/.opencrabs/config.toml on startup."
+         from ~/.stemcell/config.toml on startup."
     ));
 
     // Question about code (no modification intent)
@@ -1120,7 +1120,7 @@ fn phantom_no_tools_scope_is_prose_lead_in() {
     let unsloth_style_markdown_bash = "\
         Let me check the git log since 0.3.10.\n\n\
         ```bash\n\
-        cd /Users/adolfousierstudio/srv/rs/opencrabs && git log --oneline 0.3.10..HEAD\n\
+        cd /Users/tmih06studio/srv/rs/stemcell && git log --oneline 0.3.10..HEAD\n\
         ```";
     assert!(
         has_phantom_tool_intent_no_tools(unsloth_style_markdown_bash),

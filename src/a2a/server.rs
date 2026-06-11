@@ -221,7 +221,7 @@ async fn health_check() -> Json<serde_json::Value> {
         "version": crate::VERSION,
         "protocol": "A2A",
         "protocol_version": "1.0",
-        "provider": "OpenCrabs Community"
+        "provider": "StemCell Community"
     }))
 }
 

@@ -3,7 +3,7 @@
 //! Tests cover: name validation, token hashing, registry CRUD, profile lifecycle,
 //! token-lock isolation, export/import, and edge cases.
 //!
-//! IMPORTANT: Filesystem CRUD tests that write to `~/.opencrabs/profiles.toml`
+//! IMPORTANT: Filesystem CRUD tests that write to `~/.stemcell/profiles.toml`
 //! are combined into single sequential functions to prevent concurrent write
 //! corruption. In-memory tests remain separate since they don't share state.
 
@@ -12,13 +12,13 @@ use std::path::PathBuf;
 use std::sync::{Mutex, OnceLock};
 
 use crate::config::profile::{
-    ProfileEntry, ProfileRegistry, acquire_token_lock, active_profile, base_opencrabs_dir,
+    ProfileEntry, ProfileRegistry, acquire_token_lock, active_profile, base_stemcell_dir,
     create_profile, delete_profile, export_profile, hash_token, import_profile, list_profiles,
     migrate_profile, release_all_locks, release_token_lock, resolve_profile_home,
     set_active_profile, validate_profile_name,
 };
 
-/// Global mutex to serialize all tests that write to ~/.opencrabs/profiles.toml.
+/// Global mutex to serialize all tests that write to ~/.stemcell/profiles.toml.
 /// Without this, parallel test execution corrupts the shared TOML file.
 /// Uses unwrap_or_else to recover from poisoned state (prior test panic).
 fn fs_lock() -> std::sync::MutexGuard<'static, ()> {
@@ -288,14 +288,14 @@ fn profile_entry_optional_fields() {
 // ─── Path Resolution ─────────────────────────────────────────────────
 
 #[test]
-fn base_dir_ends_with_opencrabs() {
-    let base = base_opencrabs_dir();
-    assert!(base.ends_with(".opencrabs"));
+fn base_dir_ends_with_stemcell() {
+    let base = base_stemcell_dir();
+    assert!(base.ends_with(".stemcell"));
 }
 
 #[test]
 fn base_dir_is_absolute() {
-    let base = base_opencrabs_dir();
+    let base = base_stemcell_dir();
     assert!(base.is_absolute());
 }
 
@@ -329,7 +329,7 @@ fn import_nonexistent_archive_fails() {
 // ─── Registry Filesystem (Read-Only) ────────────────────────────────
 
 #[test]
-#[ignore = "touches user's ~/.opencrabs/ — slow + serial; run with `cargo test -- --ignored`"]
+#[ignore = "touches user's ~/.stemcell/ — slow + serial; run with `cargo test -- --ignored`"]
 fn registry_load_from_real_path() {
     let _guard = fs_lock();
     // Should not error regardless of host state
@@ -338,7 +338,7 @@ fn registry_load_from_real_path() {
 }
 
 #[test]
-#[ignore = "touches user's ~/.opencrabs/ — slow + serial; run with `cargo test -- --ignored`"]
+#[ignore = "touches user's ~/.stemcell/ — slow + serial; run with `cargo test -- --ignored`"]
 fn list_profiles_always_includes_default() {
     let _guard = fs_lock();
     let profiles = list_profiles().unwrap();
@@ -354,23 +354,23 @@ fn list_profiles_always_includes_default() {
 }
 
 // ─── Profile CRUD (Filesystem — Sequential) ─────────────────────────
-// Everything that writes to ~/.opencrabs/ (profiles.toml, locks/, profiles/)
+// Everything that writes to ~/.stemcell/ (profiles.toml, locks/, profiles/)
 // runs inside ONE test function to prevent concurrent corruption from
 // parallel test execution.
 
 #[test]
-#[ignore = "touches user's ~/.opencrabs/ — slow + serial; run with `cargo test -- --ignored`"]
+#[ignore = "touches user's ~/.stemcell/ — slow + serial; run with `cargo test -- --ignored`"]
 fn filesystem_operations_sequential() {
     let _guard = fs_lock();
     let pid = std::process::id();
-    let lock_dir = base_opencrabs_dir().join("locks");
+    let lock_dir = base_stemcell_dir().join("locks");
     fs::create_dir_all(&lock_dir).unwrap();
 
     // ══════════════════════════════════════════════════════════════════
     // Part 1: Profile CRUD lifecycle
     // ══════════════════════════════════════════════════════════════════
     let name = "_test_fs_seq";
-    let profile_dir = base_opencrabs_dir().join("profiles").join(name);
+    let profile_dir = base_stemcell_dir().join("profiles").join(name);
 
     // Clean slate
     let _ = fs::remove_dir_all(&profile_dir);
@@ -412,7 +412,7 @@ fn filesystem_operations_sequential() {
     // Part 2: Export/Import roundtrip
     // ══════════════════════════════════════════════════════════════════
     let exp_name = "_test_fs_exp";
-    let exp_dir = base_opencrabs_dir().join("profiles").join(exp_name);
+    let exp_dir = base_stemcell_dir().join("profiles").join(exp_name);
     let archive = std::env::temp_dir().join(format!("_test_fs_export_{}.tar.gz", pid));
 
     let _ = fs::remove_dir_all(&exp_dir);
@@ -440,7 +440,7 @@ fn filesystem_operations_sequential() {
     assert_eq!(imported, exp_name);
 
     // Verify content survived
-    let reimported = base_opencrabs_dir().join("profiles").join(exp_name);
+    let reimported = base_stemcell_dir().join("profiles").join(exp_name);
     assert!(reimported.exists());
     let config = fs::read_to_string(reimported.join("config.toml")).unwrap();
     assert!(config.contains("context_limit = 42000"));
@@ -459,7 +459,7 @@ fn filesystem_operations_sequential() {
     let default_archive =
         std::env::temp_dir().join(format!("_test_fs_default_export_{}.tar.gz", pid));
     let _ = fs::remove_file(&default_archive);
-    // Retry once for transient IO (concurrent dir mutations under ~/.opencrabs/)
+    // Retry once for transient IO (concurrent dir mutations under ~/.stemcell/)
     let result = export_profile("default", &default_archive)
         .or_else(|_| export_profile("default", &default_archive));
     if result.is_ok() {
@@ -570,10 +570,10 @@ fn migrate_nonexistent_destination_errors() {
 }
 
 #[test]
-#[ignore = "touches user's ~/.opencrabs/ — slow + serial; run with `cargo test -- --ignored`"]
+#[ignore = "touches user's ~/.stemcell/ — slow + serial; run with `cargo test -- --ignored`"]
 fn migrate_profile_copies_md_and_toml_files() {
     let _guard = fs_lock();
-    let base = crate::config::profile::base_opencrabs_dir();
+    let base = crate::config::profile::base_stemcell_dir();
     let src_name = "_test_migrate_src";
     let dst_name = "_test_migrate_dst";
     let src_dir = base.join("profiles").join(src_name);
@@ -647,10 +647,10 @@ fn migrate_profile_copies_md_and_toml_files() {
 }
 
 #[test]
-#[ignore = "touches user's ~/.opencrabs/ — slow + serial; run with `cargo test -- --ignored`"]
+#[ignore = "touches user's ~/.stemcell/ — slow + serial; run with `cargo test -- --ignored`"]
 fn migrate_profile_skips_existing_without_force() {
     let _guard = fs_lock();
-    let base = crate::config::profile::base_opencrabs_dir();
+    let base = crate::config::profile::base_stemcell_dir();
     let src_name = "_test_migrate_skip_src";
     let dst_name = "_test_migrate_skip_dst";
     let src_dir = base.join("profiles").join(src_name);
@@ -701,10 +701,10 @@ fn migrate_profile_skips_existing_without_force() {
 }
 
 #[test]
-#[ignore = "touches user's ~/.opencrabs/ — slow + serial; run with `cargo test -- --ignored`"]
+#[ignore = "touches user's ~/.stemcell/ — slow + serial; run with `cargo test -- --ignored`"]
 fn migrate_from_default_profile_works() {
     let _guard = fs_lock();
-    let base = crate::config::profile::base_opencrabs_dir();
+    let base = crate::config::profile::base_stemcell_dir();
     let dst_name = "_test_migrate_from_default";
     let dst_dir = base.join("profiles").join(dst_name);
 
@@ -731,10 +731,10 @@ fn migrate_from_default_profile_works() {
 #[test]
 fn resolve_profile_home_default_is_base_dir() {
     // Without any active profile set, resolve_profile_home falls back to env var.
-    // If OPENCRABS_PROFILE is unset, it returns the base ~/.opencrabs/ dir.
+    // If STEMCELL_PROFILE is unset, it returns the base ~/.stemcell/ dir.
     // We can't test set_active_profile() here because OnceLock is global and
     // may already be set by CLI or another test. Test the env var path instead.
-    let base = base_opencrabs_dir();
+    let base = base_stemcell_dir();
     let home = resolve_profile_home();
 
     // Either it's the base dir (default) or a profiles/<name> subdir
@@ -749,11 +749,11 @@ fn resolve_profile_home_default_is_base_dir() {
 
 #[test]
 fn resolve_profile_home_env_var_override() {
-    // Test that OPENCRABS_PROFILE env var resolves to the right path.
+    // Test that STEMCELL_PROFILE env var resolves to the right path.
     // We can't actually set it because it would affect other tests running
     // concurrently, so we verify the logic by checking the resolved path
     // structure matches what we'd expect.
-    let base = base_opencrabs_dir();
+    let base = base_stemcell_dir();
     let expected_hermes = base.join("profiles").join("hermes");
 
     // The path should be constructable from base + profiles + name
@@ -781,10 +781,10 @@ fn active_profile_returns_none_or_valid() {
 // ─── Profile Isolation ──────────────────────────────────────────────
 
 #[test]
-#[ignore = "touches user's ~/.opencrabs/ — slow + serial; run with `cargo test -- --ignored`"]
+#[ignore = "touches user's ~/.stemcell/ — slow + serial; run with `cargo test -- --ignored`"]
 fn profiles_have_completely_separate_directories() {
     let _guard = fs_lock();
-    let base = base_opencrabs_dir();
+    let base = base_stemcell_dir();
     let name_a = "_test_iso_alpha";
     let name_b = "_test_iso_beta";
     let dir_a = base.join("profiles").join(name_a);
@@ -863,10 +863,10 @@ fn profiles_have_completely_separate_directories() {
 }
 
 #[test]
-#[ignore = "touches user's ~/.opencrabs/ — slow + serial; run with `cargo test -- --ignored`"]
+#[ignore = "touches user's ~/.stemcell/ — slow + serial; run with `cargo test -- --ignored`"]
 fn token_lock_prevents_same_token_reuse() {
     let _guard = fs_lock();
-    let base = base_opencrabs_dir();
+    let base = base_stemcell_dir();
     let locks_dir = base.join("locks");
     let channel = "_test_iso_telegram";
     let token_hash = hash_token("shared-bot-token-12345");
@@ -945,7 +945,7 @@ fn different_tokens_same_channel_no_conflict() {
     assert!(acquire_token_lock(channel, &hash_b).is_ok());
 
     // Both should have their own lock files
-    let base = base_opencrabs_dir();
+    let base = base_stemcell_dir();
     let locks_dir = base.join("locks");
     assert!(
         locks_dir
@@ -964,12 +964,12 @@ fn different_tokens_same_channel_no_conflict() {
 }
 
 #[test]
-#[ignore = "touches user's ~/.opencrabs/ — slow + serial; run with `cargo test -- --ignored`"]
+#[ignore = "touches user's ~/.stemcell/ — slow + serial; run with `cargo test -- --ignored`"]
 fn default_profile_isolation_from_named_profiles() {
     let _guard = fs_lock();
-    // The default profile (root ~/.opencrabs/) should not interfere with
-    // named profiles under ~/.opencrabs/profiles/<name>/
-    let base = base_opencrabs_dir();
+    // The default profile (root ~/.stemcell/) should not interfere with
+    // named profiles under ~/.stemcell/profiles/<name>/
+    let base = base_stemcell_dir();
     let named = "_test_iso_vs_default";
     let named_dir = base.join("profiles").join(named);
 
@@ -1003,14 +1003,14 @@ fn default_profile_isolation_from_named_profiles() {
 // ─── Concurrent Profile Access ───────────────────────────────────────
 
 #[test]
-#[ignore = "touches user's ~/.opencrabs/ — slow + serial; run with `cargo test -- --ignored`"]
+#[ignore = "touches user's ~/.stemcell/ — slow + serial; run with `cargo test -- --ignored`"]
 fn concurrent_writes_to_separate_profiles_are_isolated() {
     // Hold lock for entire test — setup and cleanup both touch shared profiles.toml.
     // The concurrent threads only write to separate profile directories, not the registry.
     use std::thread;
     let _lock = fs_lock();
 
-    let base = base_opencrabs_dir();
+    let base = base_stemcell_dir();
     let name_a = "_test_conc_alpha";
     let name_b = "_test_conc_beta";
     let dir_a = base.join("profiles").join(name_a);
@@ -1082,10 +1082,10 @@ fn concurrent_writes_to_separate_profiles_are_isolated() {
 // ─── Export/Import with Nested Memory ────────────────────────────────
 
 #[test]
-#[ignore = "touches user's ~/.opencrabs/ — slow + serial; run with `cargo test -- --ignored`"]
+#[ignore = "touches user's ~/.stemcell/ — slow + serial; run with `cargo test -- --ignored`"]
 fn export_import_preserves_nested_memory_directories() {
     let _guard = fs_lock();
-    let base = base_opencrabs_dir();
+    let base = base_stemcell_dir();
     let src_name = "_test_nested_export_src";
     let src_dir = base.join("profiles").join(src_name);
     let export_path = std::env::temp_dir().join("_test_nested_export.tar.gz");
@@ -1100,7 +1100,7 @@ fn export_import_preserves_nested_memory_directories() {
     create_profile(src_name, Some("nested export test")).unwrap();
 
     // Create deeply nested memory structure
-    let deep_dir = src_dir.join("memory").join("projects").join("opencrabs");
+    let deep_dir = src_dir.join("memory").join("projects").join("stemcell");
     fs::create_dir_all(&deep_dir).unwrap();
     fs::write(src_dir.join("memory").join("user.md"), "# User prefs").unwrap();
     fs::write(
@@ -1154,7 +1154,7 @@ fn export_import_preserves_nested_memory_directories() {
             imported_dir
                 .join("memory")
                 .join("projects")
-                .join("opencrabs")
+                .join("stemcell")
                 .join("architecture.md")
         )
         .unwrap(),
@@ -1165,7 +1165,7 @@ fn export_import_preserves_nested_memory_directories() {
             imported_dir
                 .join("memory")
                 .join("projects")
-                .join("opencrabs")
+                .join("stemcell")
                 .join("decisions.md")
         )
         .unwrap(),
@@ -1185,9 +1185,9 @@ fn export_import_preserves_nested_memory_directories() {
 
 #[test]
 fn explicit_default_name_resolves_to_base_dir() {
-    // When "default" is explicitly passed, it should resolve to ~/.opencrabs/
-    // not ~/.opencrabs/profiles/default/
-    let base = base_opencrabs_dir();
+    // When "default" is explicitly passed, it should resolve to ~/.stemcell/
+    // not ~/.stemcell/profiles/default/
+    let base = base_stemcell_dir();
 
     // The resolve logic: if profile_name is None or "default", return base
     // This tests the contract — "default" is the root, not a subdirectory
@@ -1203,7 +1203,7 @@ fn explicit_default_name_resolves_to_base_dir() {
 
 #[test]
 fn profile_directories_never_overlap() {
-    let base = base_opencrabs_dir();
+    let base = base_stemcell_dir();
 
     // Default profile home
     let default_home = base.clone();
@@ -1228,10 +1228,10 @@ fn profile_directories_never_overlap() {
 
 #[test]
 fn test_resolve_profile_home_returns_valid_path() {
-    // Verify resolve_profile_home returns a path rooted in base_opencrabs_dir.
+    // Verify resolve_profile_home returns a path rooted in base_stemcell_dir.
     // We do NOT test env var mutation here — std::env::set_var is UB in
     // multi-threaded contexts (Rust 2024) and causes flaky failures on CI.
-    let base = base_opencrabs_dir();
+    let base = base_stemcell_dir();
     let home = resolve_profile_home();
 
     // Home must be either the base dir (default profile) or a profiles subdir
@@ -1271,12 +1271,12 @@ fn test_set_and_get_active_profile() {
 }
 
 #[test]
-#[ignore = "touches user's ~/.opencrabs/ — slow + serial; run with `cargo test -- --ignored`"]
+#[ignore = "touches user's ~/.stemcell/ — slow + serial; run with `cargo test -- --ignored`"]
 fn test_concurrent_profile_writes() {
     use std::thread;
 
     let _guard = fs_lock();
-    let base = base_opencrabs_dir();
+    let base = base_stemcell_dir();
     let names: Vec<String> = (0..5).map(|i| format!("_test_concurrent_{}", i)).collect();
 
     // Cleanup from previous runs
@@ -1347,10 +1347,10 @@ fn test_concurrent_profile_writes() {
 }
 
 #[test]
-#[ignore = "touches user's ~/.opencrabs/ — slow + serial; run with `cargo test -- --ignored`"]
+#[ignore = "touches user's ~/.stemcell/ — slow + serial; run with `cargo test -- --ignored`"]
 fn test_export_import_nested_memory() {
     let _guard = fs_lock();
-    let base = base_opencrabs_dir();
+    let base = base_stemcell_dir();
     let name = "_test_exp_imp_nested";
     let profile_dir = base.join("profiles").join(name);
     let archive = std::env::temp_dir().join(format!(
@@ -1415,8 +1415,8 @@ fn test_export_import_nested_memory() {
 #[test]
 fn test_resolve_profile_home_default_explicit() {
     // "default" is reserved — resolve_profile_home should return the base
-    // ~/.opencrabs/ path, NOT ~/.opencrabs/profiles/default/
-    let base = base_opencrabs_dir();
+    // ~/.stemcell/ path, NOT ~/.stemcell/profiles/default/
+    let base = base_stemcell_dir();
 
     // "default" is rejected as a profile name (it's reserved)
     assert!(
@@ -1429,8 +1429,8 @@ fn test_resolve_profile_home_default_explicit() {
 
     // resolve_profile_home with no active profile and no env var returns base
     let _env_guard = crate::tests::ENV_LOCK.lock().unwrap();
-    let original_env = std::env::var("OPENCRABS_PROFILE").ok();
-    unsafe { std::env::remove_var("OPENCRABS_PROFILE") };
+    let original_env = std::env::var("STEMCELL_PROFILE").ok();
+    unsafe { std::env::remove_var("STEMCELL_PROFILE") };
 
     let home = resolve_profile_home();
 
@@ -1457,7 +1457,7 @@ fn test_resolve_profile_home_default_explicit() {
 
     // Restore env var
     if let Some(val) = original_env {
-        unsafe { std::env::set_var("OPENCRABS_PROFILE", val) };
+        unsafe { std::env::set_var("STEMCELL_PROFILE", val) };
     }
 }
 
@@ -1480,7 +1480,7 @@ const EXPECTED_SEEDED_BRAIN_FILES: &[&str] = &[
 fn create_profile_seeds_all_brain_templates() {
     let _guard = fs_lock();
     let name = "_test_seed_brain";
-    let profile_dir = base_opencrabs_dir().join("profiles").join(name);
+    let profile_dir = base_stemcell_dir().join("profiles").join(name);
 
     // Clean any leftovers from a prior aborted run.
     let _ = fs::remove_dir_all(&profile_dir);
@@ -1515,7 +1515,7 @@ fn create_profile_does_not_overwrite_existing_brain_files() {
     // a user is recovering from a broken state.)
     let _guard = fs_lock();
     let name = "_test_seed_no_overwrite";
-    let profile_dir = base_opencrabs_dir().join("profiles").join(name);
+    let profile_dir = base_stemcell_dir().join("profiles").join(name);
     let _ = fs::remove_dir_all(&profile_dir);
     let mut reg = ProfileRegistry::load().unwrap_or_default();
     reg.profiles.remove(name);
@@ -1553,7 +1553,7 @@ fn create_profile_brain_files_are_non_trivial_size() {
     // remove reference bloat — it's now a lean routing index.
     let _guard = fs_lock();
     let name = "_test_seed_sizes";
-    let profile_dir = base_opencrabs_dir().join("profiles").join(name);
+    let profile_dir = base_stemcell_dir().join("profiles").join(name);
     let _ = fs::remove_dir_all(&profile_dir);
     let mut reg = ProfileRegistry::load().unwrap_or_default();
     reg.profiles.remove(name);

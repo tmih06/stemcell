@@ -24,7 +24,7 @@ pub struct LogConfig {
     /// Enable debug mode (creates log files)
     pub debug_mode: bool,
 
-    /// Log directory path (default: .opencrabs/logs)
+    /// Log directory path (default: .stemcell/logs)
     pub log_dir: PathBuf,
 
     /// Minimum log level (default: INFO, DEBUG mode: DEBUG)
@@ -44,10 +44,10 @@ impl Default for LogConfig {
     fn default() -> Self {
         Self {
             debug_mode: false,
-            log_dir: crate::config::opencrabs_home().join("logs"),
+            log_dir: crate::config::stemcell_home().join("logs"),
             log_level: Level::INFO,
             console_output: false,
-            log_prefix: "opencrabs".to_string(),
+            log_prefix: "stemcell".to_string(),
             max_age_days: 7,
         }
     }
@@ -123,10 +123,10 @@ impl LoggerGuard {
 ///
 /// # Behavior
 /// - **Debug mode OFF**: No log files created, minimal console output
-/// - **Debug mode ON**: Creates log files in `.opencrabs/logs/`, detailed logging
+/// - **Debug mode ON**: Creates log files in `.stemcell/logs/`, detailed logging
 pub fn init_logging(config: LogConfig) -> Result<LoggerGuard, Box<dyn std::error::Error>> {
     if config.debug_mode {
-        // Debug mode: Create log files in .opencrabs/logs/
+        // Debug mode: Create log files in .stemcell/logs/
         init_debug_logging(config)
     } else {
         // Normal mode: Minimal logging, no files
@@ -139,13 +139,13 @@ fn init_debug_logging(config: LogConfig) -> Result<LoggerGuard, Box<dyn std::err
     // Create log directory
     std::fs::create_dir_all(&config.log_dir)?;
 
-    // Create gitignore file in .opencrabs to ignore logs
-    let opencrabs_dir = config.log_dir.parent().unwrap_or(&config.log_dir);
-    let gitignore_path = opencrabs_dir.join(".gitignore");
+    // Create gitignore file in .stemcell to ignore logs
+    let stemcell_dir = config.log_dir.parent().unwrap_or(&config.log_dir);
+    let gitignore_path = stemcell_dir.join(".gitignore");
     if !gitignore_path.exists() {
         std::fs::write(
             &gitignore_path,
-            "# Ignore all OpenCrabs runtime files\n*\n!.gitignore\n",
+            "# Ignore all StemCell runtime files\n*\n!.gitignore\n",
         )
         .ok();
     }
@@ -168,9 +168,9 @@ fn init_debug_logging(config: LogConfig) -> Result<LoggerGuard, Box<dyn std::err
         .add_directive("whatsapp_rust=warn".parse()?)
         // TUI module is extremely chatty in debug mode (key events, render ticks,
         // pane updates on every animation frame). Keep warnings and errors,
-        // drop info/debug/trace. Override with RUST_LOG=opencrabs::tui=debug
+        // drop info/debug/trace. Override with RUST_LOG=stemcell::tui=debug
         // when you actually need to debug the TUI.
-        .add_directive("opencrabs::tui=warn".parse()?);
+        .add_directive("stemcell::tui=warn".parse()?);
 
     // Initialize subscriber with file logging
     tracing_subscriber::registry()
@@ -188,7 +188,7 @@ fn init_debug_logging(config: LogConfig) -> Result<LoggerGuard, Box<dyn std::err
         .init();
 
     // Log startup information
-    tracing::info!("🚀 OpenCrabs debug mode enabled");
+    tracing::info!("🚀 StemCell debug mode enabled");
     tracing::info!("📁 Log directory: {}", config.log_dir.display());
     tracing::info!("📊 Log level: {:?}", config.log_level);
     tracing::debug!("Debug logging initialized successfully");
@@ -201,7 +201,7 @@ fn init_minimal_logging(config: LogConfig) -> Result<LoggerGuard, Box<dyn std::e
     // Build environment filter - minimal logging
     let env_filter = EnvFilter::from_default_env()
         .add_directive(Level::WARN.into()) // Only warnings and errors
-        .add_directive("opencrabs=info".parse()?); // INFO for opencrabs itself
+        .add_directive("stemcell=info".parse()?); // INFO for stemcell itself
 
     if config.console_output {
         // Console output for non-TUI modes
@@ -229,7 +229,7 @@ fn init_minimal_logging(config: LogConfig) -> Result<LoggerGuard, Box<dyn std::e
 
 /// Get the path to the current log file (if debug mode is enabled)
 pub fn get_log_path() -> Option<PathBuf> {
-    let log_dir = crate::config::opencrabs_home().join("logs");
+    let log_dir = crate::config::stemcell_home().join("logs");
 
     if log_dir.exists() {
         // Return the most recent log file
@@ -252,7 +252,7 @@ pub fn get_log_path() -> Option<PathBuf> {
 
 /// Clean up old log files based on max age
 pub fn cleanup_old_logs(max_age_days: u64) -> Result<usize, Box<dyn std::error::Error>> {
-    let log_dir = crate::config::opencrabs_home().join("logs");
+    let log_dir = crate::config::stemcell_home().join("logs");
 
     if !log_dir.exists() {
         return Ok(0);
@@ -280,7 +280,7 @@ pub fn cleanup_old_logs(max_age_days: u64) -> Result<usize, Box<dyn std::error::
     Ok(removed)
 }
 
-/// Clean up orphaned temp files from ~/.opencrabs/tmp/files/ older than max_age_days.
+/// Clean up orphaned temp files from ~/.stemcell/tmp/files/ older than max_age_days.
 /// All channel image uploads (Telegram, WhatsApp, Slack, Trello) are saved here
 /// via process_file_with_vision. This single purge replaces per-channel cleanup spawns.
 pub fn cleanup_old_temp_files(max_age_days: u64) -> Result<usize, Box<dyn std::error::Error>> {
@@ -288,7 +288,7 @@ pub fn cleanup_old_temp_files(max_age_days: u64) -> Result<usize, Box<dyn std::e
         Some(h) => h,
         None => return Ok(0),
     };
-    let tmp_dir = home.join(".opencrabs").join("tmp").join("files");
+    let tmp_dir = home.join(".stemcell").join("tmp").join("files");
     if !tmp_dir.exists() {
         return Ok(0);
     }
@@ -329,7 +329,7 @@ mod tests {
         assert!(!config.debug_mode);
         assert_eq!(config.log_level, Level::INFO);
         assert!(!config.console_output);
-        assert_eq!(config.log_prefix, "opencrabs");
+        assert_eq!(config.log_prefix, "stemcell");
     }
 
     #[test]
@@ -352,10 +352,10 @@ mod tests {
     }
 
     #[test]
-    fn test_log_dir_in_home_opencrabs_folder() {
+    fn test_log_dir_in_home_stemcell_folder() {
         let config = LogConfig::default();
         let log_dir_str = config.log_dir.to_string_lossy();
-        assert!(log_dir_str.contains(".opencrabs"));
+        assert!(log_dir_str.contains(".stemcell"));
         assert!(log_dir_str.contains("logs"));
         // Should be under home dir, not cwd
         if let Some(home) = dirs::home_dir() {

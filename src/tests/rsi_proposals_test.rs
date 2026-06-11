@@ -1,8 +1,8 @@
 //! Tests for the RSI proposals inbox + the propose / proposals tools.
 //!
 //! Storage tests use `ProposalsStore::with_dir(tmpdir)` so they never
-//! touch the user's real `~/.opencrabs/rsi/` inbox. Tool-level tests
-//! exercise `rsi_propose` against the real `opencrabs_home()` resolver
+//! touch the user's real `~/.stemcell/rsi/` inbox. Tool-level tests
+//! exercise `rsi_propose` against the real `stemcell_home()` resolver
 //! is intentionally avoided — we only run the parts that don't write to
 //! disk (input validation, error paths) without test isolation. The
 //! `apply` round-trip test uses a tmpdir for both the inbox and the

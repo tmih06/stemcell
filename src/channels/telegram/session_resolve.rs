@@ -51,7 +51,7 @@ pub fn session_idle_expired(
 /// Handler resolve policy: explicit chat binding wins over suffix `updated_at` winner.
 ///
 /// Cold-start behaviour: the `chat_sessions` map that feeds `chat_bound`
-/// is in-memory and process-scoped — every opencrabs restart starts the
+/// is in-memory and process-scoped — every stemcell restart starts the
 /// map empty. The first message in any chat after a restart therefore
 /// returns `ResolveSource::Suffix` (no binding yet) and falls through to
 /// `find_session_by_title_suffix`. That's correct behaviour, just worth

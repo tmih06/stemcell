@@ -1,5 +1,5 @@
 //! Tests for `brain_file_safety` — the chokepoint that protects
-//! `~/.opencrabs/*.md` brain files from agent-driven destruction.
+//! `~/.stemcell/*.md` brain files from agent-driven destruction.
 //!
 //! Background: 2026-04-26 the RSI agent shrank TOOLS.md from 33 KB to a
 //! stub by passing the entire file as `old_content` to a
@@ -47,10 +47,10 @@ mod protected_predicate {
 
     #[test]
     fn path_predicate_uses_basename() {
-        assert!(is_protected_path(Path::new("/Users/x/.opencrabs/TOOLS.md")));
+        assert!(is_protected_path(Path::new("/Users/x/.stemcell/TOOLS.md")));
         assert!(is_protected_path(Path::new("TOOLS.md")));
         assert!(!is_protected_path(Path::new(
-            "/Users/x/.opencrabs/memory/log.md"
+            "/Users/x/.stemcell/memory/log.md"
         )));
     }
 }

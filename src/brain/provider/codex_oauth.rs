@@ -1,8 +1,8 @@
 //! Codex OAuth Provider — direct OpenAI API with device-code auth
 //!
 //! Implements the Codex CLI's OAuth device-code flow natively, so users
-//! can authenticate through OpenCrabs without needing the `codex` CLI
-//! installed. Tokens are stored in `~/.opencrabs/auth/codex.json` and
+//! can authenticate through StemCell without needing the `codex` CLI
+//! installed. Tokens are stored in `~/.stemcell/auth/codex.json` and
 //! auto-refreshed before expiry.
 //!
 //! Auth flow:
@@ -53,7 +53,7 @@ const SCOPES: &str =
 
 /// Path to the token storage file.
 fn token_path() -> std::path::PathBuf {
-    crate::config::opencrabs_home()
+    crate::config::stemcell_home()
         .join("auth")
         .join("codex.json")
 }
@@ -562,7 +562,7 @@ pub struct CodexOAuthProvider {
 
 impl CodexOAuthProvider {
     /// Create a new Codex OAuth provider.
-    /// Loads tokens from `~/.opencrabs/auth/codex.json`.
+    /// Loads tokens from `~/.stemcell/auth/codex.json`.
     pub fn new() -> Result<Self> {
         let token_manager = Arc::new(CodexTokenManager::new());
 

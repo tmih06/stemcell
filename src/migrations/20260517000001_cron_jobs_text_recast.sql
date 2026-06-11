@@ -3,7 +3,7 @@
 -- byte-buffer inserts despite the column being declared `TEXT NOT NULL`,
 -- and `row.get::<String, _>("prompt")` then failed on those rows in
 -- `CronJobRepository::list_all`. Symptom: Mission Control's schedule
--- panel rendered "No scheduled jobs." while `opencrabs cron list` exited
+-- panel rendered "No scheduled jobs." while `stemcell cron list` exited
 -- code 1 with no stderr (until the diagnostic improvements in this same
 -- commit landed). CAST(x AS TEXT) is a no-op on existing TEXT values and
 -- fixes the storage class on BLOBs in place.

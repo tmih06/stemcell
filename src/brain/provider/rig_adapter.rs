@@ -485,10 +485,10 @@ where
                         use rig_core::completion::GetTokenUsage;
                         let mut events = stream_state.finish_block();
 
-                        let mut opencrabs_usage = TokenUsage::default();
+                        let mut stemcell_usage = TokenUsage::default();
                         if let Some(usage) = res.token_usage() {
-                            opencrabs_usage.input_tokens = usage.input_tokens as u32;
-                            opencrabs_usage.output_tokens = usage.output_tokens as u32;
+                            stemcell_usage.input_tokens = usage.input_tokens as u32;
+                            stemcell_usage.output_tokens = usage.output_tokens as u32;
                         }
 
                         events.push(Ok(StreamEvent::MessageDelta {
@@ -496,7 +496,7 @@ where
                                 stop_reason: Some(StopReason::EndTurn),
                                 stop_sequence: None,
                             },
-                            usage: opencrabs_usage,
+                            usage: stemcell_usage,
                         }));
                         events.push(Ok(StreamEvent::MessageStop));
                         events

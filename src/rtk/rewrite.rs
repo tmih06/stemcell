@@ -112,7 +112,7 @@ static RTK_BINARY: OnceCell<Option<String>> = OnceCell::const_new();
 /// Find the RTK binary path (async, cached).
 ///
 /// Checks in order:
-/// 1. Bundled binary in the same directory as the OpenCrabs executable
+/// 1. Bundled binary in the same directory as the Stemcell executable
 /// 2. Bundled binary in `bin/` subdirectory relative to the executable
 /// 3. System PATH via `which rtk` (spawned as a non-blocking tokio child)
 ///
@@ -210,7 +210,7 @@ pub(crate) fn is_rtk_supported(token: &str) -> bool {
 ///
 /// # Example
 /// ```rust,ignore
-/// use opencrabs::rtk::rewrite_command;
+/// use stemcell::rtk::rewrite_command;
 ///
 /// let result = rewrite_command("git status");
 /// // Returns Some(RtkResult { rewritten_command: "/path/to/rtk git status", ... })

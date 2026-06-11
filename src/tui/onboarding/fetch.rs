@@ -121,12 +121,12 @@ impl OnboardingWizard {
 /// First-time detection: no config file AND no API keys in environment.
 /// Once config.toml is written (by onboarding or manually), this returns false forever.
 /// If any API key env var is set, the user has already configured auth — skip onboarding.
-/// To re-run the wizard, use `opencrabs onboard`, `--onboard` flag, or `/onboard`.
+/// To re-run the wizard, use `stemcell onboard`, `--onboard` flag, or `/onboard`.
 pub fn is_first_time() -> bool {
     tracing::debug!("[is_first_time] checking if first time setup needed...");
 
     // Check if config exists
-    let config_path = crate::config::opencrabs_home().join("config.toml");
+    let config_path = crate::config::stemcell_home().join("config.toml");
     if !config_path.exists() {
         tracing::debug!("[is_first_time] no config found, need onboarding");
         return true;
@@ -275,25 +275,12 @@ pub async fn fetch_provider_models(
         ];
     }
 
-    // Handle Minimax specially - no /models API, must use config
+    // MiniMax — supports OpenAI-compatible /v1/models on both
+    // international (api.minimax.io) and China (api.minimaxi.com).
+    // Fall back to the curated baseline if the fetch fails (no
+    // network, older account tier, etc.).
     if provider_id == "minimax" {
-        // MiniMax has no `/v1/models` endpoint — the binary's baseline
-        // list is the source of truth for "models we know exist", and
-        // the user's `config.toml` `[providers.minimax].models` is a
-        // CACHED snapshot (possibly stale from an earlier install,
-        // missing newer releases like MiniMax-M3).
-        //
-        // Additive merge: start from the baseline, append any custom
-        // entries the user added that aren't in baseline. This means:
-        //   - users on an old `models = [...]` line still see M3 the
-        //     moment they upgrade (no manual edit needed)
-        //   - users who manually added `MiniMax-Text-01` or a private
-        //     variant keep that entry too — never overwrite their
-        //     additions
-        //   - new releases the binary ships always land at the top of
-        //     the picker so first-highlight points at the current
-        //     model
-        return merge_minimax_baseline(minimax_baseline_models(), user_minimax_models());
+        return fetch_minimax_models(api_key).await;
     }
 
     let client = reqwest::Client::new();
@@ -440,6 +427,41 @@ pub async fn fetch_provider_models(
             }
             req.send().await
         }
+        "opencode_zen_free" => {
+            // OpenCode Zen Free API
+            // Filter models dynamically based on cost from models.dev, matching OpenCode's source
+            let req = client.get("https://models.dev/api.json");
+            match req.send().await {
+                Ok(resp) if resp.status().is_success() => {
+                    if let Ok(json) = resp.json::<serde_json::Value>().await {
+                        if let Some(models) =
+                            json.pointer("/opencode/models").and_then(|v| v.as_object())
+                        {
+                            let mut free_models: Vec<String> = models
+                                .iter()
+                                .filter_map(|(id, model)| {
+                                    let is_free = model
+                                        .get("cost")
+                                        .and_then(|c| c.get("input"))
+                                        .and_then(|i| i.as_f64())
+                                        .map_or(true, |input| input == 0.0);
+                                    if is_free { Some(id.clone()) } else { None }
+                                })
+                                .collect();
+                            free_models.sort();
+                            tracing::info!(
+                                "[fetch_provider_models] OpenCode Zen Free: fetched {} free models",
+                                free_models.len()
+                            );
+                            return free_models;
+                        }
+                    }
+                }
+                Ok(resp) => tracing::warn!("models.dev API returned {}", resp.status()),
+                Err(e) => tracing::warn!("models.dev fetch failed: {}", e),
+            }
+            return Vec::new();
+        }
         "zhipu" => {
             // z.ai GLM — /api/paas/v4/models or /api/coding/paas/v4/models
             // Use passed endpoint_type (from wizard state), fall back to config, then default "api"
@@ -540,7 +562,16 @@ pub async fn fetch_provider_models(
                 let mut entries = body.data;
                 // Sort newest first (by created timestamp descending)
                 entries.sort_by_key(|e| std::cmp::Reverse(e.created));
-                entries.into_iter().map(|m| m.id).collect()
+                // The chat TUI is the main interface, so drop non-chat models
+                // (image / audio / embedding / moderation / …) that providers'
+                // /v1/models endpoints mix in.  OpenAI's endpoint is untyped
+                // and the worst offender (dall-e, whisper, tts, embeddings),
+                // but the id-based filter is safe for every provider here.
+                entries
+                    .into_iter()
+                    .map(|m| m.id)
+                    .filter(|id| crate::startup::model_cache::is_chat_capable_model_id(id))
+                    .collect()
             }
             Err(_) => Vec::new(),
         },
@@ -578,6 +609,78 @@ fn user_minimax_models() -> Vec<String> {
         return vec![model.clone()];
     }
     Vec::new()
+}
+
+/// Fetch MiniMax models live from the OpenAI-compatible /v1/models endpoint.
+/// Both international (api.minimax.io) and China (api.minimaxi.com) regions
+/// expose this endpoint with the standard OpenAI response shape.  Falls back
+/// to the curated baseline on any network/auth failure so the picker is never
+/// empty.
+async fn fetch_minimax_models(api_key: Option<&str>) -> Vec<String> {
+    let api_key = match api_key {
+        Some(k) if !k.is_empty() => k,
+        _ => return merge_minimax_baseline(minimax_baseline_models(), user_minimax_models()),
+    };
+
+    let client = reqwest::Client::new();
+    for endpoint in &[
+        "https://api.minimax.io/v1/models",
+        "https://api.minimaxi.com/v1/models",
+    ] {
+        let req = client
+            .get(*endpoint)
+            .header("Authorization", format!("Bearer {}", api_key));
+        match req.send().await {
+            Ok(resp) if resp.status().is_success() => {
+                #[derive(serde::Deserialize)]
+                struct MiniMaxEntry {
+                    id: String,
+                }
+                #[derive(serde::Deserialize)]
+                struct MiniMaxResponse {
+                    data: Vec<MiniMaxEntry>,
+                }
+                match resp.json::<MiniMaxResponse>().await {
+                    Ok(body) => {
+                        let mut models: Vec<String> = body.data.into_iter().map(|m| m.id).collect();
+                        models.sort();
+                        models.reverse();
+                        tracing::info!(
+                            "[fetch_provider_models] MiniMax: fetched {} models from {}",
+                            models.len(),
+                            endpoint
+                        );
+                        return models;
+                    }
+                    Err(e) => {
+                        tracing::warn!(
+                            "[fetch_provider_models] MiniMax: parse error from {}: {}",
+                            endpoint,
+                            e
+                        );
+                    }
+                }
+            }
+            Ok(resp) => {
+                tracing::debug!(
+                    "[fetch_provider_models] MiniMax: {} returned {}",
+                    endpoint,
+                    resp.status()
+                );
+            }
+            Err(e) => {
+                tracing::debug!(
+                    "[fetch_provider_models] MiniMax: {} unreachable: {}",
+                    endpoint,
+                    e
+                );
+            }
+        }
+    }
+    tracing::info!(
+        "[fetch_provider_models] MiniMax: live fetch failed, falling back to curated list"
+    );
+    merge_minimax_baseline(minimax_baseline_models(), user_minimax_models())
 }
 
 /// Merge MiniMax baseline + user models. Baseline order preserved

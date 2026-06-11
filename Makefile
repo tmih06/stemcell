@@ -3,7 +3,7 @@ SHELL := /usr/bin/env bash
 MAKEFLAGS += --no-print-directory
 
 CARGO ?= cargo
-BIN ?= opencrabs
+BIN ?= stemcell
 PYTHON ?= python3
 TOOL_FEATURES_SCRIPT ?= $(PYTHON) src/scripts/tool_features.py build_toggles.toml
 MSRV ?= 1.91
@@ -15,7 +15,7 @@ ARGS ?=
 
 .PHONY: help
 help: ## Show available targets
-	@printf "\n\033[1mopencrabs\033[0m — make targets\n\n"
+	@printf "\n\033[1mstemcell\033[0m — make targets\n\n"
 	@printf "Usage: \033[36mmake <target>\033[0m [ARGS='...']\n"
 	@printf "Example: \033[36mmake run ARGS='chat --onboard'\033[0m\n"
 	@awk 'BEGIN {FS = ":.*?## "} \
@@ -36,7 +36,7 @@ setup: ## Install system prerequisites via the repo bootstrap script
 .PHONY: build
 build: ## Build the default developer binary (from build_toggles.toml)
 	@FEATURES="$$( $(TOOL_FEATURES_SCRIPT) )"; \
-	OPENCRABS_EXPECTED_FEATURES="$$FEATURES" \
+	STEMCELL_EXPECTED_FEATURES="$$FEATURES" \
 	$(CARGO) build --locked --no-default-features --features "$$FEATURES"
 
 .PHONY: build-ci
@@ -46,7 +46,7 @@ build-ci: ## Build all features with the repo's CI profile
 .PHONY: build-release
 build-release: ## Build the release binary
 	@FEATURES="$$( $(TOOL_FEATURES_SCRIPT) )"; \
-	OPENCRABS_EXPECTED_FEATURES="$$FEATURES" \
+	STEMCELL_EXPECTED_FEATURES="$$FEATURES" \
 	$(CARGO) build --locked --release --no-default-features --features "$$FEATURES"
 
 .PHONY: build-no-default
@@ -84,10 +84,10 @@ check: ## Fast type-check across all targets and features
 run: ## Run the TUI or pass ARGS='...'
 	@FEATURES="$$( $(TOOL_FEATURES_SCRIPT) )"; \
 	if [[ -n "$(strip $(ARGS))" ]]; then \
-	  OPENCRABS_EXPECTED_FEATURES="$$FEATURES" \
+	  STEMCELL_EXPECTED_FEATURES="$$FEATURES" \
 	  $(CARGO) run --bin $(BIN) --no-default-features --features "$$FEATURES" -- $(ARGS); \
 	else \
-	  OPENCRABS_EXPECTED_FEATURES="$$FEATURES" \
+	  STEMCELL_EXPECTED_FEATURES="$$FEATURES" \
 	  $(CARGO) run --bin $(BIN) --no-default-features --features "$$FEATURES"; \
 	fi
 
@@ -102,7 +102,7 @@ run-release: build-release ## Run the release binary or pass ARGS='...'
 .PHONY: install
 install: ## cargo install the current repo from source
 	@FEATURES="$$( $(TOOL_FEATURES_SCRIPT) )"; \
-	OPENCRABS_EXPECTED_FEATURES="$$FEATURES" \
+	STEMCELL_EXPECTED_FEATURES="$$FEATURES" \
 	$(CARGO) install --path . --locked --force --no-default-features --features "$$FEATURES"
 
 .PHONY: clean
@@ -161,12 +161,17 @@ secrets: ## Scan git history and working tree with gitleaks
 msrv: ## Verify the minimum supported Rust version still builds
 	$(CARGO) +$(MSRV) build --locked --all-features
 
+.PHONY: docs-coverage
+docs-coverage: ## Verify wiki integrity (links, source refs, format)
+	bash src/scripts/check-wiki.sh
+
 .PHONY: verify
 verify: ## Run the main local verification gates
 	$(MAKE) fmt-check
 	$(MAKE) lint
 	$(MAKE) test
 	$(MAKE) doc
+	$(MAKE) docs-coverage
 
 .PHONY: ci
 ci: ## Run the broader CI-style suite (requires extra audit/coverage tools)

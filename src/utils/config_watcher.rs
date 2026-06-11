@@ -1,12 +1,12 @@
 //! Config hot-reload watcher.
 //!
-//! Watches `~/.opencrabs/config.toml` and `~/.opencrabs/keys.toml` for changes.
+//! Watches `~/.stemcell/config.toml` and `~/.stemcell/keys.toml` for changes.
 //! On any modification, re-loads the full `Config` and fires all registered callbacks.
 //!
 //! Designed to be extended: register any channel state update or command reload
 //! by pushing a `ReloadCallback` via `spawn()`.
 
-use crate::config::{Config, opencrabs_home};
+use crate::config::{Config, stemcell_home};
 use notify::{RecursiveMode, Watcher};
 use std::sync::Arc;
 use std::time::Duration;
@@ -31,7 +31,7 @@ pub type ReloadCallback = Arc<dyn Fn(Config) + Send + Sync>;
 pub fn spawn(callbacks: Vec<ReloadCallback>) -> tokio::task::JoinHandle<()> {
     tokio::task::spawn_blocking(move || {
         let rt = tokio::runtime::Handle::current();
-        let base = opencrabs_home();
+        let base = stemcell_home();
         let config_path = base.join("config.toml");
         let keys_path = base.join("keys.toml");
         let commands_path = base.join("commands.toml");

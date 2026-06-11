@@ -7,8 +7,8 @@
 //!
 //! Only 6 fields required: `title`, `description`, `tasks[]` with `title`, `description`, `task_type`.
 //!
-//! All other fields are auto-generated on import. See `~/.opencrabs/profiles/<profile>/plans/plan-json-spec.md`
-//! for full schema documentation and `~/.opencrabs/profiles/<profile>/plans/coding-plans/` for reference examples.
+//! All other fields are auto-generated on import. See `~/.stemcell/profiles/<profile>/plans/plan-json-spec.md`
+//! for full schema documentation and `~/.stemcell/profiles/<profile>/plans/coding-plans/` for reference examples.
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};

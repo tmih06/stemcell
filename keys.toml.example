@@ -1,8 +1,8 @@
-# OpenCrabs API Keys File
-# Copy this to ~/.opencrabs/keys.toml
+# StemCell API Keys File
+# Copy this to ~/.stemcell/keys.toml
 # 
 # IMPORTANT: Set proper permissions after copying:
-#   chmod 600 ~/.opencrabs/keys.toml
+#   chmod 600 ~/.stemcell/keys.toml
 #
 # This file contains sensitive API keys - NEVER commit to version control!
 # Add to .gitignore: keys.toml

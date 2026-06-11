@@ -8,7 +8,7 @@ use clap::Parser;
 #[test]
 fn test_cli_parse_no_command() {
     // When no command is given, command should be None (defaults to chat)
-    let cli = Cli::try_parse_from(["opencrabs"]).unwrap();
+    let cli = Cli::try_parse_from(["stemcell"]).unwrap();
     assert!(cli.command.is_none());
     assert!(!cli.debug);
     assert!(cli.config.is_none());
@@ -16,7 +16,7 @@ fn test_cli_parse_no_command() {
 
 #[test]
 fn test_cli_parse_chat_command() {
-    let cli = Cli::try_parse_from(["opencrabs", "chat"]).unwrap();
+    let cli = Cli::try_parse_from(["stemcell", "chat"]).unwrap();
     match cli.command {
         Some(Commands::Chat { session, .. }) => {
             assert!(session.is_none());
@@ -27,7 +27,7 @@ fn test_cli_parse_chat_command() {
 
 #[test]
 fn test_cli_parse_chat_with_session() {
-    let cli = Cli::try_parse_from(["opencrabs", "chat", "--session", "test-session-id"]).unwrap();
+    let cli = Cli::try_parse_from(["stemcell", "chat", "--session", "test-session-id"]).unwrap();
     match cli.command {
         Some(Commands::Chat { session, .. }) => {
             assert_eq!(session, Some("test-session-id".to_string()));
@@ -38,7 +38,7 @@ fn test_cli_parse_chat_with_session() {
 
 #[test]
 fn test_cli_parse_run_command() {
-    let cli = Cli::try_parse_from(["opencrabs", "run", "Hello, how are you?"]).unwrap();
+    let cli = Cli::try_parse_from(["stemcell", "run", "Hello, how are you?"]).unwrap();
     match cli.command {
         Some(Commands::Run {
             prompt,
@@ -55,7 +55,7 @@ fn test_cli_parse_run_command() {
 
 #[test]
 fn test_cli_parse_run_with_json_format() {
-    let cli = Cli::try_parse_from(["opencrabs", "run", "--format", "json", "Test prompt"]).unwrap();
+    let cli = Cli::try_parse_from(["stemcell", "run", "--format", "json", "Test prompt"]).unwrap();
     match cli.command {
         Some(Commands::Run {
             prompt,
@@ -73,7 +73,7 @@ fn test_cli_parse_run_with_json_format() {
 #[test]
 fn test_cli_parse_run_with_markdown_format() {
     let cli =
-        Cli::try_parse_from(["opencrabs", "run", "--format", "markdown", "Test prompt"]).unwrap();
+        Cli::try_parse_from(["stemcell", "run", "--format", "markdown", "Test prompt"]).unwrap();
     match cli.command {
         Some(Commands::Run {
             prompt,
@@ -90,7 +90,7 @@ fn test_cli_parse_run_with_markdown_format() {
 
 #[test]
 fn test_cli_parse_run_with_auto_approve() {
-    let cli = Cli::try_parse_from(["opencrabs", "run", "--auto-approve", "Test prompt"]).unwrap();
+    let cli = Cli::try_parse_from(["stemcell", "run", "--auto-approve", "Test prompt"]).unwrap();
     match cli.command {
         Some(Commands::Run {
             prompt,
@@ -106,7 +106,7 @@ fn test_cli_parse_run_with_auto_approve() {
 
 #[test]
 fn test_cli_parse_run_with_yolo_alias() {
-    let cli = Cli::try_parse_from(["opencrabs", "run", "--yolo", "Test prompt"]).unwrap();
+    let cli = Cli::try_parse_from(["stemcell", "run", "--yolo", "Test prompt"]).unwrap();
     match cli.command {
         Some(Commands::Run {
             prompt,
@@ -122,7 +122,7 @@ fn test_cli_parse_run_with_yolo_alias() {
 
 #[test]
 fn test_cli_parse_init_command() {
-    let cli = Cli::try_parse_from(["opencrabs", "init"]).unwrap();
+    let cli = Cli::try_parse_from(["stemcell", "init"]).unwrap();
     match cli.command {
         Some(Commands::Init { force }) => {
             assert!(!force);
@@ -133,7 +133,7 @@ fn test_cli_parse_init_command() {
 
 #[test]
 fn test_cli_parse_init_with_force() {
-    let cli = Cli::try_parse_from(["opencrabs", "init", "--force"]).unwrap();
+    let cli = Cli::try_parse_from(["stemcell", "init", "--force"]).unwrap();
     match cli.command {
         Some(Commands::Init { force }) => {
             assert!(force);
@@ -144,7 +144,7 @@ fn test_cli_parse_init_with_force() {
 
 #[test]
 fn test_cli_parse_config_command() {
-    let cli = Cli::try_parse_from(["opencrabs", "config"]).unwrap();
+    let cli = Cli::try_parse_from(["stemcell", "config"]).unwrap();
     match cli.command {
         Some(Commands::Config { show_secrets }) => {
             assert!(!show_secrets);
@@ -155,7 +155,7 @@ fn test_cli_parse_config_command() {
 
 #[test]
 fn test_cli_parse_config_with_show_secrets() {
-    let cli = Cli::try_parse_from(["opencrabs", "config", "--show-secrets"]).unwrap();
+    let cli = Cli::try_parse_from(["stemcell", "config", "--show-secrets"]).unwrap();
     match cli.command {
         Some(Commands::Config { show_secrets }) => {
             assert!(show_secrets);
@@ -166,7 +166,7 @@ fn test_cli_parse_config_with_show_secrets() {
 
 #[test]
 fn test_cli_parse_db_init() {
-    let cli = Cli::try_parse_from(["opencrabs", "db", "init"]).unwrap();
+    let cli = Cli::try_parse_from(["stemcell", "db", "init"]).unwrap();
     match cli.command {
         Some(Commands::Db { operation }) => {
             assert!(matches!(operation, DbCommands::Init));
@@ -177,7 +177,7 @@ fn test_cli_parse_db_init() {
 
 #[test]
 fn test_cli_parse_db_stats() {
-    let cli = Cli::try_parse_from(["opencrabs", "db", "stats"]).unwrap();
+    let cli = Cli::try_parse_from(["stemcell", "db", "stats"]).unwrap();
     match cli.command {
         Some(Commands::Db { operation }) => {
             assert!(matches!(operation, DbCommands::Stats));
@@ -188,32 +188,32 @@ fn test_cli_parse_db_stats() {
 
 #[test]
 fn test_cli_parse_debug_flag() {
-    let cli = Cli::try_parse_from(["opencrabs", "--debug"]).unwrap();
+    let cli = Cli::try_parse_from(["stemcell", "--debug"]).unwrap();
     assert!(cli.debug);
 }
 
 #[test]
 fn test_cli_parse_debug_flag_short() {
-    let cli = Cli::try_parse_from(["opencrabs", "-d"]).unwrap();
+    let cli = Cli::try_parse_from(["stemcell", "-d"]).unwrap();
     assert!(cli.debug);
 }
 
 #[test]
 fn test_cli_parse_config_path() {
-    let cli = Cli::try_parse_from(["opencrabs", "--config", "/path/to/config.toml"]).unwrap();
+    let cli = Cli::try_parse_from(["stemcell", "--config", "/path/to/config.toml"]).unwrap();
     assert_eq!(cli.config, Some("/path/to/config.toml".to_string()));
 }
 
 #[test]
 fn test_cli_parse_config_path_short() {
-    let cli = Cli::try_parse_from(["opencrabs", "-c", "/path/to/config.toml"]).unwrap();
+    let cli = Cli::try_parse_from(["stemcell", "-c", "/path/to/config.toml"]).unwrap();
     assert_eq!(cli.config, Some("/path/to/config.toml".to_string()));
 }
 
 #[test]
 fn test_cli_parse_combined_flags() {
     let cli = Cli::try_parse_from([
-        "opencrabs",
+        "stemcell",
         "--debug",
         "--config",
         "/path/config.toml",
@@ -244,31 +244,31 @@ fn test_cli_parse_combined_flags() {
 
 #[test]
 fn test_cli_invalid_format() {
-    let result = Cli::try_parse_from(["opencrabs", "run", "--format", "invalid", "Test"]);
+    let result = Cli::try_parse_from(["stemcell", "run", "--format", "invalid", "Test"]);
     assert!(result.is_err());
 }
 
 #[test]
 fn test_cli_missing_prompt_for_run() {
-    let result = Cli::try_parse_from(["opencrabs", "run"]);
+    let result = Cli::try_parse_from(["stemcell", "run"]);
     assert!(result.is_err());
 }
 
 #[test]
 fn test_cli_invalid_subcommand() {
-    let result = Cli::try_parse_from(["opencrabs", "invalid"]);
+    let result = Cli::try_parse_from(["stemcell", "invalid"]);
     assert!(result.is_err());
 }
 
 #[test]
 fn test_cli_db_missing_operation() {
-    let result = Cli::try_parse_from(["opencrabs", "db"]);
+    let result = Cli::try_parse_from(["stemcell", "db"]);
     assert!(result.is_err());
 }
 
 #[test]
 fn test_cli_db_invalid_operation() {
-    let result = Cli::try_parse_from(["opencrabs", "db", "invalid"]);
+    let result = Cli::try_parse_from(["stemcell", "db", "invalid"]);
     assert!(result.is_err());
 }
 
@@ -276,13 +276,13 @@ fn test_cli_db_invalid_operation() {
 
 #[test]
 fn test_cli_parse_daemon_command() {
-    let cli = Cli::try_parse_from(["opencrabs", "daemon"]).unwrap();
+    let cli = Cli::try_parse_from(["stemcell", "daemon"]).unwrap();
     assert!(matches!(cli.command, Some(Commands::Daemon)));
 }
 
 #[test]
 fn test_cli_parse_daemon_with_debug_flag() {
-    let cli = Cli::try_parse_from(["opencrabs", "--debug", "daemon"]).unwrap();
+    let cli = Cli::try_parse_from(["stemcell", "--debug", "daemon"]).unwrap();
     assert!(cli.debug);
     assert!(matches!(cli.command, Some(Commands::Daemon)));
 }
@@ -290,19 +290,19 @@ fn test_cli_parse_daemon_with_debug_flag() {
 #[test]
 fn test_cli_parse_daemon_with_config_path() {
     let cli = Cli::try_parse_from([
-        "opencrabs",
+        "stemcell",
         "--config",
-        "/etc/opencrabs/config.toml",
+        "/etc/stemcell/config.toml",
         "daemon",
     ])
     .unwrap();
-    assert_eq!(cli.config, Some("/etc/opencrabs/config.toml".to_string()));
+    assert_eq!(cli.config, Some("/etc/stemcell/config.toml".to_string()));
     assert!(matches!(cli.command, Some(Commands::Daemon)));
 }
 
 #[test]
 fn test_cli_daemon_takes_no_args() {
     // daemon subcommand accepts no positional args or flags
-    let result = Cli::try_parse_from(["opencrabs", "daemon", "--session", "foo"]);
+    let result = Cli::try_parse_from(["stemcell", "daemon", "--session", "foo"]);
     assert!(result.is_err());
 }

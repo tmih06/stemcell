@@ -1,13 +1,13 @@
-//! Profile management — multi-instance isolated OpenCrabs environments.
+//! Profile management — multi-instance isolated StemCell environments.
 //!
-//! Each profile gets its own `config.toml`, `keys.toml`, `opencrabs.db`,
+//! Each profile gets its own `config.toml`, `keys.toml`, `stemcell.db`,
 //! `memory/`, brain files, and `layout.json`. The "default" profile maps
-//! to `~/.opencrabs/` for backward compatibility; named profiles live
-//! under `~/.opencrabs/profiles/<name>/`.
+//! to `~/.stemcell/` for backward compatibility; named profiles live
+//! under `~/.stemcell/profiles/<name>/`.
 //!
 //! Selection priority (first wins):
 //! 1. `set_active_profile()` (called from CLI `-p` flag)
-//! 2. `OPENCRABS_PROFILE` environment variable
+//! 2. `STEMCELL_PROFILE` environment variable
 //! 3. Falls back to "default"
 //!
 //! ## TUI footer display
@@ -29,10 +29,10 @@ use anyhow::{Context, Result, bail};
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 
-/// Global active profile name. Set once at startup before anything calls `opencrabs_home()`.
+/// Global active profile name. Set once at startup before anything calls `stemcell_home()`.
 static ACTIVE_PROFILE: OnceLock<Option<String>> = OnceLock::new();
 
-/// Set the active profile. Must be called before any `opencrabs_home()` call.
+/// Set the active profile. Must be called before any `stemcell_home()` call.
 /// Returns `Err` if called more than once (OnceLock semantics).
 pub fn set_active_profile(name: Option<String>) -> Result<()> {
     ACTIVE_PROFILE
@@ -47,13 +47,13 @@ pub fn active_profile() -> Option<&'static str> {
 
 /// Resolve the home directory for the active profile.
 ///
-/// - `None` / `"default"` → `~/.opencrabs/`
-/// - `"hermes"` → `~/.opencrabs/profiles/hermes/`
+/// - `None` / `"default"` → `~/.stemcell/`
+/// - `"hermes"` → `~/.stemcell/profiles/hermes/`
 pub fn resolve_profile_home() -> PathBuf {
-    let base = base_opencrabs_dir();
+    let base = base_stemcell_dir();
 
     let profile_name = active_profile().map(String::from).or_else(|| {
-        std::env::var("OPENCRABS_PROFILE")
+        std::env::var("STEMCELL_PROFILE")
             .ok()
             .filter(|s| !s.is_empty())
     });
@@ -64,10 +64,10 @@ pub fn resolve_profile_home() -> PathBuf {
     }
 }
 
-/// The raw `~/.opencrabs/` directory (profile-agnostic).
-pub fn base_opencrabs_dir() -> PathBuf {
+/// The raw `~/.stemcell/` directory (profile-agnostic).
+pub fn base_stemcell_dir() -> PathBuf {
     let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
-    home.join(".opencrabs")
+    home.join(".stemcell")
 }
 
 // ─── Profile Registry ────────────────────────────────────────────────
@@ -81,7 +81,7 @@ pub struct ProfileEntry {
     pub last_used: Option<String>,
 }
 
-/// Registry of all profiles, stored at `~/.opencrabs/profiles.toml`.
+/// Registry of all profiles, stored at `~/.stemcell/profiles.toml`.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ProfileRegistry {
     #[serde(default)]
@@ -90,7 +90,7 @@ pub struct ProfileRegistry {
 
 impl ProfileRegistry {
     fn path() -> PathBuf {
-        base_opencrabs_dir().join("profiles.toml")
+        base_stemcell_dir().join("profiles.toml")
     }
 
     pub fn load() -> Result<Self> {
@@ -206,7 +206,7 @@ impl ProfileRegistry {
 pub fn create_profile(name: &str, description: Option<&str>) -> Result<PathBuf> {
     validate_profile_name(name)?;
 
-    let profile_dir = base_opencrabs_dir().join("profiles").join(name);
+    let profile_dir = base_stemcell_dir().join("profiles").join(name);
     if profile_dir.exists() {
         bail!(
             "profile '{}' already exists at {}",
@@ -249,35 +249,35 @@ pub(crate) fn seed_brain_templates(profile_dir: &Path) {
     // are baked into the binary at compile time via `include_str!`,
     // so this list and the TUI's `TEMPLATE_FILES` stay in lockstep
     // because both reference the same files under
-    // `src/docs/reference/templates/`.
+    // `wiki/reference/templates/`.
     const TEMPLATES: &[(&str, &str)] = &[
         (
             "SOUL.md",
-            include_str!("../docs/reference/templates/SOUL.md"),
+            include_str!("../../wiki/reference/templates/SOUL.md"),
         ),
         (
             "USER.md",
-            include_str!("../docs/reference/templates/USER.md"),
+            include_str!("../../wiki/reference/templates/USER.md"),
         ),
         (
             "AGENTS.md",
-            include_str!("../docs/reference/templates/AGENTS.md"),
+            include_str!("../../wiki/reference/templates/AGENTS.md"),
         ),
         (
             "TOOLS.md",
-            include_str!("../docs/reference/templates/TOOLS.md"),
+            include_str!("../../wiki/reference/templates/TOOLS.md"),
         ),
         (
             "MEMORY.md",
-            include_str!("../docs/reference/templates/MEMORY.md"),
+            include_str!("../../wiki/reference/templates/MEMORY.md"),
         ),
         (
             "CODE.md",
-            include_str!("../docs/reference/templates/CODE.md"),
+            include_str!("../../wiki/reference/templates/CODE.md"),
         ),
         (
             "SECURITY.md",
-            include_str!("../docs/reference/templates/SECURITY.md"),
+            include_str!("../../wiki/reference/templates/SECURITY.md"),
         ),
     ];
 
@@ -302,7 +302,7 @@ pub fn list_profiles() -> Result<Vec<ProfileEntry>> {
 
     let mut profiles = vec![ProfileEntry {
         name: "default".to_string(),
-        description: Some("Default profile (~/.opencrabs/)".to_string()),
+        description: Some("Default profile (~/.stemcell/)".to_string()),
         created_at: String::new(),
         last_used: None,
     }];
@@ -320,7 +320,7 @@ pub fn delete_profile(name: &str) -> Result<()> {
         bail!("cannot delete the default profile");
     }
 
-    let profile_dir = base_opencrabs_dir().join("profiles").join(name);
+    let profile_dir = base_stemcell_dir().join("profiles").join(name);
     if !profile_dir.exists() {
         bail!("profile '{}' does not exist", name);
     }
@@ -344,9 +344,9 @@ pub fn delete_profile(name: &str) -> Result<()> {
 /// Export a profile as a tar.gz archive.
 pub fn export_profile(name: &str, output: &Path) -> Result<()> {
     let profile_dir = if name == "default" {
-        base_opencrabs_dir()
+        base_stemcell_dir()
     } else {
-        let dir = base_opencrabs_dir().join("profiles").join(name);
+        let dir = base_stemcell_dir().join("profiles").join(name);
         if !dir.exists() {
             bail!("profile '{}' does not exist", name);
         }
@@ -406,7 +406,7 @@ pub fn import_profile(archive: &Path) -> Result<String> {
         bail!("could not determine profile name from archive");
     }
 
-    let target = base_opencrabs_dir().join("profiles");
+    let target = base_stemcell_dir().join("profiles");
     fs::create_dir_all(&target)?;
 
     ar.unpack(&target)
@@ -434,7 +434,7 @@ pub fn import_profile(archive: &Path) -> Result<String> {
 /// Copies `*.md`, `*.toml`, and `memory/` directory.
 /// Does NOT copy database, sessions, logs, locks, or layout.
 pub fn migrate_profile(from: &str, to: &str, force: bool) -> Result<Vec<String>> {
-    let base = base_opencrabs_dir();
+    let base = base_stemcell_dir();
 
     let src_dir = if from == "default" {
         base.clone()
@@ -452,7 +452,7 @@ pub fn migrate_profile(from: &str, to: &str, force: bool) -> Result<Vec<String>>
         let dir = base.join("profiles").join(to);
         if !dir.exists() {
             bail!(
-                "destination profile '{}' does not exist. Create it first with: opencrabs profile create {}",
+                "destination profile '{}' does not exist. Create it first with: stemcell profile create {}",
                 to,
                 to
             );
@@ -545,7 +545,7 @@ pub fn migrate_profile(from: &str, to: &str, force: bool) -> Result<Vec<String>>
 /// Check and acquire a token lock for a channel credential.
 /// Returns `Err` if another profile holds the lock.
 pub fn acquire_token_lock(channel: &str, token_hash: &str) -> Result<()> {
-    let lock_dir = base_opencrabs_dir().join("locks");
+    let lock_dir = base_stemcell_dir().join("locks");
     fs::create_dir_all(&lock_dir)?;
 
     let lock_file = lock_dir.join(format!("{}_{}.lock", channel, token_hash));
@@ -591,7 +591,7 @@ pub fn acquire_token_lock(channel: &str, token_hash: &str) -> Result<()> {
 
 /// Release a token lock.
 pub fn release_token_lock(channel: &str, token_hash: &str) {
-    let lock_file = base_opencrabs_dir()
+    let lock_file = base_stemcell_dir()
         .join("locks")
         .join(format!("{}_{}.lock", channel, token_hash));
     let _ = fs::remove_file(lock_file);
@@ -599,7 +599,7 @@ pub fn release_token_lock(channel: &str, token_hash: &str) {
 
 /// Release all locks held by this process.
 pub fn release_all_locks() {
-    let lock_dir = base_opencrabs_dir().join("locks");
+    let lock_dir = base_stemcell_dir().join("locks");
     let pid = std::process::id();
     let current_profile = active_profile().unwrap_or("default");
     let expected = format!("{}:{}", current_profile, pid);
@@ -627,7 +627,7 @@ pub fn hash_token(token: &str) -> String {
 
 pub fn validate_profile_name(name: &str) -> Result<()> {
     if name == "default" {
-        bail!("'default' is reserved — the default profile is ~/.opencrabs/");
+        bail!("'default' is reserved — the default profile is ~/.stemcell/");
     }
     if name.is_empty() || name.len() > 64 {
         bail!("profile name must be 1-64 characters");

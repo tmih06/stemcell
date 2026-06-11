@@ -1,6 +1,6 @@
-# OpenCrabs Usage Pricing Table — usage_pricing.toml.example
+# StemCell Usage Pricing Table — usage_pricing.toml.example
 #
-# This file is copied to ~/.opencrabs/usage_pricing.toml on first run.
+# This file is copied to ~/.stemcell/usage_pricing.toml on first run.
 # Edit that file live — changes take effect immediately on next /usage open.
 # No restart needed.
 #

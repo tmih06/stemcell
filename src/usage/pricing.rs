@@ -1,6 +1,6 @@
 //! Model pricing configuration
 //!
-//! Loaded from `~/.opencrabs/usage_pricing.toml` at runtime.
+//! Loaded from `~/.stemcell/usage_pricing.toml` at runtime.
 //! No compiled-in fallback — if the file is missing or broken, an error is returned.
 //! Users can edit the file live — changes take effect on next `/usage` open.
 
@@ -122,7 +122,7 @@ impl PricingConfig {
         None
     }
 
-    /// Load from ~/.opencrabs/usage_pricing.toml.
+    /// Load from ~/.stemcell/usage_pricing.toml.
     /// Supports both the current schema (`[providers.X] entries = [...]`) and the
     /// legacy on-disk schema (`[[usage.pricing.X]]` array-of-tables).
     /// Falls back to the embedded example file if the user file doesn't exist
@@ -143,7 +143,7 @@ impl PricingConfig {
     /// prefixes, hand-tweaked rates) are NEVER overwritten. Only
     /// prefixes the user doesn't have at all get appended.
     pub fn load() -> Result<Self, String> {
-        let path = crate::config::opencrabs_home().join("usage_pricing.toml");
+        let path = crate::config::stemcell_home().join("usage_pricing.toml");
         let content = match std::fs::read_to_string(&path) {
             Ok(c) => c,
             Err(_) => {
@@ -226,7 +226,7 @@ impl PricingConfig {
             let new_content = Self::serialize_to_toml(&cfg);
             // Only write back if source is a real file path (not embedded example)
             if source != "embedded example" {
-                let path = crate::config::opencrabs_home().join("usage_pricing.toml");
+                let path = crate::config::stemcell_home().join("usage_pricing.toml");
                 let _ = std::fs::write(&path, new_content);
             }
             return Ok(cfg);
@@ -275,7 +275,7 @@ impl PricingConfig {
     /// Serialize a PricingConfig back to the canonical TOML schema.
     fn serialize_to_toml(cfg: &PricingConfig) -> String {
         let mut out = String::from(
-            "# OpenCrabs Usage Pricing — auto-migrated to current schema.\n\
+            "# StemCell Usage Pricing — auto-migrated to current schema.\n\
              # Edit freely. Changes take effect immediately on next /usage open.\n\
              # prefix is matched case-insensitively as a substring of the model name.\n\
              # Costs are per 1 million tokens (USD).\n\n",
@@ -311,7 +311,7 @@ impl PricingConfig {
     /// Copy `usage_pricing.toml.example` to brain directory on first run only.
     /// Existing users: see release notes for instructions to diff and update their file.
     pub fn seed_from_example() {
-        let path = crate::config::opencrabs_home().join("usage_pricing.toml");
+        let path = crate::config::stemcell_home().join("usage_pricing.toml");
 
         if path.exists() {
             return; // User owns this file. Never overwrite.

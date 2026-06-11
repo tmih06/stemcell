@@ -104,7 +104,7 @@ impl SlashCommandTool {
         lines.push(String::new());
         lines.push("Provider Health:".to_string());
         let health_state: crate::config::health::HealthState =
-            std::fs::read_to_string(crate::config::opencrabs_home().join("provider_health.json"))
+            std::fs::read_to_string(crate::config::stemcell_home().join("provider_health.json"))
                 .ok()
                 .and_then(|s| serde_json::from_str(&s).ok())
                 .unwrap_or_default();
@@ -122,7 +122,7 @@ impl SlashCommandTool {
         }
 
         // Last known good config
-        let has_good = crate::config::opencrabs_home()
+        let has_good = crate::config::stemcell_home()
             .join("config.last_good.toml")
             .exists();
         lines.push(format!(
@@ -145,11 +145,11 @@ impl Tool for SlashCommandTool {
     }
 
     fn description(&self) -> &str {
-        "Execute any OpenCrabs slash command. Built-in: /help, /models (view/switch), \
+        "Execute any StemCell slash command. Built-in: /help, /models (view/switch), \
          /usage (session stats), /doctor (health check), /sessions (list), \
          /approve (get/set policy), /cd (change dir), /compact, /rebuild. \
-         Also executes user-defined commands from commands.toml. \
-         /models with args='model-name' switches the active model."
+         Also executes user-defined commands from commands.toml. /models with \
+         args='model-name' switches the active model."
     }
 
     fn input_schema(&self) -> Value {
@@ -207,25 +207,9 @@ impl Tool for SlashCommandTool {
             "/usage" => self.handle_usage(context).await,
             "/doctor" => self.handle_doctor().await,
             "/sessions" => self.handle_sessions(context).await,
-            "/settings" => Ok(ToolResult::success(
-                "Settings is a TUI screen (press S). Use config_manager read_config \
-                 to view settings programmatically."
-                    .into(),
-            )),
             "/stop" => Ok(ToolResult::success(
                 "Use the cancel mechanism to stop the current operation. \
                  On channels, users type /stop. On TUI, press Escape twice."
-                    .into(),
-            )),
-            "/onboard" => Ok(ToolResult::success(
-                "Onboarding wizard is a TUI-only interactive screen. \
-                 However, you can read and modify all settings via config_manager \
-                 (read_config, write_config) and manage API keys directly."
-                    .into(),
-            )),
-            "/whisper" => Ok(ToolResult::success(
-                "WhisperCrabs is a TUI-triggered command. Tell the user to type /whisper \
-                 in the input box to launch the floating voice-to-text tool."
                     .into(),
             )),
             _ => self.handle_user_command(command, args),
@@ -346,8 +330,6 @@ impl SlashCommandTool {
              /compact  — Compact context (summarize + trim)\n\
              /rebuild  — Build from source & hot-restart\n\
              /evolve   — Download latest release & hot-restart\n\
-             /whisper  — Voice-to-text (TUI only)\n\
-             /onboard  — Setup wizard (TUI only, use config_manager for programmatic changes)\n\n\
              You can also use config_manager to read/write any config setting directly."
                 .into(),
         ))
@@ -682,9 +664,7 @@ impl SlashCommandTool {
                 "/usage",
                 "/doctor",
                 "/stop",
-                "/settings",
-                "/onboard",
-                "/whisper",
+                "/quit",
             ];
             Ok(ToolResult::error(format!(
                 "Unknown command: '{}'. Built-in: {}. User-defined: {}",
@@ -746,6 +726,7 @@ mod tests {
         assert!(result.success);
         assert!(result.output.contains("/models"));
         assert!(result.output.contains("/usage"));
+        assert!(!result.output.contains("/statusline"));
     }
 
     #[tokio::test]

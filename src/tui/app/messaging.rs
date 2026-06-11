@@ -23,17 +23,27 @@ fn utf8_char_len(b: u8) -> usize {
 }
 
 impl App {
+    fn approval_policy_flags(cfg: &crate::config::Config) -> (bool, bool) {
+        match cfg.agent.approval_policy.as_str() {
+            "auto-session" => (true, false),
+            "auto-always" => (false, true),
+            _ => (false, false),
+        }
+    }
+
+    /// Read persisted approval policy + status-bar visibility from config.toml.
+    pub(crate) fn load_ui_state_from_config()
+    -> Result<((bool, bool), crate::config::StatusLineConfig)> {
+        let cfg = crate::config::Config::load()?;
+        Ok((Self::approval_policy_flags(&cfg), cfg.statusline))
+    }
+
     /// Read the persisted approval policy from config.toml.
     /// Returns `(auto_session, auto_always)` flags.
     pub(crate) fn read_approval_policy_from_config() -> (bool, bool) {
-        match crate::config::Config::load() {
-            Ok(cfg) => match cfg.agent.approval_policy.as_str() {
-                "auto-session" => (true, false),
-                "auto-always" => (false, true),
-                _ => (false, false),
-            },
-            Err(_) => (false, false),
-        }
+        Self::load_ui_state_from_config()
+            .map(|(approval, _)| approval)
+            .unwrap_or((false, false))
     }
 
     /// Create a new session
@@ -397,10 +407,10 @@ impl App {
         Ok(())
     }
 
-    /// Persist the current session ID to `~/.opencrabs/last_session` so
+    /// Persist the current session ID to `~/.stemcell/last_session` so
     /// the next startup can restore the correct session.
     fn save_last_session_id(session_id: Uuid) {
-        let base = crate::config::opencrabs_home();
+        let base = crate::config::stemcell_home();
         if let Err(e) = std::fs::write(base.join("last_session"), session_id.to_string()) {
             tracing::warn!("Failed to persist last_session: {}", e);
         }
@@ -408,7 +418,7 @@ impl App {
 
     /// Read the last active session ID from disk.
     pub(crate) fn read_last_session_id() -> Option<Uuid> {
-        let base = crate::config::opencrabs_home();
+        let base = crate::config::stemcell_home();
         let content = std::fs::read_to_string(base.join("last_session")).ok()?;
         Uuid::parse_str(content.trim()).ok()
     }
@@ -795,6 +805,10 @@ impl App {
                 });
                 true
             }
+            "/quit" | "/exit" | "/q" => {
+                let _ = self.event_sender().send(TuiEvent::Quit);
+                true
+            }
             "/help" => {
                 self.mode = AppMode::Help;
                 true
@@ -805,6 +819,10 @@ impl App {
             }
             "/skills" => {
                 crate::tui::app::skills_dialog::actions::open(self);
+                true
+            }
+            "/statusline" => {
+                crate::tui::app::statusline_dialog::actions::open(self);
                 true
             }
             "/rtk" => {
@@ -1864,7 +1882,29 @@ impl App {
         }
     }
 
-    /// Send a message to the agent
+    /// Push a system message whose `details` body is collapsed by default and
+    /// toggled with Ctrl+O (see `ctrl_o_toggle_target`). Used for the startup
+    /// jobs report: a one-line `content` summary plus an expandable per-job
+    /// `details` body. An empty `details` degrades to a plain system message.
+    pub(crate) fn push_collapsible_system_message(&mut self, content: String, details: String) {
+        let details = (!details.trim().is_empty()).then_some(details);
+        self.messages.push(DisplayMessage {
+            id: Uuid::new_v4(),
+            role: "system".to_string(),
+            content,
+            timestamp: chrono::Utc::now(),
+            token_count: None,
+            cost: None,
+            approval: None,
+            approve_menu: None,
+            details,
+            expanded: false,
+            tool_group: None,
+        });
+        if self.auto_scroll {
+            self.scroll_offset = 0;
+        }
+    }
     pub(crate) async fn send_message(&mut self, content: String) -> Result<()> {
         tracing::info!(
             "[send_message] START is_processing={} has_session={} content_len={}",

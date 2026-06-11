@@ -346,7 +346,7 @@ fn extract_bare_array_single_call_compact() {
 
 #[test]
 fn extract_bare_array_pretty_printed_matches_log_shape() {
-    // Verbatim text shape from ~/.opencrabs/logs/opencrabs.2026-05-16
+    // Verbatim text shape from ~/.stemcell/logs/stemcell.2026-05-16
     // (qwen-3.6-max-preview-thinking, ~20:16 UTC+1).
     let text = "Good idea. I'll add automatic sitemap discovery.\n\n[\n  {\n    \"id\": \"call_1\",\n    \"type\": \"function\",\n    \"function\": {\n      \"name\": \"edit_file\",\n      \"arguments\": {\n        \"path\": \"/x/scraper.rs\",\n        \"operation\": \"replace\",\n        \"old_text\": \"foo\",\n        \"new_text\": \"bar\"\n      }\n    }\n  }\n]";
     let (calls, cleaned) = extract_text_tool_calls(text);
@@ -437,7 +437,7 @@ fn classify_bare_tool_array_states() {
 
 #[test]
 fn extract_dict_by_call_id_single() {
-    // The exact shape seen in @adolfousier's Telegram screenshots:
+    // The exact shape seen in @tmih06's Telegram screenshots:
     // top-level object keyed by call_<hex>, value is {name, arguments}.
     let text = r#"{"call_5f8d9c7b4a3e2f1c8d6e5b9a": {"name": "read_file", "arguments": {"path": "/tmp/x"}}}"#;
     let (calls, remaining) = extract_text_tool_calls(text);
@@ -501,13 +501,13 @@ fn dict_by_call_id_with_function_envelope_form() {
 
 #[test]
 fn extract_bare_command_args_single() {
-    let text = r#"{"command": "cd ~/srv/rs/opencrabs && cat src/rtk/tracker.rs | head -150"}"#;
+    let text = r#"{"command": "cd ~/srv/rs/stemcell && cat src/rtk/tracker.rs | head -150"}"#;
     let (calls, cleaned) = extract_text_tool_calls(text);
     assert_eq!(calls.len(), 1, "must synthesize a bash call");
     assert_eq!(calls[0].0, "bash");
     assert_eq!(
         calls[0].1["command"],
-        "cd ~/srv/rs/opencrabs && cat src/rtk/tracker.rs | head -150"
+        "cd ~/srv/rs/stemcell && cat src/rtk/tracker.rs | head -150"
     );
     assert!(
         cleaned.trim().is_empty(),
@@ -521,11 +521,11 @@ fn extract_bare_command_args_multiple_blobs_user_screenshot() {
     // `{"command": "..."}` blobs the model emitted in delta.content after
     // some structured tool calls succeeded. Pre-fix: every blob rendered
     // as visible JSON in the TUI and the calls never dispatched.
-    let text = r#"{"command": "cd ~/srv/rs/opencrabs && cat src/rtk/tracker.rs | head -150"}
-{"command": "cd ~/srv/rs/opencrabs && cat src/rtk/mod.rs | head -200"}
-{"command": "cd ~/srv/rs/opencrabs && grep -r \"rtk::rewrite\\|rtk_rewrite\\|Rtk Result\" src/brain/tools/ --include=\"*.rs\" | head -20"}
-{"command": "cd ~/srv/rs/opencrabs && git diff v0.3.24..v0.3.25 -- src/brain/tools/bash.rs | head -100"}
-{"command": "cd ~/srv/rs/opencrabs && cat src/brain/tools/bash.rs | grep -A 30 -B 5 'rtk\\|spawn_blocking\\|block_on' | head -80"}"#;
+    let text = r#"{"command": "cd ~/srv/rs/stemcell && cat src/rtk/tracker.rs | head -150"}
+{"command": "cd ~/srv/rs/stemcell && cat src/rtk/mod.rs | head -200"}
+{"command": "cd ~/srv/rs/stemcell && grep -r \"rtk::rewrite\\|rtk_rewrite\\|Rtk Result\" src/brain/tools/ --include=\"*.rs\" | head -20"}
+{"command": "cd ~/srv/rs/stemcell && git diff v0.3.24..v0.3.25 -- src/brain/tools/bash.rs | head -100"}
+{"command": "cd ~/srv/rs/stemcell && cat src/brain/tools/bash.rs | grep -A 30 -B 5 'rtk\\|spawn_blocking\\|block_on' | head -80"}"#;
 
     let (calls, cleaned) = extract_text_tool_calls(text);
     assert_eq!(calls.len(), 5, "all five blobs must become tool calls");
@@ -535,7 +535,7 @@ fn extract_bare_command_args_multiple_blobs_user_screenshot() {
             call.1["command"]
                 .as_str()
                 .unwrap()
-                .starts_with("cd ~/srv/rs/opencrabs"),
+                .starts_with("cd ~/srv/rs/stemcell"),
             "command must round-trip exactly: {call:?}"
         );
     }

@@ -536,7 +536,7 @@ pub(super) fn render_chat(f: &mut Frame, app: &mut App, area: Rect) {
                     .add_modifier(Modifier::BOLD),
             ),
             Span::styled(
-                "🦀 OpenCrabs ",
+                "🦀 StemCell ",
                 Style::default()
                     .fg(Color::Gray)
                     .add_modifier(Modifier::BOLD),
@@ -613,7 +613,7 @@ pub(super) fn render_chat(f: &mut Frame, app: &mut App, area: Rect) {
                     .add_modifier(Modifier::BOLD),
             ),
             Span::styled(
-                "🦀 OpenCrabs ",
+                "🦀 StemCell ",
                 Style::default()
                     .fg(Color::Gray)
                     .add_modifier(Modifier::BOLD),
@@ -640,7 +640,7 @@ pub(super) fn render_chat(f: &mut Frame, app: &mut App, area: Rect) {
         lines.push(Line::from(header_spans));
     }
 
-    // Inline "OpenCrabs is thinking..." spinner during tool execution / waiting
+    // Inline "StemCell is thinking..." spinner during tool execution / waiting
     // (no streaming text or reasoning yet). Renders ABOVE the tool group so the
     // user always sees the spinner on top of the processing indicator.
     // Hide when user has scrolled up so the viewport stays frozen.
@@ -664,7 +664,7 @@ pub(super) fn render_chat(f: &mut Frame, app: &mut App, area: Rect) {
                     .add_modifier(Modifier::BOLD),
             ),
             Span::styled(
-                "OpenCrabs is thinking...",
+                "StemCell is thinking...",
                 Style::default().fg(Color::Rgb(215, 100, 20)),
             ),
         ];
@@ -757,28 +757,8 @@ pub(super) fn render_chat(f: &mut Frame, app: &mut App, area: Rect) {
         lines.push(Line::from(""));
     }
 
-    // Show notification if present (auto-dismiss after 2s)
-    if let Some(ref note) = app.notification {
-        if app
-            .notification_shown_at
-            .is_some_and(|t| t.elapsed() < std::time::Duration::from_secs(2))
-        {
-            lines.push(Line::from(""));
-            lines.push(Line::from(vec![
-                Span::styled("  ", Style::default()),
-                Span::styled(
-                    note.clone(),
-                    Style::default()
-                        .fg(Color::Cyan)
-                        .add_modifier(Modifier::BOLD),
-                ),
-            ]));
-            lines.push(Line::from(""));
-        } else {
-            app.notification = None;
-            app.notification_shown_at = None;
-        }
-    }
+    // Notification is rendered as a fixed overlay (see below) so it stays
+    // visible regardless of scroll position.
 
     // Show SSH password dialog inline (like approval dialogs).
     // Same shape as the sudo dialog, different label.
@@ -981,48 +961,117 @@ pub(super) fn render_chat(f: &mut Frame, app: &mut App, area: Rect) {
     f.render_widget(Clear, area);
     f.render_widget(chat, area);
 
-    // Drag-selection highlight overlay: invert fg/bg for cells inside the
-    // selection rectangle (reading-order), clipped to the chat area.
-    if let (Some(a), Some(b)) = (app.drag_anchor, app.drag_current) {
-        let (start, end) = if (a.1, a.0) <= (b.1, b.0) {
-            (a, b)
-        } else {
-            (b, a)
-        };
+    // Selection highlight overlay (shared by keyboard select mode and mouse
+    // drag). Both store the selection in LOGICAL (line, col) coords so it
+    // survives scrolling. Logical → screen using the same padding as the
+    // paragraph (left=1, top=1) and the actual scroll offset computed above.
+    if app.keyboard_select_active || app.mouse_selecting {
+        let content_left = area.x + 1;
+        let content_top = area.y + 1;
+        let visible_rows = area.height.saturating_sub(1) as usize;
         let buf = f.buffer_mut();
-        let x0 = area.x;
-        let y0 = area.y;
-        let x1 = area.x.saturating_add(area.width);
-        let y1 = area.y.saturating_add(area.height);
-        let highlight = Style::default().add_modifier(Modifier::REVERSED);
-        if start.1 == end.1 {
-            let y = start.1;
-            if y >= y0 && y < y1 {
-                let sx = start.0.max(x0);
-                let ex = end.0.min(x1.saturating_sub(1));
-                for x in sx..=ex {
-                    if let Some(cell) = buf.cell_mut((x, y)) {
-                        cell.set_style(highlight);
-                    }
-                }
+        let x_max = area.x.saturating_add(area.width);
+
+        // Map a logical line to its screen row, if currently visible.
+        let line_to_row = |line: usize| -> Option<u16> {
+            if line < actual_scroll_offset {
+                return None;
             }
-        } else {
-            for y in start.1..=end.1 {
-                if y < y0 || y >= y1 {
+            let row_in_chat = line - actual_scroll_offset;
+            if row_in_chat >= visible_rows {
+                return None;
+            }
+            Some(content_top + row_in_chat as u16)
+        };
+        // Char column → screen x for a given line (monospace approximation,
+        // consistent with the mouse selection path).
+        let col_to_x = |col: usize| -> u16 { content_left.saturating_add(col as u16) };
+
+        let sel_style = Style::default().add_modifier(Modifier::REVERSED);
+
+        // Paint the selection range cells.
+        if let Some(anchor) = app.select_anchor {
+            let (start, end) = if anchor <= app.select_cursor {
+                (anchor, app.select_cursor)
+            } else {
+                (app.select_cursor, anchor)
+            };
+            for line in start.0..=end.0 {
+                let Some(row) = line_to_row(line) else {
                     continue;
-                }
-                let sx = if y == start.1 { start.0 } else { x0 };
-                let ex = if y == end.1 {
-                    end.0.min(x1.saturating_sub(1))
-                } else {
-                    x1.saturating_sub(1)
                 };
-                for x in sx.max(x0)..=ex {
-                    if let Some(cell) = buf.cell_mut((x, y)) {
-                        cell.set_style(highlight);
+                let line_len = app
+                    .chat_rendered_lines
+                    .get(line)
+                    .map(|l| l.chars().count())
+                    .unwrap_or(0);
+                let from = if line == start.0 { start.1 } else { 0 };
+                let to = if line == end.0 {
+                    (end.1 + 1).min(line_len)
+                } else {
+                    line_len
+                };
+                for col in from..to {
+                    let x = col_to_x(col);
+                    if x >= content_left
+                        && x < x_max
+                        && let Some(cell) = buf.cell_mut((x, row))
+                    {
+                        cell.set_style(sel_style);
                     }
                 }
             }
         }
+
+        // Draw the caret as a reversed block so it's visible even on an
+        // empty line or at end-of-line. Mouse drag tracks the pointer, so
+        // skip the caret block there to avoid a distracting double-cursor.
+        if app.keyboard_select_active
+            && let Some(row) = line_to_row(app.select_cursor.0)
+        {
+            let x = col_to_x(app.select_cursor.1).min(x_max.saturating_sub(1));
+            if x >= content_left
+                && let Some(cell) = buf.cell_mut((x, row))
+            {
+                cell.set_style(
+                    Style::default()
+                        .add_modifier(Modifier::REVERSED)
+                        .add_modifier(Modifier::BOLD),
+                );
+            }
+        }
+    }
+
+    // Fixed notification overlay: pinned to the bottom row of the chat area so
+    // it stays visible no matter where the transcript is scrolled. Auto-dismiss
+    // after 2s. A copy-failure message is shown in red, success in cyan.
+    let fresh = app
+        .notification_shown_at
+        .is_some_and(|t| t.elapsed() < std::time::Duration::from_secs(2));
+    if !fresh {
+        app.notification = None;
+        app.notification_shown_at = None;
+    } else if let Some(note) = app.notification.as_deref()
+        && area.height > 0
+    {
+        let is_err = app.notification_is_error;
+        let fg = if is_err { Color::Red } else { Color::Black };
+        let bg = if is_err { Color::Yellow } else { Color::Cyan };
+        let label = format!(" {note} ");
+        let width = (label.chars().count() as u16).min(area.width);
+        let x = area.x + area.width.saturating_sub(width).saturating_sub(1);
+        let y = area.y + area.height.saturating_sub(1);
+        let rect = Rect {
+            x,
+            y,
+            width,
+            height: 1,
+        };
+        let widget = Paragraph::new(Line::from(Span::styled(
+            label,
+            Style::default().fg(fg).bg(bg).add_modifier(Modifier::BOLD),
+        )));
+        f.render_widget(Clear, rect);
+        f.render_widget(widget, rect);
     }
 }

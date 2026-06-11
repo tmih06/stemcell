@@ -186,7 +186,7 @@ fn preview_handles_unicode_safely() {
     // 60 char-count cap, NOT 60 bytes. Russian/CJK/emoji must not
     // panic at a non-char-boundary slice. Use a string long enough
     // to force truncation so we exercise the cap path.
-    let cyrillic = "Привет, краб! Помоги мне понять как работает поток обновлений Telegram внутри opencrabs, пожалуйста.";
+    let cyrillic = "Привет, краб! Помоги мне понять как работает поток обновлений Telegram внутри stemcell, пожалуйста.";
     let preview = build_user_message_preview(cyrillic).unwrap();
     assert!(preview.chars().count() <= 61);
     assert!(preview.ends_with('…'));

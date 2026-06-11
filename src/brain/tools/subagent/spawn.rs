@@ -1,6 +1,6 @@
 //! spawn_agent tool — creates a child agent with forked context.
 //!
-//! Sub-agent progress is streamed to `~/.opencrabs/tmp/subagents/<agent_id>.json`
+//! Sub-agent progress is streamed to `~/.stemcell/tmp/subagents/<agent_id>.json`
 //! so the main orchestrator can track status without session_search.
 
 use super::manager::{SubAgent, SubAgentManager, SubAgentState};

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# OpenCrabs — build-from-source setup script
+# StemCell — build-from-source setup script
 # Detects platform, installs system dependencies, and ensures Rust stable is ready.
 
 BOLD='\033[1m'
@@ -159,8 +159,8 @@ echo ""
 echo -e "${GREEN}${BOLD}Setup complete!${RESET}"
 echo ""
 echo "Next steps:"
-echo "  git clone https://github.com/adolfousier/opencrabs.git"
-echo "  cd opencrabs"
+echo "  git clone https://github.com/tmih06/stemcell.git"
+echo "  cd stemcell"
 echo "  cargo build --release"
-echo "  ./target/release/opencrabs"
+echo "  ./target/release/stemcell"
 echo ""

@@ -5,7 +5,7 @@
 //! Tests are hermetic: each one initializes a fresh git repo in a tmp
 //! dir, makes the required commits with controlled timestamps, and
 //! invokes the helper directly. No reliance on the host git config or
-//! the opencrabs source repo state.
+//! the stemcell source repo state.
 
 use crate::brain::rsi_git_history::{
     CommitSummary, commits_matching_since, parse_git_log_output, resolve_source_repo,
@@ -241,7 +241,7 @@ fn merge_commits_excluded() {
 #[test]
 fn returns_empty_for_nonexistent_repo() {
     // Helper must not panic when the resolved path isn't a repo.
-    let nope = Path::new("/tmp/opencrabs-rsi-nonexistent-xyz");
+    let nope = Path::new("/tmp/stemcell-rsi-nonexistent-xyz");
     let hits = commits_matching_since(nope, "2026-04-20T00:00:00Z", "browser");
     assert!(hits.is_empty());
 }
@@ -255,18 +255,18 @@ fn resolve_source_repo_returns_some_when_env_var_points_at_a_git_dir() {
     // process-global. Snapshot and restore the previous value to avoid
     // bleeding state. This is the standard `temp-env`-free pattern.
     let _env_guard = crate::tests::ENV_LOCK.lock().unwrap();
-    let prev = std::env::var("OPENCRABS_SRC").ok();
+    let prev = std::env::var("STEMCELL_SRC").ok();
     // SAFETY: same parallelism caveat as above. The crate doesn't use
-    // OPENCRABS_SRC anywhere else under cfg(test), so swapping it for
+    // STEMCELL_SRC anywhere else under cfg(test), so swapping it for
     // the duration of this test is safe in practice.
-    unsafe { std::env::set_var("OPENCRABS_SRC", dir.path()) };
+    unsafe { std::env::set_var("STEMCELL_SRC", dir.path()) };
 
     let resolved = resolve_source_repo();
     assert_eq!(resolved.as_deref(), Some(dir.path()));
 
     match prev {
-        Some(v) => unsafe { std::env::set_var("OPENCRABS_SRC", v) },
-        None => unsafe { std::env::remove_var("OPENCRABS_SRC") },
+        Some(v) => unsafe { std::env::set_var("STEMCELL_SRC", v) },
+        None => unsafe { std::env::remove_var("STEMCELL_SRC") },
     }
 }
 
@@ -275,8 +275,8 @@ fn resolve_source_repo_rejects_env_var_without_dot_git() {
     let dir = tempfile::tempdir().expect("tmpdir");
     // No `git init` here — the dir exists but isn't a repo.
     let _env_guard = crate::tests::ENV_LOCK.lock().unwrap();
-    let prev = std::env::var("OPENCRABS_SRC").ok();
-    unsafe { std::env::set_var("OPENCRABS_SRC", dir.path()) };
+    let prev = std::env::var("STEMCELL_SRC").ok();
+    unsafe { std::env::set_var("STEMCELL_SRC", dir.path()) };
 
     // Resolution from env requires `.git/`; without it the helper must
     // fall through to the cwd-Cargo.toml path. We don't assert that
@@ -290,7 +290,7 @@ fn resolve_source_repo_rejects_env_var_without_dot_git() {
     );
 
     match prev {
-        Some(v) => unsafe { std::env::set_var("OPENCRABS_SRC", v) },
-        None => unsafe { std::env::remove_var("OPENCRABS_SRC") },
+        Some(v) => unsafe { std::env::set_var("STEMCELL_SRC", v) },
+        None => unsafe { std::env::remove_var("STEMCELL_SRC") },
     }
 }

@@ -452,7 +452,7 @@ impl OpenAIProvider {
         let base = self.base_url.to_lowercase();
         let include_reasoning = if base.contains("openrouter")
             || base.contains("openrouter.ai")
-            || std::env::var("OPENCRABS_ENABLE_REASONING").is_ok()
+            || std::env::var("STEMCELL_ENABLE_REASONING").is_ok()
         {
             Some(true)
         } else {

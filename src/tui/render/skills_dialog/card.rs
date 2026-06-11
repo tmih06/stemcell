@@ -1,6 +1,6 @@
 //! One skill rendered as a rounded card — slug + source badge +
 //! description. Mirrors the agentverse / mission-control card style
-//! and reuses the same OpenCrabs palette via `mission_control::theme`.
+//! and reuses the same StemCell palette via `mission_control::theme`.
 
 use crate::brain::skills::{Skill, SkillSource};
 use crate::tui::render::palette;

@@ -3,7 +3,7 @@
 //!
 //! Without this section the agent grepped the repo working directory
 //! when the user said "check logs", instead of reading
-//! `~/.opencrabs/logs/opencrabs.YYYY-MM-DD`. These tests are
+//! `~/.stemcell/logs/stemcell.YYYY-MM-DD`. These tests are
 //! sentinels: they fail loudly if a future refactor accidentally
 //! strips the path guidance, sending the agent back to wandering.
 
@@ -19,7 +19,7 @@ fn rendered() -> String {
 fn paths_section_mentions_log_directory() {
     let out = rendered();
     assert!(
-        out.contains("~/.opencrabs/logs/"),
+        out.contains("~/.stemcell/logs/"),
         "must surface the log directory path; got: {out}"
     );
 }
@@ -28,7 +28,7 @@ fn paths_section_mentions_log_directory() {
 fn paths_section_mentions_daily_log_file_pattern() {
     let out = rendered();
     assert!(
-        out.contains("opencrabs.YYYY-MM-DD"),
+        out.contains("stemcell.YYYY-MM-DD"),
         "must surface the daily file naming pattern so the agent \
          knows logs are rotated by date; got: {out}"
     );
@@ -80,7 +80,7 @@ fn paths_section_mentions_brain_files() {
 fn paths_section_mentions_plan_files() {
     let out = rendered();
     assert!(
-        out.contains("Plans:") && out.contains("opencrabs_plan_"),
+        out.contains("Plans:") && out.contains("stemcell_plan_"),
         "must surface where the plan tool persists JSON state; got: {out}"
     );
 }

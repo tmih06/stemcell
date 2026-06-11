@@ -1,4 +1,4 @@
-/// ASCII art logo for OpenCrabs featuring a croissant
+/// ASCII art logo for StemCell featuring a croissant
 pub const LOGO: &str = r#"
    ╔═══════════════════════════════════════════════════════════════╗
    ║                                                               ║
@@ -45,7 +45,7 @@ pub const SMALL_LOGO: &str = r#"
         🥐 Flaky & Fast
 "#;
 
-/// Returns the full OpenCrabs logo with croissant
+/// Returns the full StemCell logo with croissant
 pub fn get_logo() -> &'static str {
     LOGO
 }

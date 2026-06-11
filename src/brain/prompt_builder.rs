@@ -41,7 +41,7 @@ const BRAIN_FILES: &[(&str, &str)] = &[
 ];
 
 /// Brain preamble — always present regardless of workspace contents.
-pub(crate) const BRAIN_PREAMBLE_CORE: &str = r#"You are OpenCrabs, an AI orchestration agent with powerful tools to help with software development tasks.
+pub(crate) const BRAIN_PREAMBLE_CORE: &str = r#"You are StemCell, an AI orchestration agent with powerful tools to help with software development tasks.
 
 IMPORTANT: You have access to tools for file operations and code exploration. USE THEM PROACTIVELY!
 
@@ -71,7 +71,7 @@ Understand the current code first, then modify it using your available file edit
 SELF-AWARENESS — CHECK WHAT YOU ALREADY HAVE BEFORE BUILDING NEW:
 Before proposing to implement a feature from scratch (STT, TTS, browser automation, messaging channels, token compression, PDF rendering, etc.):
 1. Check your tool list in this request — is there already a tool for this? Use it instead of bash+pip+third-party libraries.
-2. Check the "Built-in features compiled into this binary" line in Runtime Info below — is the capability already baked into the OpenCrabs binary you're running? If yes, USE it; don't re-implement it.
+2. Check the "Built-in features compiled into this binary" line in Runtime Info below — is the capability already baked into the StemCell binary you're running? If yes, USE it; don't re-implement it.
 3. Check the relevant brain file (TOOLS.md for tool usage, AGENTS.md for project conventions) before deciding the right surface.
 Skipping these checks wastes the user's time, ships duplicate code, and makes the agent look unaware of its own runtime.
 
@@ -122,7 +122,7 @@ pub(crate) const BRAIN_PREAMBLE_RSI: &str = r#"RECURSIVE SELF-IMPROVEMENT:
 You have three tools for improving yourself over time:
 - feedback_analyze: Query your performance history (tool success rates, failure patterns, recent events). Call with query='summary' or query='tool_stats' or query='failures'.
 - feedback_record: Manually log observations — user corrections, patterns you notice, strategies that work well.
-- self_improve: Propose or apply changes to your brain files (SOUL.md, TOOLS.md, etc.). Runs autonomously — no human approval needed. Changes are logged to ~/.opencrabs/rsi/improvements.md and archived in ~/.opencrabs/rsi/history/.
+- self_improve: Propose or apply changes to your brain files (SOUL.md, TOOLS.md, etc.). Runs autonomously — no human approval needed. Changes are logged to ~/.stemcell/rsi/improvements.md and archived in ~/.stemcell/rsi/history/.
 
 Your tool executions are automatically tracked. When you notice recurring failures, user frustration, or repeated corrections:
 1. Call feedback_analyze with query='failures' to understand what's going wrong
@@ -142,12 +142,12 @@ impl BrainLoader {
         Self { workspace_path }
     }
 
-    /// Resolve the brain path: `~/.opencrabs/`
+    /// Resolve the brain path: `~/.stemcell/`
     ///
     /// Brain files (SOUL.md, IDENTITY.md, etc.) live at the root of the
-    /// OpenCrabs home directory for simplicity.
+    /// StemCell home directory for simplicity.
     pub fn resolve_path() -> PathBuf {
-        crate::config::opencrabs_home()
+        crate::config::stemcell_home()
     }
 
     /// Read a single markdown file from the workspace. Returns `None` if missing.
@@ -318,7 +318,7 @@ impl BrainLoader {
                 "Brain directory: {}/  (all files below live here)\n\
                  Load on demand with the `load_brain_file` tool when relevant — \
                  do NOT load unless the request actually needs that context. \
-                 Use `write_opencrabs_file` to update or edit a brain file.\n\n",
+                 Use `write_stemcell_file` to update or edit a brain file.\n\n",
                 brain_dir
             ));
             for (name, desc) in &available {
@@ -358,7 +358,7 @@ impl BrainLoader {
             // Memory persistence hint — tell the agent to proactively write learnings
             if has("MEMORY.md") {
                 prompt.push_str(
-                    "Write proactively to MEMORY.md (via `write_opencrabs_file`) when:\n\
+                    "Write proactively to MEMORY.md (via `write_stemcell_file`) when:\n\
                      - You discover a fact, pattern, or context that would be valuable across sessions\n\
                      - The user corrects you on something non-obvious that isn't already in MEMORY.md\n\
                      - You learn project-specific knowledge (integrations, team structure, workflows)\n\
@@ -487,7 +487,7 @@ pub struct RuntimeInfo {
 /// `Working directory:` line.
 ///
 /// The 2026-04-26 regression: collapsing `$HOME → ~` in the prompt
-/// also stripped the literal username (e.g. `adolfousierstudio`) the
+/// also stripped the literal username (e.g. `tmih06studio`) the
 /// model used to parrot back when constructing absolute paths. With
 /// nothing to copy from, the model started inventing one — typically
 /// the user's first name from git config (`/Users/adolfo/...`),
@@ -551,7 +551,7 @@ fn push_preamble_and_tools(prompt: &mut String, active_tools: Option<&[String]>)
     }
 }
 
-/// List of OpenCrabs features compiled into this binary. Built at
+/// List of StemCell features compiled into this binary. Built at
 /// runtime from `cfg!(feature = "...")` checks against every feature
 /// declared in `Cargo.toml::[features]`. Used to teach the agent
 /// what it already has — without this, newly-onboarded users get
@@ -771,8 +771,8 @@ pub(crate) fn compiled_features() -> Vec<&'static str> {
     if cfg!(feature = "tool-load-brain-file") {
         out.push("tool-load-brain-file");
     }
-    if cfg!(feature = "tool-write-opencrabs-file") {
-        out.push("tool-write-opencrabs-file");
+    if cfg!(feature = "tool-write-stemcell-file") {
+        out.push("tool-write-stemcell-file");
     }
     if cfg!(feature = "tool-a2a-send") {
         out.push("tool-a2a-send");
@@ -876,7 +876,7 @@ pub(crate) fn push_compiled_features(prompt: &mut String) {
 /// user says "check the logs" the agent knows EXACTLY where to look
 /// instead of grepping random places in the working directory.
 ///
-/// All paths are anchored under `~/.opencrabs/` (the same root the
+/// All paths are anchored under `~/.stemcell/` (the same root the
 /// home-anchor line teaches the agent to expand to). We list the
 /// surfaces the agent reaches for repeatedly:
 /// - logs (rotated daily; the agent always wants today's file)
@@ -889,17 +889,17 @@ pub(crate) fn push_compiled_features(prompt: &mut String) {
 /// question stays out; the goal is "next time you're told 'check
 /// the logs' you don't grep .git/".
 pub(crate) fn push_known_paths(prompt: &mut String) {
-    let home = crate::config::opencrabs_home();
+    let home = crate::config::stemcell_home();
     prompt.push_str(&format!(
         "\nKnown paths:\n\
-         - Logs: ~/.opencrabs/logs/opencrabs.YYYY-MM-DD (daily, today is the most relevant)\n\
-         - Config: ~/.opencrabs/config.toml\n\
-         - Keys: ~/.opencrabs/keys.toml\n\
+         - Logs: ~/.stemcell/logs/stemcell.YYYY-MM-DD (daily, today is the most relevant)\n\
+         - Config: ~/.stemcell/config.toml\n\
+         - Keys: ~/.stemcell/keys.toml\n\
          - Brain files: {home}/{{SOUL,USER,AGENTS,TOOLS,MEMORY,CODE}}.md\n\
-         - Plans: {home}/agents/session/.opencrabs_plan_<session-id>.json\n\
+         - Plans: {home}/agents/session/.stemcell_plan_<session-id>.json\n\
          When the user asks to check logs, read today's file at \
-         ~/.opencrabs/logs/opencrabs.<today UTC date>. Do NOT grep the repo \
-         working directory for log files — opencrabs never writes logs there.\n",
+         ~/.stemcell/logs/stemcell.<today UTC date>. Do NOT grep the repo \
+         working directory for log files — stemcell never writes logs there.\n",
         home = home.display(),
     ));
 }
@@ -920,7 +920,7 @@ mod tests {
         let prompt = loader.build_system_brain(None, None, None);
 
         // Should contain brain preamble even with no brain files
-        assert!(prompt.contains("You are OpenCrabs"));
+        assert!(prompt.contains("You are StemCell"));
         assert!(prompt.contains("CRITICAL RULE"));
     }
 
@@ -932,7 +932,7 @@ mod tests {
         let loader = BrainLoader::new(dir.path().to_path_buf());
         let prompt = loader.build_system_brain(None, None, None);
 
-        assert!(prompt.contains("You are OpenCrabs"));
+        assert!(prompt.contains("You are StemCell"));
         assert!(prompt.contains("I am a helpful crab."));
         assert!(prompt.contains("SOUL.md"));
     }
