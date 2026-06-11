@@ -543,6 +543,13 @@ pub async fn fetch_provider_models(
                     .into_iter()
                     .map(|m| m.id)
                     .filter(|id| crate::startup::model_cache::is_chat_capable_model_id(id))
+                    .filter(|id| {
+                        if provider_id == "opencode_zen_free" {
+                            id.ends_with("-free")
+                        } else {
+                            true
+                        }
+                    })
                     .collect()
             }
             Err(_) => Vec::new(),
