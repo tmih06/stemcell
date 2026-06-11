@@ -21,9 +21,7 @@ pub fn status_dir() -> PathBuf {
             return p;
         }
     }
-    crate::config::stemcell_home()
-        .join("tmp")
-        .join("subagents")
+    crate::config::stemcell_home().join("tmp").join("subagents")
 }
 
 #[cfg(test)]

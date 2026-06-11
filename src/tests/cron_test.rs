@@ -172,13 +172,7 @@ mod cli {
     #[test]
     fn test_cron_add_missing_cron() {
         let result = Cli::try_parse_from([
-            "stemcell",
-            "cron",
-            "add",
-            "--name",
-            "Test",
-            "--prompt",
-            "Test",
+            "stemcell", "cron", "add", "--name", "Test", "--prompt", "Test",
         ]);
         assert!(result.is_err());
     }
