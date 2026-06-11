@@ -249,7 +249,7 @@ pub(crate) fn seed_brain_templates(profile_dir: &Path) {
     // are baked into the binary at compile time via `include_str!`,
     // so this list and the TUI's `TEMPLATE_FILES` stay in lockstep
     // because both reference the same files under
-    // `src/docs/reference/templates/`.
+    // `wiki/reference/templates/`.
     const TEMPLATES: &[(&str, &str)] = &[
         (
             "SOUL.md",

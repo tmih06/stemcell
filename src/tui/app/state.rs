@@ -1210,7 +1210,7 @@ impl App {
                     format!(
                         " You just evolved from v{old} to v{new}. \
                          Check the CHANGELOG at the repo root for what's new in v{new}. \
-                         Compare the brain templates in src/docs/reference/templates/ against \
+                         Compare the brain templates in wiki/reference/templates/ against \
                          the user's brain files in ~/.stemcell/ (TOOLS.md, AGENTS.md, etc.) \
                          and tell the user what changed. Offer to update their brain files \
                          with the new content. Be specific about what's new.",
@@ -1293,7 +1293,7 @@ impl App {
                 let msg = format!(
                     "[SYSTEM: You just evolved from v{old} to v{new}. \
                      Check the CHANGELOG at the repo root for what's new in v{new}. \
-                     Compare the brain templates in src/docs/reference/templates/ against \
+                     Compare the brain templates in wiki/reference/templates/ against \
                      the user's brain files in ~/.stemcell/ (TOOLS.md, AGENTS.md, etc.) \
                      and tell the user what changed. Offer to update their brain files \
                      with the new content. Be specific about what's new.]",

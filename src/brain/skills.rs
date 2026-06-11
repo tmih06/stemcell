@@ -15,7 +15,7 @@
 //! ```
 //!
 //! The repo ships a curated set of built-ins under
-//! `src/docs/reference/templates/skills/<name>/SKILL.md`, embedded at
+//! `wiki/reference/templates/skills/<name>/SKILL.md`, embedded at
 //! compile time via `include_str!`. The user directory at
 //! `~/.stemcell/skills/` is purely user-owned (per `TOOLS.md`); writes
 //! never come from the binary.
@@ -47,7 +47,7 @@ use std::path::PathBuf;
 /// Compile-time table of built-in skills shipped with the binary.
 ///
 /// To add a new built-in, drop a `SKILL.md` under
-/// `src/docs/reference/templates/skills/<name>/` and add a line here.
+/// `wiki/reference/templates/skills/<name>/` and add a line here.
 const BUILTIN_SKILLS: &[(&str, &str)] = &[
     (
         "cost-estimate",
