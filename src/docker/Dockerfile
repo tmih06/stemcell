@@ -1,54 +1,61 @@
-# ── Stage 1: Build ──────────────────────────────────────────────
-# Rust nightly + all build deps. Takes ~15min on first build,
-# subsequent builds use Docker layer cache.
-FROM rust:slim AS builder
+# ── Stage 1: Toolchain + dependency planner ────────────────────
+# cargo-chef keeps dependency compilation in a stable layer so CI,
+# release builds, and local rebuilds don't recompile the full Rust
+# graph whenever only application sources change. Keep the builder on
+# bookworm as well so the runtime image gets a compatible glibc.
+FROM rust:slim-bookworm AS chef
 
-# Install build dependencies (matches CI pipeline)
-RUN apt-get update && apt-get install -y \
+ARG DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
-    pkg-config \
+    ca-certificates \
     clang \
-    libclang-dev \
-    libasound2-dev \
-    libssl-dev \
     cmake \
     git \
+    libasound2-dev \
+    libclang-dev \
+    libssl-dev \
+    pkg-config \
     && rm -rf /var/lib/apt/lists/*
 
-# Install nightly toolchain (required for wacore-binary portable_simd)
-RUN rustup toolchain install nightly && rustup default nightly
+RUN rustup toolchain install stable --profile minimal --component rustfmt --component clippy \
+    && cargo install cargo-chef --locked --version 0.1.77
 
 WORKDIR /build
 
-# Cache dependencies: copy manifests first, build a dummy to cache deps
-COPY Cargo.toml Cargo.lock* rust-toolchain.toml ./
-COPY src/patches/ src/patches/
-RUN mkdir -p src && echo 'fn main() {}' > src/main.rs \
-    && echo 'pub fn lib() {}' > src/lib.rs \
-    && cargo build --release 2>/dev/null || true \
-    && rm -rf src
+FROM chef AS planner
 
-# Copy full source and build for real
 COPY . .
-RUN cargo build --release --all-features \
-    && strip target/release/opencrabs
+RUN cargo chef prepare --recipe-path recipe.json
+
+FROM chef AS builder
+
+COPY --from=planner /build/recipe.json recipe.json
+RUN cargo chef cook --locked --release --all-features --recipe-path recipe.json
+
+COPY . .
+RUN cargo build --locked --release --all-features --bin opencrabs \
+    && install -Dm755 target/release/opencrabs /out/opencrabs \
+    && strip /out/opencrabs
 
 # ── Stage 2: Runtime ───────────────────────────────────────────
-# Minimal image — just the binary + runtime deps
 FROM debian:bookworm-slim
 
-RUN apt-get update && apt-get install -y \
+ARG DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     git \
-    libgomp1 \
     libasound2 \
+    libgomp1 \
     && rm -rf /var/lib/apt/lists/*
 
 # Create non-root user
-RUN useradd -m -s /bin/bash opencrabs
+RUN useradd -m -s /bin/sh opencrabs
 
 # Copy binary from builder
-COPY --from=builder /build/target/release/opencrabs /usr/local/bin/opencrabs
+COPY --from=builder /out/opencrabs /usr/local/bin/opencrabs
 
 # Workspace and config persist via volume
 VOLUME /home/opencrabs/.opencrabs

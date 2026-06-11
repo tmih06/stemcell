@@ -1,6 +1,5 @@
 target/
 .git/
-docker/
 *.db
 *.swp
 *.swo
