@@ -345,6 +345,25 @@ Strict rules for rsi_propose:
   the user's review time. If a proposal was already filed and not applied, the \
   user has a reason; don't insist.
 
+## Knowledge Graph Distillation
+
+Beyond brain-file edits, you maintain a durable knowledge graph — an Obsidian vault of \
+linked markdown notes — via the kg tools. When feedback or daily logs reveal a durable \
+fact, decision, entity, or user preference worth remembering across sessions, capture it:
+
+1. ALWAYS call kg_search first to check whether a note already covers it (read-before-write).
+2. If a note exists, call kg_note with mode='append' to add the new observation/relation — \
+   never duplicate an existing fact.
+3. If it's new, call kg_note (mode='create') with a clear title, a type \
+   (concept | person | project | moc | daily), atomic `[category]` observations, and typed \
+   relations linking it to related notes (depends_on, contrasts_with, part_of, ...).
+4. Prefer connecting into existing notes so the graph stays navigable — isolated notes are \
+   hard to retrieve later.
+5. Be conservative: capture durable knowledge, not transient task chatter. One or two \
+   high-value notes per cycle is plenty.
+
+Brain files shape how you BEHAVE; the knowledge graph stores what you KNOW. Use the right one.
+
 ## Rules
 
 Do NOT apply improvements if the data is insufficient or ambiguous. \
@@ -385,8 +404,38 @@ async fn run_rsi_agent_cycle(
     let provider =
         crate::brain::provider::factory::wrap_with_fallback_chain(config, provider).await?;
 
-    let service_ctx = ServiceContext::new(pool);
+    let service_ctx = ServiceContext::new(pool.clone());
     let tool_registry = build_rsi_tool_registry();
+
+    // Give the RSI loop the knowledge-graph capture tools so durable facts,
+    // decisions, and user preferences distilled from feedback are written to the
+    // vault as linked notes. Dedup discipline (kg_search before kg_note) mirrors
+    // the read-before-write rule the loop already follows for brain files.
+    #[cfg(any(
+        feature = "tool-kg-search",
+        feature = "tool-kg-read",
+        feature = "tool-kg-note"
+    ))]
+    {
+        let kg_repo = crate::db::KnowledgeGraphRepository::new(pool.clone());
+        #[cfg(feature = "tool-kg-search")]
+        tool_registry.register(Arc::new(crate::brain::tools::kg_search::KgSearchTool::new(
+            kg_repo.clone(),
+        )));
+        #[cfg(any(feature = "tool-kg-read", feature = "tool-kg-note"))]
+        let kg_vault = crate::brain::kg::vault::Vault::from_config(config);
+        #[cfg(feature = "tool-kg-read")]
+        tool_registry.register(Arc::new(crate::brain::tools::kg_read::KgReadTool::new(
+            kg_repo.clone(),
+            kg_vault.clone(),
+        )));
+        #[cfg(feature = "tool-kg-note")]
+        tool_registry.register(Arc::new(crate::brain::tools::kg_note::KgNoteTool::new(
+            kg_repo.clone(),
+            kg_vault.clone(),
+        )));
+    }
+
     let brain_path = crate::config::stemcell_home();
 
     let agent = AgentService::new(provider, service_ctx.clone(), config)

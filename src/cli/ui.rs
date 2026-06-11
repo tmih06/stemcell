@@ -118,6 +118,18 @@ async fn cmd_chat_inner(
     let (rsi_tx, mut rsi_rx) = tokio::sync::mpsc::unbounded_channel();
     crate::brain::rsi::spawn_rsi_engine(db.pool().clone(), config, rsi_tx, startup_ready_rx);
 
+    // Spawn the knowledge-graph vault indexer: initial reindex of
+    // ~/.stemcell/vault + a live file watcher that keeps the SQLite index
+    // in sync as notes change on disk (or in Obsidian).
+    #[cfg(any(
+        feature = "tool-kg-search",
+        feature = "tool-kg-read",
+        feature = "tool-kg-links",
+        feature = "tool-kg-note",
+        feature = "tool-kg-context"
+    ))]
+    crate::brain::kg::sync::spawn_indexer(config, db.pool().clone());
+
     // Get working directory
     let working_directory = std::env::current_dir().unwrap_or_default();
 

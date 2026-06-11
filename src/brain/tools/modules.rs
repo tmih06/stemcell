@@ -878,6 +878,61 @@ impl ToolModule for DynamicModule {
     }
 }
 
+/// Knowledge graph: kg_search, kg_read, kg_links, kg_note, kg_context
+#[cfg(any(
+    feature = "tool-kg-search",
+    feature = "tool-kg-read",
+    feature = "tool-kg-links",
+    feature = "tool-kg-note",
+    feature = "tool-kg-context"
+))]
+struct KnowledgeGraphModule;
+
+#[cfg(any(
+    feature = "tool-kg-search",
+    feature = "tool-kg-read",
+    feature = "tool-kg-links",
+    feature = "tool-kg-note",
+    feature = "tool-kg-context"
+))]
+impl ToolModule for KnowledgeGraphModule {
+    fn id(&self) -> &str {
+        "knowledge_graph"
+    }
+    fn name(&self) -> &str {
+        "Knowledge Graph"
+    }
+    fn description(&self) -> &str {
+        "Obsidian-style knowledge-graph long-term memory: FTS search, sliced reads, \
+         link/backlink traversal, note capture, and bounded multi-hop context"
+    }
+    #[allow(unused_variables)]
+    fn register(&self, ctx: &ModuleContext) {
+        use crate::brain::kg::vault::Vault;
+        use crate::db::KnowledgeGraphRepository;
+
+        let repo = KnowledgeGraphRepository::new(ctx.pool.clone());
+        let vault = Vault::from_config(&ctx.config);
+
+        #[cfg(feature = "tool-kg-search")]
+        ctx.register(Arc::new(super::kg_search::KgSearchTool::new(repo.clone())));
+        #[cfg(feature = "tool-kg-read")]
+        ctx.register(Arc::new(super::kg_read::KgReadTool::new(
+            repo.clone(),
+            vault.clone(),
+        )));
+        #[cfg(feature = "tool-kg-links")]
+        ctx.register(Arc::new(super::kg_links::KgLinksTool::new(repo.clone())));
+        #[cfg(feature = "tool-kg-note")]
+        ctx.register(Arc::new(super::kg_note::KgNoteTool::new(
+            repo.clone(),
+            vault.clone(),
+        )));
+        #[cfg(feature = "tool-kg-context")]
+        ctx.register(Arc::new(super::kg_context::KgContextTool::new(repo.clone())));
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Module registry
 // ---------------------------------------------------------------------------
@@ -990,6 +1045,14 @@ pub fn all_modules() -> Vec<Box<dyn ToolModule>> {
     modules.push(Box::new(MetaModule));
     #[cfg(feature = "tools-dynamic")]
     modules.push(Box::new(DynamicModule));
+    #[cfg(any(
+        feature = "tool-kg-search",
+        feature = "tool-kg-read",
+        feature = "tool-kg-links",
+        feature = "tool-kg-note",
+        feature = "tool-kg-context"
+    ))]
+    modules.push(Box::new(KnowledgeGraphModule));
     modules
 }
 

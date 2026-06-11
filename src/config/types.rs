@@ -841,6 +841,12 @@ pub struct MemoryConfig {
     /// via API instead of the local GGUF model. Eliminates ~300MB download + ~2.9GB RAM.
     #[serde(default)]
     pub embedding: Option<EmbeddingConfig>,
+
+    /// Override directory for the Obsidian-style knowledge-graph vault.
+    /// When unset, defaults to `<stemcell_home>/vault` (i.e. `~/.stemcell/vault`).
+    /// Accepts a leading `~` for the home directory.
+    #[serde(default)]
+    pub vault_dir: Option<String>,
 }
 
 const fn default_vector_enabled() -> bool {
@@ -852,6 +858,7 @@ impl Default for MemoryConfig {
         Self {
             vector_enabled: default_vector_enabled(),
             embedding: None,
+            vault_dir: None,
         }
     }
 }

@@ -15,6 +15,7 @@ The core AI layer of StemCell — LLM providers, agent orchestration, 30+ tools,
 | Prompt Builder | `src/brain/prompt_builder.rs` | Dynamic system prompt assembly from brain files (SOUL.md, USER.md, AGENTS.md, etc.) |
 | RSI | `src/brain/rsi.rs` | Recursive Self-Improvement background engine |
 | Mission Control | `src/brain/mission_control/` | RSI inbox, activity feed, cron schedule queue (panels) |
+| Knowledge Graph | `src/brain/kg/` | Obsidian-style markdown vault: parser, resolver, vault, sync, traverse (see [Knowledge Graph](knowledge-graph.md)) |
 | Skills | `src/brain/skills.rs` | SKILL.md workflow system (built-in + user overlay) |
 | Slash Commands | `src/brain/commands.rs` | User-defined `/commands` from `commands.toml` |
 | Self-Update | `src/brain/self_update.rs` | Build, test, and hot-restart from source |
@@ -48,6 +49,7 @@ Located at `src/brain/agent/service/`, the `AgentService` orchestrates the conve
 | Browser | CDP Chrome automation (`navigate`, `click`, `type`, `screenshot`, `eval`, `find`, `wait`, `content`, `close`) |
 | Subagent | Multi-agent orchestration (`spawn`, `wait`, `close`, `resume`, `send_input`, teams) |
 | RSI | `feedback_record`, `feedback_analyze`, `self_improve`, `rsi_proposals`, `rsi_propose` |
+| Knowledge Graph | `kg_search`, `kg_read`, `kg_links`, `kg_note`, `kg_context` |
 | Channels | Telegram, Discord, Slack, WhatsApp, Trello (connect/send pairs) |
 | Meta | `tool_manage`, `rebuild`, `evolve`, `config_tool`, `slash_command`, `rename_session` |
 | Other | `bash`, `code_exec`, `doc_parser`, `http`, `generate_image`, `analyze_image`, `analyze_video`, `task`, `plan_tool`, `cron_manage`, `context`, `notebook`, `follow_up_question`, `a2a_send`, `load_brain_file`, `write_stemcell_file` |

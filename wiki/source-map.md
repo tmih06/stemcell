@@ -43,6 +43,7 @@
 | `src/db/repository/pending_request.rs` | Pending channel requests |
 | `src/db/repository/file.rs` | File records |
 | `src/db/repository/recent_paths.rs` | Recently accessed paths |
+| `src/db/repository/knowledge_graph.rs` | Knowledge-graph index (notes, observations, relations, FTS5) |
 
 ## LLM Providers
 
@@ -111,6 +112,11 @@
 | `src/brain/tools/memory_search.rs` | Memory search |
 | `src/brain/tools/session_search.rs` | Session search |
 | `src/brain/tools/channel_search.rs` | Channel search |
+| `src/brain/tools/kg_search.rs` | Knowledge-graph entry-point search |
+| `src/brain/tools/kg_read.rs` | Knowledge-graph note/anchor read |
+| `src/brain/tools/kg_links.rs` | Knowledge-graph relations + backlinks |
+| `src/brain/tools/kg_note.rs` | Knowledge-graph note capture (surgical append) |
+| `src/brain/tools/kg_context.rs` | Knowledge-graph bounded traversal |
 | `src/brain/tools/http.rs` | HTTP requests |
 | `src/brain/tools/code_exec.rs` | Code execution |
 | `src/brain/tools/doc_parser.rs` | Document parsing |
@@ -246,6 +252,18 @@
 | `src/memory/embedding.rs` | Vector embedding generation |
 | `src/memory/index.rs` | FTS5 index management |
 | `src/memory/store.rs` | Memory storage |
+
+## Knowledge Graph (Vault)
+
+| File | Responsibility |
+|------|---------------|
+| `src/brain/kg/mod.rs` | Knowledge-graph module root |
+| `src/brain/kg/parser.rs` | Pure markdown parser (frontmatter, wikilinks, observations, relations, anchors) |
+| `src/brain/kg/resolver.rs` | Pure link resolution + anchor→line-range slicing |
+| `src/brain/kg/vault.rs` | Vault path resolution, `.obsidian/` scaffold, read/write, markdown walk |
+| `src/brain/kg/sync.rs` | Filesystem→DB indexer, `notify` watcher, startup spawner |
+| `src/brain/kg/traverse.rs` | Bounded-depth graph walk with centrality + MOC ranking |
+| `src/migrations/20260611000001_add_knowledge_graph.sql` | KG tables (notes, FTS5, observations, relations) |
 
 ## RSI (Recursive Self-Improvement)
 

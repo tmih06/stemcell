@@ -99,6 +99,16 @@
 | `session_search.rs` | Session history search |
 | `channel_search.rs` | Channel message search |
 
+### Knowledge Graph
+
+| File | Role |
+|---|---|
+| `kg_search.rs` | Vault entry-point FTS search |
+| `kg_read.rs` | Note / anchor slice read |
+| `kg_links.rs` | Relations + backlinks |
+| `kg_note.rs` | Note capture (surgical append) |
+| `kg_context.rs` | Bounded graph traversal |
+
 ### Browser (CDP Chrome Automation)
 
 | File | Role |
@@ -218,3 +228,16 @@
 | `activity_service.rs` | Activity feed — parses `improvements.md` journal |
 | `schedule_service.rs` | Cron schedule queue |
 | `mod.rs` | Module declarations |
+
+## Knowledge Graph (`src/brain/kg/`)
+
+| File | Role |
+|---|---|
+| `mod.rs` | Module root |
+| `parser.rs` | Pure markdown parser — frontmatter, `[[wikilinks]]`, `#tags`, typed observations/relations, anchors |
+| `resolver.rs` | Link resolution (name → path) + anchor (`#heading`/`^block`) → line-range slicing |
+| `vault.rs` | Vault path resolution, `.obsidian/` scaffold, read/write, markdown walk, slug/folder helpers |
+| `sync.rs` | Filesystem → SQLite indexer (checksum-skip, prune, resolve), `notify` watcher, `spawn_indexer` |
+| `traverse.rs` | Bounded-depth BFS with degree-centrality + MOC ranking and budget truncation |
+
+Index lives in `src/db/repository/knowledge_graph.rs`; see [Knowledge Graph](knowledge-graph.md).
