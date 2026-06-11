@@ -3,7 +3,7 @@
 //! Parses various document formats (PDF, DOCX, TXT, etc.) to extract text content.
 
 use super::error::{Result, ToolError};
-use super::r#trait::{Tool, ToolCapability, ToolExecutionContext, ToolResult};
+use super::r#trait::{Tool, ToolCapability, ToolExecutionContext, ToolResult, parse_input};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -150,13 +150,12 @@ impl Tool for DocParserTool {
     }
 
     fn validate_input(&self, input: &Value) -> Result<()> {
-        let _: DocParserInput = serde_json::from_value(input.clone())
-            .map_err(|e| ToolError::InvalidInput(format!("Invalid input: {}", e)))?;
+        let _: DocParserInput = parse_input(input)?;
         Ok(())
     }
 
     async fn execute(&self, input: Value, context: &ToolExecutionContext) -> Result<ToolResult> {
-        let input: DocParserInput = serde_json::from_value(input)?;
+        let input: DocParserInput = parse_input(&input)?;
 
         // Resolve path (tilde expansion + absolute/relative resolution).
         let path = super::error::resolve_tool_path(&input.path, &context.working_dir());

@@ -1,11 +1,21 @@
 //! Tool trait definition
 
-use super::error::Result;
+use super::error::{Result, ToolError};
 use async_trait::async_trait;
+use serde::de::DeserializeOwned;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::Arc;
 use uuid::Uuid;
+
+/// Deserialize a tool's typed input struct from the raw JSON `Value`,
+/// mapping any serde failure to `ToolError::InvalidInput` with a uniform
+/// message. Borrows the value (no clone) so `validate_input` and `execute`
+/// can both parse from the same `&Value` without the previous
+/// `input.clone()` + hand-written `map_err` boilerplate repeated per tool.
+pub fn parse_input<T: DeserializeOwned>(input: &Value) -> Result<T> {
+    T::deserialize(input).map_err(|e| ToolError::InvalidInput(format!("Invalid input: {}", e)))
+}
 
 /// Execution context for tools
 #[derive(Clone)]

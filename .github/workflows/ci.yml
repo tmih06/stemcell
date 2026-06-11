@@ -16,6 +16,15 @@ env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
   CARGO_INCREMENTAL: 0
+  DOCKERFILE_PATH: src/docker/Dockerfile
+  # Docker images are Linux-only; native release binaries for
+  # Windows/macOS are built in the matrix below. We ship amd64 + arm64
+  # only: the wider arch set (386, arm/v7, ppc64le, s390x) can't build
+  # the current dependency graph — pprof has no 32-bit x86 frame-pointer
+  # support, and llama-cpp-sys-2's build script panics on arm/v7,
+  # ppc64le, and s390x (CARGO_CFG_TARGET_FEATURE unset on those targets).
+  # Both supported platforms build on native runners, so no QEMU needed.
+  DOCKER_PLATFORMS: linux/amd64,linux/arm64
 
 jobs:
   # ── Stage 1: Lint (fast gate — fails early before burning compute) ────────
@@ -215,7 +224,7 @@ jobs:
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v6
         with:
-          file: ./cobertura.xml
+          files: ./cobertura.xml
 
   # ── Stage 6: MSRV verification ──────────────────────────────────────────
   # Verify the declared minimum supported Rust version (1.91) compiles.
@@ -268,6 +277,52 @@ jobs:
 
       - name: Build documentation
         run: cargo doc --all-features --no-deps --document-private-items
+
+  # ── Stage 8: Multi-arch container build ─────────────────────────────────
+  docker:
+    name: Docker Build (${{ matrix.platform }})
+    needs: [lint]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 240
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux/amd64
+            runner: ubuntu-latest
+            lto: fat
+          - platform: linux/arm64
+            runner: ubuntu-24.04-arm
+            lto: fat
+    steps:
+      - name: Free disk space
+        if: matrix.runner == 'ubuntu-latest'
+        run: |
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /usr/local/lib/android
+          sudo rm -rf /opt/ghc
+          sudo rm -rf /opt/hostedtoolcache/CodeQL
+          sudo docker image prune --all --force
+
+      - uses: actions/checkout@v6
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ env.DOCKERFILE_PATH }}
+          platforms: ${{ matrix.platform }}
+          build-args: |
+            CARGO_PROFILE_RELEASE_LTO=${{ matrix.lto }}
+          tags: opencrabs:ci-${{ github.sha }}
+          pull: true
+          push: false
+          provenance: false
+          cache-from: type=gha,scope=opencrabs-docker-${{ matrix.platform }}
+          cache-to: type=gha,mode=max,scope=opencrabs-docker-${{ matrix.platform }}
 
   # ── First wave: Independent checks (no Rust build needed) ───────────────
   # These run in parallel with lint — no compilation required.
@@ -355,7 +410,7 @@ jobs:
   ci-gate:
     name: CI Required Gate
     if: always()
-    needs: [lint, build, test, audit, coverage, msrv, doc, deny, typos, secrets, docs-coverage, build-no-default]
+    needs: [lint, build, test, audit, coverage, msrv, doc, docker, deny, typos, secrets, docs-coverage, build-no-default]
     runs-on: ubuntu-latest
     steps:
       - name: Check results

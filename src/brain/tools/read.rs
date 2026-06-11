@@ -4,7 +4,7 @@
 
 use super::error::{Result, ToolError, validate_file_path};
 use super::hashline::hash::{format_hashline, hash_line};
-use super::r#trait::{Tool, ToolCapability, ToolExecutionContext, ToolResult};
+use super::r#trait::{Tool, ToolCapability, ToolExecutionContext, ToolResult, parse_input};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -87,13 +87,12 @@ impl Tool for ReadTool {
     }
 
     fn validate_input(&self, input: &Value) -> Result<()> {
-        let _: ReadInput = serde_json::from_value(input.clone())
-            .map_err(|e| ToolError::InvalidInput(format!("Invalid input: {}", e)))?;
+        let _: ReadInput = parse_input(input)?;
         Ok(())
     }
 
     async fn execute(&self, input: Value, context: &ToolExecutionContext) -> Result<ToolResult> {
-        let input: ReadInput = serde_json::from_value(input)?;
+        let input: ReadInput = parse_input(&input)?;
 
         // Validate path: safety check, existence, and file type
         let path = match validate_file_path(&input.path, &context.working_dir()) {

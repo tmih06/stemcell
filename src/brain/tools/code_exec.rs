@@ -3,7 +3,7 @@
 //! Execute code in various languages within a sandboxed environment.
 
 use super::error::{Result, ToolError};
-use super::r#trait::{Tool, ToolCapability, ToolExecutionContext, ToolResult};
+use super::r#trait::{Tool, ToolCapability, ToolExecutionContext, ToolResult, parse_input};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -148,7 +148,7 @@ impl Tool for CodeExecTool {
     }
 
     async fn execute(&self, input: Value, context: &ToolExecutionContext) -> Result<ToolResult> {
-        let input: CodeExecInput = serde_json::from_value(input)?;
+        let input: CodeExecInput = parse_input(&input)?;
 
         // Determine interpreter and file extension
         let (interpreter, extension, extra_args) = match input.language.as_str() {

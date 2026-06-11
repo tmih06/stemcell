@@ -27,10 +27,9 @@
 
 | File | Responsibility |
 |------|---------------|
-| `src/db/database.rs` | SQLite pool init (deadpool-sqlite), connection management |
+| `src/db/database.rs` | SQLite pool init (deadpool-sqlite), connection management, 30s busy_timeout |
 | `src/db/mod.rs` | Module root |
 | `src/db/models.rs` | Data models |
-| `src/db/retry.rs` | Retry logic |
 | `src/db/repository/session.rs` | Session CRUD |
 | `src/db/repository/message.rs` | Message CRUD |
 | `src/db/repository/channel_message.rs` | Channel message persistence |
@@ -286,12 +285,11 @@
 | File | Responsibility |
 |------|---------------|
 | `src/services/` | Business logic services (session, message, file, plan, context) |
-| `src/error/` | Typed errors (`StemCellError`, `ErrorCode`) |
 | `src/logging/logger.rs` | Tracing logger init |
 | `src/startup/` | Startup job runner |
 | `src/rtk/` | Rust Token Killer integration |
 | `src/usage/` | Usage analytics (dashboard, cards, categorizer, pricing, data) |
-| `src/utils/` | Shared utilities (approval, config_watcher, fd_suppress, file_extract, git_branch, image, install, pdf_vision, providers, retry, sanitize, slack_fmt, string, text_complete, tool_context) |
+| `src/utils/` | Shared utilities (approval, config_watcher, fd_suppress, file_extract, git_branch, image, install, pdf_vision, providers, sanitize, slack_fmt, string, text_complete, tool_context) |
 | `src/patches/wacore-binary/` | Patched WhatsApp library binary |
 | `src/scripts/` | Build/dev scripts (install.sh, setup.sh, tool_features.py) |
 | `src/assets/` | Icons and screenshots |
