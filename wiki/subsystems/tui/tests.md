@@ -5,6 +5,8 @@
 | File | What It Tests |
 |---|---|
 | [`src/tui/plan_tests.rs`](source-map.md#core) | Plan display types and rendering |
+| `src/tests/model_search_test.rs` | Model search: query normalization, multi-term matching, highlight spans |
+| `src/tests/provider_selector_test.rs` | Provider visibility gating + `/models` multi-term filtering |
 
 ## Inline Tests
 
@@ -14,8 +16,10 @@ Several TUI modules contain `#[cfg(test)]` blocks with inline unit tests:
 - `src/tui/highlight.rs` — syntax highlighting edge cases
 - `src/tui/markdown.rs` — markdown parse/render round-trips
 - `src/tui/pane/layout.rs` — pane split calculations
-- `src/tui/provider_selector.rs` — filtering and selection logic
 - Various `app/` and `render/` sub-modules
+
+`src/tui/provider_selector.rs` and `src/tui/model_search.rs` tests now live in
+`src/tests/` (see the table above), per `src/tests/AGENTS.md`.
 
 ## Running Tests
 

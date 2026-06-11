@@ -27,6 +27,26 @@ pub struct ModelSelectorOption {
     pub display_name: String,
 }
 
+impl ModelSelectorOption {
+    /// Combined text used for multi-term search matching: the display label,
+    /// the raw model id, and the provider name. A single query term can match
+    /// any of these (e.g. `free` may live in the model id while `deepseek` is
+    /// in the display label), and all terms must match for the option to be
+    /// included.
+    pub fn search_haystack(&self) -> String {
+        format!(
+            "{} {} {}",
+            self.display_name, self.model_id, self.provider_name
+        )
+    }
+
+    /// Whether this option matches *every* term in `terms` (AND semantics).
+    /// An empty `terms` slice matches all options.
+    fn matches_terms(&self, terms: &[String]) -> bool {
+        crate::tui::model_search::matches_terms(terms, &self.search_haystack())
+    }
+}
+
 // Not a `matches!`: each arm yields a distinct `cfg!(feature = ...)`, so the
 // arms only collapse when those features happen to share a value.
 #[allow(clippy::match_like_matches_macro)]
@@ -352,40 +372,32 @@ impl ProviderSelectorState {
     }
 
     pub fn filtered_dialog_model_options(&self) -> Vec<&ModelSelectorOption> {
-        let query = self.model_filter.trim().to_ascii_lowercase();
-        if query.is_empty() {
+        let terms = crate::tui::model_search::query_terms(&self.model_filter);
+        if terms.is_empty() {
             return self.dialog_model_options_cache.iter().collect();
         }
 
         self.dialog_model_options_cache
             .iter()
-            .filter(|option| {
-                option.display_name.to_ascii_lowercase().contains(&query)
-                    || option.model_id.to_ascii_lowercase().contains(&query)
-                    || option.provider_name.to_ascii_lowercase().contains(&query)
-            })
+            .filter(|option| option.matches_terms(&terms))
             .collect()
     }
 
     pub fn dialog_model_count(&self) -> usize {
-        let query = self.model_filter.trim().to_ascii_lowercase();
-        if query.is_empty() {
+        let terms = crate::tui::model_search::query_terms(&self.model_filter);
+        if terms.is_empty() {
             self.dialog_model_options_cache.len()
         } else {
             self.dialog_model_options_cache
                 .iter()
-                .filter(|option| {
-                    option.display_name.to_ascii_lowercase().contains(&query)
-                        || option.model_id.to_ascii_lowercase().contains(&query)
-                        || option.provider_name.to_ascii_lowercase().contains(&query)
-                })
+                .filter(|option| option.matches_terms(&terms))
                 .count()
         }
     }
 
     pub fn selected_dialog_model_option(&self) -> Option<ModelSelectorOption> {
-        let query = self.model_filter.trim().to_ascii_lowercase();
-        if query.is_empty() {
+        let terms = crate::tui::model_search::query_terms(&self.model_filter);
+        if terms.is_empty() {
             return self
                 .dialog_model_options_cache
                 .get(self.selected_model)
@@ -396,10 +408,7 @@ impl ProviderSelectorState {
         let mut matched = 0usize;
         let mut first = None;
         for option in &self.dialog_model_options_cache {
-            let matches = option.display_name.to_ascii_lowercase().contains(&query)
-                || option.model_id.to_ascii_lowercase().contains(&query)
-                || option.provider_name.to_ascii_lowercase().contains(&query);
-            if !matches {
+            if !option.matches_terms(&terms) {
                 continue;
             }
             if first.is_none() {
@@ -712,15 +721,17 @@ impl ProviderSelectorState {
         out
     }
 
-    /// Model names filtered by `model_filter` (case-insensitive substring match).
+    /// Model names filtered by `model_filter`. Multiple whitespace-separated
+    /// terms must *all* match (case-insensitive substring) — e.g. `deepseek
+    /// free` keeps only names containing both `deepseek` and `free`.
     pub fn filtered_model_names(&self) -> Vec<&str> {
         let all = self.all_model_names();
-        if self.model_filter.is_empty() {
+        let terms = crate::tui::model_search::query_terms(&self.model_filter);
+        if terms.is_empty() {
             all
         } else {
-            let q = self.model_filter.to_lowercase();
             all.into_iter()
-                .filter(|m| m.to_lowercase().contains(&q))
+                .filter(|m| crate::tui::model_search::matches_terms(&terms, m))
                 .collect()
         }
     }
@@ -902,46 +913,4 @@ pub fn load_default_models(provider_id: &str) -> Vec<String> {
         provider_id
     );
     models
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn compiled_cli_provider_visibility_matches_features() {
-        #[cfg(feature = "provider-claude-cli")]
-        assert!(index_of_provider("claude-cli").is_some());
-        #[cfg(not(feature = "provider-claude-cli"))]
-        assert!(index_of_provider("claude-cli").is_none());
-
-        #[cfg(feature = "provider-opencode-cli")]
-        assert!(index_of_provider("opencode-cli").is_some());
-        #[cfg(not(feature = "provider-opencode-cli"))]
-        assert!(index_of_provider("opencode-cli").is_none());
-
-        #[cfg(feature = "provider-codex-cli")]
-        assert!(index_of_provider("codex-cli").is_some());
-        #[cfg(not(feature = "provider-codex-cli"))]
-        assert!(index_of_provider("codex-cli").is_none());
-    }
-
-    #[test]
-    fn dialog_model_options_filter_by_provider_name_and_model_name() {
-        let mut state = ProviderSelectorState {
-            selected_provider: index_of_provider("openrouter").unwrap_or(0),
-            model_filter: "router".to_string(),
-            ..Default::default()
-        };
-        state.models = vec![
-            "openai/gpt-4o".to_string(),
-            "anthropic/claude-3.7".to_string(),
-        ];
-        state.rebuild_dialog_model_options_cache();
-
-        let options = state.filtered_dialog_model_options();
-        assert!(options.iter().any(
-            |option| option.provider_name == "OpenRouter" && option.model_id == "openai/gpt-4o"
-        ));
-    }
 }
