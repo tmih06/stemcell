@@ -23,17 +23,27 @@ fn utf8_char_len(b: u8) -> usize {
 }
 
 impl App {
+    fn approval_policy_flags(cfg: &crate::config::Config) -> (bool, bool) {
+        match cfg.agent.approval_policy.as_str() {
+            "auto-session" => (true, false),
+            "auto-always" => (false, true),
+            _ => (false, false),
+        }
+    }
+
+    /// Read persisted approval policy + status-bar visibility from config.toml.
+    pub(crate) fn load_ui_state_from_config()
+    -> Result<((bool, bool), crate::config::StatusLineConfig)> {
+        let cfg = crate::config::Config::load()?;
+        Ok((Self::approval_policy_flags(&cfg), cfg.statusline))
+    }
+
     /// Read the persisted approval policy from config.toml.
     /// Returns `(auto_session, auto_always)` flags.
     pub(crate) fn read_approval_policy_from_config() -> (bool, bool) {
-        match crate::config::Config::load() {
-            Ok(cfg) => match cfg.agent.approval_policy.as_str() {
-                "auto-session" => (true, false),
-                "auto-always" => (false, true),
-                _ => (false, false),
-            },
-            Err(_) => (false, false),
-        }
+        Self::load_ui_state_from_config()
+            .map(|(approval, _)| approval)
+            .unwrap_or((false, false))
     }
 
     /// Create a new session
@@ -809,6 +819,10 @@ impl App {
             }
             "/skills" => {
                 crate::tui::app::skills_dialog::actions::open(self);
+                true
+            }
+            "/statusline" => {
+                crate::tui::app::statusline_dialog::actions::open(self);
                 true
             }
             "/rtk" => {

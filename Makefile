@@ -161,12 +161,17 @@ secrets: ## Scan git history and working tree with gitleaks
 msrv: ## Verify the minimum supported Rust version still builds
 	$(CARGO) +$(MSRV) build --locked --all-features
 
+.PHONY: docs-coverage
+docs-coverage: ## Verify wiki integrity (links, source refs, format)
+	bash src/scripts/check-wiki.sh
+
 .PHONY: verify
 verify: ## Run the main local verification gates
 	$(MAKE) fmt-check
 	$(MAKE) lint
 	$(MAKE) test
 	$(MAKE) doc
+	$(MAKE) docs-coverage
 
 .PHONY: ci
 ci: ## Run the broader CI-style suite (requires extra audit/coverage tools)

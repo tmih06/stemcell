@@ -212,7 +212,7 @@ impl Tool for PlanTool {
          (e) the user is going to step away while you work. \
          Skip planning only for trivial single-tool answers (one read, one search, one edit). \
          The plan stays visible across compactions, so it doubles as memory for long sessions. \
-         \n\nBUNDLED REFERENCE PLANS: Source at `src/docs/reference/plans/` (embedded in binary). \
+         \n\nBUNDLED REFERENCE PLANS: Source at `wiki/reference/plans/` (embedded in binary). \
          Runtime path: `~/.stemcell/profiles/<profile>/plans/` (e.g., `~/.stemcell/profiles/ops/plans/`). \
          See `coding-plans/rust-fast.json`, `coding-plans/rust-medium.json`, `coding-plans/rust-full.json`, \
          `coding-plans/python-fast.json`, `coding-plans/python-medium.json`, `coding-plans/python-full.json`, \

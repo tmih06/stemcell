@@ -15,7 +15,7 @@
 //! ```
 //!
 //! The repo ships a curated set of built-ins under
-//! `src/docs/reference/templates/skills/<name>/SKILL.md`, embedded at
+//! `wiki/reference/templates/skills/<name>/SKILL.md`, embedded at
 //! compile time via `include_str!`. The user directory at
 //! `~/.stemcell/skills/` is purely user-owned (per `TOOLS.md`); writes
 //! never come from the binary.
@@ -47,35 +47,35 @@ use std::path::PathBuf;
 /// Compile-time table of built-in skills shipped with the binary.
 ///
 /// To add a new built-in, drop a `SKILL.md` under
-/// `src/docs/reference/templates/skills/<name>/` and add a line here.
+/// `wiki/reference/templates/skills/<name>/` and add a line here.
 const BUILTIN_SKILLS: &[(&str, &str)] = &[
     (
         "cost-estimate",
-        include_str!("../docs/reference/templates/skills/cost-estimate/SKILL.md"),
+        include_str!("../../wiki/reference/templates/skills/cost-estimate/SKILL.md"),
     ),
     (
         "security-audit",
-        include_str!("../docs/reference/templates/skills/security-audit/SKILL.md"),
+        include_str!("../../wiki/reference/templates/skills/security-audit/SKILL.md"),
     ),
     (
         "repo-audit",
-        include_str!("../docs/reference/templates/skills/repo-audit/SKILL.md"),
+        include_str!("../../wiki/reference/templates/skills/repo-audit/SKILL.md"),
     ),
     (
         "opencli",
-        include_str!("../docs/reference/templates/skills/opencli/SKILL.md"),
+        include_str!("../../wiki/reference/templates/skills/opencli/SKILL.md"),
     ),
     (
         "browser-cdp",
-        include_str!("../docs/reference/templates/skills/browser-cdp/SKILL.md"),
+        include_str!("../../wiki/reference/templates/skills/browser-cdp/SKILL.md"),
     ),
     (
         "a2a-gateway",
-        include_str!("../docs/reference/templates/skills/a2a-gateway/SKILL.md"),
+        include_str!("../../wiki/reference/templates/skills/a2a-gateway/SKILL.md"),
     ),
     (
         "dynamic-tools",
-        include_str!("../docs/reference/templates/skills/dynamic-tools/SKILL.md"),
+        include_str!("../../wiki/reference/templates/skills/dynamic-tools/SKILL.md"),
     ),
 ];
 
