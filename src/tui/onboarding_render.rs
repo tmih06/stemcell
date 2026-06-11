@@ -21,6 +21,54 @@ const BRAND_BLUE: Color = Color::Rgb(120, 120, 120);
 const BRAND_GOLD: Color = Color::Rgb(215, 100, 20);
 const ACCENT_GOLD: Color = Color::Rgb(215, 100, 20);
 
+pub(crate) fn refresh_spinner_frame(start: Option<std::time::Instant>) -> char {
+    const SPINNER_FRAMES: &[char] = &['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
+    let frame_idx = start
+        .map(|started_at| (started_at.elapsed().as_millis() / 100) as usize % SPINNER_FRAMES.len())
+        .unwrap_or(0);
+    SPINNER_FRAMES[frame_idx]
+}
+
+pub(crate) fn refresh_elapsed_label(start: Option<std::time::Instant>) -> Option<String> {
+    start.map(|started_at| {
+        let elapsed = started_at.elapsed();
+        if elapsed.as_secs() >= 1 {
+            format!("{:.1}s", elapsed.as_secs_f64())
+        } else {
+            format!("{}ms", elapsed.as_millis())
+        }
+    })
+}
+
+fn push_model_refresh_feedback(lines: &mut Vec<Line<'static>>, wizard: &OnboardingWizard) {
+    if wizard.ps.models_fetching {
+        let spinner = refresh_spinner_frame(wizard.ps.refresh_start);
+        let elapsed = refresh_elapsed_label(wizard.ps.refresh_start);
+        lines.push(Line::from(vec![
+            Span::styled(
+                format!("  {} Fetching models", spinner),
+                Style::default().fg(BRAND_GOLD).add_modifier(Modifier::BOLD),
+            ),
+            elapsed.map_or_else(
+                || Span::raw(""),
+                |label| {
+                    Span::styled(
+                        format!(" ({})", label),
+                        Style::default().fg(Color::DarkGray),
+                    )
+                },
+            ),
+        ]));
+    } else if let Some((ref msg, shown_at)) = wizard.ps.refresh_message
+        && shown_at.elapsed().as_secs() < 3
+    {
+        lines.push(Line::from(Span::styled(
+            format!("  {}", msg),
+            Style::default().fg(Color::Green),
+        )));
+    }
+}
+
 /// Render the entire onboarding wizard
 pub fn render_onboarding(f: &mut Frame, wizard: &OnboardingWizard) {
     let area = f.area();
@@ -188,24 +236,39 @@ pub fn render_onboarding(f: &mut Frame, wizard: &OnboardingWizard) {
                 footer.push(Span::styled("Check", Style::default().fg(Color::White)));
             }
         } else {
+            let model_picker_fetching = step == OnboardingStep::ProviderAuth
+                && wizard.ps.models_fetching
+                && matches!(wizard.auth_field, AuthField::Model | AuthField::CustomModel);
             // All other steps: Tab/Shift+Tab field nav + Enter confirm
-            if step != OnboardingStep::ModeSelect {
+            if !model_picker_fetching {
+                if step != OnboardingStep::ModeSelect {
+                    footer.push(Span::styled(
+                        "[Tab] ",
+                        Style::default().fg(BRAND_BLUE).add_modifier(Modifier::BOLD),
+                    ));
+                    footer.push(Span::styled(
+                        "Next Field  ",
+                        Style::default().fg(Color::White),
+                    ));
+                }
                 footer.push(Span::styled(
-                    "[Tab] ",
-                    Style::default().fg(BRAND_BLUE).add_modifier(Modifier::BOLD),
+                    "[Enter] ",
+                    Style::default()
+                        .fg(ACCENT_GOLD)
+                        .add_modifier(Modifier::BOLD),
                 ));
-                footer.push(Span::styled(
-                    "Next Field  ",
-                    Style::default().fg(Color::White),
-                ));
+                footer.push(Span::styled("Confirm", Style::default().fg(Color::White)));
+                if step == OnboardingStep::ProviderAuth
+                    && matches!(wizard.auth_field, AuthField::Model | AuthField::CustomModel)
+                    && wizard.ps.supports_model_fetch()
+                {
+                    footer.push(Span::styled(
+                        "  [Ctrl+R] ",
+                        Style::default().fg(BRAND_BLUE).add_modifier(Modifier::BOLD),
+                    ));
+                    footer.push(Span::styled("Refresh", Style::default().fg(Color::White)));
+                }
             }
-            footer.push(Span::styled(
-                "[Enter] ",
-                Style::default()
-                    .fg(ACCENT_GOLD)
-                    .add_modifier(Modifier::BOLD),
-            ));
-            footer.push(Span::styled("Confirm", Style::default().fg(Color::White)));
         }
 
         lines.push(Line::from(footer));
@@ -673,8 +736,9 @@ fn render_provider_auth(lines: &mut Vec<Line<'static>>, wizard: &OnboardingWizar
             ),
         ]));
 
-        // Custom provider: show model list if fetched, otherwise free-text
-        if wizard.ps.models.is_empty() {
+        // Custom provider: show model list when we have one already or while a
+        // refresh is in flight, so Ctrl+R keeps the user in the picker.
+        if wizard.ps.models.is_empty() && !wizard.ps.models_fetching {
             let model_display = if wizard.ps.custom_model.is_empty() {
                 "model-name".to_string()
             } else {
@@ -700,44 +764,109 @@ fn render_provider_auth(lines: &mut Vec<Line<'static>>, wizard: &OnboardingWizar
                 ),
             ]));
         } else {
+            let label = if wizard.ps.models_fetching {
+                "  Model:    (fetching...)".to_string()
+            } else {
+                "  Model:".to_string()
+            };
+            if model_focused {
+                focused_line = lines.len();
+            }
+            lines.push(Line::from(Span::styled(
+                label,
+                Style::default().fg(if model_focused {
+                    BRAND_BLUE
+                } else {
+                    Color::DarkGray
+                }),
+            )));
+            push_model_refresh_feedback(lines, wizard);
+
+            if model_focused {
+                let cursor = if wizard.ps.models_fetching { "" } else { "█" };
+                let filter_display = if wizard.ps.model_filter.is_empty() {
+                    format!("  / type to filter…{}", cursor)
+                } else {
+                    format!("  / {}{}", wizard.ps.model_filter, cursor)
+                };
+                lines.push(Line::from(Span::styled(
+                    filter_display,
+                    Style::default().fg(if wizard.ps.model_filter.is_empty() {
+                        Color::DarkGray
+                    } else {
+                        Color::White
+                    }),
+                )));
+            }
+
             // Models fetched — show scrollable list picker
             const MAX_VISIBLE: usize = 6;
-            let total = wizard.ps.models.len();
-            let safe_sel = wizard.ps.selected_model.min(total.saturating_sub(1));
-            let half = MAX_VISIBLE / 2;
-            let start = safe_sel
-                .saturating_sub(half)
-                .min(total.saturating_sub(MAX_VISIBLE));
-            let end = (start + MAX_VISIBLE).min(total);
-
-            if start > 0 {
+            if wizard.ps.models_fetching {
                 lines.push(Line::from(Span::styled(
-                    format!("  ↑ {} more", start),
-                    Style::default().fg(Color::DarkGray),
-                )));
-            }
-            for (off, m) in wizard.ps.models[start..end].iter().enumerate() {
-                let idx = start + off;
-                let sel = idx == safe_sel;
-                let prefix = if sel && model_focused { " > " } else { "   " };
-                let style = if sel && model_focused {
+                    "  Refreshing model list...".to_string(),
                     Style::default()
-                        .fg(Color::Black)
-                        .bg(BRAND_BLUE)
-                        .add_modifier(Modifier::BOLD)
-                } else {
-                    Style::default().fg(Color::Reset)
-                };
-                lines.push(Line::from(vec![
-                    Span::styled(prefix, style),
-                    Span::styled(m.clone(), style),
-                ]));
-            }
-            if end < total {
-                lines.push(Line::from(Span::styled(
-                    format!("  ↓ {} more", total - end),
-                    Style::default().fg(Color::DarkGray),
+                        .fg(Color::DarkGray)
+                        .add_modifier(Modifier::ITALIC),
                 )));
+                for _ in 1..MAX_VISIBLE {
+                    lines.push(Line::from(""));
+                }
+            } else {
+                let filtered = wizard.ps.filtered_model_names();
+                let total = filtered.len();
+                let safe_sel = wizard.ps.selected_model.min(total.saturating_sub(1));
+                let half = MAX_VISIBLE / 2;
+                let start = safe_sel
+                    .saturating_sub(half)
+                    .min(total.saturating_sub(MAX_VISIBLE));
+                let end = (start + MAX_VISIBLE).min(total);
+
+                if filtered.is_empty() {
+                    let typed = wizard.ps.model_filter.trim();
+                    if !typed.is_empty() {
+                        lines.push(Line::from(Span::styled(
+                            format!("  > {} (custom — press Enter to use)", typed),
+                            Style::default().fg(BRAND_GOLD),
+                        )));
+                    } else {
+                        lines.push(Line::from(Span::styled(
+                            "  no models match".to_string(),
+                            Style::default()
+                                .fg(Color::DarkGray)
+                                .add_modifier(Modifier::ITALIC),
+                        )));
+                    }
+                } else {
+                    if start > 0 {
+                        lines.push(Line::from(Span::styled(
+                            format!("  ↑ {} more", start),
+                            Style::default().fg(Color::DarkGray),
+                        )));
+                    }
+                    for (off, m) in filtered[start..end].iter().enumerate() {
+                        let idx = start + off;
+                        let sel = idx == safe_sel;
+                        let prefix = if sel && model_focused { " > " } else { "   " };
+                        let style = if sel && model_focused {
+                            Style::default()
+                                .fg(Color::Black)
+                                .bg(BRAND_BLUE)
+                                .add_modifier(Modifier::BOLD)
+                        } else {
+                            Style::default().fg(Color::Reset)
+                        };
+                        lines.push(Line::from(vec![
+                            Span::styled(prefix, style),
+                            Span::styled((*m).to_string(), style),
+                        ]));
+                    }
+                    if end < total {
+                        lines.push(Line::from(Span::styled(
+                            format!("  ↓ {} more", total - end),
+                            Style::default().fg(Color::DarkGray),
+                        )));
+                    }
+                }
             }
         }
 
@@ -1052,6 +1181,7 @@ fn render_provider_auth(lines: &mut Vec<Line<'static>>, wizard: &OnboardingWizar
                     Color::DarkGray
                 }),
             )));
+            push_model_refresh_feedback(lines, wizard);
 
             const MAX_VISIBLE_MODELS: usize = 8;
 
@@ -1106,25 +1236,35 @@ fn render_provider_auth(lines: &mut Vec<Line<'static>>, wizard: &OnboardingWizar
                 }
             };
 
-            if !wizard.ps.models_fetching {
-                // Filter input (shown when model field is focused)
-                if model_focused {
-                    let cursor = "█";
-                    let filter_display = if wizard.ps.model_filter.is_empty() {
-                        format!("  / type to filter…{}", cursor)
+            // Filter input (shown when model field is focused)
+            if model_focused {
+                let cursor = if wizard.ps.models_fetching { "" } else { "█" };
+                let filter_display = if wizard.ps.model_filter.is_empty() {
+                    format!("  / type to filter…{}", cursor)
+                } else {
+                    format!("  / {}{}", wizard.ps.model_filter, cursor)
+                };
+                lines.push(Line::from(Span::styled(
+                    filter_display,
+                    Style::default().fg(if wizard.ps.model_filter.is_empty() {
+                        Color::DarkGray
                     } else {
-                        format!("  / {}{}", wizard.ps.model_filter, cursor)
-                    };
-                    lines.push(Line::from(Span::styled(
-                        filter_display,
-                        Style::default().fg(if wizard.ps.model_filter.is_empty() {
-                            Color::DarkGray
-                        } else {
-                            Color::White
-                        }),
-                    )));
-                }
+                        Color::White
+                    }),
+                )));
+            }
 
+            if wizard.ps.models_fetching {
+                lines.push(Line::from(Span::styled(
+                    "  Refreshing model list...".to_string(),
+                    Style::default()
+                        .fg(Color::DarkGray)
+                        .add_modifier(Modifier::ITALIC),
+                )));
+                for _ in 1..MAX_VISIBLE_MODELS {
+                    lines.push(Line::from(""));
+                }
+            } else {
                 let filtered = wizard.ps.filtered_model_names();
                 if filtered.is_empty() {
                     // No suggestion match for the typed filter. Tell the

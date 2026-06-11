@@ -287,7 +287,7 @@ pub(super) fn render_directory_picker(f: &mut Frame, app: &App, area: Rect) {
 }
 
 /// Render the model selector dialog - matches onboarding ProviderAuth style
-pub(super) fn render_model_selector(f: &mut Frame, app: &App, area: Rect) {
+pub(super) fn render_model_selector(f: &mut Frame, app: &mut App, area: Rect) {
     use crate::tui::onboarding::PROVIDERS;
     use crate::tui::provider_selector::{CUSTOM_INSTANCES_START, CUSTOM_PROVIDER_IDX};
 
@@ -337,7 +337,8 @@ pub(super) fn render_model_selector(f: &mut Frame, app: &App, area: Rect) {
             });
 
         const MAX_VISIBLE_MODELS: usize = 10;
-        let content_lines = 8 + MAX_VISIBLE_MODELS as u16 + 2;
+        const FEEDBACK_LINES: u16 = 2;
+        let content_lines = 8 + MAX_VISIBLE_MODELS as u16 + 2 + FEEDBACK_LINES;
         let max_height = area.height.saturating_mul(19) / 20;
         let dialog_height = content_lines
             .min(max_height)
@@ -379,7 +380,7 @@ pub(super) fn render_model_selector(f: &mut Frame, app: &App, area: Rect) {
         ]));
         lines.push(Line::from(""));
 
-        let search_cursor = "█";
+        let search_cursor = if app.ps.is_refreshing { "" } else { "█" };
         let search_display = if app.ps.model_filter.is_empty() {
             format!("  Search: model or provider{}", search_cursor)
         } else {
@@ -415,24 +416,9 @@ pub(super) fn render_model_selector(f: &mut Frame, app: &App, area: Rect) {
             Style::default().fg(Color::DarkGray),
         )));
 
-        let provider_width = app
-            .ps
-            .dialog_model_options()
-            .iter()
-            .map(|option| option.provider_name.chars().count())
-            .max()
-            .unwrap_or(12)
-            .min(22);
-        let row_width = dialog_area.width.saturating_sub(10) as usize;
-        let gap_width = 2usize;
-        let model_width = row_width
-            .saturating_sub(provider_width)
-            .saturating_sub(gap_width)
-            .max(12);
-
-        if total == 0 {
+        if app.ps.is_refreshing {
             lines.push(Line::from(Span::styled(
-                "  No models match the current search",
+                "  Refreshing model list...",
                 Style::default()
                     .fg(Color::DarkGray)
                     .add_modifier(Modifier::ITALIC),
@@ -440,83 +426,102 @@ pub(super) fn render_model_selector(f: &mut Frame, app: &App, area: Rect) {
             for _ in 1..MAX_VISIBLE_MODELS {
                 lines.push(Line::from(""));
             }
-        }
+        } else {
+            let provider_width = app.ps.max_provider_width.max(12);
+            let row_width = dialog_area.width.saturating_sub(10) as usize;
+            let gap_width = 2usize;
+            let model_width = row_width
+                .saturating_sub(provider_width)
+                .saturating_sub(gap_width)
+                .max(12);
 
-        // Reserve a 2-col gutter on the far right for the green "connected"
-        // tick so provider names stay right-aligned whether or not a tick is
-        // shown.
-        const TICK_GUTTER: usize = 2;
-        // Credential status is cached per render so Config::load() (and the
-        // CLI-binary probes inside provider_has_credentials) runs at most
-        // once per distinct provider currently in view.
-        let mut cred_cache: std::collections::HashMap<usize, bool> =
-            std::collections::HashMap::new();
+            if total == 0 {
+                lines.push(Line::from(Span::styled(
+                    "  No models match the current search",
+                    Style::default()
+                        .fg(Color::DarkGray)
+                        .add_modifier(Modifier::ITALIC),
+                )));
+                for _ in 1..MAX_VISIBLE_MODELS {
+                    lines.push(Line::from(""));
+                }
+            }
 
-        for (offset, option) in dialog_model_options[start..end].iter().enumerate() {
-            let option = *option;
-            let i = start + offset;
-            let selected = i == safe_selected;
-            let active = current_provider_idx == Some(option.provider_idx)
-                && option.model_id == current_model;
+            // Reserve a 2-col gutter on the far right for the green "connected"
+            // tick so provider names stay right-aligned whether or not a tick is
+            // shown.
+            const TICK_GUTTER: usize = 2;
+            // Credential status is cached per render so Config::load() (and the
+            // CLI-binary probes inside provider_has_credentials) runs at most
+            // once per distinct provider currently in view.
+            let mut cred_cache: std::collections::HashMap<usize, bool> =
+                std::collections::HashMap::new();
 
-            let prefix = if selected { " > " } else { "   " };
-            let style = if selected {
-                Style::default()
-                    .fg(Color::Black)
-                    .bg(BRAND_BLUE)
-                    .add_modifier(Modifier::BOLD)
-            } else if active {
-                Style::default()
-                    .fg(Color::Gray)
-                    .add_modifier(Modifier::BOLD)
-            } else {
-                Style::default().fg(Color::Reset)
-            };
+            for (offset, option) in dialog_model_options[start..end].iter().enumerate() {
+                let option = *option;
+                let i = start + offset;
+                let selected = i == safe_selected;
+                let active = current_provider_idx == Some(option.provider_idx)
+                    && option.model_id == current_model;
 
-            let model_label = truncate_to_chars(&option.display_name, model_width).into_owned();
-            let provider_label =
-                truncate_to_chars(&option.provider_name, provider_width).into_owned();
-            let filler = " ".repeat(
-                row_width
-                    .saturating_sub(TICK_GUTTER)
-                    .saturating_sub(model_label.chars().count() + provider_label.chars().count()),
-            );
-            let row = format!("{model_label}{filler}{provider_label}");
+                let prefix = if selected { " > " } else { "   " };
+                let style = if selected {
+                    Style::default()
+                        .fg(Color::Black)
+                        .bg(BRAND_BLUE)
+                        .add_modifier(Modifier::BOLD)
+                } else if active {
+                    Style::default()
+                        .fg(Color::Gray)
+                        .add_modifier(Modifier::BOLD)
+                } else {
+                    Style::default().fg(Color::Reset)
+                };
 
-            // Right-aligned green tick for providers that are connected
-            // (API key present, OAuth token saved, or CLI binary on PATH).
-            // Providers you are not logged into show a blank gutter instead.
-            let configured = *cred_cache
-                .entry(option.provider_idx)
-                .or_insert_with(|| app.ps.provider_has_credentials(option.provider_idx));
-            let tick_span = if configured {
-                Span::styled(
-                    " ✓",
-                    if selected {
-                        Style::default().fg(Color::Green).bg(BRAND_BLUE)
-                    } else {
-                        Style::default().fg(Color::Green)
-                    },
-                )
-            } else {
-                Span::styled("  ", style)
-            };
+                let model_label = truncate_to_chars(&option.display_name, model_width).into_owned();
+                let provider_label =
+                    truncate_to_chars(&option.provider_name, provider_width).into_owned();
+                let filler =
+                    " ".repeat(row_width.saturating_sub(TICK_GUTTER).saturating_sub(
+                        model_label.chars().count() + provider_label.chars().count(),
+                    ));
+                let row = format!("{model_label}{filler}{provider_label}");
 
-            lines.push(Line::from(vec![
-                Span::styled(prefix, style),
-                Span::styled(row, style),
-                tick_span,
-            ]));
-        }
+                // Right-aligned green tick for providers that are connected
+                // (API key present, OAuth token saved, or CLI binary on PATH).
+                // Providers you are not logged into show a blank gutter instead.
+                let configured = *cred_cache
+                    .entry(option.provider_idx)
+                    .or_insert_with(|| app.ps.provider_has_credentials(option.provider_idx));
+                let tick_span = if configured {
+                    Span::styled(
+                        " ✓",
+                        if selected {
+                            Style::default().fg(Color::Green).bg(BRAND_BLUE)
+                        } else {
+                            Style::default().fg(Color::Green)
+                        },
+                    )
+                } else {
+                    Span::styled("  ", style)
+                };
 
-        let visible_count = end.saturating_sub(start);
-        if total > 0 {
-            for _ in visible_count..MAX_VISIBLE_MODELS {
-                lines.push(Line::from(""));
+                lines.push(Line::from(vec![
+                    Span::styled(prefix, style),
+                    Span::styled(row, style),
+                    tick_span,
+                ]));
+            }
+
+            let visible_count = end.saturating_sub(start);
+            if total > 0 {
+                for _ in visible_count..MAX_VISIBLE_MODELS {
+                    lines.push(Line::from(""));
+                }
             }
         }
         lines.push(Line::from(Span::styled(
-            if end < total {
+            if !app.ps.is_refreshing && end < total {
                 format!("  ↓ {} more", total - end)
             } else {
                 String::new()
@@ -525,28 +530,81 @@ pub(super) fn render_model_selector(f: &mut Frame, app: &App, area: Rect) {
         )));
 
         lines.push(Line::from(""));
-        lines.push(Line::from(vec![
-            Span::styled(
-                "[↑/↓]",
-                Style::default().fg(BRAND_GOLD).add_modifier(Modifier::BOLD),
-            ),
-            Span::styled(" Move  ", Style::default().fg(Color::Reset)),
-            Span::styled(
-                "[Type]",
-                Style::default().fg(BRAND_GOLD).add_modifier(Modifier::BOLD),
-            ),
-            Span::styled(" Search  ", Style::default().fg(Color::Reset)),
-            Span::styled(
-                "[Enter]",
-                Style::default().fg(BRAND_GOLD).add_modifier(Modifier::BOLD),
-            ),
-            Span::styled(" Select  ", Style::default().fg(Color::Reset)),
-            Span::styled(
-                "[Esc]",
-                Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
-            ),
-            Span::styled(" Cancel", Style::default().fg(Color::Reset)),
-        ]));
+        if app.ps.is_refreshing {
+            lines.push(Line::from(vec![
+                Span::styled(
+                    "[Esc]",
+                    Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(" Cancel", Style::default().fg(Color::Reset)),
+            ]));
+        } else {
+            lines.push(Line::from(vec![
+                Span::styled(
+                    "[↑/↓]",
+                    Style::default().fg(BRAND_GOLD).add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(" Move  ", Style::default().fg(Color::Reset)),
+                Span::styled(
+                    "[Type]",
+                    Style::default().fg(BRAND_GOLD).add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(" Search  ", Style::default().fg(Color::Reset)),
+                Span::styled(
+                    "[Enter]",
+                    Style::default().fg(BRAND_GOLD).add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(" Select  ", Style::default().fg(Color::Reset)),
+                Span::styled(
+                    "[Ctrl+R]",
+                    Style::default().fg(BRAND_GOLD).add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(" Refresh  ", Style::default().fg(Color::Reset)),
+                Span::styled(
+                    "[Esc]",
+                    Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(" Cancel", Style::default().fg(Color::Reset)),
+            ]));
+        }
+
+        // Show refresh spinner or success message
+        if app.ps.is_refreshing {
+            // Braille spinner animation
+            let spinner =
+                crate::tui::onboarding_render::refresh_spinner_frame(app.ps.refresh_start);
+            let elapsed =
+                crate::tui::onboarding_render::refresh_elapsed_label(app.ps.refresh_start);
+
+            lines.push(Line::from(""));
+            lines.push(Line::from(vec![
+                Span::styled(
+                    format!("  {} Fetching models", spinner),
+                    Style::default().fg(BRAND_GOLD).add_modifier(Modifier::BOLD),
+                ),
+                elapsed.map_or_else(
+                    || Span::raw(""),
+                    |label| {
+                        Span::styled(
+                            format!(" ({})", label),
+                            Style::default().fg(Color::DarkGray),
+                        )
+                    },
+                ),
+            ]));
+        } else if let Some((ref msg, shown_at)) = app.ps.refresh_message {
+            // Auto-dismiss after 3 seconds
+            if shown_at.elapsed().as_secs() < 3 {
+                lines.push(Line::from(""));
+                lines.push(Line::from(Span::styled(
+                    format!("  {}", msg),
+                    Style::default().fg(Color::Green),
+                )));
+            } else {
+                // Clear expired message
+                app.ps.refresh_message = None;
+            }
+        }
 
         let widget = Paragraph::new(lines)
             .block(
@@ -618,15 +676,16 @@ pub(super) fn render_model_selector(f: &mut Frame, app: &App, area: Rect) {
     // With models: Base URL(2) + API Key(2) + filter(1) + models + ↑↓ indicators(2) + Name(2) + Context Window(1) + spacing(1) + help(1) = 12 + models
     let visible_models = model_count.min(MAX_VISIBLE_MODELS);
     let has_more_indicators = model_count > MAX_VISIBLE_MODELS;
+    let feedback_lines: u16 = if app.ps.supports_model_fetch() { 2 } else { 0 };
     let form_lines: u16 = if is_custom_selected && model_count == 0 {
-        13
+        13 + feedback_lines
     } else if is_custom_selected {
         // 11 base: Base URL(2) + API Key(2) + filter(1) + empty(1) + Name(1) + CtxWin(1) + empty(1) + help(1) + padding(1)
         // + visible models (capped at MAX_VISIBLE_MODELS for scrollable list)
         // + up/down indicators when total exceeds the viewport
-        11 + visible_models as u16 + if has_more_indicators { 2 } else { 0 }
+        11 + visible_models as u16 + if has_more_indicators { 2 } else { 0 } + feedback_lines
     } else {
-        8 + visible_models as u16 + if has_more_indicators { 2 } else { 0 }
+        8 + visible_models as u16 + if has_more_indicators { 2 } else { 0 } + feedback_lines
     };
     let content_lines = provider_lines + form_lines;
     // Use up to 95% of the terminal so the last 1-3 form fields
@@ -978,7 +1037,7 @@ pub(super) fn render_model_selector(f: &mut Frame, app: &App, area: Rect) {
         || (focused_field == 3 && (is_custom || is_zhipu_model));
     const MAX_VISIBLE_MODELS: usize = 8;
 
-    if is_custom && app.ps.models.is_empty() {
+    if is_custom && app.ps.models.is_empty() && !app.ps.is_refreshing {
         // Custom provider PASTE mode: free-text input for the model name.
         // The user types or pastes a model name; pressing Enter on an
         // empty input switches to LIST mode (live /v1/models fetch).
@@ -1035,55 +1094,71 @@ pub(super) fn render_model_selector(f: &mut Frame, app: &App, area: Rect) {
             (s, s + MAX_VISIBLE_MODELS)
         };
 
-        if start > 0 {
+        if start > 0 && !app.ps.is_refreshing {
             lines.push(Line::from(Span::styled(
                 format!("  ↑ {} more", start),
                 Style::default().fg(Color::DarkGray),
             )));
         }
 
-        for (offset, model) in custom_display_models[start..end].iter().enumerate() {
-            let i = start + offset;
-            let selected = i == safe_selected;
-            let active = *model == current_model;
-
-            let prefix = if selected && model_focused {
-                " > "
-            } else {
-                "   "
-            };
-
-            let style = if selected && model_focused {
-                Style::default()
-                    .fg(Color::Black)
-                    .bg(BRAND_BLUE)
-                    .add_modifier(Modifier::BOLD)
-            } else if active {
-                Style::default()
-                    .fg(Color::Gray)
-                    .add_modifier(Modifier::BOLD)
-            } else {
-                Style::default().fg(Color::Reset)
-            };
-
-            let suffix = if active { " (active)" } else { "" };
-            let label = crate::tui::provider_selector::model_display_label(model);
-
-            lines.push(Line::from(vec![
-                Span::styled(prefix, style),
-                Span::styled(label.to_string(), style),
-                Span::styled(suffix, Style::default().fg(Color::DarkGray)),
-            ]));
-        }
-
-        if end < total {
+        if app.ps.is_refreshing {
             lines.push(Line::from(Span::styled(
-                format!("  ↓ {} more", total - end),
-                Style::default().fg(Color::DarkGray),
+                "  Refreshing model list...",
+                Style::default()
+                    .fg(Color::DarkGray)
+                    .add_modifier(Modifier::ITALIC),
             )));
+            for _ in 1..MAX_VISIBLE_MODELS {
+                lines.push(Line::from(""));
+            }
+        } else {
+            for (offset, model) in custom_display_models[start..end].iter().enumerate() {
+                let i = start + offset;
+                let selected = i == safe_selected;
+                let active = *model == current_model;
+
+                let prefix = if selected && model_focused {
+                    " > "
+                } else {
+                    "   "
+                };
+
+                let style = if selected && model_focused {
+                    Style::default()
+                        .fg(Color::Black)
+                        .bg(BRAND_BLUE)
+                        .add_modifier(Modifier::BOLD)
+                } else if active {
+                    Style::default()
+                        .fg(Color::Gray)
+                        .add_modifier(Modifier::BOLD)
+                } else {
+                    Style::default().fg(Color::Reset)
+                };
+
+                let suffix = if active { " (active)" } else { "" };
+                let label = crate::tui::provider_selector::model_display_label(model);
+
+                lines.push(Line::from(vec![
+                    Span::styled(prefix, style),
+                    Span::styled(label.to_string(), style),
+                    Span::styled(suffix, Style::default().fg(Color::DarkGray)),
+                ]));
+            }
+
+            if end < total {
+                lines.push(Line::from(Span::styled(
+                    format!("  ↓ {} more", total - end),
+                    Style::default().fg(Color::DarkGray),
+                )));
+            }
         }
     } else {
-        let search_cursor = if model_focused { "█" } else { "" };
+        let search_cursor = if model_focused && !app.ps.is_refreshing {
+            "█"
+        } else {
+            ""
+        };
         let search_display = if app.ps.model_filter.is_empty() {
             format!("  Search: model or provider{}", search_cursor)
         } else {
@@ -1117,80 +1192,92 @@ pub(super) fn render_model_selector(f: &mut Frame, app: &App, area: Rect) {
             (s, s + MAX_VISIBLE_MODELS)
         };
 
-        if start > 0 {
+        if start > 0 && !app.ps.is_refreshing {
             lines.push(Line::from(Span::styled(
                 format!("  ↑ {} more", start),
                 Style::default().fg(Color::DarkGray),
             )));
         }
 
-        if total == 0 {
+        if app.ps.is_refreshing {
             lines.push(Line::from(Span::styled(
-                "  No models match the current search",
+                "  Refreshing model list...",
                 Style::default()
                     .fg(Color::DarkGray)
                     .add_modifier(Modifier::ITALIC),
             )));
-        }
+            for _ in 1..MAX_VISIBLE_MODELS {
+                lines.push(Line::from(""));
+            }
+        } else {
+            if total == 0 {
+                lines.push(Line::from(Span::styled(
+                    "  No models match the current search",
+                    Style::default()
+                        .fg(Color::DarkGray)
+                        .add_modifier(Modifier::ITALIC),
+                )));
+            }
 
-        let provider_width = dialog_model_options
-            .iter()
-            .map(|option| option.provider_name.chars().count())
-            .max()
-            .unwrap_or(12)
-            .min(20);
-        let row_width = dialog_area.width.saturating_sub(10) as usize;
-        let gap_width = 2usize;
-        let model_width = row_width
-            .saturating_sub(provider_width)
-            .saturating_sub(gap_width)
-            .max(8);
+            let provider_width = dialog_model_options
+                .iter()
+                .map(|option| option.provider_name.chars().count())
+                .max()
+                .unwrap_or(12)
+                .min(20);
+            let row_width = dialog_area.width.saturating_sub(10) as usize;
+            let gap_width = 2usize;
+            let model_width = row_width
+                .saturating_sub(provider_width)
+                .saturating_sub(gap_width)
+                .max(8);
 
-        for (offset, option) in dialog_model_options[start..end].iter().enumerate() {
-            let i = start + offset;
-            let selected = i == safe_selected;
-            let active = current_provider_idx == Some(option.provider_idx)
-                && option.model_id == current_model;
+            for (offset, option) in dialog_model_options[start..end].iter().enumerate() {
+                let i = start + offset;
+                let selected = i == safe_selected;
+                let active = current_provider_idx == Some(option.provider_idx)
+                    && option.model_id == current_model;
 
-            let prefix = if selected && model_focused {
-                " > "
-            } else {
-                "   "
-            };
+                let prefix = if selected && model_focused {
+                    " > "
+                } else {
+                    "   "
+                };
 
-            let style = if selected && model_focused {
-                Style::default()
-                    .fg(Color::Black)
-                    .bg(BRAND_BLUE)
-                    .add_modifier(Modifier::BOLD)
-            } else if active {
-                Style::default()
-                    .fg(Color::Gray)
-                    .add_modifier(Modifier::BOLD)
-            } else {
-                Style::default().fg(Color::Reset)
-            };
+                let style = if selected && model_focused {
+                    Style::default()
+                        .fg(Color::Black)
+                        .bg(BRAND_BLUE)
+                        .add_modifier(Modifier::BOLD)
+                } else if active {
+                    Style::default()
+                        .fg(Color::Gray)
+                        .add_modifier(Modifier::BOLD)
+                } else {
+                    Style::default().fg(Color::Reset)
+                };
 
-            let model_label = truncate_to_chars(&option.display_name, model_width).into_owned();
-            let provider_label =
-                truncate_to_chars(&option.provider_name, provider_width).into_owned();
-            let filler = " ".repeat(
-                row_width
-                    .saturating_sub(model_label.chars().count() + provider_label.chars().count()),
-            );
-            let row = format!("{model_label}{filler}{provider_label}");
+                let model_label = truncate_to_chars(&option.display_name, model_width).into_owned();
+                let provider_label =
+                    truncate_to_chars(&option.provider_name, provider_width).into_owned();
+                let filler =
+                    " ".repeat(row_width.saturating_sub(
+                        model_label.chars().count() + provider_label.chars().count(),
+                    ));
+                let row = format!("{model_label}{filler}{provider_label}");
 
-            lines.push(Line::from(vec![
-                Span::styled(prefix, style),
-                Span::styled(row, style),
-            ]));
-        }
+                lines.push(Line::from(vec![
+                    Span::styled(prefix, style),
+                    Span::styled(row, style),
+                ]));
+            }
 
-        if end < total {
-            lines.push(Line::from(Span::styled(
-                format!("  ↓ {} more", total - end),
-                Style::default().fg(Color::DarkGray),
-            )));
+            if end < total {
+                lines.push(Line::from(Span::styled(
+                    format!("  ↓ {} more", total - end),
+                    Style::default().fg(Color::DarkGray),
+                )));
+            }
         }
     }
 
@@ -1258,7 +1345,9 @@ pub(super) fn render_model_selector(f: &mut Frame, app: &App, area: Rect) {
     lines.push(Line::from(""));
 
     // Help text - show different instructions based on focused field
-    let help_text = if is_custom {
+    let help_text = if app.ps.is_refreshing {
+        vec![("[Esc]", "Cancel")]
+    } else if is_custom {
         match focused_field {
             0 => vec![
                 ("[↑/↓]", "Select"),
@@ -1286,6 +1375,7 @@ pub(super) fn render_model_selector(f: &mut Frame, app: &App, area: Rect) {
                         ("[↑/↓]", "Select"),
                         ("[Enter]", "Use"),
                         ("[Esc]", "Type custom"),
+                        ("[Ctrl+R]", "Refresh"),
                     ]
                 }
             }
@@ -1305,6 +1395,7 @@ pub(super) fn render_model_selector(f: &mut Frame, app: &App, area: Rect) {
                 ("[Type]", "Filter"),
                 ("[↑/↓]", "Select"),
                 ("[Enter]", "Confirm"),
+                ("[Ctrl+R]", "Refresh"),
             ],
             _ => vec![],
         }
@@ -1325,6 +1416,39 @@ pub(super) fn render_model_selector(f: &mut Frame, app: &App, area: Rect) {
         ));
     }
     lines.push(Line::from(help_spans));
+
+    // Show refresh spinner or success message for per-provider view
+    if app.ps.is_refreshing {
+        let spinner = crate::tui::onboarding_render::refresh_spinner_frame(app.ps.refresh_start);
+        let elapsed = crate::tui::onboarding_render::refresh_elapsed_label(app.ps.refresh_start);
+
+        lines.push(Line::from(vec![
+            Span::styled(
+                format!("   {} Fetching models", spinner),
+                Style::default()
+                    .fg(Color::Rgb(215, 100, 20))
+                    .add_modifier(Modifier::BOLD),
+            ),
+            elapsed.map_or_else(
+                || Span::raw(""),
+                |label| {
+                    Span::styled(
+                        format!(" ({})", label),
+                        Style::default().fg(Color::DarkGray),
+                    )
+                },
+            ),
+        ]));
+    } else if let Some((ref msg, shown_at)) = app.ps.refresh_message {
+        if shown_at.elapsed().as_secs() < 3 {
+            lines.push(Line::from(Span::styled(
+                format!("   {}", msg),
+                Style::default().fg(Color::Green),
+            )));
+        } else {
+            app.ps.refresh_message = None;
+        }
+    }
 
     f.render_widget(Clear, dialog_area);
     let dialog = Paragraph::new(lines).block(

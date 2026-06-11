@@ -132,101 +132,227 @@ pub struct SlashCommand {
     pub description: &'static str,
 }
 
-/// Available slash commands for autocomplete
+/// Available slash commands for autocomplete.
+///
+/// Descriptions double as a search index: the autocomplete filter matches
+/// the query against both the command name and its description, so each
+/// description deliberately embeds synonyms and the equivalent command
+/// names from other coding tools (Claude Code, Codex, Cursor, Aider,
+/// Gemini CLI, etc.). A user who types the command they know from another
+/// tool — `/resume`, `/session`, `/chat`, `/clear`, `/exit` — lands on the
+/// nearest matching command here. Keep these keyword-rich.
 pub const SLASH_COMMANDS: &[SlashCommand] = &[
     SlashCommand {
         name: "/help",
-        description: "Show available commands",
+        description: "Show available commands, shortcuts and usage — help, ?, commands, menu",
     },
     SlashCommand {
         name: "/models",
-        description: "Switch model",
+        description: "Switch model or AI provider — model, llm, provider, switch, change, /model",
     },
     SlashCommand {
         name: "/usage",
-        description: "Session usage stats",
+        description: "Session usage, token count and cost — usage, tokens, cost, stats, /cost, /tokens",
     },
     SlashCommand {
         name: "/onboard",
-        description: "Run setup wizard",
+        description: "Run setup wizard, configure settings and preferences — onboard, setup, config, settings, init, /config, /settings",
     },
     SlashCommand {
         name: "/onboard:provider",
-        description: "Jump to AI provider setup",
+        description: "Set up AI provider, API key, login and auth — provider, apikey, login, auth, /login, /auth",
     },
     SlashCommand {
         name: "/onboard:workspace",
-        description: "Jump to workspace settings",
+        description: "Configure workspace, project and directory settings — workspace, project, folder, directory",
     },
     SlashCommand {
         name: "/onboard:channels",
-        description: "Setup Telegram, Slack, Discord, WhatsApp, Trello",
+        description: "Set up Telegram, Slack, Discord, WhatsApp, Trello integrations — channels, integrations, bots, connect",
     },
     SlashCommand {
         name: "/onboard:voice",
-        description: "Jump to voice STT/TTS setup",
+        description: "Set up voice, speech-to-text and text-to-speech — voice, stt, tts, speech, audio, mic",
     },
     SlashCommand {
         name: "/onboard:image",
-        description: "Jump to image handling setup (vision + generation)",
+        description: "Set up image handling, vision and generation — image, vision, picture, photo, generate",
     },
     SlashCommand {
         name: "/onboard:brain",
-        description: "Jump to brain/persona setup",
+        description: "Set up brain, persona, system prompt and instructions — brain, persona, prompt, instructions, /agents, /memory",
     },
     SlashCommand {
         name: "/doctor",
-        description: "Run connection health check",
+        description: "Run connection health check and diagnostics — doctor, health, diagnose, status, check, /status",
     },
     SlashCommand {
         name: "/new",
-        description: "Start a new session",
+        description: "Start a new session, clear chat and reset context — new, clear, reset, fresh, start over, /clear, /reset",
     },
     SlashCommand {
         name: "/sessions",
-        description: "List all sessions",
+        description: "List, resume and switch sessions or chats — sessions, resume, history, conversations, /resume, /session, /chat, /chats, /history",
     },
     SlashCommand {
         name: "/approve",
-        description: "Tool approval policy",
+        description: "Tool approval and permission policy — approve, permissions, allow, trust, /permissions, /allowed-tools",
     },
     SlashCommand {
         name: "/compact",
-        description: "Compact context now",
+        description: "Compact, summarize and shrink context now — compact, summarize, condense, shrink, /summary",
     },
     SlashCommand {
         name: "/rebuild",
-        description: "Build & restart from source",
+        description: "Build and restart from source — rebuild, build, recompile, restart from source",
     },
     SlashCommand {
         name: "/evolve",
-        description: "Download latest release & restart",
+        description: "Download latest release, update and upgrade — evolve, update, upgrade, latest, release, /update, /upgrade",
     },
     SlashCommand {
         name: "/whisper",
-        description: "Speak anywhere, paste to clipboard",
+        description: "Speak anywhere, dictate and paste to clipboard — whisper, dictate, voice, speak, transcribe",
     },
     SlashCommand {
         name: "/cd",
-        description: "Change working directory",
+        description: "Change working directory or folder — cd, directory, folder, path, chdir, cwd",
     },
     SlashCommand {
         name: "/mission-control",
-        description: "RSI proposals, activity, schedule",
+        description: "RSI proposals, activity log and schedule — mission control, dashboard, activity, schedule, tasks, jobs",
     },
     SlashCommand {
         name: "/skills",
-        description: "Browse and run loaded skills",
+        description: "Browse and run loaded skills — skills, commands, prompts, tools, run, /prompts",
     },
     SlashCommand {
         name: "/rtk",
-        description: "Show RTK token savings statistics",
+        description: "Show RTK token savings statistics — rtk, tokens, savings, stats, analytics",
+    },
+    SlashCommand {
+        name: "/quit",
+        description: "Exit and quit the app — quit, exit, close, leave, bye, /exit, /q, ctrl+c",
     },
     SlashCommand {
         name: "/statusline",
         description: "Toggle status bar fields",
     },
 ];
+
+/// True if `query` is a prefix of any whitespace/punctuation-delimited word in
+/// `haystack`, compared ASCII-case-insensitively. Word-boundary matching
+/// (rather than a raw substring search) keeps description-only autocomplete
+/// hits relevant: typing `co` matches "connect" and "condense" but not the "co"
+/// buried inside "record". Allocation-free — descriptions are matched in place.
+fn word_prefix_match(haystack: &str, query: &str) -> bool {
+    haystack.split(|c: char| !c.is_alphanumeric()).any(|word| {
+        word.len() >= query.len()
+            && word.as_bytes()[..query.len()].eq_ignore_ascii_case(query.as_bytes())
+    })
+}
+
+/// Resolve a combined autocomplete index into the command name it points at.
+/// The index space is `0..N` built-ins, `N..M` user commands, then skills
+/// (returned as their `/<slug>` form). Returns `None` for out-of-range indices.
+fn slash_name_at<'a>(
+    idx: usize,
+    user_commands: &'a [UserCommand],
+    skills: &'a [crate::brain::skills::Skill],
+) -> Option<&'a str> {
+    let base_user = SLASH_COMMANDS.len();
+    let base_skill = base_user + user_commands.len();
+    if idx < base_user {
+        Some(SLASH_COMMANDS[idx].name)
+    } else if idx < base_skill {
+        user_commands.get(idx - base_user).map(|c| c.name.as_str())
+    } else {
+        skills.get(idx - base_skill).map(|s| s.slash_name.as_str())
+    }
+}
+
+/// Filter slash commands for autocomplete and return combined indices into the
+/// `(built-ins, user commands, skills)` index space used by [`App::slash_command_name`].
+///
+/// Matches the query against each command **name** (prefix) and, once ≥2 chars
+/// are typed after the slash, its **description** (word-boundary prefix). The
+/// descriptions embed cross-tool synonyms (e.g. `/sessions` mentions "resume",
+/// "chat", "history"), so a user typing the command they know from another tool
+/// still finds the nearest equivalent. Name-prefix matches rank above
+/// description-only matches, then ties break alphabetically by name.
+///
+/// User commands and skills that shadow a built-in `/name` are skipped, as are
+/// skills shadowed by a user command of the same name.
+fn filter_slash_commands(
+    input_buffer: &str,
+    user_commands: &[UserCommand],
+    skills: &[crate::brain::skills::Skill],
+) -> Vec<usize> {
+    let input = input_buffer.trim_start();
+    if !input.starts_with('/') || input.contains(' ') || input.is_empty() {
+        return Vec::new();
+    }
+
+    let prefix = input.to_lowercase();
+    // Only search descriptions once the user has typed ≥2 chars after the
+    // slash, so a lone "/" doesn't match every description.
+    let desc_query = prefix.trim_start_matches('/');
+    let desc_search = (desc_query.len() >= 2).then_some(desc_query);
+
+    // A command's description matches if the query is a word-boundary prefix of
+    // it. Only consulted when the name didn't already hit (callers short-circuit
+    // with `name_hit ||`), so this stays off the common prefix-typing path.
+    let desc_hit = |description: &str| {
+        desc_search
+            .map(|q| word_prefix_match(description, q))
+            .unwrap_or(false)
+    };
+    let shadows_builtin = |name: &str| SLASH_COMMANDS.iter().any(|b| b.name == name);
+
+    // (combined_index, name_prefix_match) — name matches sort first.
+    let mut matches: Vec<(usize, bool)> = Vec::new();
+
+    // Built-in commands: indices 0..SLASH_COMMANDS.len()
+    for (i, cmd) in SLASH_COMMANDS.iter().enumerate() {
+        let name_hit = cmd.name.starts_with(&prefix);
+        if name_hit || desc_hit(cmd.description) {
+            matches.push((i, name_hit));
+        }
+    }
+
+    // User-defined commands, skipping those that shadow a built-in name.
+    let base_user = SLASH_COMMANDS.len();
+    for (i, ucmd) in user_commands.iter().enumerate() {
+        if shadows_builtin(&ucmd.name) {
+            continue;
+        }
+        let name_hit = ucmd.name.to_lowercase().starts_with(&prefix);
+        if name_hit || desc_hit(&ucmd.description) {
+            matches.push((base_user + i, name_hit));
+        }
+    }
+
+    // Skills, skipping those shadowed by a built-in or a user command of the
+    // same `/<name>`. `slash_name` already carries the leading slash.
+    let base_skill = SLASH_COMMANDS.len() + user_commands.len();
+    for (i, skill) in skills.iter().enumerate() {
+        if shadows_builtin(&skill.slash_name)
+            || user_commands.iter().any(|c| c.name == skill.slash_name)
+        {
+            continue;
+        }
+        let name_hit = skill.slash_name.to_lowercase().starts_with(&prefix);
+        if name_hit || desc_hit(&skill.description) {
+            matches.push((base_skill + i, name_hit));
+        }
+    }
+
+    matches.sort_by(|a, b| {
+        let name = |idx| slash_name_at(idx, user_commands, skills).unwrap_or("");
+        b.1.cmp(&a.1).then_with(|| name(a.0).cmp(name(b.0)))
+    });
+    matches.into_iter().map(|(idx, _)| idx).collect()
+}
 
 /// Approval option selected by the user
 #[derive(Debug, Clone, PartialEq)]
@@ -416,9 +542,11 @@ pub struct App {
     pub error_message: Option<String>,
     /// When error_message was set — used to auto-dismiss after 2.5s
     pub error_message_shown_at: Option<std::time::Instant>,
-    /// Transient notification (non-error, e.g. "Copied to clipboard")
+    /// Transient notification (e.g. "Copied to clipboard")
     pub notification: Option<String>,
     pub notification_shown_at: Option<std::time::Instant>,
+    /// Whether the active notification is an error (styled red instead of cyan).
+    pub notification_is_error: bool,
     /// Currently selected message index (left-click to select, right-click to copy)
     pub selected_message_idx: Option<usize>,
     /// Set to true when IntermediateText arrives during the current response cycle.
@@ -628,10 +756,30 @@ pub struct App {
     /// Indexed by logical line (matches `chat_line_to_msg` / `chat_render_scroll`).
     pub chat_rendered_lines: Vec<String>,
 
-    /// Drag selection: anchor point in terminal-screen coords (col, row), set on first drag event.
-    pub drag_anchor: Option<(u16, u16)>,
-    /// Drag selection: current point in terminal-screen coords (col, row), updated during drag.
-    pub drag_current: Option<(u16, u16)>,
+    /// Mouse drag selection over the chat transcript. Unlike the input-box
+    /// drag (which works on the small fixed input area), this reuses the
+    /// LOGICAL `select_anchor`/`select_cursor` (line, col) model so the
+    /// selection survives scrolling and can extend across the whole
+    /// transcript. `mouse_selecting` is true while the button is held.
+    pub mouse_selecting: bool,
+    /// Last drag pointer position in screen coords, kept so the Tick handler
+    /// can keep auto-scrolling while the button is held stationary at an edge
+    /// (crossterm stops emitting drag events when the pointer doesn't move).
+    pub mouse_drag_col: u16,
+    pub mouse_drag_row: u16,
+
+    /// Keyboard select-to-copy mode. Entered with Ctrl+S, exited with Esc.
+    /// While active, arrow keys move a caret through the rendered transcript,
+    /// Shift+arrows (or `v`) extend a selection, and y/c/Enter copies it.
+    pub keyboard_select_active: bool,
+    /// Caret/selection position in LOGICAL coords: (line index into
+    /// `chat_rendered_lines`, char column within that line). Shared by both
+    /// the keyboard caret and the mouse drag. The viewport auto-scrolls to
+    /// keep this visible as it nears the top/bottom edge.
+    pub select_cursor: (usize, usize),
+    /// Selection anchor in the same (line, col) logical coords. `None` means no
+    /// active selection (caret only); a range is anchor..=cursor in reading order.
+    pub select_anchor: Option<(usize, usize)>,
 
     /// Input area screen coordinates (set each render frame)
     pub input_area_x: u16,
@@ -736,6 +884,7 @@ impl App {
             error_message_shown_at: None,
             notification: None,
             notification_shown_at: None,
+            notification_is_error: false,
             selected_message_idx: None,
             intermediate_text_received: false,
             build_lines: Vec::new(),
@@ -809,8 +958,12 @@ impl App {
             chat_area_width: 0,
             chat_area_height: 0,
             chat_rendered_lines: Vec::new(),
-            drag_anchor: None,
-            drag_current: None,
+            mouse_selecting: false,
+            mouse_drag_col: 0,
+            mouse_drag_row: 0,
+            keyboard_select_active: false,
+            select_cursor: (0, 0),
+            select_anchor: None,
             input_area_x: 0,
             input_area_y: 0,
             input_area_width: 0,
@@ -1191,14 +1344,9 @@ impl App {
             );
         }
 
-        // Notify user about unknown config keys (possible typos)
-        let typo_warnings = crate::config::Config::take_typo_warnings();
-        if !typo_warnings.is_empty() {
-            self.push_system_message(format!(
-                "⚠️ Unknown keys in config.toml (possible typos): {}",
-                typo_warnings.join(", ")
-            ));
-        }
+        // Unknown config keys (possible typos) are surfaced by the
+        // `check-config` startup job and folded into the collapsible startup
+        // info line, so they are not pushed as a separate message here.
 
         // Notify user if DB integrity check failed
         if crate::db::db_integrity_failed() {
@@ -1209,21 +1357,10 @@ impl App {
             );
         }
 
-        // Notify user if the autonomous RSI loop has filed proposals
-        // they haven't reviewed yet. The banner points at the
-        // direct-action path (Mission Control's Inbox panel, where
-        // `a` applies and `r` rejects) first, then mentions the
-        // agent-driven path as a fallback for users who prefer the
-        // chat surface.
-        let pending = crate::brain::rsi_proposals::ProposalsStore::new().pending_count();
-        if pending > 0 {
-            self.push_system_message(format!(
-                "🔧 RSI proposed {pending} new item(s) (tools / commands / skills). \
-                 Open Mission Control with `/mission-control` → Inbox to review \
-                 (press `a` to apply, `r` to reject), or ask me to \"show proposed\" \
-                 / \"implement proposed\" if you'd rather work from the chat."
-            ));
-        }
+        // Pending RSI proposals are reported by the `rsi-status` startup job
+        // and folded into the collapsible startup-info line (with a pointer to
+        // Mission Control's Inbox), so they are not pushed as a separate banner
+        // here.
 
         Ok(())
     }
@@ -1544,10 +1681,7 @@ impl App {
                         || (row >= self.input_area_y
                             && row < self.input_area_y + self.input_area_height)
                     {
-                        if self.handle_input_mouse_up(col, row) {
-                            self.notification = Some("Copied to clipboard".to_string());
-                            self.notification_shown_at = Some(std::time::Instant::now());
-                        }
+                        self.handle_input_mouse_up(col, row);
                     } else {
                         self.handle_mouse_up(col, row);
                     }
@@ -1629,13 +1763,16 @@ impl App {
                                     None
                                 };
                             wizard.ps.models_fetching = true;
+                            wizard.ps.is_refreshing = true;
+                            wizard.ps.refresh_start = Some(std::time::Instant::now());
+                            wizard.ps.refresh_message = None;
                             let sender = self.event_sender();
                             tokio::spawn(async move {
                                 let models = super::onboarding::fetch_provider_models(
                                     provider_idx,
                                     api_key.as_deref(),
-                                    base_url.as_deref(),
                                     None,
+                                    base_url.as_deref(),
                                 )
                                 .await;
                                 let _ = sender.send(TuiEvent::OnboardingModelsFetched(models));
@@ -1665,6 +1802,7 @@ impl App {
                                 let _ = sender.send(TuiEvent::ModelSelectorModelsFetched(
                                     provider_idx,
                                     models,
+                                    None,
                                 ));
                             });
                         }
@@ -1689,6 +1827,7 @@ impl App {
                                 let _ = sender.send(TuiEvent::ModelSelectorModelsFetched(
                                     provider_idx,
                                     models,
+                                    None,
                                 ));
                             });
                         }
@@ -1714,6 +1853,7 @@ impl App {
                                 let _ = sender.send(TuiEvent::ModelSelectorModelsFetched(
                                     provider_idx,
                                     models,
+                                    None,
                                 ));
                             });
                         }
@@ -1734,13 +1874,14 @@ impl App {
                                     let models = super::onboarding::fetch_provider_models(
                                         provider_idx,
                                         api_key.as_deref(),
-                                        Some(&base_url),
                                         None,
+                                        Some(&base_url),
                                     )
                                     .await;
                                     let _ = sender.send(TuiEvent::ModelSelectorModelsFetched(
                                         provider_idx,
                                         models,
+                                        None,
                                     ));
                                 });
                             }
@@ -1760,17 +1901,18 @@ impl App {
                                     let models = super::onboarding::fetch_provider_models(
                                         provider_idx,
                                         Some(&api_key),
+                                        None,
                                         if base_url.is_empty() {
                                             None
                                         } else {
                                             Some(&base_url)
                                         },
-                                        None,
                                     )
                                     .await;
                                     let _ = sender.send(TuiEvent::ModelSelectorModelsFetched(
                                         provider_idx,
                                         models,
+                                        None,
                                     ));
                                 });
                             }
@@ -1930,6 +2072,14 @@ impl App {
             TuiEvent::Tick => {
                 // Update animation frame for spinner
                 self.animation_frame = self.animation_frame.wrapping_add(1);
+
+                // While a chat mouse drag is held at the top/bottom edge,
+                // crossterm stops emitting drag events once the pointer is
+                // stationary — so keep auto-scrolling and extending the
+                // selection on each tick from the last known pointer position.
+                if self.mouse_selecting {
+                    self.update_mouse_drag_cursor();
+                }
 
                 // Resolve deferred health checks (shows Pending for one frame first)
                 if let Some(ref mut wizard) = self.onboarding
@@ -2562,9 +2712,16 @@ impl App {
             TuiEvent::OnboardingModelsFetched(models) => {
                 if let Some(ref mut wizard) = self.onboarding {
                     wizard.ps.models_fetching = false;
-                    if !models.is_empty() {
+                    wizard.ps.is_refreshing = false;
+                    wizard.ps.refresh_start = None;
+                    let fetched_count = models.len();
+                    if fetched_count > 0 {
                         wizard.ps.models = models;
                         wizard.ps.resolve_selected_model_index();
+                        wizard.ps.refresh_message = Some((
+                            format!("✓ Refreshed {} models", fetched_count),
+                            std::time::Instant::now(),
+                        ));
                     } else {
                         // Fetch returned empty — fall back to static PROVIDERS models
                         let provider = wizard.ps.current_provider();
@@ -2572,12 +2729,25 @@ impl App {
                             wizard.ps.models =
                                 provider.models.iter().map(|s| s.to_string()).collect();
                             wizard.ps.resolve_selected_model_index();
+                            wizard.ps.refresh_message = Some((
+                                format!("✓ Loaded {} built-in models", wizard.ps.models.len()),
+                                std::time::Instant::now(),
+                            ));
+                        } else {
+                            wizard.ps.refresh_message =
+                                Some(("No models returned".to_string(), std::time::Instant::now()));
                         }
                     }
                 }
             }
-            TuiEvent::ModelSelectorModelsFetched(provider_idx, models) => {
-                // Discard stale fetches from a previously-selected provider
+            TuiEvent::ModelSelectorModelsFetched(provider_idx, models, elapsed) => {
+                // Clear refreshing state
+                self.ps.is_refreshing = false;
+                self.ps.refresh_start = None;
+
+                // Distinguish raw endpoint results from fallback/merged list sizes.
+                let fetched_count = models.len();
+                let from_live_fetch = fetched_count > 0;
                 let models = if models.is_empty() {
                     // Fetch returned empty — fall back to static PROVIDERS models
                     let provider = self.ps.current_provider();
@@ -2589,42 +2759,91 @@ impl App {
                 } else {
                     models
                 };
-                if self.mode == AppMode::ModelSelector
-                    && !models.is_empty()
-                    && provider_idx == self.ps.selected_provider
+                if self.mode == AppMode::ModelSelector && provider_idx == self.ps.selected_provider
                 {
-                    // Read the provider's saved default_model from config
-                    let provider_id = crate::tui::onboarding::PROVIDERS
-                        .get(provider_idx)
-                        .map(|p| p.id)
-                        .unwrap_or("");
-                    let saved_model = crate::config::Config::load().ok().and_then(|c| {
-                        if provider_idx >= crate::tui::provider_selector::CUSTOM_INSTANCES_START {
-                            let ci = provider_idx
-                                - crate::tui::provider_selector::CUSTOM_INSTANCES_START;
-                            self.ps.custom_names.get(ci).and_then(|name| {
-                                c.providers
-                                    .custom_by_name(name)
-                                    .and_then(|p| p.default_model.clone())
-                            })
-                        } else if !provider_id.is_empty() {
-                            crate::utils::providers::config_for(&c.providers, provider_id)
-                                .and_then(|p| p.default_model.clone())
-                        } else {
-                            None
+                    if models.is_empty() {
+                        if elapsed.is_some() {
+                            self.ps.refresh_message =
+                                Some(("No models returned".to_string(), std::time::Instant::now()));
                         }
-                    });
-                    let target = saved_model.as_deref().unwrap_or(&self.default_model_name);
-                    self.ps.models = models;
-                    // Merge config-persisted models (user-pasted ones
-                    // that the endpoint doesn't list) on top of the
-                    // fetched results so they survive the next fetch.
-                    self.ps.merge_config_models_into_fetched();
-                    self.ps.selected_model = self
-                        .ps
-                        .dialog_model_index_for(provider_idx, target)
-                        .unwrap_or(0);
-                    self.ps.model_filter.clear();
+                    } else {
+                        // Read the provider's saved default_model from config
+                        let provider_id = crate::tui::onboarding::PROVIDERS
+                            .get(provider_idx)
+                            .map(|p| p.id)
+                            .unwrap_or("");
+                        let saved_model = crate::config::Config::load().ok().and_then(|c| {
+                            if provider_idx >= crate::tui::provider_selector::CUSTOM_INSTANCES_START
+                            {
+                                let ci = provider_idx
+                                    - crate::tui::provider_selector::CUSTOM_INSTANCES_START;
+                                self.ps.custom_names.get(ci).and_then(|name| {
+                                    c.providers
+                                        .custom_by_name(name)
+                                        .and_then(|p| p.default_model.clone())
+                                })
+                            } else if !provider_id.is_empty() {
+                                crate::utils::providers::config_for(&c.providers, provider_id)
+                                    .and_then(|p| p.default_model.clone())
+                            } else {
+                                None
+                            }
+                        });
+                        let target = saved_model.as_deref().unwrap_or(&self.default_model_name);
+                        // Persist genuinely-fetched lists (not the static fallback)
+                        // for built-in providers, so the next /models open is instant.
+                        if from_live_fetch
+                            && !provider_id.is_empty()
+                            && provider_idx < crate::tui::provider_selector::CUSTOM_PROVIDER_IDX
+                        {
+                            crate::startup::model_cache::store(provider_id, models.clone());
+                        }
+                        self.ps.models = models;
+                        // Merge config-persisted models (user-pasted ones
+                        // that the endpoint doesn't list) on top of the
+                        // fetched results so they survive the next fetch.
+                        self.ps.merge_config_models_into_fetched();
+                        if elapsed.is_some() {
+                            // Manual Ctrl+R refresh: keep the current search term so
+                            // the user stays in the same filtered list view.
+                            self.ps.selected_model = 0;
+                        } else {
+                            self.ps.selected_model = self
+                                .ps
+                                .dialog_model_index_for(provider_idx, target)
+                                .unwrap_or(0);
+                            self.ps.model_filter.clear();
+                        }
+
+                        let picker_total = self.ps.dialog_model_options().len();
+                        let picker_matches = self.ps.dialog_model_count();
+                        let picker_summary = if self.ps.model_filter.trim().is_empty() {
+                            format!("{} models available", picker_total)
+                        } else {
+                            format!("{} matches / {} total", picker_matches, picker_total)
+                        };
+
+                        // Show success message with model count and elapsed time
+                        if let Some(duration) = elapsed {
+                            let time_str = if duration.as_secs() >= 1 {
+                                format!("{:.1}s", duration.as_secs_f64())
+                            } else {
+                                format!("{}ms", duration.as_millis())
+                            };
+                            let msg = if from_live_fetch {
+                                format!(
+                                    "✓ Picker updated: {} ({} fetched in {})",
+                                    picker_summary, fetched_count, time_str
+                                )
+                            } else {
+                                format!(
+                                    "✓ Picker updated: {} (using built-in provider list)",
+                                    picker_summary
+                                )
+                            };
+                            self.ps.refresh_message = Some((msg, std::time::Instant::now()));
+                        }
+                    }
                 }
             }
             TuiEvent::GitHubDeviceCode(code) => {
@@ -2649,6 +2868,10 @@ impl App {
                     wizard.auth_field = super::onboarding::AuthField::Model;
                     wizard.ps.models.clear();
                     wizard.ps.selected_model = 0;
+                    wizard.ps.models_fetching = true;
+                    wizard.ps.is_refreshing = true;
+                    wizard.ps.refresh_start = Some(std::time::Instant::now());
+                    wizard.ps.refresh_message = None;
                     // Trigger model fetch using the OAuth token
                     let token = oauth_token.clone();
                     let sender = self.event_sender();
@@ -2687,6 +2910,10 @@ impl App {
                     wizard.auth_field = super::onboarding::AuthField::Model;
                     wizard.ps.models.clear();
                     wizard.ps.selected_model = 0;
+                    wizard.ps.models_fetching = true;
+                    wizard.ps.is_refreshing = true;
+                    wizard.ps.refresh_start = Some(std::time::Instant::now());
+                    wizard.ps.refresh_message = None;
                     // Enable the provider in config
                     let _ = crate::config::Config::write_key("providers.codex", "enabled", "true");
                     // Trigger model fetch
@@ -2718,8 +2945,11 @@ impl App {
                             None,
                         )
                         .await;
-                        let _ =
-                            sender.send(TuiEvent::ModelSelectorModelsFetched(provider_idx, models));
+                        let _ = sender.send(TuiEvent::ModelSelectorModelsFetched(
+                            provider_idx,
+                            models,
+                            None,
+                        ));
                     });
                 }
             }
@@ -2855,6 +3085,11 @@ impl App {
                     self.push_system_message(text);
                 }
             }
+            TuiEvent::StartupInfo { summary, details } => {
+                // One collapsed line in the transcript; Ctrl+O expands the
+                // per-job details. Pushed globally (boot isn't session-scoped).
+                self.push_collapsible_system_message(summary, details);
+            }
             TuiEvent::ProviderSwitched {
                 session_id,
                 to_name,
@@ -2975,12 +3210,14 @@ impl App {
         // works as an escape hatch when the TUI is hogging mouse events.
         if event.code == KeyCode::F(12) {
             self.mouse_capture_enabled = !self.mouse_capture_enabled;
-            self.notification = Some(if self.mouse_capture_enabled {
-                "Mouse capture ON (F12 to enable text selection)".to_string()
-            } else {
-                "Mouse capture OFF — drag to select, F12 to re-enable".to_string()
-            });
-            self.notification_shown_at = Some(std::time::Instant::now());
+            self.set_notification(
+                if self.mouse_capture_enabled {
+                    "Mouse capture ON (F12 to enable text selection)"
+                } else {
+                    "Mouse capture OFF — drag to select, F12 to re-enable"
+                },
+                false,
+            );
             return Ok(());
         }
 
@@ -3600,81 +3837,13 @@ impl App {
         // Stay in AppMode::Chat — no mode switch
     }
 
-    /// Update slash command autocomplete suggestions (built-in + user-defined)
+    /// Update slash command autocomplete suggestions from the input buffer.
+    /// See [`filter_slash_commands`] for matching and ranking rules.
     pub(crate) fn update_slash_suggestions(&mut self) {
-        let input = self.input_buffer.trim_start();
-        if input.starts_with('/') && !input.contains(' ') && !input.is_empty() {
-            let prefix = input.to_lowercase();
-
-            // Built-in commands: indices 0..SLASH_COMMANDS.len()
-            self.slash_filtered = SLASH_COMMANDS
-                .iter()
-                .enumerate()
-                .filter(|(_, cmd)| cmd.name.starts_with(&prefix))
-                .map(|(i, _)| i)
-                .collect();
-
-            // User-defined commands: indices starting at SLASH_COMMANDS.len()
-            // Skip user commands that shadow a built-in name
-            let base_user = SLASH_COMMANDS.len();
-            for (i, ucmd) in self.user_commands.iter().enumerate() {
-                if ucmd.name.to_lowercase().starts_with(&prefix)
-                    && !SLASH_COMMANDS.iter().any(|b| b.name == ucmd.name)
-                {
-                    self.slash_filtered.push(base_user + i);
-                }
-            }
-
-            // Skills: indices starting at SLASH_COMMANDS.len() + user_commands.len()
-            // Skip skills shadowed by a built-in or a user command of the same
-            // `/<name>`. The skill's precomputed `slash_name` already carries
-            // the leading slash for direct comparison.
-            let base_skill = SLASH_COMMANDS.len() + self.user_commands.len();
-            for (i, skill) in self.skills.iter().enumerate() {
-                let lower = skill.slash_name.to_lowercase();
-                if lower.starts_with(&prefix)
-                    && !SLASH_COMMANDS.iter().any(|b| b.name == skill.slash_name)
-                    && !self
-                        .user_commands
-                        .iter()
-                        .any(|c| c.name == skill.slash_name)
-                {
-                    self.slash_filtered.push(base_skill + i);
-                }
-            }
-
-            // Sort suggestions alphabetically by command name. Inline the
-            // index → name resolution to avoid an immutable borrow of self
-            // inside the sort_by closure (which holds a mutable borrow of
-            // self.slash_filtered).
-            let n_builtin = SLASH_COMMANDS.len();
-            let n_user = self.user_commands.len();
-            let name_at = |idx: usize| -> &str {
-                if idx < n_builtin {
-                    SLASH_COMMANDS[idx].name
-                } else if idx < n_builtin + n_user {
-                    self.user_commands
-                        .get(idx - n_builtin)
-                        .map(|c| c.name.as_str())
-                        .unwrap_or("")
-                } else {
-                    self.skills
-                        .get(idx - n_builtin - n_user)
-                        .map(|s| s.slash_name.as_str())
-                        .unwrap_or("")
-                }
-            };
-            self.slash_filtered
-                .sort_by(|&a, &b| name_at(a).cmp(name_at(b)));
-
-            self.slash_suggestions_active = !self.slash_filtered.is_empty();
-            // Clamp selected index
-            if self.slash_selected_index >= self.slash_filtered.len() {
-                self.slash_selected_index = 0;
-            }
-        } else {
-            self.slash_suggestions_active = false;
-            self.slash_filtered.clear();
+        self.slash_filtered =
+            filter_slash_commands(&self.input_buffer, &self.user_commands, &self.skills);
+        self.slash_suggestions_active = !self.slash_filtered.is_empty();
+        if self.slash_selected_index >= self.slash_filtered.len() {
             self.slash_selected_index = 0;
         }
     }
@@ -3682,19 +3851,7 @@ impl App {
     /// Get the name of a slash command by its combined index
     /// (0..N built-ins, N..M user commands, M.. skills as `/<slug>`).
     pub fn slash_command_name(&self, index: usize) -> Option<&str> {
-        let n_builtin = SLASH_COMMANDS.len();
-        let n_user = self.user_commands.len();
-        if index < n_builtin {
-            Some(SLASH_COMMANDS[index].name)
-        } else if index < n_builtin + n_user {
-            self.user_commands
-                .get(index - n_builtin)
-                .map(|c| c.name.as_str())
-        } else {
-            self.skills
-                .get(index - n_builtin - n_user)
-                .map(|s| s.slash_name.as_str())
-        }
+        slash_name_at(index, &self.user_commands, &self.skills)
     }
 
     /// Get the description of a slash command by its combined index
@@ -3822,5 +3979,68 @@ mod tests {
             display_msg.details,
             Some("I need to analyze this carefully...".to_string())
         );
+    }
+
+    fn names(
+        query: &str,
+        user: &[UserCommand],
+        skills: &[crate::brain::skills::Skill],
+    ) -> Vec<String> {
+        filter_slash_commands(query, user, skills)
+            .into_iter()
+            .map(|idx| slash_name_at(idx, user, skills).unwrap().to_string())
+            .collect()
+    }
+
+    #[test]
+    fn word_prefix_match_respects_word_boundaries() {
+        assert!(word_prefix_match("compact condense shrink", "co"));
+        assert!(word_prefix_match("download latest release", "rel"));
+        // "co" must not match inside "record" — it isn't at a word boundary.
+        assert!(!word_prefix_match("record audio", "co"));
+        // Slash-prefixed synonyms split on '/', so the bare query still hits.
+        assert!(word_prefix_match("start over /clear /reset", "clear"));
+    }
+
+    #[test]
+    fn description_only_query_surfaces_nearest_command() {
+        // "/resume" is no built-in's name, but it lives in /sessions' synonyms.
+        let out = names("/resume", &[], &[]);
+        assert!(
+            out.contains(&"/sessions".to_string()),
+            "expected /sessions for /resume, got {out:?}"
+        );
+        // Likewise "/clear" should surface /new.
+        let out = names("/clear", &[], &[]);
+        assert!(
+            out.contains(&"/new".to_string()),
+            "expected /new for /clear, got {out:?}"
+        );
+    }
+
+    #[test]
+    fn name_prefix_matches_rank_above_description_only() {
+        // "/co" prefixes /compact by name; it also appears (word-prefix) in
+        // other descriptions like /onboard:channels ("connect") and /compact's
+        // own "condense". The name-prefix hit must come first.
+        let out = names("/co", &[], &[]);
+        assert_eq!(
+            out.first(),
+            Some(&"/compact".to_string()),
+            "name-prefix hit should rank first, got {out:?}"
+        );
+        assert!(
+            out.len() > 1,
+            "expected description-only hits too, got {out:?}"
+        );
+    }
+
+    #[test]
+    fn lone_slash_does_not_match_descriptions() {
+        // A single "/" yields only name-prefix hits (every command), never
+        // description-only noise. All built-ins start with "/", so the count
+        // equals the built-in count exactly.
+        let out = names("/", &[], &[]);
+        assert_eq!(out.len(), SLASH_COMMANDS.len());
     }
 }

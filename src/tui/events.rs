@@ -135,8 +135,8 @@ pub enum TuiEvent {
     /// Onboarding wizard received fetched model list from provider API
     OnboardingModelsFetched(Vec<String>),
 
-    /// Model selector (/models) received fetched model list (provider_index, models)
-    ModelSelectorModelsFetched(usize, Vec<String>),
+    /// Model selector (/models) received fetched model list (provider_index, models, elapsed_time)
+    ModelSelectorModelsFetched(usize, Vec<String>, Option<std::time::Duration>),
 
     /// WhatsApp QR code data received during onboarding pairing
     WhatsAppQrCode(String),
@@ -164,6 +164,11 @@ pub enum TuiEvent {
     /// open panes don't see leaked self-healing alerts from sessions they
     /// aren't currently focused on.
     SystemMessage { session_id: Uuid, text: String },
+
+    /// Collapsible startup-jobs report. `summary` is the one-line content
+    /// shown in the transcript; `details` is the expandable per-job body
+    /// (toggled with Ctrl+O). Emitted once, when all startup jobs complete.
+    StartupInfo { summary: String, details: String },
 
     /// Sticky fallback just swapped the active provider/model. Carries the
     /// originating session id so a fallback in session A doesn't update
@@ -596,6 +601,15 @@ pub mod keys {
         event.code == KeyCode::Tab && event.modifiers.is_empty()
     }
 
+    /// Ctrl+R - refresh provider/model fetch.
+    /// Accept both the structured key event and the raw DC2 control char
+    /// some terminals emit instead.
+    pub fn is_refresh_models(event: &KeyEvent) -> bool {
+        matches!(event.code, KeyCode::Char('\x12'))
+            || matches!(event.code, KeyCode::Char('r') | KeyCode::Char('R'))
+                && event.modifiers.contains(KeyModifiers::CONTROL)
+    }
+
     /// 'A' or 'Y' - Approve
     pub fn is_approve(event: &KeyEvent) -> bool {
         matches!(
@@ -678,5 +692,23 @@ mod tests {
         let event = KeyEvent::new(KeyCode::Enter, KeyModifiers::ALT);
         assert!(!keys::is_submit(&event));
         assert!(keys::is_newline(&event));
+    }
+
+    #[test]
+    fn test_refresh_models_key() {
+        let event = KeyEvent::new(KeyCode::Char('r'), KeyModifiers::CONTROL);
+        assert!(keys::is_refresh_models(&event));
+
+        let event = KeyEvent::new(
+            KeyCode::Char('R'),
+            KeyModifiers::CONTROL | KeyModifiers::SHIFT,
+        );
+        assert!(keys::is_refresh_models(&event));
+
+        let event = KeyEvent::new(KeyCode::Char('\x12'), KeyModifiers::NONE);
+        assert!(keys::is_refresh_models(&event));
+
+        let event = KeyEvent::new(KeyCode::Char('r'), KeyModifiers::NONE);
+        assert!(!keys::is_refresh_models(&event));
     }
 }

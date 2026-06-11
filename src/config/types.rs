@@ -1926,7 +1926,7 @@ pub struct KeysA2a {
 
 /// Load API keys from keys.toml
 /// This file should be chmod 600 for security
-fn load_keys_from_file() -> Result<KeysFile> {
+pub(crate) fn load_keys_from_file() -> Result<KeysFile> {
     let keys_path = keys_path();
     if !keys_path.exists() {
         return Ok(KeysFile::default());
