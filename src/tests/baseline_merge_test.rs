@@ -4,7 +4,7 @@
 //!
 //! 1. **Pricing additive merge** — `PricingConfig::load` merges any
 //!    `(provider, prefix)` from the bundled `usage_pricing.toml.example`
-//!    that's missing from the user's live `~/.opencrabs/usage_pricing.toml`,
+//!    that's missing from the user's live `~/.stemcell/usage_pricing.toml`,
 //!    then writes the merged file back to disk. Without this the
 //!    seed-on-missing pattern froze the user's pricing table at
 //!    whatever shipped on their first install — MiniMax-M3 (or any

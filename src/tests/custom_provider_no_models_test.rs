@@ -65,13 +65,13 @@ impl Drop for HomeGuard {
 fn write_temp_home(config_toml: &str) -> tempfile::TempDir {
     use std::io::Write;
     let dir = tempfile::tempdir().expect("tempdir");
-    let opencrabs = dir.path().join(".opencrabs");
-    std::fs::create_dir_all(&opencrabs).expect("create .opencrabs");
-    let path = opencrabs.join("config.toml");
+    let stemcell = dir.path().join(".stemcell");
+    std::fs::create_dir_all(&stemcell).expect("create .stemcell");
+    let path = stemcell.join("config.toml");
     let mut f = std::fs::File::create(&path).expect("create config");
     f.write_all(config_toml.as_bytes()).expect("write config");
     // Empty keys.toml — config we test sets api_key inline.
-    std::fs::write(opencrabs.join("keys.toml"), b"").expect("write keys");
+    std::fs::write(stemcell.join("keys.toml"), b"").expect("write keys");
     dir
 }
 

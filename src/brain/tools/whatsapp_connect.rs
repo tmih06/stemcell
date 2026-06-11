@@ -7,7 +7,7 @@
 use super::error::Result;
 use super::r#trait::{Tool, ToolCapability, ToolExecutionContext, ToolResult};
 use crate::brain::agent::{ProgressCallback, ProgressEvent};
-use crate::config::opencrabs_home;
+use crate::config::stemcell_home;
 use async_trait::async_trait;
 use serde_json::Value;
 use std::sync::Arc;
@@ -81,7 +81,7 @@ pub fn subscribe_whatsapp_pairing(
     wipe_session: bool,
 ) -> WhatsAppConnectHandle {
     if wipe_session {
-        let wa_dir = opencrabs_home().join("whatsapp");
+        let wa_dir = stemcell_home().join("whatsapp");
         let _ = std::fs::remove_file(wa_dir.join("session.db"));
         let _ = std::fs::remove_file(wa_dir.join("session.db-wal"));
         let _ = std::fs::remove_file(wa_dir.join("session.db-shm"));
@@ -120,7 +120,7 @@ impl Tool for WhatsAppConnectTool {
     }
 
     fn description(&self) -> &str {
-        "Connect WhatsApp to OpenCrabs. Generates a QR code that the user scans with their \
+        "Connect WhatsApp to StemCell. Generates a QR code that the user scans with their \
          WhatsApp mobile app. Once scanned, WhatsApp messages from allowed phone numbers \
          will be routed to the agent. Call this when the user asks to connect or set up WhatsApp."
     }
@@ -161,7 +161,7 @@ impl Tool for WhatsAppConnectTool {
         }
 
         // Wipe session and enable WhatsApp — ChannelManager will (re)start the agent
-        let wa_dir = opencrabs_home().join("whatsapp");
+        let wa_dir = stemcell_home().join("whatsapp");
         if let Err(e) = std::fs::create_dir_all(&wa_dir) {
             tracing::error!("Failed to create WhatsApp dir: {}", e);
         }

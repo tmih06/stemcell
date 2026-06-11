@@ -15,7 +15,7 @@ pub(crate) async fn cmd_status(config: &crate::config::Config) -> Result<()> {
     use crate::db::Database;
 
     let version = env!("CARGO_PKG_VERSION");
-    println!("🦀 OpenCrabs v{version}\n");
+    println!("🦀 StemCell v{version}\n");
 
     // Provider
     match crate::brain::provider::create_provider(config).await {
@@ -153,7 +153,7 @@ pub(crate) async fn cmd_status(config: &crate::config::Config) -> Result<()> {
 
     // Logs
     let log_dir = dirs::config_dir()
-        .map(|d| d.join("opencrabs").join("logs"))
+        .map(|d| d.join("stemcell").join("logs"))
         .unwrap_or_default();
     if log_dir.exists() {
         let log_count = std::fs::read_dir(&log_dir)
@@ -186,7 +186,7 @@ pub(crate) async fn cmd_doctor(config: &crate::config::Config) -> Result<()> {
     use crate::db::Database;
 
     let version = env!("CARGO_PKG_VERSION");
-    println!("🦀 OpenCrabs Doctor v{version}\n");
+    println!("🦀 StemCell Doctor v{version}\n");
 
     let mut pass = 0u32;
     let mut fail = 0u32;
@@ -200,7 +200,7 @@ pub(crate) async fn cmd_doctor(config: &crate::config::Config) -> Result<()> {
         println!("  ✅ Config file: {}", p.display());
         pass += 1;
     } else {
-        println!("  ❌ Config file: not found (run `opencrabs init` or `opencrabs onboard`)");
+        println!("  ❌ Config file: not found (run `stemcell init` or `stemcell onboard`)");
         fail += 1;
     }
 
@@ -246,7 +246,7 @@ pub(crate) async fn cmd_doctor(config: &crate::config::Config) -> Result<()> {
         }
     } else {
         println!(
-            "  ❌ Database: not found at {} (run `opencrabs db init`)",
+            "  ❌ Database: not found at {} (run `stemcell db init`)",
             db_path.display()
         );
         fail += 1;
@@ -455,10 +455,10 @@ pub(crate) async fn load_config(config_path: Option<&str>) -> Result<crate::conf
 pub(crate) async fn cmd_init(_config: &crate::config::Config, force: bool) -> Result<()> {
     use crate::config::Config;
 
-    println!("🦀 OpenCrabs Configuration Initialization\n");
+    println!("🦀 StemCell Configuration Initialization\n");
 
     let config_path = Config::system_config_path()
-        .unwrap_or_else(|| crate::config::opencrabs_home().join("config.toml"));
+        .unwrap_or_else(|| crate::config::stemcell_home().join("config.toml"));
 
     // Check if config already exists
     if config_path.exists() && !force {
@@ -476,14 +476,14 @@ pub(crate) async fn cmd_init(_config: &crate::config::Config, force: bool) -> Re
     println!("\n📝 Next steps:");
     println!("   1. Edit the config file to add your API keys");
     println!("   2. Set ANTHROPIC_API_KEY environment variable");
-    println!("   3. Run 'opencrabs' or 'opencrabs chat' to start");
+    println!("   3. Run 'stemcell' or 'stemcell chat' to start");
 
     Ok(())
 }
 
 /// Show configuration
 pub(crate) async fn cmd_config(config: &crate::config::Config, show_secrets: bool) -> Result<()> {
-    println!("🦀 OpenCrabs Configuration\n");
+    println!("🦀 StemCell Configuration\n");
 
     if show_secrets {
         println!("{:#?}", config);
@@ -770,11 +770,11 @@ pub(crate) async fn cmd_logs(operation: LogCommands) -> Result<()> {
     use crate::logging;
     use std::io::{BufRead, BufReader};
 
-    let log_dir = std::env::current_dir()?.join(".opencrabs").join("logs");
+    let log_dir = std::env::current_dir()?.join(".stemcell").join("logs");
 
     match operation {
         LogCommands::Status => {
-            println!("📊 OpenCrabs Logging Status\n");
+            println!("📊 StemCell Logging Status\n");
             println!("Log directory: {}", log_dir.display());
 
             if log_dir.exists() {
@@ -813,11 +813,11 @@ pub(crate) async fn cmd_logs(operation: LogCommands) -> Result<()> {
                 }
 
                 println!("\n💡 To enable debug logging, run with -d flag:");
-                println!("   opencrabs -d");
+                println!("   stemcell -d");
             } else {
                 println!("Status: ❌ No logs found");
                 println!("\n💡 To enable debug logging, run with -d flag:");
-                println!("   opencrabs -d");
+                println!("   stemcell -d");
                 println!("\nThis will create log files in:");
                 println!("   {}", log_dir.display());
             }
@@ -849,8 +849,8 @@ pub(crate) async fn cmd_logs(operation: LogCommands) -> Result<()> {
                 }
             } else {
                 println!("❌ No log files found.\n");
-                println!("💡 Run OpenCrabs with -d flag to enable debug logging:");
-                println!("   opencrabs -d");
+                println!("💡 Run StemCell with -d flag to enable debug logging:");
+                println!("   stemcell -d");
             }
 
             Ok(())
@@ -878,8 +878,8 @@ pub(crate) async fn cmd_logs(operation: LogCommands) -> Result<()> {
         LogCommands::Open => {
             if !log_dir.exists() {
                 println!("❌ Log directory does not exist: {}", log_dir.display());
-                println!("\n💡 Run OpenCrabs with -d flag to enable debug logging:");
-                println!("   opencrabs -d");
+                println!("\n💡 Run StemCell with -d flag to enable debug logging:");
+                println!("   stemcell -d");
                 return Ok(());
             }
 
@@ -972,7 +972,7 @@ pub(crate) async fn cmd_agent_interactive(
         .await?;
 
     println!(
-        "🦀 OpenCrabs Agent — {} ({})",
+        "🦀 StemCell Agent — {} ({})",
         provider.name(),
         provider.default_model()
     );
@@ -1408,8 +1408,8 @@ pub(crate) async fn cmd_session(
 }
 
 /// Resolve profile-specific service identifiers.
-/// Default profile → `com.opencrabs.daemon` / `opencrabs`
-/// Named profile → `com.opencrabs.daemon.hermes` / `opencrabs-hermes`
+/// Default profile → `com.stemcell.daemon` / `stemcell`
+/// Named profile → `com.stemcell.daemon.hermes` / `stemcell-hermes`
 fn service_identifiers() -> (String, String, String) {
     let profile = crate::config::profile::active_profile();
     let suffix = match profile {
@@ -1420,8 +1420,8 @@ fn service_identifiers() -> (String, String, String) {
         Some(name) if name != "default" => format!("-{name}"),
         _ => String::new(),
     };
-    let plist_name = format!("com.opencrabs.daemon{suffix}");
-    let systemd_name = format!("opencrabs{systemd_suffix}");
+    let plist_name = format!("com.stemcell.daemon{suffix}");
+    let systemd_name = format!("stemcell{systemd_suffix}");
     let log_suffix = if suffix.is_empty() {
         String::new()
     } else {
@@ -1483,9 +1483,9 @@ pub(crate) async fn cmd_service(operation: ServiceCommands) -> Result<()> {
     <key>KeepAlive</key>
     <true/>
     <key>StandardOutPath</key>
-    <string>/tmp/opencrabs-daemon{log_suffix}.out.log</string>
+    <string>/tmp/stemcell-daemon{log_suffix}.out.log</string>
     <key>StandardErrorPath</key>
-    <string>/tmp/opencrabs-daemon{log_suffix}.err.log</string>
+    <string>/tmp/stemcell-daemon{log_suffix}.err.log</string>
 </dict>
 </plist>"#
                 );
@@ -1498,7 +1498,7 @@ pub(crate) async fn cmd_service(operation: ServiceCommands) -> Result<()> {
                     "✅ Installed LaunchAgent [{profile_label}]: {}",
                     plist_path.display()
                 );
-                println!("   Run: opencrabs service start");
+                println!("   Run: stemcell service start");
             }
 
             #[cfg(target_os = "linux")]
@@ -1514,7 +1514,7 @@ pub(crate) async fn cmd_service(operation: ServiceCommands) -> Result<()> {
 
                 let unit = format!(
                     r#"[Unit]
-Description=OpenCrabs Daemon [{profile_label}]
+Description=StemCell Daemon [{profile_label}]
 After=network.target
 
 [Service]
@@ -1539,7 +1539,7 @@ WantedBy=default.target
                     "✅ Installed systemd user unit [{profile_label}]: {}",
                     unit_path.display()
                 );
-                println!("   Run: opencrabs service start");
+                println!("   Run: stemcell service start");
             }
 
             #[cfg(not(any(target_os = "macos", target_os = "linux")))]
@@ -1561,7 +1561,7 @@ WantedBy=default.target
                             .join(format!("Library/LaunchAgents/{plist_name}.plist")),
                     )
                     .status()?;
-                println!("✅ Started OpenCrabs daemon [{profile_label}]");
+                println!("✅ Started StemCell daemon [{profile_label}]");
             }
 
             #[cfg(target_os = "linux")]
@@ -1569,7 +1569,7 @@ WantedBy=default.target
                 std::process::Command::new("systemctl")
                     .args(["--user", "start", &systemd_name])
                     .status()?;
-                println!("✅ Started OpenCrabs daemon [{profile_label}]");
+                println!("✅ Started StemCell daemon [{profile_label}]");
             }
 
             Ok(())
@@ -1585,7 +1585,7 @@ WantedBy=default.target
                             .join(format!("Library/LaunchAgents/{plist_name}.plist")),
                     )
                     .status()?;
-                println!("✅ Stopped OpenCrabs daemon [{profile_label}]");
+                println!("✅ Stopped StemCell daemon [{profile_label}]");
             }
 
             #[cfg(target_os = "linux")]
@@ -1593,7 +1593,7 @@ WantedBy=default.target
                 std::process::Command::new("systemctl")
                     .args(["--user", "stop", &systemd_name])
                     .status()?;
-                println!("✅ Stopped OpenCrabs daemon [{profile_label}]");
+                println!("✅ Stopped StemCell daemon [{profile_label}]");
             }
 
             Ok(())
@@ -1612,14 +1612,14 @@ WantedBy=default.target
                     .args(["load", "-w"])
                     .arg(&plist)
                     .status()?;
-                println!("✅ Restarted OpenCrabs daemon [{profile_label}]");
+                println!("✅ Restarted StemCell daemon [{profile_label}]");
             }
             #[cfg(target_os = "linux")]
             {
                 std::process::Command::new("systemctl")
                     .args(["--user", "restart", &systemd_name])
                     .status()?;
-                println!("✅ Restarted OpenCrabs daemon [{profile_label}]");
+                println!("✅ Restarted StemCell daemon [{profile_label}]");
             }
             Ok(())
         }
@@ -1630,10 +1630,10 @@ WantedBy=default.target
                     .args(["list", &plist_name])
                     .output()?;
                 if output.status.success() {
-                    println!("✅ OpenCrabs daemon [{profile_label}] is running");
+                    println!("✅ StemCell daemon [{profile_label}] is running");
                     println!("{}", String::from_utf8_lossy(&output.stdout));
                 } else {
-                    println!("⬚  OpenCrabs daemon [{profile_label}] is not running");
+                    println!("⬚  StemCell daemon [{profile_label}] is not running");
                 }
             }
 
@@ -1706,7 +1706,7 @@ pub(crate) async fn cmd_profile(operation: ProfileCommands) -> Result<()> {
             let path = profile::create_profile(&name, description.as_deref())?;
             println!("✅ Created profile '{name}'");
             println!("   Path: {}", path.display());
-            println!("\n   Usage: opencrabs -p {name}");
+            println!("\n   Usage: stemcell -p {name}");
             Ok(())
         }
         ProfileCommands::List => {
@@ -1747,7 +1747,7 @@ pub(crate) async fn cmd_profile(operation: ProfileCommands) -> Result<()> {
         ProfileCommands::Import { path } => {
             let name = profile::import_profile(std::path::Path::new(&path))?;
             println!("✅ Imported profile '{name}'");
-            println!("\n   Usage: opencrabs -p {name}");
+            println!("\n   Usage: stemcell -p {name}");
             Ok(())
         }
         ProfileCommands::Migrate { from, to, force } => {
@@ -1763,7 +1763,7 @@ pub(crate) async fn cmd_profile(operation: ProfileCommands) -> Result<()> {
                 for file in &migrated {
                     println!("   {file}");
                 }
-                println!("\n   Switch to the new profile: opencrabs -p {to}");
+                println!("\n   Switch to the new profile: stemcell -p {to}");
                 println!("   Then customize identity, brain files, keys, etc.");
             }
             Ok(())
@@ -1771,10 +1771,10 @@ pub(crate) async fn cmd_profile(operation: ProfileCommands) -> Result<()> {
     }
 }
 
-/// Check for and install the latest OpenCrabs release
+/// Check for and install the latest StemCell release
 pub(crate) async fn cmd_evolve(check_only: bool) -> Result<()> {
     let current_version = crate::VERSION;
-    println!("🔄 OpenCrabs v{current_version} — checking for updates...\n");
+    println!("🔄 StemCell v{current_version} — checking for updates...\n");
 
     #[cfg(not(feature = "tool-evolve"))]
     {
@@ -1788,7 +1788,7 @@ pub(crate) async fn cmd_evolve(check_only: bool) -> Result<()> {
         match crate::brain::tools::evolve::check_for_update().await {
             Some(latest) => {
                 println!("✅ Update available: v{current_version} → v{latest}");
-                println!("   Run `opencrabs evolve` to install.");
+                println!("   Run `stemcell evolve` to install.");
             }
             None => {
                 println!("✅ Already on the latest version (v{current_version}).");

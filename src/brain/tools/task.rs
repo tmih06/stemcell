@@ -292,7 +292,7 @@ fn parse_status(status_str: &str) -> Result<TaskStatus> {
 }
 
 fn get_store_path(context: &ToolExecutionContext) -> PathBuf {
-    let dir = crate::config::opencrabs_home()
+    let dir = crate::config::stemcell_home()
         .join("agents")
         .join("session");
     let _ = std::fs::create_dir_all(&dir);

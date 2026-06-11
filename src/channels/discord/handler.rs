@@ -505,7 +505,7 @@ pub(crate) async fn handle_message(
 
     // Build the human-readable display text (used for DB persistence + TUI).
     // Owner DMs show the bare text; everything else gets a `Sender: text`
-    // prefix so multi-user channels stay readable in OpenCrabs without
+    // prefix so multi-user channels stay readable in StemCell without
     // surfacing the LLM-only metadata brackets.
     let display_text = if is_owner && msg.guild_id.is_none() {
         content.clone()
@@ -783,7 +783,7 @@ pub(crate) async fn handle_message(
                 let bot_id = discord_state.bot_user_id().await;
                 let bot_sender_id = bot_id
                     .map(|id| id.to_string())
-                    .unwrap_or_else(|| "bot:opencrabs".to_string());
+                    .unwrap_or_else(|| "bot:stemcell".to_string());
                 let guild_name = msg
                     .guild_id
                     .map(|g| g.get().to_string())
@@ -793,7 +793,7 @@ pub(crate) async fn handle_message(
                     msg.channel_id.get().to_string(),
                     Some(guild_name),
                     bot_sender_id,
-                    "OpenCrabs".into(),
+                    "StemCell".into(),
                     text_only.clone(),
                     "text".into(),
                     None,

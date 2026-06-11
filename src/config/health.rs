@@ -1,6 +1,6 @@
 //! Provider health tracking — records success/failure per provider.
 //!
-//! Persisted to `~/.opencrabs/provider_health.json`. Used for auto-fallback:
+//! Persisted to `~/.stemcell/provider_health.json`. Used for auto-fallback:
 //! when the current provider fails, the system can suggest or switch to the
 //! last provider that successfully returned a response.
 
@@ -32,7 +32,7 @@ pub struct HealthState {
 static HEALTH: Mutex<Option<HealthState>> = Mutex::new(None);
 
 fn health_path() -> PathBuf {
-    super::opencrabs_home().join("provider_health.json")
+    super::stemcell_home().join("provider_health.json")
 }
 
 /// Load health state from disk (or initialize empty).

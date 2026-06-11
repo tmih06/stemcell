@@ -1,7 +1,7 @@
 //! Tests for the Mission Control inbox service.
 //!
 //! Uses an explicit `ProposalsStore` rooted at a tmpdir so the tests
-//! never touch the user's real `~/.opencrabs/rsi/` inbox.
+//! never touch the user's real `~/.stemcell/rsi/` inbox.
 
 use crate::brain::commands::UserCommand;
 use crate::brain::mission_control::{McInboxKind, inbox_service};

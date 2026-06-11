@@ -1,4 +1,4 @@
-//! Activity feed data service — parses `~/.opencrabs/rsi/improvements.md`
+//! Activity feed data service — parses `~/.stemcell/rsi/improvements.md`
 //! into a uniform `Vec<McActivity>` for the activity panel.
 //!
 //! `improvements.md` is the RSI loop's append-only journal. Each entry
@@ -21,7 +21,7 @@ use chrono::{DateTime, NaiveDateTime, TimeZone, Utc};
 
 /// Read up to `limit` newest entries from the improvements log.
 pub fn recent(limit: usize) -> Vec<McActivity> {
-    let path = crate::config::opencrabs_home()
+    let path = crate::config::stemcell_home()
         .join("rsi")
         .join("improvements.md");
     let Ok(content) = std::fs::read_to_string(&path) else {
@@ -51,7 +51,7 @@ pub fn parse_improvements_md(content: &str, limit: usize) -> Vec<McActivity> {
     }
 
     // The journal is append-only with oldest at the top — surface
-    // newest first so the panel matches the rest of OpenCrabs.
+    // newest first so the panel matches the rest of StemCell.
     entries.reverse();
     entries.truncate(limit);
     entries

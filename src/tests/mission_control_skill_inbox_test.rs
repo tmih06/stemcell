@@ -5,7 +5,7 @@
 //! kind to `rsi_propose`, but `inbox_service::list_with_store` was
 //! never taught about it. So an agent could file a skill via
 //! `rsi_propose kind=skill`, the file landed in
-//! `~/.opencrabs/rsi/proposed_skills.toml`, but Mission Control's
+//! `~/.stemcell/rsi/proposed_skills.toml`, but Mission Control's
 //! Inbox panel showed nothing. Users had no runtime path to apply
 //! / reject those proposals.
 

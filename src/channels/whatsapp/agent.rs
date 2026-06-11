@@ -54,7 +54,7 @@ impl WhatsAppAgent {
     /// If already paired, reconnects and handles messages.
     pub fn start(self) -> tokio::task::JoinHandle<()> {
         tokio::spawn(async move {
-            let db_path = crate::config::opencrabs_home()
+            let db_path = crate::config::stemcell_home()
                 .join("whatsapp")
                 .join("session.db");
 

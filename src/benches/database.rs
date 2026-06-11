@@ -9,7 +9,7 @@
 #![allow(clippy::all)]
 
 use criterion::{BenchmarkId, Criterion, black_box, criterion_group, criterion_main};
-use opencrabs::db::{Database, models::Session};
+use stemcell::db::{Database, models::Session};
 use rusqlite::params;
 use tempfile::TempDir;
 

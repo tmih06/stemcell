@@ -64,8 +64,8 @@ fn strip_ansi_output_preserves_unicode() {
     // Non-ANSI multi-byte content must round-trip unchanged. Caught a
     // class of stripper bugs where ESC-detection code accidentally
     // consumed a UTF-8 continuation byte.
-    let raw = "🦀 OpenCrabs";
-    assert_eq!(strip_ansi_output(raw), "🦀 OpenCrabs");
+    let raw = "🦀 StemCell";
+    assert_eq!(strip_ansi_output(raw), "🦀 StemCell");
 }
 
 #[test]
@@ -79,7 +79,7 @@ fn strip_ansi_output_strips_24bit_truecolor() {
 // ── extract_path_for_recent_buffer ────────────────────────────────
 
 fn cwd() -> PathBuf {
-    std::env::temp_dir().join("opencrabs-tool-loop-test")
+    std::env::temp_dir().join("stemcell-tool-loop-test")
 }
 
 #[test]

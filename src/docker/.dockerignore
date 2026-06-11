@@ -5,4 +5,4 @@ docker/
 *.swp
 *.swo
 .env
-.opencrabs_*.json
+.stemcell_*.json

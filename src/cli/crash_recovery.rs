@@ -11,7 +11,7 @@ use std::path::Path;
 
 use crate::utils::install::{InstallMethod, binary_name, platform_suffix};
 
-const GITHUB_RELEASES_API: &str = "https://api.github.com/repos/adolfousier/opencrabs/releases";
+const GITHUB_RELEASES_API: &str = "https://api.github.com/repos/tmih06/stemcell/releases";
 
 /// A single release entry from GitHub.
 #[derive(Debug)]
@@ -32,7 +32,7 @@ async fn fetch_available_versions() -> Result<Vec<ReleaseEntry>> {
     let releases: Vec<serde_json::Value> = client
         .get(GITHUB_RELEASES_API)
         .query(&[("per_page", "15")])
-        .header("User-Agent", format!("opencrabs/{}", crate::VERSION))
+        .header("User-Agent", format!("stemcell/{}", crate::VERSION))
         .header("Accept", "application/vnd.github+json")
         .send()
         .await?
@@ -57,8 +57,8 @@ async fn fetch_available_versions() -> Result<Vec<ReleaseEntry>> {
         // Find matching binary asset (only for pre-built binary installs)
         let download_url = if let Some(suffix) = suffix {
             let assets = release["assets"].as_array();
-            let versioned_name = format!("opencrabs-{}-{}.{}", tag, suffix, ext);
-            let legacy_name = format!("opencrabs-{}.{}", suffix, ext);
+            let versioned_name = format!("stemcell-{}-{}.{}", tag, suffix, ext);
+            let legacy_name = format!("stemcell-{}.{}", suffix, ext);
 
             assets.and_then(|arr| {
                 arr.iter().find_map(|a| {
@@ -116,7 +116,7 @@ async fn download_and_install_binary(url: &str, version: &str) -> Result<()> {
     swap_binary(&binary_data, version).await
 }
 
-/// Install a specific version via `cargo install opencrabs@version`.
+/// Install a specific version via `cargo install stemcell@version`.
 async fn cargo_install_version(version: &str) -> Result<()> {
     let orange = "\x1b[38;2;215;100;20m";
     let reset = "\x1b[0m";
@@ -127,7 +127,7 @@ async fn cargo_install_version(version: &str) -> Result<()> {
     );
 
     let status = tokio::process::Command::new("cargo")
-        .args(["install", "opencrabs", "--version", version, "--force"])
+        .args(["install", "stemcell", "--version", version, "--force"])
         .status()
         .await?;
 
@@ -318,7 +318,7 @@ pub async fn show_crash_recovery(error_msg: &str) -> Result<CrashRecoveryAction>
     let install_method = InstallMethod::detect();
 
     println!();
-    println!("{}{}  OpenCrabs crashed during startup{}", red, bold, reset);
+    println!("{}{}  StemCell crashed during startup{}", red, bold, reset);
     println!();
     println!("  {}{}{}", dim, error_msg, reset);
     println!(
@@ -401,7 +401,7 @@ pub async fn show_crash_recovery(error_msg: &str) -> Result<CrashRecoveryAction>
 
     println!();
     println!("  {}q. Quit without changes{}", dim, reset);
-    println!("  {}r. Retry starting OpenCrabs{}", dim, reset);
+    println!("  {}r. Retry starting StemCell{}", dim, reset);
     println!();
 
     // Read user choice
@@ -443,7 +443,7 @@ pub async fn show_crash_recovery(error_msg: &str) -> Result<CrashRecoveryAction>
                 Ok(()) => {
                     println!();
                     println!(
-                        "  {}Restart OpenCrabs to use v{}.{}",
+                        "  {}Restart StemCell to use v{}.{}",
                         orange, entry.version, reset
                     );
                     return Ok(CrashRecoveryAction::Installed(entry.version.clone()));

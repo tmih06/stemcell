@@ -126,7 +126,7 @@ fn opencode_provider_does_not_support_tools() {
     let provider = OpenCodeCliProvider::new().unwrap();
     assert!(
         !provider.supports_tools(),
-        "OpenCode CLI should not support native tools — OpenCrabs handles them"
+        "OpenCode CLI should not support native tools — StemCell handles them"
     );
 }
 
@@ -244,7 +244,7 @@ async fn e2e_opencode_simple_completion() {
     let Some(provider) = try_provider() else {
         return;
     };
-    let request = simple_request("opencode/gpt-5-nano", "Reply with exactly: HELLO_OPENCRABS");
+    let request = simple_request("opencode/gpt-5-nano", "Reply with exactly: HELLO_STEMCELL");
 
     let result = timeout(Duration::from_secs(30), provider.complete(request)).await;
     if result.is_err() {
@@ -270,8 +270,8 @@ async fn e2e_opencode_simple_completion() {
         return;
     }
     assert!(
-        text.contains("HELLO_OPENCRABS"),
-        "response should contain HELLO_OPENCRABS, got: {}",
+        text.contains("HELLO_STEMCELL"),
+        "response should contain HELLO_STEMCELL, got: {}",
         text
     );
 }
@@ -397,7 +397,7 @@ async fn e2e_opencode_with_write_and_read_tools() {
     };
     let request = simple_request(
         "opencode/gpt-5-nano",
-        "Write exactly this text and nothing else: OpenCrabs integration test OK",
+        "Write exactly this text and nothing else: StemCell integration test OK",
     );
 
     use tokio::time::{Duration, timeout};
@@ -451,7 +451,7 @@ async fn e2e_opencode_with_write_and_read_tools() {
         return;
     }
     assert!(
-        read_result.output.contains("OpenCrabs"),
+        read_result.output.contains("StemCell"),
         "read output should contain generated text: {}",
         read_result.output
     );
@@ -469,8 +469,8 @@ async fn e2e_opencode_with_glob_and_grep_tools() {
     // Create test files
     let write_tool = WriteTool;
     for (name, content) in [
-        ("alpha.txt", "hello world from opencrabs"),
-        ("beta.rs", "fn main() { println!(\"opencrabs\"); }"),
+        ("alpha.txt", "hello world from stemcell"),
+        ("beta.rs", "fn main() { println!(\"stemcell\"); }"),
         ("gamma.log", "no match here"),
     ] {
         let path = tmp_dir.path().join(name);
@@ -505,12 +505,12 @@ async fn e2e_opencode_with_glob_and_grep_tools() {
         glob_result.output
     );
 
-    // GrepTool: search for "opencrabs"
+    // GrepTool: search for "stemcell"
     let grep_tool = GrepTool;
     let grep_result = grep_tool
         .execute(
             serde_json::json!({
-                "pattern": "opencrabs",
+                "pattern": "stemcell",
                 "path": tmp_dir.path().to_string_lossy()
             }),
             &ctx,
@@ -537,7 +537,7 @@ async fn e2e_opencode_with_glob_and_grep_tools() {
     let request = simple_request(
         "opencode/gpt-5-nano",
         &format!(
-            "The grep results are:\n{}\nHow many files contain 'opencrabs'? Reply with just the number.",
+            "The grep results are:\n{}\nHow many files contain 'stemcell'? Reply with just the number.",
             grep_result.output
         ),
     );

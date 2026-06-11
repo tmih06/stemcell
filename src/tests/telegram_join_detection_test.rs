@@ -32,7 +32,7 @@ fn format_bot_join_notification_preserves_numeric_precision() {
 
 #[test]
 fn format_bot_join_notification_actionable_instruction() {
-    let notify = format_bot_join_notification("My Group", -5008492520, "opencrabsbot", 8478243969);
+    let notify = format_bot_join_notification("My Group", -5008492520, "stemcellbot", 8478243969);
     assert!(notify.contains("Add this ID to allowed_users"));
     assert!(notify.contains("respond to it"));
 }

@@ -1,6 +1,6 @@
-//! Write OpenCrabs File Tool
+//! Write StemCell File Tool
 //!
-//! Writes or edits any file within `~/.opencrabs/` (brain files like
+//! Writes or edits any file within `~/.stemcell/` (brain files like
 //! MEMORY.md, USER.md, config files like commands.toml, memory logs, and
 //! any other app-owned files). The standard `edit_file`/`write_file`
 //! tools refuse to touch protected brain files (issue #91 guardrail)
@@ -13,15 +13,15 @@ use super::r#trait::{Tool, ToolCapability, ToolExecutionContext, ToolResult};
 use async_trait::async_trait;
 use serde_json::Value;
 
-pub struct WriteOpenCrabsFileTool;
+pub struct WriteStemCellFileTool;
 
-/// Validate that `path` is a safe relative path within `~/.opencrabs/`.
+/// Validate that `path` is a safe relative path within `~/.stemcell/`.
 /// Prevents path traversal outside the app home directory.
-pub(super) fn validate_opencrabs_path(path: &str) -> std::result::Result<(), String> {
+pub(super) fn validate_stemcell_path(path: &str) -> std::result::Result<(), String> {
     if path.is_empty() {
         return Err("path is required".into());
     }
-    // Reject absolute paths — must be relative to ~/.opencrabs/
+    // Reject absolute paths — must be relative to ~/.stemcell/
     if path.starts_with('/') || path.starts_with('~') {
         return Err(format!(
             "Use a relative path (e.g. \"MEMORY.md\" or \"memory/2026-03-02.md\"), \
@@ -57,13 +57,13 @@ pub(super) fn validate_opencrabs_path(path: &str) -> std::result::Result<(), Str
 }
 
 #[async_trait]
-impl Tool for WriteOpenCrabsFileTool {
+impl Tool for WriteStemCellFileTool {
     fn name(&self) -> &str {
-        "write_opencrabs_file"
+        "write_stemcell_file"
     }
 
     fn description(&self) -> &str {
-        "Write or edit any file within the OpenCrabs home directory. \
+        "Write or edit any file within the StemCell home directory. \
          Use this for brain files (MEMORY.md, USER.md, AGENTS.md, SOUL.md, etc.), \
          config files (commands.toml), memory logs, and any other app files. \
          The standard edit_file/write_file tools cannot reach the home directory — use this instead. \
@@ -136,7 +136,7 @@ impl Tool for WriteOpenCrabsFileTool {
             .unwrap_or("")
             .trim();
 
-        if let Err(e) = validate_opencrabs_path(path_str) {
+        if let Err(e) = validate_stemcell_path(path_str) {
             return Ok(ToolResult::error(e));
         }
 
@@ -146,7 +146,7 @@ impl Tool for WriteOpenCrabsFileTool {
             .unwrap_or("")
             .trim();
 
-        let home = crate::config::opencrabs_home();
+        let home = crate::config::stemcell_home();
         let full_path = home.join(path_str);
 
         match operation {
@@ -195,7 +195,7 @@ impl Tool for WriteOpenCrabsFileTool {
                             pruned_state.record_pruned(path_str, removed);
                             if let Err(e) = pruned_state.save() {
                                 tracing::warn!(
-                                    "write_opencrabs_file (create-update path): recorded {} pruned header(s) for {} \
+                                    "write_stemcell_file (create-update path): recorded {} pruned header(s) for {} \
                                      but pruned.toml save failed: {} — sync_templates() will re-add those sections \
                                      on the next sync until this is fixed",
                                     pruned_state
@@ -219,7 +219,7 @@ impl Tool for WriteOpenCrabsFileTool {
                     )));
                 }
                 if let Err(e) = brain_file_safety::backup_before_write(&full_path) {
-                    tracing::warn!("write_opencrabs_file: backup failed for {path_str}: {e}");
+                    tracing::warn!("write_stemcell_file: backup failed for {path_str}: {e}");
                 }
                 match std::fs::write(&full_path, content) {
                     Ok(()) => Ok(ToolResult::success(format!(
@@ -253,7 +253,7 @@ impl Tool for WriteOpenCrabsFileTool {
                             skipped_paragraphs,
                         } => {
                             tracing::info!(
-                                "write_opencrabs_file: filtered {skipped_paragraphs} duplicate paragraph(s) from append to {path_str}"
+                                "write_stemcell_file: filtered {skipped_paragraphs} duplicate paragraph(s) from append to {path_str}"
                             );
                             filtered_content
                         }
@@ -277,7 +277,7 @@ impl Tool for WriteOpenCrabsFileTool {
                     )));
                 }
                 if let Err(e) = brain_file_safety::backup_before_write(&full_path) {
-                    tracing::warn!("write_opencrabs_file: backup failed for {path_str}: {e}");
+                    tracing::warn!("write_stemcell_file: backup failed for {path_str}: {e}");
                 }
                 use std::io::Write;
                 match std::fs::OpenOptions::new()
@@ -320,7 +320,7 @@ impl Tool for WriteOpenCrabsFileTool {
                     Ok(s) => s,
                     Err(_) => {
                         return Ok(ToolResult::error(format!(
-                            "~/.opencrabs/{} not found. Use overwrite to create it.",
+                            "~/.stemcell/{} not found. Use overwrite to create it.",
                             path_str
                         )));
                     }
@@ -361,7 +361,7 @@ impl Tool for WriteOpenCrabsFileTool {
                         pruned_state.record_pruned(path_str, removed);
                         if let Err(e) = pruned_state.save() {
                             tracing::warn!(
-                                "write_opencrabs_file (update path): recorded {} pruned header(s) for {} \
+                                "write_stemcell_file (update path): recorded {} pruned header(s) for {} \
                                  but pruned.toml save failed: {} — sync_templates() will re-add those sections \
                                  on the next sync until this is fixed",
                                 pruned_state
@@ -376,7 +376,7 @@ impl Tool for WriteOpenCrabsFileTool {
                     }
                 }
                 if let Err(e) = brain_file_safety::backup_before_write(&full_path) {
-                    tracing::warn!("write_opencrabs_file: backup failed for {path_str}: {e}");
+                    tracing::warn!("write_stemcell_file: backup failed for {path_str}: {e}");
                 }
                 match std::fs::write(&full_path, &updated) {
                     Ok(()) => Ok(ToolResult::success(format!(
@@ -399,5 +399,5 @@ impl Tool for WriteOpenCrabsFileTool {
 }
 
 #[cfg(test)]
-#[path = "write_opencrabs_file_tests.rs"]
-mod write_opencrabs_file_tests;
+#[path = "write_stemcell_file_tests.rs"]
+mod write_stemcell_file_tests;

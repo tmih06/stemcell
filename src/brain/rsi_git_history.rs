@@ -6,7 +6,7 @@
 //! says "ignore failures that have a fix commit between them and now".
 //!
 //! The helper shells out to `git log --since=<ts> --grep=<term> -i
-//! --no-merges --format=%H%x09%s` in the resolved opencrabs source
+//! --no-merges --format=%H%x09%s` in the resolved stemcell source
 //! directory. Returns an empty Vec on any error (no git, not a repo,
 //! no source dir resolvable, etc.) — RSI degrades to its window-only
 //! behaviour when git context isn't available, never crashes.
@@ -32,20 +32,20 @@ pub struct CommitSummary {
     pub subject: String,
 }
 
-/// Resolve the opencrabs source repo root. Returns `None` when we have
+/// Resolve the stemcell source repo root. Returns `None` when we have
 /// no plausible candidate — RSI then skips the git-context check.
 ///
 /// Resolution order:
-/// 1. `OPENCRABS_SRC` env var, if set and points to a directory with `.git/`.
+/// 1. `STEMCELL_SRC` env var, if set and points to a directory with `.git/`.
 /// 2. `std::env::current_dir()`, if it has a `Cargo.toml` AND that toml
-///    contains `name = "opencrabs"` (handles dev-checkout case).
+///    contains `name = "stemcell"` (handles dev-checkout case).
 ///
 /// We deliberately don't walk parent directories — too easy to silently
-/// pick up the wrong repo (e.g. running opencrabs from inside a
+/// pick up the wrong repo (e.g. running stemcell from inside a
 /// monorepo subdir). An explicit env var or running from the project
 /// root are the supported configurations.
 pub fn resolve_source_repo() -> Option<PathBuf> {
-    if let Ok(env_dir) = std::env::var("OPENCRABS_SRC") {
+    if let Ok(env_dir) = std::env::var("STEMCELL_SRC") {
         let p = PathBuf::from(env_dir);
         if p.join(".git").exists() {
             return Some(p);
@@ -55,7 +55,7 @@ pub fn resolve_source_repo() -> Option<PathBuf> {
     let cargo = cwd.join("Cargo.toml");
     if cargo.exists()
         && let Ok(text) = std::fs::read_to_string(&cargo)
-        && text.contains(r#"name = "opencrabs""#)
+        && text.contains(r#"name = "stemcell""#)
         && cwd.join(".git").exists()
     {
         return Some(cwd);

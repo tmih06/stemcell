@@ -7,7 +7,7 @@
 //! - `ref: refs/<other>/<name>` — returns the last path component
 //! - a raw 40-char SHA — returns the first 7 chars (detached HEAD)
 //!
-//! Used by the TUI status bar to show `~/srv/rs/opencrabs (main)`. Read
+//! Used by the TUI status bar to show `~/srv/rs/stemcell (main)`. Read
 //! per render with no cache: the HEAD file is tiny (~30 bytes) and stays
 //! in the OS page cache, so a `git checkout` in another terminal shows
 //! up on the very next frame.

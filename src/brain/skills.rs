@@ -9,7 +9,7 @@
 //! Layout:
 //!
 //! ```text
-//! ~/.opencrabs/skills/
+//! ~/.stemcell/skills/
 //! └── <skill-name>/
 //!     └── SKILL.md          ← user-owned, overrides any built-in of the same name
 //! ```
@@ -17,12 +17,12 @@
 //! The repo ships a curated set of built-ins under
 //! `src/docs/reference/templates/skills/<name>/SKILL.md`, embedded at
 //! compile time via `include_str!`. The user directory at
-//! `~/.opencrabs/skills/` is purely user-owned (per `TOOLS.md`); writes
+//! `~/.stemcell/skills/` is purely user-owned (per `TOOLS.md`); writes
 //! never come from the binary.
 //!
 //! ## Resolution order
 //!
-//! 1. `~/.opencrabs/skills/<name>/SKILL.md` — user override
+//! 1. `~/.stemcell/skills/<name>/SKILL.md` — user override
 //! 2. embedded built-in
 //!
 //! A user file with a malformed frontmatter falls back to the built-in
@@ -177,9 +177,9 @@ fn split_frontmatter(raw: &str) -> Option<(&str, &str)> {
     Some((frontmatter, body))
 }
 
-/// User skills directory: `~/.opencrabs/skills/`.
+/// User skills directory: `~/.stemcell/skills/`.
 fn user_skills_dir() -> PathBuf {
-    crate::config::opencrabs_home().join("skills")
+    crate::config::stemcell_home().join("skills")
 }
 
 /// Load every available skill (built-ins + user overlays).

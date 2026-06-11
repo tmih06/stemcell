@@ -9,7 +9,7 @@ static STORE: OnceCell<Mutex<Store>> = OnceCell::new();
 
 /// Get (or create) the shared memory qmd Store.
 ///
-/// The database lives at `~/.opencrabs/memory/memory.db`.
+/// The database lives at `~/.stemcell/memory/memory.db`.
 /// First call initializes the schema via `Store::open` and creates the vector table
 /// (only when vector embeddings are enabled in config).
 pub fn get_store() -> Result<&'static Mutex<Store>, String> {
@@ -46,9 +46,9 @@ pub fn get_store() -> Result<&'static Mutex<Store>, String> {
     })
 }
 
-/// Path to the memory directory: `~/.opencrabs/memory/`
+/// Path to the memory directory: `~/.stemcell/memory/`
 fn memory_dir() -> PathBuf {
-    crate::config::opencrabs_home().join("memory")
+    crate::config::stemcell_home().join("memory")
 }
 
 #[cfg(test)]

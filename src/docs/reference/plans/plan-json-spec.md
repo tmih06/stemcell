@@ -139,5 +139,5 @@ Use **1-based integer indices** (human-friendly). **Omit the field when there ar
 
 ## Files
 
-- **Minimal example**: `~/.opencrabs/profiles/ops/plans/coding-plans/sample-minimal-plan.json`
-- **Full example**: `~/.opencrabs/profiles/ops/plans/coding-plans/rust-full.json`
+- **Minimal example**: `~/.stemcell/profiles/ops/plans/coding-plans/sample-minimal-plan.json`
+- **Full example**: `~/.stemcell/profiles/ops/plans/coding-plans/rust-full.json`

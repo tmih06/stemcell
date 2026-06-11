@@ -5,7 +5,7 @@ description: "Runtime tool management with tool_manage and tools.toml format. Cr
 
 # Dynamic Tools Reference
 
-Runtime tool creation — define tools in `~/.opencrabs/tools.toml` and they become callable immediately without restart or rebuild.
+Runtime tool creation — define tools in `~/.stemcell/tools.toml` and they become callable immediately without restart or rebuild.
 
 ## tool_manage Meta-Tool
 

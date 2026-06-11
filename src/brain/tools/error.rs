@@ -52,7 +52,7 @@ pub type Result<T> = std::result::Result<T, ToolError>;
 /// Expand a leading `~` or `~/` in a user-provided path into the current
 /// user's home directory. Everything else passes through unchanged.
 ///
-/// Models routinely paste tilde paths (`~/.opencrabs/logs`) and without
+/// Models routinely paste tilde paths (`~/.stemcell/logs`) and without
 /// expansion `PathBuf::is_absolute()` returns false, so the path gets
 /// joined to the process working directory as literal `~` — which never
 /// exists. This helper normalizes that so tools don't all have to
@@ -237,13 +237,13 @@ mod tests {
 
     #[test]
     fn test_resolve_tool_path_tilde_becomes_absolute() {
-        // The classic custom-provider bug: model sends `~/.opencrabs/logs`,
-        // cwd is `/Users/adolfo/srv/rs/opencrabs`. Before the fix this
-        // produced `/Users/adolfo/srv/rs/opencrabs/~/.opencrabs/logs`.
-        let cwd = std::path::Path::new("/Users/adolfo/srv/rs/opencrabs");
-        let resolved = resolve_tool_path("~/.opencrabs/logs", cwd);
+        // The classic custom-provider bug: model sends `~/.stemcell/logs`,
+        // cwd is `/Users/adolfo/srv/rs/stemcell`. Before the fix this
+        // produced `/Users/adolfo/srv/rs/stemcell/~/.stemcell/logs`.
+        let cwd = std::path::Path::new("/Users/adolfo/srv/rs/stemcell");
+        let resolved = resolve_tool_path("~/.stemcell/logs", cwd);
         let home = dirs::home_dir().expect("home dir required");
-        assert_eq!(resolved, home.join(".opencrabs/logs"));
+        assert_eq!(resolved, home.join(".stemcell/logs"));
         assert!(resolved.is_absolute());
     }
 

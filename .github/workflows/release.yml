@@ -63,7 +63,7 @@ jobs:
         run: |
           VERSION=$(grep '^version' Cargo.toml | head -1 | sed 's/.*"\(.*\)"/\1/')
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          if curl -sf "https://crates.io/api/v1/crates/opencrabs/$VERSION" > /dev/null 2>&1; then
+          if curl -sf "https://crates.io/api/v1/crates/stemcell/$VERSION" > /dev/null 2>&1; then
             echo "published=true" >> "$GITHUB_OUTPUT"
             echo "v$VERSION already on crates.io — skipping build"
           else
@@ -97,27 +97,27 @@ jobs:
         include:
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
-            artifact_name: opencrabs
+            artifact_name: stemcell
             asset_suffix: linux-amd64
 
           - os: ubuntu-24.04-arm
             target: aarch64-unknown-linux-gnu
-            artifact_name: opencrabs
+            artifact_name: stemcell
             asset_suffix: linux-arm64
 
           - os: windows-latest
             target: x86_64-pc-windows-msvc
-            artifact_name: opencrabs.exe
+            artifact_name: stemcell.exe
             asset_suffix: windows-amd64
 
           - os: macos-latest
             target: x86_64-apple-darwin
-            artifact_name: opencrabs
+            artifact_name: stemcell
             asset_suffix: macos-amd64
 
           - os: macos-latest
             target: aarch64-apple-darwin
-            artifact_name: opencrabs
+            artifact_name: stemcell
             asset_suffix: macos-arm64
 
     steps:
@@ -205,7 +205,7 @@ jobs:
             exit 1
           fi
           
-          # Copy to the release directory alongside opencrabs
+          # Copy to the release directory alongside stemcell
           RELEASE_DIR="target/${{ matrix.target }}/release"
           cp "$RTK_BINARY" "$RELEASE_DIR/"
           if [[ "${{ matrix.os }}" != "windows-latest" ]]; then
@@ -221,7 +221,7 @@ jobs:
       - name: Create archive
         shell: bash
         run: |
-          ASSET_NAME="opencrabs-v${{ steps.version.outputs.version }}-${{ matrix.asset_suffix }}"
+          ASSET_NAME="stemcell-v${{ steps.version.outputs.version }}-${{ matrix.asset_suffix }}"
           cd target/${{ matrix.target }}/release
           if [ "${{ matrix.os }}" = "windows-latest" ]; then
             7z a ../../../${ASSET_NAME}.zip ${{ matrix.artifact_name }} rtk.exe
@@ -232,10 +232,10 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@v7
         with:
-          name: opencrabs-v${{ steps.version.outputs.version }}-${{ matrix.asset_suffix }}
+          name: stemcell-v${{ steps.version.outputs.version }}-${{ matrix.asset_suffix }}
           path: |
-            opencrabs-v${{ steps.version.outputs.version }}-${{ matrix.asset_suffix }}.tar.gz
-            opencrabs-v${{ steps.version.outputs.version }}-${{ matrix.asset_suffix }}.zip
+            stemcell-v${{ steps.version.outputs.version }}-${{ matrix.asset_suffix }}.tar.gz
+            stemcell-v${{ steps.version.outputs.version }}-${{ matrix.asset_suffix }}.zip
 
   create-release:
     name: Create Release

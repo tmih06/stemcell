@@ -174,7 +174,7 @@ pub(crate) async fn handle_message(
         && text.starts_with("/start")
     {
         let reply = format!(
-            "OpenCrabs Telegram Bot\n\nYour user ID: {}\n\nAdd this ID to your config.toml under [channels.telegram] allowed_users to get started.",
+            "StemCell Telegram Bot\n\nYour user ID: {}\n\nAdd this ID to your config.toml under [channels.telegram] allowed_users to get started.",
             user_id
         );
         message_in_thread(&bot, msg.chat.id, thread_id, reply).await?;
@@ -579,7 +579,7 @@ pub(crate) async fn handle_message(
             }
         };
 
-        // Route through the shared vision pipeline — saves to ~/.opencrabs/tmp/files/
+        // Route through the shared vision pipeline — saves to ~/.stemcell/tmp/files/
         // and returns a <<IMG:path>> marker. Centralized temp management, single cleanup.
         use crate::utils::{inject_file_content, process_file_with_vision};
         let fc = process_file_with_vision(&photo_bytes, "image/jpeg", "photo.jpg", &cfg);
@@ -969,7 +969,7 @@ pub(crate) async fn handle_message(
     }
 
     // Strip @bot_username suffix from ALL text (Telegram appends it in menus, even in DMs).
-    // Without this, /stop@opencrabsbot won't match /stop in handle_command.
+    // Without this, /stop@stemcellbot won't match /stop in handle_command.
     let text = if let Some(ref uname) = telegram_state.bot_username().await {
         text.replace(&format!("@{}", uname), "").trim().to_string()
     } else {
@@ -2474,13 +2474,13 @@ pub(crate) async fn handle_message(
                     .bot_username()
                     .await
                     .map(|u| format!("@{}", u))
-                    .unwrap_or_else(|| "OpenCrabs".to_string());
+                    .unwrap_or_else(|| "StemCell".to_string());
                 let thread_id = msg.thread_id.map(|t| t.0.to_string());
                 let cm = DbChannelMessage::new(
                     "telegram".to_string(),
                     msg.chat.id.0.to_string(),
                     Some(chat_title.to_string()),
-                    "bot:opencrabs".to_string(),
+                    "bot:stemcell".to_string(),
                     bot_display_name,
                     text_only.clone(),
                     "text".to_string(),

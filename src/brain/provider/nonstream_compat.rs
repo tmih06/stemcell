@@ -2,7 +2,7 @@
 //! non-streaming OpenAI-compatible chat-completion JSON response.
 //!
 //! Some upstream proxies / local models return a full `chat.completion`
-//! JSON object when OpenCrabs asks for streaming (e.g. when `stream=true`
+//! JSON object when StemCell asks for streaming (e.g. when `stream=true`
 //! is ignored or unsupported). The streaming tool loop expects a sequence
 //! of `StreamEvent`s. Rather than re-implementing the whole response
 //! pipeline, we convert the JSON into the same event sequence that the

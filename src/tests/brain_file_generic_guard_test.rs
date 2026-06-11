@@ -1,11 +1,11 @@
 //! Issue #91 guardrail: protected brain files cannot be mutated via
 //! the generic `write_file` / `edit_file` tools. They must go through
-//! `write_opencrabs_file`, which enforces append-only writes,
+//! `write_stemcell_file`, which enforces append-only writes,
 //! dedup-aware shrinking, and `.bak` snapshots.
 //!
 //! Tests pin both the rejection (path under any directory ending in a
 //! protected brain file name) and the pass-through (non-brain files
-//! still write normally, even inside `~/.opencrabs/`).
+//! still write normally, even inside `~/.stemcell/`).
 
 use crate::brain::tools::edit::EditTool;
 use crate::brain::tools::write::WriteTool;
@@ -16,7 +16,7 @@ use uuid::Uuid;
 
 /// write_file refuses to overwrite a protected brain file even when
 /// the caller passes an absolute path that bypasses working-dir
-/// resolution. Error text must point the caller at write_opencrabs_file.
+/// resolution. Error text must point the caller at write_stemcell_file.
 #[tokio::test]
 async fn write_file_rejects_protected_brain_file() {
     let temp = TempDir::new().unwrap();
@@ -44,8 +44,8 @@ async fn write_file_rejects_protected_brain_file() {
     );
     let err = result.error.unwrap_or_default();
     assert!(
-        err.contains("write_opencrabs_file"),
-        "error must route caller to write_opencrabs_file, got: {err}"
+        err.contains("write_stemcell_file"),
+        "error must route caller to write_stemcell_file, got: {err}"
     );
     let still_there = std::fs::read_to_string(&brain_path).unwrap();
     assert_eq!(
@@ -84,8 +84,8 @@ async fn edit_file_rejects_protected_brain_file() {
     );
     let err = result.error.unwrap_or_default();
     assert!(
-        err.contains("write_opencrabs_file"),
-        "error must route caller to write_opencrabs_file, got: {err}"
+        err.contains("write_stemcell_file"),
+        "error must route caller to write_stemcell_file, got: {err}"
     );
     let still_there = std::fs::read_to_string(&brain_path).unwrap();
     assert_eq!(

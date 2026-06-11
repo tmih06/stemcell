@@ -1027,7 +1027,7 @@ impl AgentService {
             }
         }
 
-        // Claude Code tool name mapping (capitalized → OpenCrabs lowercase)
+        // Claude Code tool name mapping (capitalized → StemCell lowercase)
         // The cc-max-proxy returns Claude Code tool names which differ from ours.
         let mapped = match name.as_str() {
             "Bash" => Some("bash"),

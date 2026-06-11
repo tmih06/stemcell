@@ -4,7 +4,7 @@
 
 use anyhow::Result;
 use async_trait::async_trait;
-use opencrabs::llm::provider::{
+use stemcell::llm::provider::{
     error::{ProviderError, Result as ProviderResult},
     types::{
         ContentBlock, ContentDelta, LLMRequest, LLMResponse, MessageDelta, Role, StopReason,

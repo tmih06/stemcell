@@ -397,10 +397,10 @@ impl App {
         Ok(())
     }
 
-    /// Persist the current session ID to `~/.opencrabs/last_session` so
+    /// Persist the current session ID to `~/.stemcell/last_session` so
     /// the next startup can restore the correct session.
     fn save_last_session_id(session_id: Uuid) {
-        let base = crate::config::opencrabs_home();
+        let base = crate::config::stemcell_home();
         if let Err(e) = std::fs::write(base.join("last_session"), session_id.to_string()) {
             tracing::warn!("Failed to persist last_session: {}", e);
         }
@@ -408,7 +408,7 @@ impl App {
 
     /// Read the last active session ID from disk.
     pub(crate) fn read_last_session_id() -> Option<Uuid> {
-        let base = crate::config::opencrabs_home();
+        let base = crate::config::stemcell_home();
         let content = std::fs::read_to_string(base.join("last_session")).ok()?;
         Uuid::parse_str(content.trim()).ok()
     }

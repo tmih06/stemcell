@@ -46,8 +46,8 @@ mod repository {
         // The whole point of the (working_directory, path) primary key:
         // re-recording the same path must not produce duplicate rows.
         let (_db, repo) = setup().await;
-        let wd = "~/srv/rs/opencrabs";
-        let path = "~/srv/rs/opencrabs/src/main.rs";
+        let wd = "~/srv/rs/stemcell";
+        let path = "~/srv/rs/stemcell/src/main.rs";
         repo.record(wd, path).await.expect("first record");
         repo.record(wd, path).await.expect("second record");
         repo.record(wd, path).await.expect("third record");
@@ -198,9 +198,9 @@ mod augment {
     fn skips_path_already_in_message_text() {
         // Same uncompacted session: the path was just mentioned by
         // the assistant in plain text. Don't double-list it.
-        let recent = vec!["~/srv/rs/opencrabs/src/main.rs".to_string()];
+        let recent = vec!["~/srv/rs/stemcell/src/main.rs".to_string()];
         let messages = vec![Message::assistant(
-            "I'll edit ~/srv/rs/opencrabs/src/main.rs next.",
+            "I'll edit ~/srv/rs/stemcell/src/main.rs next.",
         )];
         let got =
             AgentService::augment_system_with_recent_paths(Some("BASE".into()), &recent, &messages);

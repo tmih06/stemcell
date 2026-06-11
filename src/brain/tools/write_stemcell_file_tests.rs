@@ -1,4 +1,4 @@
-//! Tests for `write_opencrabs_file` tool.
+//! Tests for `write_stemcell_file` tool.
 
 use super::*;
 use crate::brain::tools::r#trait::ToolExecutionContext;
@@ -9,8 +9,8 @@ fn ctx() -> ToolExecutionContext {
     ToolExecutionContext::new(Uuid::new_v4())
 }
 
-fn tool() -> WriteOpenCrabsFileTool {
-    WriteOpenCrabsFileTool
+fn tool() -> WriteStemCellFileTool {
+    WriteStemCellFileTool
 }
 
 // ── metadata ─────────────────────────────────────────────────────────────────
@@ -18,7 +18,7 @@ fn tool() -> WriteOpenCrabsFileTool {
 #[test]
 fn test_tool_name_and_requires_approval() {
     let t = tool();
-    assert_eq!(t.name(), "write_opencrabs_file");
+    assert_eq!(t.name(), "write_stemcell_file");
     assert!(t.requires_approval(), "writes must require approval");
 }
 
@@ -34,44 +34,44 @@ fn test_input_schema_required_fields() {
 
 #[test]
 fn test_empty_path_rejected() {
-    assert!(validate_opencrabs_path("").is_err());
+    assert!(validate_stemcell_path("").is_err());
 }
 
 #[test]
 fn test_absolute_path_rejected() {
-    assert!(validate_opencrabs_path("/etc/passwd").is_err());
-    assert!(validate_opencrabs_path("~/MEMORY.md").is_err());
+    assert!(validate_stemcell_path("/etc/passwd").is_err());
+    assert!(validate_stemcell_path("~/MEMORY.md").is_err());
 }
 
 #[test]
 fn test_path_traversal_rejected() {
-    assert!(validate_opencrabs_path("../etc/passwd").is_err());
-    assert!(validate_opencrabs_path("../../secrets").is_err());
-    assert!(validate_opencrabs_path("subdir/../../etc/passwd").is_err());
+    assert!(validate_stemcell_path("../etc/passwd").is_err());
+    assert!(validate_stemcell_path("../../secrets").is_err());
+    assert!(validate_stemcell_path("subdir/../../etc/passwd").is_err());
 }
 
 #[test]
 fn test_valid_brain_files_accepted() {
-    assert!(validate_opencrabs_path("MEMORY.md").is_ok());
-    assert!(validate_opencrabs_path("USER.md").is_ok());
-    assert!(validate_opencrabs_path("SOUL.md").is_ok());
+    assert!(validate_stemcell_path("MEMORY.md").is_ok());
+    assert!(validate_stemcell_path("USER.md").is_ok());
+    assert!(validate_stemcell_path("SOUL.md").is_ok());
 }
 
 #[test]
 fn test_valid_config_files_accepted() {
-    assert!(validate_opencrabs_path("commands.toml").is_ok());
-    assert!(validate_opencrabs_path("config.toml").is_ok());
+    assert!(validate_stemcell_path("commands.toml").is_ok());
+    assert!(validate_stemcell_path("config.toml").is_ok());
 }
 
 #[test]
 fn test_valid_subdirectory_paths_accepted() {
-    assert!(validate_opencrabs_path("memory/2026-03-02.md").is_ok());
-    assert!(validate_opencrabs_path("agents/session/context.json").is_ok());
+    assert!(validate_stemcell_path("memory/2026-03-02.md").is_ok());
+    assert!(validate_stemcell_path("agents/session/context.json").is_ok());
 }
 
 #[test]
 fn test_profiles_prefix_rejected() {
-    let result = validate_opencrabs_path("profiles/ops/TOOLS.md");
+    let result = validate_stemcell_path("profiles/ops/TOOLS.md");
     assert!(result.is_err());
     let err = result.unwrap_err();
     assert!(
@@ -84,7 +84,7 @@ fn test_profiles_prefix_rejected() {
     );
 
     // Also reject just "profiles/" with nothing after
-    let result2 = validate_opencrabs_path("profiles/ops/MEMORY.md");
+    let result2 = validate_stemcell_path("profiles/ops/MEMORY.md");
     assert!(result2.is_err());
 }
 

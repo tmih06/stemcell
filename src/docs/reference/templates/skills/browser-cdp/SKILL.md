@@ -35,6 +35,6 @@ Built-in browser control via Chrome DevTools Protocol — no Node.js, no Playwri
 
 ## Chrome Launch Failures
 
-1. **SingletonLock exists:** `rm -f ~/.opencrabs/chrome-profile/SingletonLock ~/.opencrabs/chrome-profile/SingletonCookie ~/.opencrabs/chrome-profile/SingletonSocket` then retry.
+1. **SingletonLock exists:** `rm -f ~/.stemcell/chrome-profile/SingletonLock ~/.stemcell/chrome-profile/SingletonCookie ~/.stemcell/chrome-profile/SingletonSocket` then retry.
 2. **DevTools data dir conflict:** `pkill -f chrome` then retry.
 3. **Channel closed:** Kill Chrome, delete lock files, retry.

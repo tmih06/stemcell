@@ -37,7 +37,7 @@ pub async fn generate_connection_greeting(agent: &AgentService, channel_name: &s
         model,
         vec![crate::brain::provider::types::Message::user(prompt)],
     )
-    .with_system("You are OpenCrabs, an AI assistant. Respond with only the requested text.");
+    .with_system("You are StemCell, an AI assistant. Respond with only the requested text.");
 
     let provider = agent.provider();
     match provider.complete(request).await {
