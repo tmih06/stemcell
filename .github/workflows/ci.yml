@@ -287,16 +287,22 @@ jobs:
         include:
           - platform: linux/amd64
             runner: ubuntu-latest
+            lto: fat
           - platform: linux/386
             runner: ubuntu-latest
+            lto: false
           - platform: linux/arm64
             runner: ubuntu-24.04-arm
+            lto: fat
           - platform: linux/arm/v7
-            runner: ubuntu-24.04-arm
+            runner: ubuntu-latest
+            lto: false
           - platform: linux/ppc64le
             runner: ubuntu-latest
+            lto: fat
           - platform: linux/s390x
             runner: ubuntu-latest
+            lto: fat
     steps:
       - name: Free disk space
         if: matrix.runner == 'ubuntu-latest'
@@ -321,6 +327,8 @@ jobs:
           context: .
           file: ${{ env.DOCKERFILE_PATH }}
           platforms: ${{ matrix.platform }}
+          build-args: |
+            CARGO_PROFILE_RELEASE_LTO=${{ matrix.lto }}
           tags: opencrabs:ci-${{ github.sha }}
           pull: true
           push: false

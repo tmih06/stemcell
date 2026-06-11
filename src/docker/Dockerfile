@@ -31,6 +31,9 @@ RUN cargo chef prepare --recipe-path recipe.json
 
 FROM chef AS builder
 
+ARG CARGO_PROFILE_RELEASE_LTO=fat
+ENV CARGO_PROFILE_RELEASE_LTO=${CARGO_PROFILE_RELEASE_LTO}
+
 COPY --from=planner /build/recipe.json recipe.json
 RUN cargo chef cook --locked --release --all-features --recipe-path recipe.json
 
