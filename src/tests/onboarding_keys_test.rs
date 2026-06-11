@@ -7,8 +7,8 @@ use crate::tui::onboarding::{OnboardingWizard, PROVIDERS};
 
 #[test]
 fn test_provider_count_matches() {
-    // Verify PROVIDERS array has 15 entries
-    assert_eq!(PROVIDERS.len(), 15);
+    // Verify PROVIDERS array has 16 entries
+    assert_eq!(PROVIDERS.len(), 16);
 
     // Verify provider names
     assert_eq!(PROVIDERS[0].name, "Anthropic Claude");
@@ -23,9 +23,10 @@ fn test_provider_count_matches() {
     assert_eq!(PROVIDERS[9].name, "Codex CLI");
     assert_eq!(PROVIDERS[10].name, "Codex");
     assert_eq!(PROVIDERS[11].name, "OpenCode");
-    assert_eq!(PROVIDERS[12].name, "Qwen");
-    assert_eq!(PROVIDERS[13].name, "Ollama");
-    assert_eq!(PROVIDERS[14].name, "Custom OpenAI-Compatible");
+    assert_eq!(PROVIDERS[12].name, "OpenCode Zen Free");
+    assert_eq!(PROVIDERS[13].name, "Qwen");
+    assert_eq!(PROVIDERS[14].name, "Ollama");
+    assert_eq!(PROVIDERS[15].name, "Custom OpenAI-Compatible");
 }
 
 #[test]
