@@ -14,6 +14,7 @@
 | `src/tui/plan_tests.rs` | Tests for plan rendering |
 | `src/tui/prompt_analyzer.rs` | Prompt quality/structure analysis |
 | `src/tui/provider_selector.rs` | Provider/model interactive selector |
+| `src/tui/model_search.rs` | Model search: multi-term matching + match highlighting |
 | `src/tui/onboarding_render.rs` | Onboarding wizard rendering logic |
 
 ## App Layer (`src/tui/app/`)

@@ -219,6 +219,7 @@
 | `src/tui/onboarding_render.rs` | Onboarding screen render (109KB) |
 | `src/tui/prompt_analyzer.rs` | Prompt analysis |
 | `src/tui/provider_selector.rs` | Provider selector UI |
+| `src/tui/model_search.rs` | Model search matching + highlighting (shared by /models + onboarding) |
 
 ## A2A
 
