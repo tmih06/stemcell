@@ -155,7 +155,9 @@ impl StartupJob for FetchModelsJob {
 /// non-chat surface (embeddings, image generation) rather than an omission.
 pub(crate) fn is_chat_capable(tool_call: Option<bool>, input_modalities: &[String]) -> bool {
     let takes_text = input_modalities.is_empty()
-        || input_modalities.iter().any(|m| m.eq_ignore_ascii_case("text"));
+        || input_modalities
+            .iter()
+            .any(|m| m.eq_ignore_ascii_case("text"));
     tool_call == Some(true) && takes_text
 }
 
@@ -274,8 +276,12 @@ async fn fetch_modelsdev_catalog() -> HashMap<String, Vec<CachedModel>> {
 
             let cost_obj = model_val.get("cost");
             let cost = ModelCost {
-                input: cost_obj.and_then(|c| c.get("input")).and_then(|v| v.as_f64()),
-                output: cost_obj.and_then(|c| c.get("output")).and_then(|v| v.as_f64()),
+                input: cost_obj
+                    .and_then(|c| c.get("input"))
+                    .and_then(|v| v.as_f64()),
+                output: cost_obj
+                    .and_then(|c| c.get("output"))
+                    .and_then(|v| v.as_f64()),
                 cache_read: cost_obj
                     .and_then(|c| c.get("cache_read"))
                     .and_then(|v| v.as_f64()),
@@ -294,15 +300,18 @@ async fn fetch_modelsdev_catalog() -> HashMap<String, Vec<CachedModel>> {
                     .and_then(|v| v.as_u64()),
             };
 
-            catalog.entry(our_id.to_string()).or_default().push(CachedModel {
-                id: model_id.clone(),
-                name,
-                tool_call,
-                reasoning,
-                input_modalities,
-                cost,
-                limit,
-            });
+            catalog
+                .entry(our_id.to_string())
+                .or_default()
+                .push(CachedModel {
+                    id: model_id.clone(),
+                    name,
+                    tool_call,
+                    reasoning,
+                    input_modalities,
+                    cost,
+                    limit,
+                });
         }
     }
 

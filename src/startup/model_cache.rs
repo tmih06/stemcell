@@ -280,7 +280,12 @@ pub fn store(provider: &str, models: Vec<String>) {
     let models: Vec<CachedModel> = models
         .into_iter()
         .filter(|id| is_chat_capable_model_id(id))
-        .map(|id| prior.get(&id).cloned().unwrap_or_else(|| CachedModel::id_only(id)))
+        .map(|id| {
+            prior
+                .get(&id)
+                .cloned()
+                .unwrap_or_else(|| CachedModel::id_only(id))
+        })
         .collect();
     write_entry(&mut cache, provider, models);
 }
