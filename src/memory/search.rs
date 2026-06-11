@@ -52,7 +52,7 @@ pub async fn search(
         let store = store
             .lock()
             .map_err(|e| format!("Store lock poisoned: {e}"))?;
-        let home = crate::config::opencrabs_home();
+        let home = crate::config::stemcell_home();
 
         let fts_results = store
             .search_fts(&fts_query, n, None)

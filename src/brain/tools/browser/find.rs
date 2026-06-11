@@ -95,8 +95,8 @@ impl Tool for BrowserFindTool {
         };
 
         // All four modes run server-side JS that enumerates matches
-        // and assigns each a `data-opencrabs-match` attribute so the
-        // returned selector (`[data-opencrabs-match="N"]`) is stable
+        // and assigns each a `data-stemcell-match` attribute so the
+        // returned selector (`[data-stemcell-match="N"]`) is stable
         // and unique for the next click/type turn. The attribute is
         // cleared first to avoid leaking state across calls.
         let enumerate_js = build_find_js(mode, &pattern, limit);
@@ -177,25 +177,25 @@ pub(crate) fn build_find_js(mode: &str, pattern: &str, limit: usize) -> String {
         ),
     };
 
-    // Wrap with the "assign stable data-opencrabs-match and serialise"
+    // Wrap with the "assign stable data-stemcell-match and serialise"
     // step, shared across all modes.
     format!(
         r#"
         (() => {{
-            document.querySelectorAll('[data-opencrabs-match]').forEach(
-                el => el.removeAttribute('data-opencrabs-match'));
+            document.querySelectorAll('[data-stemcell-match]').forEach(
+                el => el.removeAttribute('data-stemcell-match'));
             const nodes = {walker};
             const out = [];
             for (let i = 0; i < nodes.length; i++) {{
                 const el = nodes[i];
                 if (!el || !(el instanceof Element)) continue;
-                el.setAttribute('data-opencrabs-match', String(i));
+                el.setAttribute('data-stemcell-match', String(i));
                 const rect = el.getBoundingClientRect();
                 const visible = rect.width > 0 && rect.height > 0
                     && getComputedStyle(el).visibility !== 'hidden'
                     && getComputedStyle(el).display !== 'none';
                 out.push({{
-                    selector: '[data-opencrabs-match="' + i + '"]',
+                    selector: '[data-stemcell-match="' + i + '"]',
                     text: (el.innerText || el.textContent || '').trim().slice(0, 200),
                     tag: el.tagName.toLowerCase(),
                     visible: visible,

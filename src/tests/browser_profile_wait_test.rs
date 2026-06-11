@@ -1,10 +1,10 @@
 //! Tests for `wait_for_profile_unlock` — the backoff loop that gives
 //! the user's main browser a few seconds to release its profile lock
-//! before we fall back to the empty opencrabs profile.
+//! before we fall back to the empty stemcell profile.
 //!
 //! Scenario the retry protects against: user just clicked the Brave
 //! dock icon, Chrome's `SingletonLock` appears for ~1–3 seconds while
-//! the browser starts up, opencrabs tries to launch in that window,
+//! the browser starts up, stemcell tries to launch in that window,
 //! sees the lock, falls through to the empty fallback profile —
 //! user's cookies and logins gone.
 
@@ -15,7 +15,7 @@ use std::fs;
 
 fn scratch(tag: &str) -> std::path::PathBuf {
     let dir = std::env::temp_dir().join(format!(
-        "opencrabs-profile-wait-test-{}-{}",
+        "stemcell-profile-wait-test-{}-{}",
         tag,
         std::process::id()
     ));
@@ -70,7 +70,7 @@ async fn returns_true_after_lock_removed_during_wait() {
 #[tokio::test]
 async fn returns_false_when_cap_elapses() {
     // Lock never goes away → cap exhausts → returns false so the
-    // caller can fall through to the empty opencrabs profile.
+    // caller can fall through to the empty stemcell profile.
     let dir = scratch("permanent");
     fs::write(dir.join("SingletonLock"), b"stays-locked").unwrap();
 

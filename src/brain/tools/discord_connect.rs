@@ -35,7 +35,7 @@ impl Tool for DiscordConnectTool {
     }
 
     fn description(&self) -> &str {
-        "Connect a Discord bot to OpenCrabs. Accepts a bot token and starts listening for \
+        "Connect a Discord bot to StemCell. Accepts a bot token and starts listening for \
          messages. The user must first create a bot at https://discord.com/developers/applications, \
          enable MESSAGE CONTENT intent, and invite the bot to their server. \
          Call this when the user asks to connect or set up Discord."

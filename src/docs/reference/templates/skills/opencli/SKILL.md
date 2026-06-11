@@ -26,4 +26,4 @@ Requires daemon running (`opencli-rs --daemon` on port 19825) + Brave extension 
 
 ## Full tool definitions
 
-`~/.opencrabs/tools.toml` — check this file for exact command syntax, parameters, and defaults.
+`~/.stemcell/tools.toml` — check this file for exact command syntax, parameters, and defaults.

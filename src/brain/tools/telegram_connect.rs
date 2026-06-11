@@ -34,7 +34,7 @@ impl Tool for TelegramConnectTool {
     }
 
     fn description(&self) -> &str {
-        "Connect a Telegram bot to OpenCrabs. Accepts a bot token from @BotFather and starts \
+        "Connect a Telegram bot to StemCell. Accepts a bot token from @BotFather and starts \
          listening for messages. The user must first create a bot via @BotFather on Telegram. \
          Call this when the user asks to connect or set up Telegram."
     }

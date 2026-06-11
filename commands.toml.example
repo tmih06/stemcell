@@ -1,5 +1,5 @@
-# OpenCrabs User-Defined Slash Commands
-# Copy this to ~/.opencrabs/commands.toml
+# StemCell User-Defined Slash Commands
+# Copy this to ~/.stemcell/commands.toml
 #
 # Commands appear instantly in the / autocomplete dropdown.
 # Changes are hot-reloaded — no restart needed.
@@ -23,9 +23,9 @@ prompt = "Run ./deploy.sh staging and report the result."
 
 [[commands]]
 name = "/rebuild"
-description = "Build and restart OpenCrabs from source"
+description = "Build and restart StemCell from source"
 action = "prompt"
-prompt = 'Run `RUSTFLAGS="-C target-cpu=native" cargo build --release` in /srv/rs/opencrabs. If it succeeds, ask if I want to restart now.'
+prompt = 'Run `RUSTFLAGS="-C target-cpu=native" cargo build --release` in /srv/rs/stemcell. If it succeeds, ask if I want to restart now.'
 
 # ========================================
 # Example: Productivity Commands

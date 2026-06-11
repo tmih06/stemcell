@@ -1,4 +1,4 @@
-// Crabrace client integration for OpenCrabs
+// Crabrace client integration for StemCell
 // Replaces the planned Catwalk integration with Crabrace
 
 use anyhow::{Context, Result};
@@ -53,7 +53,7 @@ impl Default for CrabraceConfig {
     }
 }
 
-/// Crabrace client wrapper for OpenCrabs
+/// Crabrace client wrapper for StemCell
 pub struct CrabraceIntegration {
     client: CrabraceClient,
     config: CrabraceConfig,

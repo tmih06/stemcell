@@ -130,7 +130,7 @@ const TOGGLE_TO_FEATURES: &[(&str, &[&str])] = &[
             "tool-slash-command",
             "tool-rename-session",
             "tool-load-brain-file",
-            "tool-write-opencrabs-file",
+            "tool-write-stemcell-file",
             "tool-a2a-send",
         ],
     ),
@@ -161,8 +161,8 @@ fn main() {
     {
         let mut res = winresource::WindowsResource::new();
         res.set_icon("src/assets/icon.ico");
-        res.set("ProductName", "OpenCrabs");
-        res.set("FileDescription", "OpenCrabs — AI Agent");
+        res.set("ProductName", "StemCell");
+        res.set("FileDescription", "StemCell — LLM Harness");
         res.compile().expect("Failed to compile Windows resources");
     }
 }
@@ -265,7 +265,7 @@ fn validate_build_toggles() {
         );
     }
 
-    if let Ok(expected_csv) = std::env::var("OPENCRABS_EXPECTED_FEATURES") {
+    if let Ok(expected_csv) = std::env::var("STEMCELL_EXPECTED_FEATURES") {
         let expected: BTreeSet<String> = expected_csv
             .split(',')
             .map(str::trim)

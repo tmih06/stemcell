@@ -35,9 +35,8 @@ COPY --from=planner /build/recipe.json recipe.json
 RUN cargo chef cook --locked --release --all-features --recipe-path recipe.json
 
 COPY . .
-RUN cargo build --locked --release --all-features --bin opencrabs \
-    && install -Dm755 target/release/opencrabs /out/opencrabs \
-    && strip /out/opencrabs
+RUN cargo build --locked --release --all-features \
+    && strip target/release/stemcell
 
 # ── Stage 2: Runtime ───────────────────────────────────────────
 FROM debian:bookworm-slim
@@ -52,15 +51,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Create non-root user
-RUN useradd -m -s /bin/sh opencrabs
+RUN useradd -m -s /bin/bash stemcell
 
 # Copy binary from builder
-COPY --from=builder /out/opencrabs /usr/local/bin/opencrabs
+COPY --from=builder /build/target/release/stemcell /usr/local/bin/stemcell
 
 # Workspace and config persist via volume
-VOLUME /home/opencrabs/.opencrabs
+VOLUME /home/stemcell/.stemcell
 
-USER opencrabs
-WORKDIR /home/opencrabs
+USER stemcell
+WORKDIR /home/stemcell
 
-ENTRYPOINT ["opencrabs"]
+ENTRYPOINT ["stemcell"]

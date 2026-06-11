@@ -518,7 +518,7 @@ pub(super) fn render_chat(f: &mut Frame, app: &mut App, area: Rect) {
                     .add_modifier(Modifier::BOLD),
             ),
             Span::styled(
-                "🦀 OpenCrabs ",
+                "🦀 StemCell ",
                 Style::default()
                     .fg(Color::Gray)
                     .add_modifier(Modifier::BOLD),
@@ -595,7 +595,7 @@ pub(super) fn render_chat(f: &mut Frame, app: &mut App, area: Rect) {
                     .add_modifier(Modifier::BOLD),
             ),
             Span::styled(
-                "🦀 OpenCrabs ",
+                "🦀 StemCell ",
                 Style::default()
                     .fg(Color::Gray)
                     .add_modifier(Modifier::BOLD),
@@ -622,7 +622,7 @@ pub(super) fn render_chat(f: &mut Frame, app: &mut App, area: Rect) {
         lines.push(Line::from(header_spans));
     }
 
-    // Inline "OpenCrabs is thinking..." spinner during tool execution / waiting
+    // Inline "StemCell is thinking..." spinner during tool execution / waiting
     // (no streaming text or reasoning yet). Renders ABOVE the tool group so the
     // user always sees the spinner on top of the processing indicator.
     // Hide when user has scrolled up so the viewport stays frozen.
@@ -646,7 +646,7 @@ pub(super) fn render_chat(f: &mut Frame, app: &mut App, area: Rect) {
                     .add_modifier(Modifier::BOLD),
             ),
             Span::styled(
-                "OpenCrabs is thinking...",
+                "StemCell is thinking...",
                 Style::default().fg(Color::Rgb(215, 100, 20)),
             ),
         ];

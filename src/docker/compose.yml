@@ -1,9 +1,9 @@
 services:
-  opencrabs:
+  stemcell:
     build:
       context: ..
       dockerfile: src/docker/Dockerfile
-    container_name: opencrabs
+    container_name: stemcell
     restart: unless-stopped
     # Load .env from project root if it exists (optional — onboarding wizard works without it)
     env_file:
@@ -24,10 +24,10 @@ services:
       - SLACK_APP_TOKEN
     volumes:
       # Persist config, workspace, memory DB across restarts
-      - opencrabs-data:/home/opencrabs/.opencrabs
+      - stemcell-data:/home/stemcell/.stemcell
     # Interactive TUI needs a TTY
     tty: true
     stdin_open: true
 
 volumes:
-  opencrabs-data:
+  stemcell-data:

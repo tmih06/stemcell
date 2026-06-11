@@ -1,8 +1,8 @@
 //! Tests for the browser profile stale-lock sweeper.
 //!
-//! Pins the P0 fix: before launching Chrome against the opencrabs-owned
+//! Pins the P0 fix: before launching Chrome against the stemcell-owned
 //! fallback profile, we sweep leftover `SingletonLock` / `SingletonSocket`
-//! / `Lock` files. A previous opencrabs Chrome process that crashed leaves
+//! / `Lock` files. A previous stemcell Chrome process that crashed leaves
 //! these behind, and the next launch refuses to start with
 //! `"Failed to create SingletonLock: File exists (17)"` (see the 2026-04-11
 //! 16:57 and 2026-04-17 15:00 log incidents).
@@ -17,7 +17,7 @@ use std::path::PathBuf;
 /// parallel without stepping on each other.
 fn scratch(tag: &str) -> PathBuf {
     let dir = std::env::temp_dir().join(format!(
-        "opencrabs-browser-locks-test-{}-{}",
+        "stemcell-browser-locks-test-{}-{}",
         tag,
         std::process::id()
     ));

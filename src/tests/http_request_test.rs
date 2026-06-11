@@ -6,7 +6,7 @@
 //! by administrative rules. Please make sure your request has a
 //! User-Agent header." reqwest ships with no default UA, and the
 //! model had no way to know GitHub mandates one — the tool now sets
-//! `opencrabs/<CARGO_PKG_VERSION>` automatically on every request.
+//! `stemcell/<CARGO_PKG_VERSION>` automatically on every request.
 //!
 //! We use mockito to stand up a local HTTP server and assert the
 //! UA header is present on the request reqwest actually sent.
@@ -21,10 +21,10 @@ fn ctx() -> ToolExecutionContext {
 }
 
 #[tokio::test]
-async fn default_user_agent_is_opencrabs_with_version() {
+async fn default_user_agent_is_stemcell_with_version() {
     let mut server = mockito::Server::new_async().await;
     let url = server.url();
-    let expected_ua = concat!("opencrabs/", env!("CARGO_PKG_VERSION"));
+    let expected_ua = concat!("stemcell/", env!("CARGO_PKG_VERSION"));
 
     let _mock = server
         .mock("GET", "/anything")
@@ -54,7 +54,7 @@ async fn caller_supplied_user_agent_overrides_default() {
 
     // mockito matches headers case-insensitively, so "User-Agent" vs
     // "user-agent" is not an issue here. We just need the VALUE to
-    // be the caller's custom string, NOT the default opencrabs/X.Y.Z.
+    // be the caller's custom string, NOT the default stemcell/X.Y.Z.
     let _mock = server
         .mock("GET", "/anything")
         .match_header("user-agent", "my-custom-agent/1.0")
@@ -82,7 +82,7 @@ async fn forbidden_response_surfaces_body_to_caller() {
     // Regression: the original GitHub 403s included a helpful body
     // ("Please make sure your request has a User-Agent header"). The
     // tool needs to propagate that body to the LLM so when the fix
-    // doesn't help (e.g. a future provider banning UA=opencrabs/*),
+    // doesn't help (e.g. a future provider banning UA=stemcell/*),
     // the model sees the actual reason instead of an opaque failure.
     let mut server = mockito::Server::new_async().await;
     let url = server.url();

@@ -2,7 +2,7 @@
 //! distinguish "stream truly truncated" from "provider doesn't send
 //! [DONE] but the response is fine".
 //!
-//! Regression context: 2026-05-30, user observed "OpenCrabs is
+//! Regression context: 2026-05-30, user observed "StemCell is
 //! responding... (491s · 2182 tok)" with the response already
 //! fully rendered in the chat. Root cause: dialagram +
 //! qwen-3.7-max-thinking closes the TCP stream without `[DONE]`

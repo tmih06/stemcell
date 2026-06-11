@@ -1,10 +1,10 @@
-//! OpenCrabs binary entry point.
+//! StemCell binary entry point.
 //!
-//! See the [`opencrabs`] library crate for full documentation.
+//! See the [`stemcell`] library crate for full documentation.
 
 use anyhow::Result;
 use clap::Parser;
-use opencrabs::{cli, logging};
+use stemcell::{cli, logging};
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -45,7 +45,7 @@ async fn main() -> Result<()> {
     let result = cli::run().await;
 
     // Print the error chain to stderr on failure. Without this, a CLI
-    // subcommand that returns Err (e.g. `opencrabs cron list` hitting a
+    // subcommand that returns Err (e.g. `stemcell cron list` hitting a
     // bad row) exits with status 1 and zero output, which makes
     // diagnosis a guessing game. The TUI's own error surfacing
     // (`tracing` + on-screen alerts) handles its lifecycle separately,

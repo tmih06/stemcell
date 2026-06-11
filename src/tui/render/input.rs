@@ -817,7 +817,7 @@ pub(super) fn render_emoji_picker(f: &mut Frame, app: &App, input_area: Rect) {
 
 /// Render the single-line status bar below the input box.
 ///
-/// Layout:  provider / model  ·  [policy]          ⠙ OpenCrabs is thinking... (3s)
+/// Layout:  provider / model  ·  [policy]          ⠙ StemCell is thinking... (3s)
 pub(super) fn render_status_bar(f: &mut Frame, app: &App, area: Rect) {
     if area.height == 0 || area.width == 0 {
         return;
@@ -885,9 +885,9 @@ pub(super) fn render_status_bar(f: &mut Frame, app: &App, area: Rect) {
     let git_branch = crate::utils::git_branch::current_branch(&app.working_directory);
 
     // Active profile chip. Shown only when the user explicitly picked a
-    // profile (via `-p <name>` or the `OPENCRABS_PROFILE` env var). When
+    // profile (via `-p <name>` or the `STEMCELL_PROFILE` env var). When
     // `active_profile()` returns `None` the agent is using the base
-    // `~/.opencrabs/` directory — there is no real profile by that name
+    // `~/.stemcell/` directory — there is no real profile by that name
     // on disk, so we OMIT the chip rather than invent a "default" label
     // that doesn't exist anywhere. Closes issue #167.
     let profile_chip = crate::config::profile::active_profile()

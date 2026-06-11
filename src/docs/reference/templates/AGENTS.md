@@ -180,19 +180,19 @@ Reactions are lightweight social signals. Humans use them constantly — they sa
 
 ## Workspace vs Repository (CRITICAL)
 
-OpenCrabs separates **upstream code** from **user data**. This is sacred.
+StemCell separates **upstream code** from **user data**. This is sacred.
 
 | Location | Purpose | Safe to `git pull`? |
 |----------|---------|---------------------|
-| `/srv/rs/opencrabs/` (or wherever source lives) | Source code, binary, default templates | ✅ Yes — always safe |
-| `~/.opencrabs/` | YOUR workspace — config, memory, identity, custom code | 🚫 Never touched by git |
+| `/srv/rs/stemcell/` (or wherever source lives) | Source code, binary, default templates | ✅ Yes — always safe |
+| `~/.stemcell/` | YOUR workspace — config, memory, identity, custom code | 🚫 Never touched by git |
 
 ### User Customizations — Where They Live
 
 All custom skills, tools, plugins, and implementations go in your **workspace**, never in the repo:
 
 ```
-~/.opencrabs/
+~/.stemcell/
 ├── skills/          # Custom skills you create or install
 ├── plugins/         # Custom plugins and extensions
 ├── scripts/         # Custom automation scripts
@@ -208,28 +208,28 @@ All custom skills, tools, plugins, and implementations go in your **workspace**,
 
 ### Why This Matters
 - **`git pull` is always safe** — it only touches source code and default templates
-- **Your custom work is never overwritten** — skills, plugins, scripts, memory, config all live in `~/.opencrabs/`
+- **Your custom work is never overwritten** — skills, plugins, scripts, memory, config all live in `~/.stemcell/`
 - **Upgrades are painless** — `/evolve` downloads the latest binary, or pull + rebuild from source. Your customizations persist.
 
-### Upgrading OpenCrabs
+### Upgrading StemCell
 
 **Option 1 — Binary update (recommended):**
 Type `/evolve` in the TUI or any channel. The agent downloads the latest release binary from GitHub and hot-restarts. No Rust toolchain needed.
 
 **Option 2 — Build from source:**
 ```bash
-cd /srv/rs/opencrabs    # or wherever your source lives
+cd /srv/rs/stemcell    # or wherever your source lives
 git pull origin main
 cargo build --release
 # Or type /rebuild in the TUI
 ```
 
-Both options leave your workspace at `~/.opencrabs/` untouched.
+Both options leave your workspace at `~/.stemcell/` untouched.
 
 ### Creating Custom Skills/Tools
 When you build something custom:
-1. Put it in `~/.opencrabs/skills/` or `~/.opencrabs/plugins/`
-2. Document it in `~/.opencrabs/TOOLS.md`
+1. Put it in `~/.stemcell/skills/` or `~/.stemcell/plugins/`
+2. Document it in `~/.stemcell/TOOLS.md`
 3. **Never** put custom code in the repo directory — it'll get wiped on upgrade
 
 ### Rust-First Policy
@@ -266,7 +266,7 @@ When creating cron jobs, follow these guidelines:
 
 ### Template for Isolated Cron Job:
 ```bash
-opencrabs cron add \
+stemcell cron add \
   --name "Task Name" \
   --cron "0 9 * * *" \
   --tz "UTC" \

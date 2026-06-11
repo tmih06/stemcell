@@ -19,7 +19,7 @@ impl StartupJob for CheckEnvsJob {
 
         if provider == "none" {
             tracing::warn!(
-                "[startup] no active provider configured — set an API key or run `opencrabs onboard`"
+                "[startup] no active provider configured — set an API key or run `stemcell onboard`"
             );
             return Ok(Some("no active provider configured".to_string()));
         }

@@ -1,14 +1,14 @@
 [package]
-name = "opencrabs"
+name = "stemcell"
 version = "0.3.35"
 edition = "2024"
 rust-version = "1.91"
-authors = ["Adolfo Usier <adolfo@meetneura.ai>"]
+authors = ["tmih06 <tmih06@github.com>"]
 license = "MIT"
-description = "The autonomous, self-improving AI agent. Single Rust binary. Every channel. Install with: cargo install opencrabs"
-repository = "https://github.com/adolfousier/opencrabs"
-homepage = "https://opencrabs.com"
-documentation = "https://docs.opencrabs.com"
+description = "StemCell — a modular, build-time-optimized harness layer for LLMs. Customize into any cell that does a specific job."
+repository = "https://github.com/tmih06/stemcell"
+homepage = "https://github.com/tmih06/stemcell"
+documentation = "https://github.com/tmih06/stemcell"
 keywords = ["ai", "terminal", "assistant", "llm", "cli"]
 categories = ["command-line-utilities", "development-tools"]
 readme = "README.md"
@@ -298,13 +298,13 @@ tools-brain = [
     "tool-slash-command",
     "tool-rename-session",
     "tool-load-brain-file",
-    "tool-write-opencrabs-file",
+    "tool-write-stemcell-file",
     "tool-a2a-send",
 ]
 tool-slash-command = []
 tool-rename-session = []
 tool-load-brain-file = []
-tool-write-opencrabs-file = []
+tool-write-stemcell-file = []
 tool-a2a-send = []
 
 # Messaging platform connectors (depends on telegram/discord/slack/whatsapp/trello features)
@@ -368,7 +368,7 @@ tool-dynamic-runtime = ["tools-dynamic"]
 # into [tools] / [channels] / [capabilities] sections. The Python
 # resolver (src/scripts/tool_features.py) reads it and produces the
 # `--features` list for the build. build.rs cross-checks the resolved
-# set against the active Cargo features via OPENCRABS_EXPECTED_FEATURES.
+# set against the active Cargo features via STEMCELL_EXPECTED_FEATURES.
 
 [profile.dev]
 opt-level = 0
@@ -398,7 +398,7 @@ lto = "thin"
 codegen-units = 16
 
 [[bin]]
-name = "opencrabs"
+name = "stemcell"
 path = "src/main.rs"
 
 # Benchmarks

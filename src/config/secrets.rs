@@ -127,7 +127,7 @@ mod tests {
     #[test]
     fn test_secret_string_from_env_missing() {
         // Test that a non-existent env var returns None (no env loading)
-        let result = std::env::var("OPENCRABS_TEST_NONEXISTENT_KEY_12345");
+        let result = std::env::var("STEMCELL_TEST_NONEXISTENT_KEY_12345");
         assert!(result.is_err());
     }
 

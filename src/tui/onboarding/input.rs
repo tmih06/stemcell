@@ -79,7 +79,7 @@ impl OnboardingWizard {
             // Paste replaces untouched template, appends to edited field
             let field = match self.brain_field {
                 BrainField::AboutMe => &mut self.about_me,
-                BrainField::AboutAgent => &mut self.about_opencrabs,
+                BrainField::AboutAgent => &mut self.about_stemcell,
             };
             let edited = match self.brain_field {
                 BrainField::AboutMe => self.brain_me_edited,

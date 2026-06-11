@@ -24,8 +24,8 @@ fn collapses_home_root_to_just_tilde() {
 
 #[test]
 fn collapses_dotfile_under_home() {
-    let p = home().join(".opencrabs/logs/opencrabs.2026-04-26");
-    assert_eq!(collapse_home(&p), "~/.opencrabs/logs/opencrabs.2026-04-26");
+    let p = home().join(".stemcell/logs/stemcell.2026-04-26");
+    assert_eq!(collapse_home(&p), "~/.stemcell/logs/stemcell.2026-04-26");
 }
 
 #[test]
@@ -61,7 +61,7 @@ fn passes_through_relative_path_unchanged() {
 fn round_trips_with_expand_tilde() {
     // collapse_home and expand_tilde are inverses: expanding what we
     // collapsed should give back the original absolute PathBuf.
-    for relative in ["srv/dart/heyiolo", ".opencrabs", ".config/nvim/init.lua"] {
+    for relative in ["srv/dart/heyiolo", ".stemcell", ".config/nvim/init.lua"] {
         let original = home().join(relative);
         let collapsed = collapse_home(&original);
         let re_expanded = expand_tilde(&collapsed);

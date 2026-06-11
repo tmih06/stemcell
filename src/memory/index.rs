@@ -7,7 +7,7 @@ use std::sync::Mutex;
 use super::embedding::{backfill_embeddings, embed_content, embed_content_api, embed_via_api};
 use super::{COLLECTION_BRAIN, COLLECTION_MEMORY, embedding_api_config, embedding_api_configured};
 
-/// Brain files loaded from the workspace root (`~/.opencrabs/`).
+/// Brain files loaded from the workspace root (`~/.stemcell/`).
 pub const BRAIN_FILES: &[&str] = &[
     "SOUL.md",
     "USER.md",
@@ -109,13 +109,13 @@ fn index_file_sync(
     Ok(true)
 }
 
-/// Walk `~/.opencrabs/memory/*.md` and `~/.opencrabs/*.md` brain files, indexing all.
+/// Walk `~/.stemcell/memory/*.md` and `~/.stemcell/*.md` brain files, indexing all.
 ///
 /// Also deactivates entries for files that no longer exist on disk.
 /// After indexing, backfills embeddings for any documents missing them.
 /// Returns the number of files indexed.
 pub async fn reindex(store: &'static Mutex<Store>) -> Result<usize, String> {
-    let home = crate::config::opencrabs_home();
+    let home = crate::config::stemcell_home();
     let dir = home.join("memory");
     let mut indexed = 0usize;
     let mut memory_on_disk: Vec<String> = Vec::new();
@@ -229,7 +229,7 @@ pub async fn reindex(store: &'static Mutex<Store>) -> Result<usize, String> {
         .map_err(|e| format!("spawn_blocking failed: {e}"))?;
 
         // Async backfill: spawn as a background task
-        let home = crate::config::opencrabs_home();
+        let home = crate::config::stemcell_home();
         tokio::spawn(async move {
             let store_ref = store;
             // Get hashes needing embedding

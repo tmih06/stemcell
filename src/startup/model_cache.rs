@@ -5,7 +5,7 @@
 //! boot so the dialog can populate instantly from disk, then refresh in the
 //! background.
 //!
-//! Persisted to `startup_models_cache.json` in the opencrabs base dir,
+//! Persisted to `startup_models_cache.json` in the stemcell base dir,
 //! following the `claude_cli_models.json` precedent.
 
 use serde::{Deserialize, Serialize};
@@ -97,7 +97,7 @@ pub type ModelCache = HashMap<String, CachedEntry>;
 /// Path to the cache file. Test builds use a temp-dir override.
 #[cfg(not(test))]
 fn cache_path() -> PathBuf {
-    crate::config::profile::base_opencrabs_dir().join("startup_models_cache.json")
+    crate::config::profile::base_stemcell_dir().join("startup_models_cache.json")
 }
 
 #[cfg(test)]
@@ -110,7 +110,7 @@ fn cache_path() -> PathBuf {
     TEST_CACHE_PATH.with(|p| {
         p.borrow()
             .clone()
-            .unwrap_or_else(|| std::env::temp_dir().join("opencrabs-model-cache-unset.json"))
+            .unwrap_or_else(|| std::env::temp_dir().join("stemcell-model-cache-unset.json"))
     })
 }
 

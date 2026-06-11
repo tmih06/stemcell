@@ -32,7 +32,7 @@ fn downgrade_no_evolve_message() {
 #[test]
 fn env_var_name_is_correct() {
     // Verify the env var name matches what self_update.rs sets
-    assert_eq!("OPENCRABS_EVOLVED_FROM", "OPENCRABS_EVOLVED_FROM");
+    assert_eq!("STEMCELL_EVOLVED_FROM", "STEMCELL_EVOLVED_FROM");
 }
 
 #[test]

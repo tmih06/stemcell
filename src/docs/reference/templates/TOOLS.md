@@ -48,9 +48,9 @@ and RSI instructions are already in the system prompt — don't duplicate them h
 
 | What | Path |
 |------|------|
-| Brain files | `~/.opencrabs/{SOUL,USER,AGENTS,TOOLS,MEMORY,CODE,SECURITY}.md` |
-| Config | `~/.opencrabs/config.toml` |
-| Keys | `~/.opencrabs/keys.toml` |
-| Commands | `~/.opencrabs/commands.toml` |
-| Plans | `~/.opencrabs/agents/session/.opencrabs_plan_<id>.json` |
-| Logs | `~/.opencrabs/logs/opencrabs.YYYY-MM-DD` |
+| Brain files | `~/.stemcell/{SOUL,USER,AGENTS,TOOLS,MEMORY,CODE,SECURITY}.md` |
+| Config | `~/.stemcell/config.toml` |
+| Keys | `~/.stemcell/keys.toml` |
+| Commands | `~/.stemcell/commands.toml` |
+| Plans | `~/.stemcell/agents/session/.stemcell_plan_<id>.json` |
+| Logs | `~/.stemcell/logs/stemcell.YYYY-MM-DD` |

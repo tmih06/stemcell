@@ -989,7 +989,7 @@ fn try_create_openrouter(config: &Config) -> Result<Option<Arc<dyn Provider>>> {
                 ("X-Title".to_string(), "Open Crabs".to_string()),
                 (
                     "HTTP-Referer".to_string(),
-                    "https://opencrabs.com".to_string(),
+                    "https://stemcell.com".to_string(),
                 ),
             ]),
         openrouter_config,

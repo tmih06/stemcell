@@ -148,7 +148,7 @@ pub(super) fn render_help(f: &mut Frame, app: &App, area: Rect) {
         Line::from(vec![
             Span::styled(" 📖 ", Style::default().fg(Color::Rgb(215, 100, 20))),
             Span::styled(
-                "docs.opencrabs.com",
+                "github.com/tmih06/stemcell",
                 Style::default()
                     .fg(Color::Cyan)
                     .add_modifier(Modifier::UNDERLINED),
@@ -315,7 +315,7 @@ pub(super) fn render_settings(f: &mut Frame, app: &App, area: Rect) {
     // Config file path
     let config_path = crate::config::Config::system_config_path()
         .map(|p| p.display().to_string())
-        .unwrap_or_else(|| "~/.opencrabs/config.toml".into());
+        .unwrap_or_else(|| "~/.stemcell/config.toml".into());
 
     let home_dir = dirs::home_dir()
         .map(|h| h.to_string_lossy().to_string())

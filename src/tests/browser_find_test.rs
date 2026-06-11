@@ -1,6 +1,6 @@
 //! Tests for the `browser_find` JS builder. Each test pins the shape
 //! of the JS we send into the page — assigning a stable
-//! `data-opencrabs-match` attribute and returning an array of
+//! `data-stemcell-match` attribute and returning an array of
 //! `{selector, text, tag, visible}` objects — so the selectors the
 //! model passes back to browser_click are deterministic.
 //!
@@ -79,14 +79,14 @@ fn escapes_backslashes() {
 
 #[test]
 fn clears_previous_match_attributes_before_re_enumerating() {
-    // Every call starts by stripping any `data-opencrabs-match`
+    // Every call starts by stripping any `data-stemcell-match`
     // attributes left over from the previous call. Without this,
     // stale indices from call N would coexist with fresh indices
     // from call N+1 on different elements and the returned selector
     // would be ambiguous.
     let js = build_find_js("css", ".btn", 5);
-    assert!(js.contains("[data-opencrabs-match]"));
-    assert!(js.contains("removeAttribute('data-opencrabs-match')"));
+    assert!(js.contains("[data-stemcell-match]"));
+    assert!(js.contains("removeAttribute('data-stemcell-match')"));
 }
 
 #[test]
@@ -96,7 +96,7 @@ fn returns_object_with_stable_selector_per_match() {
     // Selector uses the attribute we just assigned so it's unique
     // and survives subsequent DOM churn (within the same turn).
     let js = build_find_js("css", "button", 5);
-    assert!(js.contains(r#"selector: '[data-opencrabs-match="' + i + '"]'"#));
+    assert!(js.contains(r#"selector: '[data-stemcell-match="' + i + '"]'"#));
     assert!(js.contains("text:"));
     assert!(js.contains("tag:"));
     assert!(js.contains("visible:"));

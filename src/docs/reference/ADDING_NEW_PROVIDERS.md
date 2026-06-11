@@ -1,10 +1,10 @@
 # Adding New Providers
 
-This document describes how to add a new AI provider to OpenCrabs.
+This document describes how to add a new AI provider to StemCell.
 
 ## Overview
 
-OpenCrabs supports multiple AI providers through a pluggable architecture. Each provider is configured via `config.toml` and appears in the onboarding UI.
+StemCell supports multiple AI providers through a pluggable architecture. Each provider is configured via `config.toml` and appears in the onboarding UI.
 
 ## Provider Architecture
 

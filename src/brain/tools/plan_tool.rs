@@ -143,20 +143,20 @@ pub(crate) fn validate_plan_file_path(path: &Path, base_dir: &Path) -> Result<()
         }
     }
 
-    // Verify filename matches pattern .opencrabs_plan_{uuid}.json (no traversal)
+    // Verify filename matches pattern .stemcell_plan_{uuid}.json (no traversal)
     let file_name = path
         .file_name()
         .and_then(|n| n.to_str())
         .ok_or_else(|| ToolError::InvalidInput("Invalid plan filename".to_string()))?;
 
-    if !file_name.starts_with(".opencrabs_plan_") || !file_name.ends_with(".json") {
+    if !file_name.starts_with(".stemcell_plan_") || !file_name.ends_with(".json") {
         return Err(ToolError::InvalidInput(
-            "Plan filename must match pattern .opencrabs_plan_{session_id}.json".to_string(),
+            "Plan filename must match pattern .stemcell_plan_{session_id}.json".to_string(),
         ));
     }
 
     // Extract and validate UUID portion
-    let uuid_part = &file_name[16..file_name.len() - 5]; // Remove ".opencrabs_plan_" (16 chars) and ".json" (5 chars)
+    let uuid_part = &file_name[15..file_name.len() - 5]; // Remove ".stemcell_plan_" (15 chars) and ".json" (5 chars)
     uuid::Uuid::parse_str(uuid_part).map_err(|_| {
         ToolError::InvalidInput("Plan filename must contain a valid UUID".to_string())
     })?;
@@ -213,7 +213,7 @@ impl Tool for PlanTool {
          Skip planning only for trivial single-tool answers (one read, one search, one edit). \
          The plan stays visible across compactions, so it doubles as memory for long sessions. \
          \n\nBUNDLED REFERENCE PLANS: Source at `src/docs/reference/plans/` (embedded in binary). \
-         Runtime path: `~/.opencrabs/profiles/<profile>/plans/` (e.g., `~/.opencrabs/profiles/ops/plans/`). \
+         Runtime path: `~/.stemcell/profiles/<profile>/plans/` (e.g., `~/.stemcell/profiles/ops/plans/`). \
          See `coding-plans/rust-fast.json`, `coding-plans/rust-medium.json`, `coding-plans/rust-full.json`, \
          `coding-plans/python-fast.json`, `coding-plans/python-medium.json`, `coding-plans/python-full.json`, \
          and `coding-plans/sample-minimal-plan.json`. Also see `plan-json-spec.md` for schema documentation. \
@@ -364,11 +364,11 @@ impl Tool for PlanTool {
         let operation: PlanOperation = serde_json::from_value(input)?;
 
         // Load or create plan state from context (session-scoped)
-        let session_dir = crate::config::opencrabs_home()
+        let session_dir = crate::config::stemcell_home()
             .join("agents")
             .join("session");
         let _ = std::fs::create_dir_all(&session_dir);
-        let plan_filename = format!(".opencrabs_plan_{}.json", context.session_id);
+        let plan_filename = format!(".stemcell_plan_{}.json", context.session_id);
         let plan_file = session_dir.join(&plan_filename);
 
         // Security: Validate plan file path

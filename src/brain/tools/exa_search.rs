@@ -77,7 +77,7 @@ impl ExaSearchTool {
                 "protocolVersion": MCP_PROTOCOL_VERSION,
                 "capabilities": {},
                 "clientInfo": {
-                    "name": "opencrabs",
+                    "name": "stemcell",
                     "version": env!("CARGO_PKG_VERSION")
                 }
             }
@@ -343,7 +343,7 @@ impl ExaSearchTool {
             .post("https://api.exa.ai/search")
             .header("x-api-key", api_key)
             .header("Content-Type", "application/json")
-            .header("x-exa-integration", "opencrabs")
+            .header("x-exa-integration", "stemcell")
             .json(&body)
             .send()
             .await

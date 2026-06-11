@@ -1,4 +1,4 @@
-# OpenCrabs System Architecture
+# StemCell System Architecture
 
 ## 1. High-Level Overview
 

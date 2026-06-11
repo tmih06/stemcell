@@ -1,7 +1,7 @@
 //! Shared TUI palette + style helpers.
 //!
 //! Brand-level colours — orange, teal, white — used by every dialog
-//! that wants visual continuity with the canonical OpenCrabs look in
+//! that wants visual continuity with the canonical StemCell look in
 //! `sessions.rs` and `usage/dashboard.rs`. Panel-specific aliases
 //! (e.g. `BORDER_INBOX_FOCUS`) live in their owning module's local
 //! theme file.

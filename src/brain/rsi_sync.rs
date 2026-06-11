@@ -3,7 +3,7 @@
 //! Checks for new releases, fetches updated templates from the public repo,
 //! diffs against local brain files, and appends only new sections.
 //!
-//! State is persisted to `~/.opencrabs/rsi/state.toml`:
+//! State is persisted to `~/.stemcell/rsi/state.toml`:
 //! ```toml
 //! last_synced_version = "0.3.14"
 //! last_sync_date = "2026-04-27T21:00:00Z"
@@ -30,7 +30,7 @@ use crate::brain::tools::brain_file_safety;
 
 /// GitHub raw URL base for templates.
 const TEMPLATE_BASE_URL: &str =
-    "https://raw.githubusercontent.com/adolfousier/opencrabs/main/src/docs/reference/templates";
+    "https://raw.githubusercontent.com/adolfousier/stemcell/main/src/docs/reference/templates";
 
 /// Brain files tracked for upstream sync.
 const TRACKED_FILES: &[&str] = &[
@@ -56,7 +56,7 @@ pub struct SyncState {
 }
 
 impl SyncState {
-    /// Load state from `~/.opencrabs/rsi/state.toml`.
+    /// Load state from `~/.stemcell/rsi/state.toml`.
     pub fn load() -> Self {
         let path = Self::state_path();
         if !path.exists() {
@@ -103,7 +103,7 @@ impl SyncState {
         state
     }
 
-    /// Save state to `~/.opencrabs/rsi/state.toml`.
+    /// Save state to `~/.stemcell/rsi/state.toml`.
     pub fn save(&self) -> std::io::Result<()> {
         let path = Self::state_path();
         if let Some(parent) = path.parent() {
@@ -123,7 +123,7 @@ impl SyncState {
     }
 
     fn state_path() -> PathBuf {
-        crate::config::opencrabs_home().join("rsi/state.toml")
+        crate::config::stemcell_home().join("rsi/state.toml")
     }
 }
 
@@ -145,7 +145,7 @@ pub struct FileSyncResult {
 /// Diagnostic surfaced when `sync_single_file` refuses to write because
 /// the merged content would exceed the configured per-file line cap. The
 /// user sees this via tracing + an entry appended to
-/// `~/.opencrabs/rsi/improvements.md` so they can either raise the cap,
+/// `~/.stemcell/rsi/improvements.md` so they can either raise the cap,
 /// prune the file, or add the offending sections to the pruned sidecar.
 #[derive(Debug, Clone, Default)]
 pub struct CapBailReport {
@@ -272,7 +272,7 @@ pub(crate) fn extract_section_headers(content: &str) -> Vec<String> {
 
 /// Backup directory for RSI sync.
 fn backups_dir() -> PathBuf {
-    crate::config::opencrabs_home().join("rsi/backups")
+    crate::config::stemcell_home().join("rsi/backups")
 }
 
 /// Ensure backups directory exists.
@@ -284,7 +284,7 @@ fn ensure_backups_dir() -> std::io::Result<()> {
 ///
 /// Returns a list of per-file results.
 pub async fn sync_templates() -> Vec<FileSyncResult> {
-    let home = crate::config::opencrabs_home();
+    let home = crate::config::stemcell_home();
     let mut state = SyncState::load();
 
     if !needs_sync(&state) {
@@ -320,7 +320,7 @@ pub async fn sync_templates() -> Vec<FileSyncResult> {
     // `seed_brain_templates` fix landed: if the home directory is
     // missing the core brain files entirely (counted as "more than
     // half of the templates are missing"), call the same template
-    // seeder `create_profile` uses. This rescues old `opencrabs
+    // seeder `create_profile` uses. This rescues old `stemcell
     // profile create <name>` installs whose brain dir was left blank.
     // Existing files are NOT overwritten by the seeder, so a healthy
     // install is unaffected.
@@ -421,10 +421,10 @@ fn top_new_sections_by_size(new_sections: &str, n: usize) -> Vec<String> {
         .collect()
 }
 
-/// Append a cap-bail diagnostic to `~/.opencrabs/rsi/improvements.md`
+/// Append a cap-bail diagnostic to `~/.stemcell/rsi/improvements.md`
 /// so the user sees it next session without having to scrape stdout.
 fn log_cap_bail_to_improvements(report: &CapBailReport) {
-    let home = crate::config::opencrabs_home();
+    let home = crate::config::stemcell_home();
     let improvements_path = home.join("rsi/improvements.md");
     if let Some(parent) = improvements_path.parent()
         && let Err(e) = std::fs::create_dir_all(parent)
@@ -451,7 +451,7 @@ fn log_cap_bail_to_improvements(report: &CapBailReport) {
          **Merged would be:** {merged} lines\n\
          **Top new sections that would have been added:**\n{top}\n\n\
          To resolve: raise `[brain.caps].{filename}` in config.toml, prune \
-         the file, or add the offending headers to ~/.opencrabs/rsi/pruned.toml.\n",
+         the file, or add the offending headers to ~/.stemcell/rsi/pruned.toml.\n",
         filename = report.filename,
         date = chrono::Utc::now().format("%Y-%m-%d %H:%M UTC"),
         cap = report.cap,
@@ -618,7 +618,7 @@ async fn sync_single_file(local_path: &Path, filename: &str, _timestamp: &str) -
     }
 
     // 6. Log to improvements.md
-    let home = crate::config::opencrabs_home();
+    let home = crate::config::stemcell_home();
     let improvements_path = home.join("rsi/improvements.md");
     let entry = format!(
         "\n## [Synced] Upstream template sync for {filename}\n\n\

@@ -403,8 +403,8 @@ mod tests {
                 protocol_version: Some("1.0".to_string()),
             }],
             provider: Some(AgentProvider {
-                organization: "OpenCrabs Contributors".to_string(),
-                url: Some("https://github.com/adolfousier/opencrabs".to_string()),
+                organization: "StemCell Contributors".to_string(),
+                url: Some("https://github.com/tmih06/stemcell".to_string()),
             }),
             capabilities: Some(AgentCapabilities {
                 streaming: false,
@@ -417,7 +417,7 @@ mod tests {
         };
         let json = serde_json::to_string_pretty(&card).expect("serialize");
         assert!(json.contains("TestAgent"));
-        assert!(json.contains("OpenCrabs Contributors"));
+        assert!(json.contains("StemCell Contributors"));
     }
 
     #[test]

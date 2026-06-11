@@ -251,7 +251,7 @@ pub const PROVIDERS: &[ProviderInfo] = &[
         key_label: "OAuth",
         help_lines: &[
             "Authenticate with OpenAI Codex subscription via device-code flow",
-            "No CLI needed — sign in through OpenCrabs onboarding",
+            "No CLI needed — sign in through StemCell onboarding",
         ],
     },
     ProviderInfo {
