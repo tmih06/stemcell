@@ -277,12 +277,29 @@ jobs:
 
   # ── Stage 8: Multi-arch container build ─────────────────────────────────
   docker:
-    name: Docker Build (all supported Linux architectures)
+    name: Docker Build (${{ matrix.platform }})
     needs: [lint]
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 240
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux/amd64
+            runner: ubuntu-latest
+          - platform: linux/386
+            runner: ubuntu-latest
+          - platform: linux/arm64
+            runner: ubuntu-24.04-arm
+          - platform: linux/arm/v7
+            runner: ubuntu-24.04-arm
+          - platform: linux/ppc64le
+            runner: ubuntu-latest
+          - platform: linux/s390x
+            runner: ubuntu-latest
     steps:
       - name: Free disk space
+        if: matrix.runner == 'ubuntu-latest'
         run: |
           sudo rm -rf /usr/share/dotnet
           sudo rm -rf /usr/local/lib/android
@@ -294,24 +311,22 @@ jobs:
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
-        with:
-          platforms: ${{ env.DOCKER_QEMU_PLATFORMS }}
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Build multi-architecture image
+      - name: Build image
         uses: docker/build-push-action@v6
         with:
           context: .
           file: ${{ env.DOCKERFILE_PATH }}
-          platforms: ${{ env.DOCKER_PLATFORMS }}
+          platforms: ${{ matrix.platform }}
           tags: opencrabs:ci-${{ github.sha }}
           pull: true
           push: false
           provenance: false
-          cache-from: type=gha,scope=opencrabs-docker
-          cache-to: type=gha,mode=max,scope=opencrabs-docker
+          cache-from: type=gha,scope=opencrabs-docker-${{ matrix.platform }}
+          cache-to: type=gha,mode=max,scope=opencrabs-docker-${{ matrix.platform }}
 
   # ── First wave: Independent checks (no Rust build needed) ───────────────
   # These run in parallel with lint — no compilation required.
