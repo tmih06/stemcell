@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # StemCell — one-line install
-# curl -fsSL https://raw.githubusercontent.com/adolfousier/stemcell/main/src/scripts/install.sh | bash
+# curl -fsSL https://raw.githubusercontent.com/tmih06/stemcell/main/src/scripts/install.sh | bash
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -41,7 +41,7 @@ else
 fi
 
 info "Detecting latest release..."
-TAG=$(curl -fsSL https://api.github.com/repos/adolfousier/stemcell/releases/latest \
+TAG=$(curl -fsSL https://api.github.com/repos/tmih06/stemcell/releases/latest \
   | grep -o '"tag_name": *"[^"]*"' \
   | head -1 \
   | cut -d'"' -f4)
@@ -51,14 +51,14 @@ if [ -z "$TAG" ]; then
 fi
 
 FILENAME="stemcell-${TAG}-${OS}-${ARCH}.tar.gz"
-DOWNLOAD_URL="https://github.com/adolfousier/stemcell/releases/download/${TAG}/${FILENAME}"
+DOWNLOAD_URL="https://github.com/tmih06/stemcell/releases/download/${TAG}/${FILENAME}"
 
 info "Downloading ${TAG} for ${OS}-${ARCH}..."
 TMPDIR=$(mktemp -d)
 trap 'rm -rf "$TMPDIR"' EXIT
 
 if ! curl -fsSL "$DOWNLOAD_URL" -o "${TMPDIR}/${FILENAME}"; then
-  error "Failed to download ${FILENAME}\n   URL: ${DOWNLOAD_URL}\n   Check https://github.com/adolfousier/stemcell/releases for available releases"
+  error "Failed to download ${FILENAME}\n   URL: ${DOWNLOAD_URL}\n   Check https://github.com/tmih06/stemcell/releases for available releases"
 fi
 
 info "Extracting..."

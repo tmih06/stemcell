@@ -82,7 +82,7 @@ pub fn expand_tilde(path: &str) -> std::path::PathBuf {
 ///      every prompt; that's a privacy/identity leak that also varies
 ///      between machines, hurting prompt-cache hit rates.
 ///   2. Save tokens — `~/srv/dart/heyiolo/...` is consistently shorter
-///      than `/Users/adolfousierstudio/srv/dart/heyiolo/...`.
+///      than `/Users/tmih06studio/srv/dart/heyiolo/...`.
 pub fn collapse_home(path: &std::path::Path) -> String {
     if let Some(home) = dirs::home_dir()
         && let Ok(rest) = path.strip_prefix(&home)

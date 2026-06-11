@@ -437,7 +437,7 @@ fn classify_bare_tool_array_states() {
 
 #[test]
 fn extract_dict_by_call_id_single() {
-    // The exact shape seen in @adolfousier's Telegram screenshots:
+    // The exact shape seen in @tmih06's Telegram screenshots:
     // top-level object keyed by call_<hex>, value is {name, arguments}.
     let text = r#"{"call_5f8d9c7b4a3e2f1c8d6e5b9a": {"name": "read_file", "arguments": {"path": "/tmp/x"}}}"#;
     let (calls, remaining) = extract_text_tool_calls(text);

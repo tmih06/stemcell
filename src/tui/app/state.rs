@@ -1455,8 +1455,41 @@ impl App {
         // Get existing tool registry from current agent service
         let tool_registry = self.agent_service.tool_registry().clone();
 
-        // Get existing system brain from current agent service
-        let system_brain = self.agent_service.system_brain().cloned();
+        // Rebuild system brain with new provider info to ensure RuntimeInfo is updated
+        let brain_path_for_loader = self
+            .agent_service
+            .brain_path()
+            .clone()
+            .unwrap_or_else(crate::brain::BrainLoader::resolve_path);
+        let brain_loader = crate::brain::BrainLoader::new(brain_path_for_loader.clone());
+
+        let command_loader = crate::brain::CommandLoader::from_brain_path(&brain_path_for_loader);
+        let user_commands = command_loader.load();
+        let builtin_commands: Vec<(&str, &str)> = crate::tui::app::SLASH_COMMANDS
+            .iter()
+            .map(|c| (c.name, c.description))
+            .collect();
+        let commands_section =
+            crate::brain::CommandLoader::commands_section(&builtin_commands, &user_commands);
+
+        let working_dir = self
+            .agent_service
+            .working_directory()
+            .read()
+            .expect("working_directory lock poisoned")
+            .clone();
+
+        let runtime_info = crate::brain::prompt_builder::RuntimeInfo {
+            model: Some(provider.default_model().to_string()),
+            provider: Some(provider.name().to_string()),
+            working_directory: Some(crate::brain::tools::error::collapse_home(&working_dir)),
+        };
+
+        let system_brain = Some(brain_loader.build_core_brain(
+            Some(&runtime_info),
+            Some(&commands_section),
+            Some(&tool_registry.list_tools()),
+        ));
 
         // Get event sender for approval callback
         let event_sender = self.event_sender();

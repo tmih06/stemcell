@@ -1178,6 +1178,9 @@ impl App {
         if let Some(ref mut p) = config.providers.opencode {
             p.enabled = false;
         }
+        if let Some(ref mut p) = config.providers.opencode_zen_free {
+            p.enabled = false;
+        }
         if let Some(ref mut p) = config.providers.qwen {
             p.enabled = false;
         }
@@ -1434,6 +1437,17 @@ impl App {
                     ..Default::default()
                 });
             }
+            "opencode_zen_free" => {
+                config.providers.opencode_zen_free = Some(ProviderConfig {
+                    enabled: true,
+                    api_key: None,
+                    base_url: None,
+                    default_model: Some(default_model.to_string()),
+                    models: vec![],
+                    vision_model: None,
+                    ..Default::default()
+                });
+            }
             "qwen" => {
                 let merged = config.providers.qwen.clone().unwrap_or_default();
                 config.providers.qwen = Some(ProviderConfig {
@@ -1518,6 +1532,7 @@ impl App {
             "codex-cli" => "providers.codex_cli",
             "codex" => "providers.codex",
             "opencode" => "providers.opencode",
+            "opencode_zen_free" => "providers.opencode_zen_free",
             "qwen" => "providers.qwen",
             "ollama" => "providers.ollama",
             "" => {
@@ -1581,6 +1596,7 @@ impl App {
             "providers.codex_cli",
             "providers.codex",
             "providers.opencode",
+            "providers.opencode_zen_free",
             "providers.qwen",
             "providers.ollama",
         ] {
@@ -3426,7 +3442,7 @@ pub(crate) async fn ensure_whispercrabs() -> Result<PathBuf> {
 
     // Download latest release via GitHub API
     let client = reqwest::Client::new();
-    let release_url = "https://api.github.com/repos/adolfousier/whispercrabs/releases/latest";
+    let release_url = "https://api.github.com/repos/tmih06/whispercrabs/releases/latest";
     let release: serde_json::Value = client
         .get(release_url)
         .header("User-Agent", "stemcell")
