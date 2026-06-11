@@ -200,10 +200,26 @@ pub fn render(f: &mut Frame, app: &mut App) {
             skills_dialog::draw(f, app, content_area);
         }
         AppMode::StatusLine => {
-            f.render_widget(Clear, full_content_area);
-            let (title_area, content_area) = split_title_area(full_content_area);
-            render_app_title(f, title_area);
-            statusline_dialog::draw(f, app, content_area);
+            // Keep the regular chat shell visible so toggling fields gives an
+            // immediate preview in the status bar without leaving the overlay.
+            if app.pane_manager.is_split() {
+                render_split_panes(f, app, chunks[0]);
+            } else {
+                render_chat(f, app, chunks[0]);
+            }
+            if plan_height > 0 {
+                render_plan_checklist(f, app, chunks[1]);
+            }
+            if queue_height > 0 {
+                render_queue(f, app, chunks[2]);
+            }
+            app.input_area_x = chunks[3].x;
+            app.input_area_y = chunks[3].y;
+            app.input_area_width = chunks[3].width;
+            app.input_area_height = chunks[3].height;
+            render_input(f, app, chunks[3]);
+            render_status_bar(f, app, chunks[4]);
+            statusline_dialog::draw(f, app, chunks[3], full_content_area);
         }
         AppMode::Settings => {
             let (title_area, content_area) = split_title_area(full_content_area);
