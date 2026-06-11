@@ -9,14 +9,12 @@ use crate::config::{Config, RespondTo};
 use crate::db::ChannelMessageRepository;
 use crate::db::models::ChannelMessage as DbChannelMessage;
 use crate::services::SessionService;
-use crate::utils::sanitize::redact_secrets;
 use crate::utils::truncate_str;
 use std::collections::HashSet;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use uuid::Uuid;
 
-use serenity::builder::{CreateAttachment, CreateMessage};
 use serenity::model::channel::Message;
 use serenity::prelude::*;
 
@@ -58,6 +56,7 @@ pub(crate) async fn handle_message(
     discord_state: Arc<DiscordState>,
     config_rx: tokio::sync::watch::Receiver<Config>,
     channel_msg_repo: ChannelMessageRepository,
+    gateway: crate::channels::gateway::bus::GatewayHandle,
 ) {
     // Read latest config from watch channel — single source of truth
     let cfg = config_rx.borrow().clone();
@@ -564,297 +563,54 @@ pub(crate) async fn handle_message(
         agent_input
     };
 
-    // Tell the LLM its text response is automatically delivered to the chat,
-    // so it should NOT use discord_send for simple text replies.
+    // Tell the LLM its text response is automatically delivered to the chat.
     let agent_input = format!(
-        "[Channel: Discord — your text response is automatically sent to this channel. \
-         Do NOT call discord_send to deliver your answer. Only use discord_send for: \
-         sending to a different channel, embeds, reactions, threads, files, or moderation.]\n{agent_input}"
+        "[Channel: Discord — your text response is automatically sent to this channel.]\n{agent_input}"
     );
 
-    // Register channel for approval routing, then send with approval callback
+    // ── Publish onto the gateway bus ───────────────────────────────────────────
+    // The gateway runs the agent turn and routes the response back through
+    // `DiscordSurface::deliver`. Session was resolved here, so it rides along as
+    // `session_hint`. Stash per-turn delivery context (group-record + TTS) for
+    // `deliver`.
+    let channel_id = msg.channel_id.get();
+    let guild_name = msg
+        .guild_id
+        .map(|g| g.get().to_string())
+        .unwrap_or_else(|| "DM".to_string());
     discord_state
-        .register_session_channel(session_id, msg.channel_id.get())
-        .await;
-    let approval_cb = make_approval_callback(discord_state.clone());
-
-    let cancel_token = tokio_util::sync::CancellationToken::new();
-    discord_state
-        .store_cancel_token(session_id, cancel_token.clone())
-        .await;
-
-    // Track spawned intermediate sends so the follow-up-question
-    // callback can await them before posting the question (issue
-    // #142). Sync Mutex because the progress callback closure is
-    // synchronous. Declared here so `intermediate_handles` is visible
-    // at the `make_question_callback` call site below.
-    let intermediate_handles: Arc<std::sync::Mutex<Vec<tokio::task::JoinHandle<()>>>> =
-        Arc::new(std::sync::Mutex::new(Vec::new()));
-    let intermediate_handles_cb = intermediate_handles.clone();
-    let sent_intermediates: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
-
-    // Build progress callback — sends tool call status as Discord messages
-    let progress_cb: crate::brain::agent::ProgressCallback = {
-        use crate::brain::agent::ProgressEvent;
-        use serenity::builder::EditMessage;
-        use serenity::model::id::MessageId;
-
-        struct ToolEntry {
-            msg_id: Option<MessageId>,
-            name: String,
-            context: String,
-        }
-
-        let tools: Arc<Mutex<Vec<ToolEntry>>> = Arc::new(Mutex::new(Vec::new()));
-        let http = ctx.http.clone();
-        let channel = msg.channel_id;
-
-        Arc::new(move |_session_id, event| {
-            let tools = tools.clone();
-            let http = http.clone();
-
-            match event {
-                // Auto-compaction produces zero streaming chunks for
-                // 10-60s and Discord has no continuous typing pinger
-                // like Telegram. Ping broadcast_typing every 8s for up
-                // to 90s so the channel shows the "is typing" dots
-                // through the silent window. No text — just the native
-                // indicator. The loop self-terminates after 90s; if
-                // compaction finishes earlier, real streaming chunks
-                // resume the indicator naturally.
-                ProgressEvent::Compacting => {
-                    let http = http.clone();
-                    tokio::spawn(async move {
-                        for _ in 0..12 {
-                            let _ = channel.broadcast_typing(&http).await;
-                            tokio::time::sleep(std::time::Duration::from_secs(8)).await;
-                        }
-                    });
-                }
-                ProgressEvent::ToolStarted {
-                    tool_name,
-                    tool_input,
-                } => {
-                    let ctx_hint = crate::utils::tool_context_hint(&tool_name, &tool_input);
-                    tokio::spawn(async move {
-                        let text = format!("⚙️ **{}**{}", tool_name, ctx_hint);
-                        if let Ok(sent) = channel.say(&http, &text).await {
-                            let mut t = tools.lock().await;
-                            t.push(ToolEntry {
-                                msg_id: Some(sent.id),
-                                name: tool_name,
-                                context: ctx_hint,
-                            });
-                        }
-                    });
-                }
-                ProgressEvent::ToolCompleted {
-                    tool_name, success, ..
-                } => {
-                    tokio::spawn(async move {
-                        let mut t = tools.lock().await;
-                        if let Some(entry) = t
-                            .iter_mut()
-                            .rev()
-                            .find(|e| e.name == tool_name && e.msg_id.is_some())
-                        {
-                            let icon = if success { "✅" } else { "❌" };
-                            let text = format!("{} **{}**{}", icon, entry.name, entry.context);
-                            if let Some(mid) = entry.msg_id.take() {
-                                let _ = channel
-                                    .edit_message(&http, mid, EditMessage::new().content(text))
-                                    .await;
-                            }
-                        }
-                    });
-                }
-                ProgressEvent::SelfHealingAlert { message } => {
-                    tokio::spawn(async move {
-                        let text = format!("🔧 {}", message);
-                        let _ = channel.say(&http, &text).await;
-                    });
-                }
-                ProgressEvent::IntermediateText { text, .. } => {
-                    // Strip LLM artifacts, secrets, and media markers
-                    // the same way the final-response path does.
-                    let clean = crate::utils::sanitize::strip_llm_artifacts(&text);
-                    let clean = redact_secrets(&clean);
-                    let (clean, _) = crate::utils::extract_img_markers(&clean);
-                    let (clean, _) = crate::utils::extract_vid_markers(&clean);
-                    if clean.trim().is_empty() {
-                        return;
-                    }
-                    let sent = sent_intermediates.clone();
-                    let http = http.clone();
-                    let channel = channel;
-                    let handle = tokio::spawn(async move {
-                        // Pre-send dedup: Discord doesn't support edit-
-                        // in-place dedup across messages, so skip if
-                        // this exact body was already posted.
-                        {
-                            let mut prev = sent.lock().await;
-                            if prev.iter().any(|s| s == &clean) {
-                                return;
-                            }
-                            prev.push(clean.clone());
-                        }
-                        for chunk in split_message(&clean, 2000) {
-                            if let Err(e) = channel.say(&http, chunk).await {
-                                tracing::debug!("Discord: intermediate text send failed: {}", e);
-                            }
-                        }
-                    });
-                    if let Ok(mut g) = intermediate_handles_cb.lock() {
-                        g.push(handle);
-                    }
-                }
-                _ => {}
-            }
-        })
-    };
-
-    let discord_chat_id = msg.channel_id.get().to_string();
-    let question_cb = super::follow_up_question::make_question_callback(
-        discord_state.clone(),
-        intermediate_handles.clone(),
-    );
-    let result = agent
-        .send_message_with_tools_and_display(
-            session_id,
-            agent_input,
-            Some(display_text),
-            None,
-            Some(cancel_token),
-            Some(approval_cb),
-            Some(progress_cb),
-            Some(question_cb),
-            "discord",
-            Some(&discord_chat_id),
+        .set_delivery_context(
+            channel_id,
+            crate::channels::discord::DiscordDeliveryContext {
+                is_dm,
+                guild_name,
+                is_voice,
+                voice_config: voice_config.clone(),
+            },
         )
         .await;
 
-    discord_state.remove_cancel_token(session_id).await;
+    let mut inbound = crate::channels::gateway::envelope::Inbound::new(
+        "discord",
+        channel_id.to_string(),
+        crate::channels::gateway::envelope::SenderRef::new(
+            msg.author.id.get().to_string(),
+            msg.author.name.clone(),
+        ),
+        agent_input,
+    );
+    inbound.display_text = Some(display_text);
+    inbound.session_hint = Some(session_id);
+    inbound.routing = crate::channels::gateway::envelope::Routing {
+        is_direct: is_dm,
+        is_mention: false,
+    };
 
-    match result {
-        Ok(response) => {
-            // Extract <<IMG:path>> markers — send each as a Discord file attachment.
-            let (text_only, img_paths) = crate::utils::extract_img_markers(&response.content);
-            let text_only = crate::utils::sanitize::strip_llm_artifacts(&text_only);
-            let text_only = redact_secrets(&text_only);
-
-            // Context budget footer will be sent as a separate message after
-            // all response delivery is complete, with a 2-second delay.
-
-            for img_path in img_paths {
-                match tokio::fs::read(&img_path).await {
-                    Ok(bytes) => {
-                        let fname = std::path::Path::new(&img_path)
-                            .file_name()
-                            .and_then(|n| n.to_str())
-                            .unwrap_or("image.png")
-                            .to_string();
-                        let file = CreateAttachment::bytes(bytes.as_slice(), fname);
-                        if let Err(e) = msg
-                            .channel_id
-                            .send_message(&ctx.http, CreateMessage::new().add_file(file))
-                            .await
-                        {
-                            tracing::error!("Discord: failed to send generated image: {}", e);
-                        }
-                    }
-                    Err(e) => {
-                        tracing::error!("Discord: failed to read image {}: {}", img_path, e);
-                    }
-                }
-            }
-
-            for chunk in split_message(&text_only, 2000) {
-                if let Err(e) = msg.channel_id.say(&ctx.http, chunk).await {
-                    tracing::error!("Discord: failed to send reply: {}", e);
-                }
-            }
-
-            // Record the bot's reply in channel_messages so the recent() query
-            // used for group context on the next guild turn sees both sides of
-            // the conversation. Without this, the bot loads only user messages
-            // and responds blind to its own prior replies. Skip for DMs — the
-            // session's messages table already carries full history there.
-            if !is_dm && !text_only.trim().is_empty() {
-                let bot_id = discord_state.bot_user_id().await;
-                let bot_sender_id = bot_id
-                    .map(|id| id.to_string())
-                    .unwrap_or_else(|| "bot:stemcell".to_string());
-                let guild_name = msg
-                    .guild_id
-                    .map(|g| g.get().to_string())
-                    .unwrap_or_else(|| "DM".to_string());
-                let cm = DbChannelMessage::new(
-                    "discord".into(),
-                    msg.channel_id.get().to_string(),
-                    Some(guild_name),
-                    bot_sender_id,
-                    "StemCell".into(),
-                    text_only.clone(),
-                    "text".into(),
-                    None,
-                );
-                if let Err(e) = channel_msg_repo.insert(&cm).await {
-                    tracing::warn!(
-                        "Discord: failed to record bot reply in channel_messages: {}",
-                        e
-                    );
-                }
-            }
-
-            // TTS: send voice reply if input was audio and TTS is enabled
-            if is_voice && voice_config.tts_enabled {
-                match crate::channels::voice::synthesize(&response.content, &voice_config).await {
-                    Ok(audio_bytes) => {
-                        let file = CreateAttachment::bytes(audio_bytes.as_slice(), "response.ogg");
-                        if let Err(e) = msg
-                            .channel_id
-                            .send_message(&ctx.http, CreateMessage::new().add_file(file))
-                            .await
-                        {
-                            tracing::error!("Discord: failed to send TTS voice: {e}");
-                        }
-                    }
-                    Err(e) => tracing::error!("Discord: TTS error: {e}"),
-                }
-            }
-
-            // Send context budget footer as a separate message after 2-second delay
-            // This ensures it appears at the very end, after all response delivery is complete
-            tokio::time::sleep(std::time::Duration::from_secs(2)).await;
-            let ctx_max = agent.context_limit_for_session(session_id);
-            let footer = crate::utils::format_ctx_footer(
-                response.context_tokens,
-                ctx_max,
-                response.tokens_per_second,
-            );
-            if let Err(e) = msg.channel_id.say(&ctx.http, &footer).await {
-                tracing::warn!("Discord: failed to send ctx footer: {}", e);
-            } else {
-                tracing::info!(
-                    "Discord: sent ctx footer='{}' after 2s delay (context_tokens={}, ctx_max={})",
-                    footer,
-                    response.context_tokens,
-                    ctx_max,
-                );
-            }
-        }
-        Err(ref e) if matches!(e, crate::brain::agent::AgentError::Cancelled) => {
-            tracing::info!("Discord: agent call cancelled for session {}", session_id);
-        }
-        Err(e) => {
-            tracing::error!("Discord: agent error: {}", e);
-            // Shared helper translates the raw error into something
-            // the user can act on (5xx exhausted, rate limit, context
-            // too large, stream broken, repetition loop). Same wording
-            // as the TUI + Telegram + Slack + WhatsApp paths.
-            let error_msg = format!("❌ Error\n\n{}", crate::brain::agent::format_user_error(&e));
-            let _ = msg.channel_id.say(&ctx.http, error_msg).await;
-        }
+    if !gateway.publish_inbound(inbound) {
+        tracing::warn!(
+            "Discord: gateway rejected inbound (queue full or closed) for channel {}",
+            channel_id
+        );
     }
 }
 

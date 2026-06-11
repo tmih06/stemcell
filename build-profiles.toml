@@ -106,7 +106,6 @@ features = [
     "tools-rsi",
     "tools-image",
     "tools-brain",
-    "tools-channel-integrations",
     "tools-browser",
     "tools-meta",
     "tools-dynamic",

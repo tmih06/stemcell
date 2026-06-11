@@ -42,6 +42,27 @@ pub struct DiscordState {
     pending_questions: Mutex<HashMap<String, PendingDiscordQuestion>>,
     /// Per-session cancel tokens for aborting in-flight agent tasks via /stop
     cancel_tokens: Mutex<HashMap<Uuid, CancellationToken>>,
+    /// Per-channel delivery context stashed on publish, read back by the
+    /// surface's `deliver` to reproduce group-record + TTS. Keyed by channel id.
+    delivery_ctx: Mutex<HashMap<u64, DiscordDeliveryContext>>,
+}
+
+/// Per-turn delivery context the listener stashes on publish so the gateway's
+/// `deliver` can reproduce the non-streaming reply behavior it no longer holds
+/// the message for: group-context recording and TTS voice replies. Keyed by
+/// channel id in [`DiscordState`].
+#[derive(Clone)]
+pub struct DiscordDeliveryContext {
+    /// True for a DM (no guild). Group replies are recorded into
+    /// `channel_messages` so the next guild turn sees both sides.
+    pub is_dm: bool,
+    /// Guild id as a string ("DM" for direct messages), recorded alongside the
+    /// bot reply for group context.
+    pub guild_name: String,
+    /// True when the inbound was a voice attachment — drives the TTS reply.
+    pub is_voice: bool,
+    /// Voice config snapshot captured at receive time.
+    pub voice_config: crate::config::VoiceConfig,
 }
 
 impl Default for DiscordState {
@@ -61,6 +82,7 @@ impl DiscordState {
             pending_approvals: Mutex::new(HashMap::new()),
             pending_questions: Mutex::new(HashMap::new()),
             cancel_tokens: Mutex::new(HashMap::new()),
+            delivery_ctx: Mutex::new(HashMap::new()),
         }
     }
 
@@ -198,5 +220,15 @@ impl DiscordState {
         {
             tokens.remove(&session_id);
         }
+    }
+
+    /// Stash per-turn delivery context for a channel before publishing inbound.
+    pub async fn set_delivery_context(&self, channel_id: u64, ctx: DiscordDeliveryContext) {
+        self.delivery_ctx.lock().await.insert(channel_id, ctx);
+    }
+
+    /// Take (remove) the delivery context for a channel when delivering.
+    pub async fn take_delivery_context(&self, channel_id: u64) -> Option<DiscordDeliveryContext> {
+        self.delivery_ctx.lock().await.remove(&channel_id)
     }
 }

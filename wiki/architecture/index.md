@@ -19,7 +19,7 @@ AppState
 |-----------|-----------|-----------------|
 | **Provider trait** | `src/brain/provider/trait.rs` | Anthropic, Gemini, Copilot, Qwen, OpenAI-compat, CLI wrappers |
 | **Tool trait** | `src/brain/tools/trait.rs` | 30+ tools (bash, file I/O, search, browser, subagents, etc.) |
-| **Channel pattern** | `src/channels/factory.rs` + `manager.rs` | Telegram, Discord, Slack, WhatsApp, Trello, Voice |
+| **Surface trait** | `src/channels/gateway/surface.rs` + `registry.rs` | TUI, Telegram, Discord, Slack, WhatsApp, Trello as peer surfaces on one bus |
 | **Build-time toggles** | `Cargo.toml` features + `build_toggles.toml` | Per-tool, per-channel, per-capability feature flags |
 
 ## Key Properties

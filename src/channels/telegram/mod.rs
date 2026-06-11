@@ -6,7 +6,6 @@
 mod agent;
 pub(crate) mod follow_up_question;
 pub(crate) mod handler;
-pub(crate) mod rolling_status_quips;
 pub(crate) mod send;
 pub(crate) mod session_resolve;
 
@@ -29,6 +28,27 @@ type PhotoEntry = (String, Option<String>);
 
 /// Photo buffer key: (chat_id, user_id, media_group_id)
 type PhotoBufferKey = (i64, i64, String);
+
+/// Per-turn delivery context the listener stashes on publish so the gateway's
+/// `deliver` can reproduce the platform-specific reply behavior it no longer
+/// has the message in hand for: thread routing, group-context recording, and
+/// TTS voice replies. Keyed by chat id in [`TelegramState`]. This is the
+/// "simplify replies, preserve group-context + TTS" bridge — the streaming
+/// edit-loop is gone, but these non-streaming concerns are not.
+#[derive(Clone)]
+pub struct DeliveryContext {
+    /// Forum-topic thread id (#130) so the reply lands in the same topic.
+    pub thread_id: Option<i32>,
+    /// True for a DM. Group replies are recorded into `channel_messages` so the
+    /// next group turn sees both sides of the conversation.
+    pub is_dm: bool,
+    /// Chat title, recorded alongside the bot reply for group context.
+    pub chat_title: String,
+    /// True when the inbound was a voice note — drives the TTS voice reply.
+    pub is_voice: bool,
+    /// Voice config snapshot (tts_enabled + keys) captured at receive time.
+    pub voice_config: crate::config::VoiceConfig,
+}
 
 /// Shared Telegram state for proactive messaging.
 ///
@@ -65,6 +85,9 @@ pub struct TelegramState {
     /// Photo debounce tokens: (chat_id, user_id, media_group_id) → CancellationToken
     /// Each new photo in the same album cancels the previous timer and starts a new 3s one.
     photo_debounce: Mutex<HashMap<PhotoBufferKey, CancellationToken>>,
+    /// Per-conversation delivery context stashed by the listener on publish and
+    /// read back by the surface's `deliver`. Keyed by chat id.
+    delivery_ctx: Mutex<HashMap<i64, DeliveryContext>>,
 }
 
 impl Default for TelegramState {
@@ -86,6 +109,7 @@ impl TelegramState {
             cancel_tokens: Mutex::new(HashMap::new()),
             photo_buffer: Mutex::new(HashMap::new()),
             photo_debounce: Mutex::new(HashMap::new()),
+            delivery_ctx: Mutex::new(HashMap::new()),
         }
     }
 
@@ -294,5 +318,16 @@ impl TelegramState {
     pub async fn cleanup_photo_debounce(&self, chat_id: i64, user_id: i64, media_group_id: &str) {
         let key = (chat_id, user_id, media_group_id.to_string());
         self.photo_debounce.lock().await.remove(&key);
+    }
+
+    /// Stash the per-turn delivery context for a chat before publishing an
+    /// inbound onto the gateway. Read back by the surface's `deliver`.
+    pub async fn set_delivery_context(&self, chat_id: i64, ctx: DeliveryContext) {
+        self.delivery_ctx.lock().await.insert(chat_id, ctx);
+    }
+
+    /// Take (remove) the delivery context for a chat when delivering its reply.
+    pub async fn take_delivery_context(&self, chat_id: i64) -> Option<DeliveryContext> {
+        self.delivery_ctx.lock().await.remove(&chat_id)
     }
 }

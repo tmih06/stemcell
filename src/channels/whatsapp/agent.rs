@@ -28,9 +28,11 @@ pub struct WhatsAppAgent {
     whatsapp_state: Arc<WhatsAppState>,
     config_rx: tokio::sync::watch::Receiver<Config>,
     channel_msg_repo: ChannelMessageRepository,
+    gateway: crate::channels::gateway::bus::GatewayHandle,
 }
 
 impl WhatsAppAgent {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         agent_service: Arc<AgentService>,
         service_context: ServiceContext,
@@ -38,6 +40,7 @@ impl WhatsAppAgent {
         whatsapp_state: Arc<WhatsAppState>,
         config_rx: tokio::sync::watch::Receiver<Config>,
         channel_msg_repo: ChannelMessageRepository,
+        gateway: crate::channels::gateway::bus::GatewayHandle,
     ) -> Self {
         Self {
             agent_service,
@@ -46,6 +49,7 @@ impl WhatsAppAgent {
             whatsapp_state,
             config_rx,
             channel_msg_repo,
+            gateway,
         }
     }
 
@@ -99,6 +103,7 @@ impl WhatsAppAgent {
             let config_rx = self.config_rx.clone();
             let channel_msg_repo = self.channel_msg_repo.clone();
             let owner_jid_clone = owner_jid.clone();
+            let gateway = self.gateway.clone();
 
             let bot_result = Bot::builder()
                 .with_backend(backend)
@@ -113,6 +118,7 @@ impl WhatsAppAgent {
                     let owner_jid = owner_jid_clone.clone();
                     let config_rx = config_rx.clone();
                     let channel_msg_repo = channel_msg_repo.clone();
+                    let gateway = gateway.clone();
                     async move {
                         match &*event {
                             Event::PairingQrCode { code, .. } => {
@@ -142,6 +148,7 @@ impl WhatsAppAgent {
                                     wa_state.clone(),
                                     config_rx,
                                     channel_msg_repo,
+                                    gateway,
                                 )
                                 .await;
                             }

@@ -42,7 +42,7 @@ Config tests cover:
 
 ### Config hot-reload
 
-Integration tests validate the `notify`-based watcher triggers config re-read and applies updates to `ChannelManager`.
+Integration tests validate the `notify`-based watcher triggers config re-read and broadcasts updates to the channel gateway (surface reconcile) and agents.
 
 ## CI
 

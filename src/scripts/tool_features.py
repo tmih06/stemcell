@@ -48,32 +48,13 @@ TOGGLE_TO_FEATURES: dict[str, tuple[str, ...]] = {
     "pdfium": ("pdfium",),
     "rtk": ("rtk",),
     "profiling": ("profiling",),
-    # channels — each enables the client + the two integration tools
-    "telegram": (
-        "telegram",
-        "tool-telegram-connect",
-        "tool-telegram-send",
-    ),
-    "whatsapp": (
-        "whatsapp",
-        "tool-whatsapp-connect",
-        "tool-whatsapp-send",
-    ),
-    "discord": (
-        "discord",
-        "tool-discord-connect",
-        "tool-discord-send",
-    ),
-    "slack": (
-        "slack",
-        "tool-slack-connect",
-        "tool-slack-send",
-    ),
-    "trello": (
-        "trello",
-        "tool-trello-connect",
-        "tool-trello-send",
-    ),
+    # channels — each maps to just its own client feature now that channels
+    # are remote surfaces on the gateway, not agent tools.
+    "telegram": ("telegram",),
+    "whatsapp": ("whatsapp",),
+    "discord": ("discord",),
+    "slack": ("slack",),
+    "trello": ("trello",),
     # file tier
     "file-read": ("tool-read", "tool-ls", "tool-glob", "tool-grep"),
     "file-write": ("tool-write", "tool-edit", "tool-hashline-edit"),

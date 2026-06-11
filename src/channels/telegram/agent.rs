@@ -22,9 +22,12 @@ pub struct TelegramAgent {
     telegram_state: Arc<TelegramState>,
     config_rx: tokio::sync::watch::Receiver<Config>,
     channel_msg_repo: ChannelMessageRepository,
+    /// Handle for publishing inbound messages onto the gateway bus.
+    gateway: crate::channels::gateway::bus::GatewayHandle,
 }
 
 impl TelegramAgent {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         agent_service: Arc<AgentService>,
         service_context: ServiceContext,
@@ -32,6 +35,7 @@ impl TelegramAgent {
         telegram_state: Arc<TelegramState>,
         config_rx: tokio::sync::watch::Receiver<Config>,
         channel_msg_repo: ChannelMessageRepository,
+        gateway: crate::channels::gateway::bus::GatewayHandle,
     ) -> Self {
         Self {
             agent_service,
@@ -40,6 +44,7 @@ impl TelegramAgent {
             telegram_state,
             config_rx,
             channel_msg_repo,
+            gateway,
         }
     }
 
@@ -113,6 +118,7 @@ impl TelegramAgent {
             let telegram_state = self.telegram_state.clone();
             let config_rx = self.config_rx.clone();
             let channel_msg_repo = self.channel_msg_repo.clone();
+            let gateway = self.gateway.clone();
 
             // ── Message handler ───────────────────────────────────────────────
             let msg_handler = Update::filter_message().endpoint({
@@ -123,6 +129,7 @@ impl TelegramAgent {
                 let telegram_state = telegram_state.clone();
                 let config_rx = config_rx.clone();
                 let channel_msg_repo = channel_msg_repo.clone();
+                let gateway = gateway.clone();
                 move |bot: Bot, msg: Message| {
                     let agent = agent.clone();
                     let session_svc = session_svc.clone();
@@ -131,6 +138,7 @@ impl TelegramAgent {
                     let telegram_state = telegram_state.clone();
                     let config_rx = config_rx.clone();
                     let channel_msg_repo = channel_msg_repo.clone();
+                    let gateway = gateway.clone();
                     async move {
                         // Spawn in background so the dispatcher is free to
                         // process callback queries (approval button clicks)
@@ -147,6 +155,7 @@ impl TelegramAgent {
                                     telegram_state,
                                     config_rx,
                                     channel_msg_repo,
+                                    gateway,
                                 )
                                 .await
                             })

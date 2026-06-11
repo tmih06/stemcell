@@ -146,18 +146,11 @@
 
 ### Channel Integrations
 
+Channels are **no longer agent tools** — they are remote surfaces on the unified gateway bus (see [Channels Subsystem](../channels/index.md)). The agent reaches conversations through that pipeline, not through per-channel connect/send tools. The only channel-related tool that remains is read-only search:
+
 | File | Role |
 |---|---|
-| `telegram_connect.rs` | Connect Telegram channel |
-| `telegram_send.rs` | Send Telegram message |
-| `discord_connect.rs` | Connect Discord channel |
-| `discord_send.rs` | Send Discord message |
-| `slack_connect.rs` | Connect Slack channel |
-| `slack_send.rs` | Send Slack message |
-| `whatsapp_connect.rs` | Connect WhatsApp channel |
-| `whatsapp_send.rs` | Send WhatsApp message |
-| `trello_connect.rs` | Connect Trello channel |
-| `trello_send.rs` | Send Trello message |
+| `channel_search.rs` | Search captured channel messages across surfaces |
 
 ### Other Tools
 

@@ -37,7 +37,7 @@ fn escape_html(text: &str) -> String {
 /// sees context above the buttons (issue #142).
 pub(crate) fn make_question_callback(
     state: Arc<super::TelegramState>,
-    streaming: Arc<std::sync::Mutex<StreamingState>>,
+    streaming: Option<Arc<std::sync::Mutex<StreamingState>>>,
 ) -> QuestionCallback {
     Arc::new(move |info: FollowUpQuestionInfo| {
         let state = state.clone();
@@ -102,8 +102,12 @@ pub(crate) fn make_question_callback(
 
             // Flush any pending intermediate texts BEFORE the question
             // lands. Without this, the 1500ms edit loop sends them
-            // after the buttons, confusing the user (issue #142).
-            flush_intermediates(&bot, ChatId(chat_id), thread_id, &streaming).await;
+            // after the buttons, confusing the user (issue #142). On the
+            // gateway path there is no live edit-loop, so `streaming` is
+            // None and there is nothing to flush.
+            if let Some(ref streaming) = streaming {
+                flush_intermediates(&bot, ChatId(chat_id), thread_id, streaming).await;
+            }
 
             if let Err(e) = bot
                 .send_message(ChatId(chat_id), &text)

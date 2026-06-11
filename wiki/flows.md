@@ -16,7 +16,7 @@ main.rs → cli::Cli::parse()
            → Config::load()                    [config/types.rs]
            → Database::init()                  [db/database.rs]
            → ProviderFactory::create()         [brain/provider/factory.rs]
-           → ChannelManager::init()            [channels/manager.rs]
+           → Gateway::new + reconcile          [channels/gateway/bus.rs]
            → AgentService::new()               [brain/agent/service/mod.rs]
 ```
 

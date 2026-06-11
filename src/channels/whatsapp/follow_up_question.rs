@@ -8,33 +8,30 @@
 use std::sync::Arc;
 
 use tokio::sync::oneshot;
-use wacore_binary::jid::Jid;
-use whatsapp_rust::client::Client;
 
 use crate::brain::agent::{AgentError, FollowUpQuestionInfo, QuestionCallback};
 
-/// Build the WhatsApp `QuestionCallback`. The pending question is
-/// keyed by the recipient phone; the message router in `handler.rs`
-/// parses the next numeric reply from that phone and resolves it.
-///
-/// `intermediate_handles` tracks in-flight intermediate text spawns.
-/// Before posting the question, the callback drains and awaits all
-/// pending handles so the user sees context above the numbered list
-/// (issue #142).
-pub(crate) fn make_question_callback(
-    client: Arc<Client>,
-    chat_jid: Jid,
-    phone: String,
-    state: Arc<super::WhatsAppState>,
-    intermediate_handles: Arc<std::sync::Mutex<Vec<tokio::task::JoinHandle<()>>>>,
-) -> QuestionCallback {
+/// Build the surface-side `QuestionCallback`. WhatsApp's approval + question
+/// callbacks are keyed on the sender phone and target a chat JID; the generic
+/// `Surface::callbacks(conversation_key, session_id)` signature can't carry
+/// them, so this fetches both (plus the client) from the per-session delivery
+/// context the listener stashed. There is no live progress loop on the gateway
+/// path, so no intermediate flush.
+pub(crate) fn make_surface_question_callback(state: Arc<super::WhatsAppState>) -> QuestionCallback {
     Arc::new(move |info: FollowUpQuestionInfo| {
-        let client = client.clone();
-        let chat_jid = chat_jid.clone();
-        let phone = phone.clone();
         let state = state.clone();
-        let intermediate_handles = intermediate_handles.clone();
         Box::pin(async move {
+            let (Some(client), Some(ctx)) = (
+                state.client().await,
+                state.delivery_context_for_session(info.session_id).await,
+            ) else {
+                return Err(AgentError::Internal(
+                    "WhatsApp follow_up_question: no client/context".into(),
+                ));
+            };
+            let chat_jid = ctx.chat_jid.clone();
+            let phone = ctx.phone.clone();
+
             let numbered: String = info
                 .options
                 .iter()
@@ -46,7 +43,6 @@ pub(crate) fn make_question_callback(
                 "❓ *{}*\n\n{}\n\nReply with the number of your choice.",
                 info.question, numbered
             );
-
             let text_msg = waproto::whatsapp::Message {
                 conversation: Some(body),
                 ..Default::default()
@@ -56,22 +52,6 @@ pub(crate) fn make_question_callback(
             state
                 .register_pending_question(phone.clone(), tx, info.options.clone())
                 .await;
-            tracing::info!(
-                "WhatsApp follow_up_question: registered for phone={} options={}",
-                phone,
-                info.options.len()
-            );
-
-            // Flush in-flight intermediate text spawns before posting
-            // the question, so the user sees context above the numbered
-            // list instead of below (issue #142).
-            let pending = {
-                let mut g = intermediate_handles.lock().expect("poisoned");
-                std::mem::take(&mut *g)
-            };
-            for h in pending {
-                let _ = h.await;
-            }
 
             if let Err(e) = client.send_message(chat_jid, text_msg).await {
                 return Err(AgentError::Internal(format!("WhatsApp send failed: {}", e)));

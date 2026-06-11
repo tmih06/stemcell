@@ -6,6 +6,7 @@
 mod agent;
 pub(crate) mod follow_up_question;
 pub(crate) mod handler;
+pub mod pairing;
 pub(crate) mod store;
 
 pub use agent::WhatsAppAgent;
@@ -68,6 +69,33 @@ pub struct WhatsAppState {
     photo_buffer: Mutex<HashMap<String, Vec<(String, Option<String>)>>>,
     /// Photo debounce cancellation tokens: chat_jid → CancellationToken
     pub(crate) photo_debounce: Mutex<HashMap<String, CancellationToken>>,
+    /// Per-turn delivery + callback context stashed on publish, read back by
+    /// the surface's `deliver` (group-record + TTS) and by the surface's
+    /// interactive callbacks (which need the sender phone + chat JID that
+    /// `Surface::callbacks` doesn't otherwise have). Keyed by **session id** so
+    /// both the callbacks (which get `session_id`) and `deliver` (which gets
+    /// `OutboundMessage::session_id`) can reach it.
+    delivery_ctx: Mutex<HashMap<Uuid, WhatsAppDeliveryContext>>,
+}
+
+/// Per-turn context the listener stashes on publish. WhatsApp needs more than
+/// the other channels because its approval + follow-up-question callbacks are
+/// keyed on the sender `phone` and target a `Jid`, neither of which the generic
+/// `Surface::callbacks(conversation_key, session_id)` provides. Keyed by chat
+/// JID string in [`WhatsAppState`]; per-conversation bus ordering guarantees a
+/// single in-flight turn per chat, so the stash is not clobbered mid-turn.
+#[derive(Clone)]
+pub struct WhatsAppDeliveryContext {
+    /// Sender phone — the key WhatsApp approvals/questions register under.
+    pub phone: String,
+    /// The chat JID to send to (parsed form of the conversation_key).
+    pub chat_jid: wacore_binary::jid::Jid,
+    /// True for a group chat.
+    pub is_group: bool,
+    /// True when the inbound carried audio — drives the TTS voice reply.
+    pub is_voice: bool,
+    /// Voice config snapshot captured at receive time.
+    pub voice_config: crate::config::VoiceConfig,
 }
 
 impl Default for WhatsAppState {
@@ -92,6 +120,7 @@ impl WhatsAppState {
             error_tx,
             photo_buffer: Mutex::new(HashMap::new()),
             photo_debounce: Mutex::new(HashMap::new()),
+            delivery_ctx: Mutex::new(HashMap::new()),
         }
     }
 
@@ -299,5 +328,24 @@ impl WhatsAppState {
     pub async fn cleanup_photo_debounce(&self, chat_jid: &str) {
         let mut debounce = self.photo_debounce.lock().await;
         debounce.remove(chat_jid);
+    }
+
+    /// Stash per-turn delivery + callback context before publishing inbound.
+    pub async fn set_delivery_context(&self, session_id: Uuid, ctx: WhatsAppDeliveryContext) {
+        self.delivery_ctx.lock().await.insert(session_id, ctx);
+    }
+
+    /// Read (without removing) the delivery context for a session. Used by the
+    /// interactive callbacks, which fire mid-turn and must not consume it.
+    pub async fn delivery_context_for_session(
+        &self,
+        session_id: Uuid,
+    ) -> Option<WhatsAppDeliveryContext> {
+        self.delivery_ctx.lock().await.get(&session_id).cloned()
+    }
+
+    /// Take (remove) the delivery context for a session when delivering.
+    pub async fn take_delivery_context(&self, session_id: Uuid) -> Option<WhatsAppDeliveryContext> {
+        self.delivery_ctx.lock().await.remove(&session_id)
     }
 }

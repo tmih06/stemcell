@@ -12,7 +12,7 @@
 //! Suggested by leshchenko1979 on issue #130:
 //! https://github.com/tmih06/stemcell/issues/130#issuecomment-4582189795
 
-use crate::brain::tools::telegram_send::resolve_thread_id;
+use crate::channels::telegram::send::resolve_thread_id;
 use serde_json::json;
 use teloxide::types::{MessageId, ThreadId};
 

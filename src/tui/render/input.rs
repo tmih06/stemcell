@@ -888,7 +888,7 @@ pub(super) fn render_status_bar(f: &mut Frame, app: &App, area: Rect) {
     }
     if fields.profile {
         // Shown only when a profile is explicitly active (via `-p <name>`
-        // or `OPENCRABS_PROFILE`). `None` means the base `~/.opencrabs/`
+        // or `STEMCELL_PROFILE`). `None` means the base `~/.stemcell/`
         // dir — no real profile to name — so the chip is omitted (#167).
         if let Some(name) = crate::config::profile::active_profile() {
             push_field(Span::styled(

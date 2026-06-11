@@ -22,9 +22,11 @@ pub struct SlackAgent {
     slack_state: Arc<SlackState>,
     config_rx: tokio::sync::watch::Receiver<Config>,
     channel_msg_repo: ChannelMessageRepository,
+    gateway: crate::channels::gateway::bus::GatewayHandle,
 }
 
 impl SlackAgent {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         agent_service: Arc<AgentService>,
         service_context: ServiceContext,
@@ -32,6 +34,7 @@ impl SlackAgent {
         slack_state: Arc<SlackState>,
         config_rx: tokio::sync::watch::Receiver<Config>,
         channel_msg_repo: ChannelMessageRepository,
+        gateway: crate::channels::gateway::bus::GatewayHandle,
     ) -> Self {
         Self {
             agent_service,
@@ -40,6 +43,7 @@ impl SlackAgent {
             slack_state,
             config_rx,
             channel_msg_repo,
+            gateway,
         }
     }
 
@@ -127,6 +131,7 @@ impl SlackAgent {
                 config_rx: self.config_rx,
                 channel_msg_repo: self.channel_msg_repo,
                 seen_ts: tokio::sync::Mutex::new(std::collections::VecDeque::new()),
+                gateway: self.gateway,
             };
             handler::HANDLER_STATE
                 .set(Arc::new(handler_state))

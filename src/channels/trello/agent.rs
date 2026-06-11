@@ -6,7 +6,7 @@
 use super::TrelloState;
 use super::client::TrelloClient;
 use super::handler;
-use crate::brain::agent::AgentService;
+use crate::channels::gateway::bus::GatewayHandle;
 use crate::services::{ServiceContext, SessionService};
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -14,7 +14,7 @@ use uuid::Uuid;
 
 /// Background agent that polls Trello boards for new card comments.
 pub struct TrelloAgent {
-    agent_service: Arc<AgentService>,
+    gateway: GatewayHandle,
     service_context: ServiceContext,
     allowed_users: Vec<String>,
     shared_session_id: Arc<Mutex<Option<Uuid>>>,
@@ -28,7 +28,7 @@ pub struct TrelloAgent {
 impl TrelloAgent {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        agent_service: Arc<AgentService>,
+        gateway: GatewayHandle,
         service_context: ServiceContext,
         allowed_users: Vec<String>,
         shared_session_id: Arc<Mutex<Option<Uuid>>>,
@@ -38,7 +38,7 @@ impl TrelloAgent {
         idle_timeout_hours: Option<f64>,
     ) -> Self {
         Self {
-            agent_service,
+            gateway,
             service_context,
             allowed_users,
             shared_session_id,
@@ -161,7 +161,7 @@ impl TrelloAgent {
                         handler::process_comment(
                             action,
                             &client,
-                            self.agent_service.clone(),
+                            &self.gateway,
                             session_svc.clone(),
                             self.shared_session_id.clone(),
                             owner_member_id.as_deref(),

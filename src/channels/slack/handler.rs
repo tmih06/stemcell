@@ -12,7 +12,6 @@ use crate::config::{Config, RespondTo};
 use crate::db::ChannelMessageRepository;
 use crate::db::models::ChannelMessage as DbChannelMessage;
 use crate::services::SessionService;
-use crate::utils::sanitize::redact_secrets;
 use crate::utils::truncate_str;
 use slack_morphism::prelude::*;
 use std::collections::{HashMap, HashSet, VecDeque};
@@ -361,6 +360,8 @@ pub struct HandlerState {
     /// Uses VecDeque for FIFO eviction — oldest entries are dropped when limit
     /// is reached, preserving the rest so retries never slip through a full clear.
     pub seen_ts: Mutex<VecDeque<String>>,
+    /// Handle for publishing inbound messages onto the gateway bus.
+    pub gateway: crate::channels::gateway::bus::GatewayHandle,
 }
 
 impl HandlerState {
@@ -375,34 +376,6 @@ impl HandlerState {
             .filter(|t| !t.is_empty())
             .unwrap_or_else(|| self.bot_token.clone())
     }
-}
-
-/// Split a message into chunks that fit Slack's limit (conservative 3000 chars).
-pub fn split_message(text: &str, max_len: usize) -> Vec<&str> {
-    if text.len() <= max_len {
-        return vec![text];
-    }
-    let mut chunks = Vec::new();
-    let mut start = 0;
-    while start < text.len() {
-        let mut end = (start + max_len).min(text.len());
-        // Ensure end falls on a char boundary (back up if inside a multi-byte char)
-        while end < text.len() && !text.is_char_boundary(end) {
-            end -= 1;
-        }
-        let break_at = if end < text.len() {
-            text[start..end]
-                .rfind('\n')
-                .filter(|&pos| pos > end - start - 200)
-                .map(|pos| start + pos + 1)
-                .unwrap_or(end)
-        } else {
-            end
-        };
-        chunks.push(&text[start..break_at]);
-        start = break_at;
-    }
-    chunks
 }
 
 /// Socket Mode push event callback (function pointer — required by slack-morphism).
@@ -1260,633 +1233,53 @@ async fn handle_message(
         agent_input
     };
 
-    // Tell the LLM its text response is automatically delivered to the chat,
-    // so it should NOT use slack_send for simple text replies.
+    // Tell the LLM its text response is automatically delivered to the chat.
     let agent_input = format!(
-        "[Channel: Slack — your text response is automatically sent to this channel. \
-         Do NOT call slack_send to deliver your answer. Only use slack_send for: \
-         sending to a different channel, threads, blocks, reactions, files, or moderation.]\n{image_hint}{agent_input}"
+        "[Channel: Slack — your text response is automatically sent to this channel.]\n{image_hint}{agent_input}"
     );
 
-    // Register channel for approval routing, then send with approval callback
+    // Register channel for approval routing (the surface's callbacks resolve
+    // the channel from session_id), then publish onto the gateway bus. The
+    // gateway runs the agent turn and routes the response back through
+    // `SlackSurface::deliver`.
     state
         .slack_state
         .register_session_channel(session_id, channel_id.clone())
         .await;
-    let approval_cb = make_approval_callback(state.slack_state.clone());
-
-    // Follow-up interrupt: cancel any running agent for this session before starting new work
+    // Follow-up interrupt: cancel any running agent for this session.
     state.slack_state.cancel_session(session_id).await;
 
-    let cancel_token = tokio_util::sync::CancellationToken::new();
     state
         .slack_state
-        .store_cancel_token(session_id, cancel_token.clone())
-        .await;
-
-    // Post a "thinking" placeholder so the user knows we're processing
-    let thinking_ts: Arc<Mutex<Option<SlackTs>>> = Arc::new(Mutex::new(None));
-    {
-        let token = SlackApiToken::new(SlackApiTokenValue::from(state.current_bot_token()));
-        let session = client.open_session(&token);
-        let mut req = SlackApiChatPostMessageRequest::new(
-            SlackChannelId::new(channel_id.clone()),
-            SlackMessageContent::new().with_text("_thinking..._".to_string()),
-        );
-        if let Some(ref ts) = thread_ts {
-            req = req.with_thread_ts(ts.clone());
-        }
-        if let Ok(resp) = session.chat_post_message(&req).await {
-            *thinking_ts.lock().await = Some(resp.ts);
-        }
-    }
-
-    // Track sent intermediate message timestamps so we can delete them before
-    // sending the final response (prevents duplicate content on Slack).
-    // Per-turn record of intermediate posts: (slack_ts, content_hash). Both
-    // are needed at final-response time:
-    //   * `slack_ts` to delete the intermediate from the channel.
-    //   * `content_hash` to detect when the final's body matches an
-    //     intermediate verbatim — in which case the intermediate IS the
-    //     answer and we keep it instead of delete+repost.
-    // Per-TURN scope, not global. Earlier I used `state.seen_responses` (a
-    // 5-minute window keyed by channel + hash on HandlerState) and it
-    // suppressed legitimate final posts whenever the same body recurred
-    // across separate user prompts — observed at 01:18 / 01:32 / 01:39+
-    // today, same hash dropping five different turns. The eviction window
-    // doesn't matter when the hash gets re-inserted on every turn that
-    // happens to produce the same answer; the only correct scope is one
-    // turn.
-    let sent_intermediate_ts: Arc<Mutex<Vec<(SlackTs, u64)>>> = Arc::new(Mutex::new(Vec::new()));
-    let sent_intermediate_ts_final = sent_intermediate_ts.clone();
-
-    // Track every IntermediateText `tokio::spawn` handle so the
-    // final-response branch can await ALL of them before reading the
-    // `sent_intermediate_ts` list. Without this, the spawn-then-push race
-    // produced visible duplicates: stream emits IntermediateText, spawn
-    // fires `chat_post_message` + push (~200-500ms), stream ends, final
-    // handler reads list while it's still empty, classifies the
-    // intermediate as not-yet-posted, and posts the same body a second
-    // time. Sync `std::sync::Mutex` because the progress callback closure
-    // is synchronous and we only ever drain (no contention across
-    // .await).
-    let intermediate_handles: Arc<std::sync::Mutex<Vec<tokio::task::JoinHandle<()>>>> =
-        Arc::new(std::sync::Mutex::new(Vec::new()));
-    let intermediate_handles_cb = intermediate_handles.clone();
-    let intermediate_handles_final = intermediate_handles.clone();
-
-    // Build progress callback — sends tool call status as Slack messages
-    #[allow(clippy::type_complexity)]
-    let progress_cb: crate::brain::agent::ProgressCallback = {
-        use crate::brain::agent::ProgressEvent;
-
-        struct ToolEntry {
-            msg_ts: Option<SlackTs>,
-            name: String,
-            context: String,
-        }
-
-        let tools: Arc<Mutex<Vec<ToolEntry>>> = Arc::new(Mutex::new(Vec::new()));
-        let bot_token_cb = state.current_bot_token();
-        let channel_cb = SlackChannelId::new(channel_id.clone());
-        let client_cb = client.clone();
-        let thinking_ts_cb = thinking_ts.clone();
-        let thread_ts_cb = thread_ts.clone();
-
-        Arc::new(move |_session_id, event| {
-            let tools = tools.clone();
-            let _ts_ref = sent_intermediate_ts.clone();
-            let token = SlackApiToken::new(SlackApiTokenValue::from(bot_token_cb.clone()));
-            let channel = channel_cb.clone();
-            let client = client_cb.clone();
-            let thread_ts_inner = thread_ts_cb.clone();
-
-            match event {
-                ProgressEvent::ToolStarted {
-                    tool_name,
-                    tool_input,
-                } => {
-                    let thinking_ts = thinking_ts_cb.clone();
-                    let ctx = crate::utils::tool_context_hint(&tool_name, &tool_input);
-                    tokio::spawn(async move {
-                        let session = client.open_session(&token);
-                        // Delete the "thinking..." placeholder on first tool call
-                        if let Some(ts) = thinking_ts.lock().await.take() {
-                            let del = SlackApiChatDeleteRequest::new(channel.clone(), ts.clone());
-                            if let Err(e) = session.chat_delete(&del).await {
-                                tracing::warn!(
-                                    "Slack: chat_delete failed (thinking placeholder on tool start, ts={}): {}",
-                                    ts,
-                                    e
-                                );
-                            }
-                        }
-                        let text = format!("⚙️ *{}*{}", tool_name, ctx);
-                        let mut req = SlackApiChatPostMessageRequest::new(
-                            channel,
-                            SlackMessageContent::new().with_text(text),
-                        );
-                        if let Some(ref ts) = thread_ts_inner {
-                            req = req.with_thread_ts(ts.clone());
-                        }
-                        if let Ok(resp) = session.chat_post_message(&req).await {
-                            let mut t = tools.lock().await;
-                            t.push(ToolEntry {
-                                msg_ts: Some(resp.ts),
-                                name: tool_name,
-                                context: ctx,
-                            });
-                        }
-                    });
-                }
-                ProgressEvent::ToolCompleted {
-                    tool_name, success, ..
-                } => {
-                    tokio::spawn(async move {
-                        let session = client.open_session(&token);
-                        let mut t = tools.lock().await;
-                        if let Some(entry) = t
-                            .iter_mut()
-                            .rev()
-                            .find(|e| e.name == tool_name && e.msg_ts.is_some())
-                        {
-                            let icon = if success { "✅" } else { "❌" };
-                            let text = format!("{} *{}*{}", icon, entry.name, entry.context);
-                            if let Some(ts) = entry.msg_ts.take() {
-                                let upd = SlackApiChatUpdateRequest::new(
-                                    channel,
-                                    SlackMessageContent::new().with_text(text),
-                                    ts.clone(),
-                                );
-                                if let Err(e) = session.chat_update(&upd).await {
-                                    tracing::warn!(
-                                        "Slack: chat_update failed (tool {} status, ts={}): {}",
-                                        entry.name,
-                                        ts,
-                                        e
-                                    );
-                                }
-                            }
-                        }
-                    });
-                }
-                ProgressEvent::SelfHealingAlert { message } => {
-                    let thread_ts_heal = thread_ts_inner.clone();
-                    tokio::spawn(async move {
-                        let session = client.open_session(&token);
-                        let text = format!("🔧 {}", message);
-                        let mut req = SlackApiChatPostMessageRequest::new(
-                            channel,
-                            SlackMessageContent::new().with_text(text),
-                        );
-                        if let Some(ref ts) = thread_ts_heal {
-                            req = req.with_thread_ts(ts.clone());
-                        }
-                        let _ = session.chat_post_message(&req).await;
-                    });
-                }
-                ProgressEvent::IntermediateText { text, .. } => {
-                    let thread_ts_resp = thread_ts_inner.clone();
-                    let ts_ref = sent_intermediate_ts.clone();
-                    // Strip LLM-hallucinated artifacts (<!-- tools-v2: ... -->,
-                    // <tool_call> XML blocks, etc.) BEFORE posting. The
-                    // final-response handler does this on text_only; this is
-                    // the intermediate-path mirror so the same content
-                    // doesn't leak the raw `<!-- tools-v2: [...] -->`
-                    // comment into the channel as visible text. Observed
-                    // in a turn with multiple bash steps where one tool's
-                    // tools-v2 wrapper rendered as raw HTML in Slack
-                    // because the streaming chunk never hit the final
-                    // response cleanup path.
-                    let text = crate::utils::sanitize::strip_llm_artifacts(&text);
-                    // Strip <<IMG:path>> markers — the final-response handler
-                    // extracts these and uploads via files_upload, but if the
-                    // LLM emits the marker mid-stream the intermediate path
-                    // would post the raw token verbatim AND the prefixed body
-                    // would no longer hash-match a prior clean intermediate,
-                    // breaking dedup against the final post (same root cause
-                    // as the Telegram fix at 37d9f69a).
-                    let (text_clean, _img_paths) = crate::utils::extract_img_markers(&text);
-                    // Same reasoning for <<VID:>> markers — strip so a
-                    // mid-stream emit doesn't leak the raw token AND
-                    // doesn't break hash-match against the final.
-                    let (text_clean, _vid_paths) = crate::utils::extract_vid_markers(&text_clean);
-                    let text_clone = text_clean;
-                    let handle = tokio::spawn(async move {
-                        let session = client.open_session(&token);
-                        let text_fmt = crate::utils::slack_fmt::markdown_to_mrkdwn(&text_clone);
-                        let mut req = SlackApiChatPostMessageRequest::new(
-                            channel,
-                            SlackMessageContent::new().with_text(text_fmt.clone()),
-                        );
-                        if let Some(ref ts) = thread_ts_resp {
-                            req = req.with_thread_ts(ts.clone());
-                        }
-                        match session.chat_post_message(&req).await {
-                            Ok(resp) => {
-                                use std::collections::hash_map::DefaultHasher;
-                                use std::hash::{Hash, Hasher};
-                                let mut hasher = DefaultHasher::new();
-                                text_fmt.hash(&mut hasher);
-                                let content_hash = hasher.finish();
-                                ts_ref.lock().await.push((resp.ts, content_hash));
-                            }
-                            Err(e) => {
-                                tracing::debug!("Slack: failed to send intermediate text: {}", e);
-                            }
-                        }
-                    });
-                    if let Ok(mut g) = intermediate_handles_cb.lock() {
-                        g.push(handle);
-                    }
-                }
-                _ => {}
-            }
-        })
-    };
-
-    let question_cb = super::follow_up_question::make_question_callback(
-        state.slack_state.clone(),
-        intermediate_handles.clone(),
-    );
-    let result = state
-        .agent
-        .send_message_with_tools_and_display(
-            session_id,
-            agent_input,
-            Some(display_text),
-            None,
-            Some(cancel_token),
-            Some(approval_cb),
-            Some(progress_cb),
-            Some(question_cb),
-            "slack",
-            Some(&channel_id),
+        .set_delivery_context(
+            channel_id.clone(),
+            crate::channels::slack::SlackDeliveryContext {
+                thread_ts: thread_ts.as_ref().map(|t| t.0.clone()),
+                channel_name: channel_name.clone(),
+                is_voice,
+                voice_config: voice_config.clone(),
+            },
         )
         .await;
 
-    state.slack_state.remove_cancel_token(session_id).await;
+    let mut inbound = crate::channels::gateway::envelope::Inbound::new(
+        "slack",
+        channel_id.clone(),
+        crate::channels::gateway::envelope::SenderRef::new(user_id.clone(), user_name.clone()),
+        agent_input,
+    );
+    inbound.display_text = Some(display_text);
+    inbound.session_hint = Some(session_id);
+    inbound.routing = crate::channels::gateway::envelope::Routing {
+        is_direct: is_dm,
+        is_mention: false,
+    };
 
-    // Delete the "thinking..." placeholder if it's still around
-    {
-        let token = SlackApiToken::new(SlackApiTokenValue::from(state.current_bot_token()));
-        let session = client.open_session(&token);
-        if let Some(ts) = thinking_ts.lock().await.take() {
-            let del =
-                SlackApiChatDeleteRequest::new(SlackChannelId::new(channel_id.clone()), ts.clone());
-            if let Err(e) = session.chat_delete(&del).await {
-                tracing::warn!(
-                    "Slack: chat_delete failed (thinking placeholder, ts={}): {}",
-                    ts,
-                    e
-                );
-            }
-        }
-    }
-
-    match result {
-        Ok(response) => {
-            // Extract <<IMG:path>> and <<VID:path>> markers. IMG paths are
-            // uploaded via files_upload below; VID paths are only stripped
-            // (the agent already analyzed them via analyze_video — we don't
-            // re-attach the source video to Slack). Stripping VID here so
-            // the final hash matches the intermediate hash (which also
-            // strips VID), preserving dedup.
-            let (text_only, img_paths) = crate::utils::extract_img_markers(&response.content);
-            let (text_only, _vid_paths) = crate::utils::extract_vid_markers(&text_only);
-            let text_only = crate::utils::sanitize::strip_llm_artifacts(&text_only);
-            let text_only = redact_secrets(&text_only);
-
-            let text_only = crate::utils::slack_fmt::markdown_to_mrkdwn(&text_only);
-
-            let token = SlackApiToken::new(SlackApiTokenValue::from(state.current_bot_token()));
-            let session = client.open_session(&token);
-
-            // Await every IntermediateText spawn before reading the
-            // intermediates list. This closes the spawn-then-push race
-            // that produced visible duplicates: stream emits IntermediateText,
-            // spawn fires `chat_post_message` (~hundreds of ms), stream ends
-            // ~immediately, final handler used to read `sent_intermediate_ts`
-            // while it was still empty, classify the in-flight intermediate as
-            // not-yet-posted, and post the same body a second time.
-            let pending = {
-                let mut g = intermediate_handles_final.lock().expect("poisoned");
-                std::mem::take(&mut *g)
-            };
-            if !pending.is_empty() {
-                tracing::debug!(
-                    "Slack: awaiting {} in-flight intermediate post(s) before dedup",
-                    pending.len()
-                );
-                for h in pending {
-                    let _ = h.await;
-                }
-            }
-
-            // Resolve intermediate-vs-final overlap PER TURN.
-            //
-            // Three outcomes possible after this block:
-            //   1. An intermediate already posted the same body as the final →
-            //      keep it as the visible answer, delete only the OTHER
-            //      intermediates, and skip the final post entirely. Avoids
-            //      delete+repost, which previously produced visible duplicates
-            //      when chat_delete silently failed.
-            //   2. No intermediate matched the final → delete all intermediates
-            //      (they were partial chunks), then post the final.
-            //   3. There were no intermediates → just post the final.
-            //
-            // The dedup is strictly intra-turn. The earlier global
-            // `state.seen_responses` map (5-minute window) caused legit final
-            // posts to be suppressed across separate user prompts whenever
-            // the same body recurred — observed at 01:18/01:32/01:39+ today,
-            // five turns dropped on the same hash.
-            use std::collections::hash_map::DefaultHasher;
-            use std::hash::{Hash, Hasher};
-            let mut hasher = DefaultHasher::new();
-            text_only.hash(&mut hasher);
-            let final_hash = hasher.finish();
-
-            let intermediates = sent_intermediate_ts_final.lock().await.clone();
-
-            // Empty-final guard: when `text_only` is empty/whitespace (model
-            // emitted its real answer mid-stream as IntermediateText and the
-            // final response.content was just a wrap-up with no content), the
-            // intermediates ARE the answer. Don't delete them, don't post
-            // anything else — leave them as the visible reply. Without this
-            // guard, hash("") never matches any real intermediate's hash, so
-            // every intermediate gets classified "non-matching" and deleted,
-            // and the empty post loop emits nothing → user sees zero messages.
-            // Observed at 01:53 today: bot's only response was a streaming
-            // intermediate, the final was empty, my dedup deleted the
-            // intermediate and posted nothing.
-            if text_only.trim().is_empty() {
-                if !intermediates.is_empty() {
-                    tracing::info!(
-                        "Slack: final response is empty — keeping {} intermediate(s) as the visible answer",
-                        intermediates.len(),
-                    );
-                }
-                return;
-            }
-
-            let mut matching_keep: Vec<SlackTs> = Vec::new();
-            let mut to_delete: Vec<SlackTs> = Vec::new();
-            for (ts, hash) in &intermediates {
-                if *hash == final_hash {
-                    matching_keep.push(ts.clone());
-                } else {
-                    to_delete.push(ts.clone());
-                }
-            }
-            if !to_delete.is_empty() {
-                tracing::info!(
-                    "Slack: deleting {} non-matching intermediate(s) before final response",
-                    to_delete.len()
-                );
-                for ts in &to_delete {
-                    let del = SlackApiChatDeleteRequest::new(
-                        SlackChannelId::new(channel_id.clone()),
-                        ts.clone(),
-                    );
-                    if let Err(e) = session.chat_delete(&del).await {
-                        tracing::warn!(
-                            "Slack: chat_delete failed (non-matching intermediate, ts={}): {}",
-                            ts,
-                            e
-                        );
-                    }
-                }
-            }
-            if !matching_keep.is_empty() {
-                tracing::info!(
-                    "Slack: skipping final post — {} intermediate(s) already carry this content (hash={})",
-                    matching_keep.len(),
-                    final_hash,
-                );
-                // The matching intermediate(s) stay visible as the answer.
-                // Channel-messages DB record still gets written below for
-                // future context queries.
-                if !text_only.trim().is_empty() {
-                    let cm = DbChannelMessage::new(
-                        "slack".into(),
-                        channel_id.clone(),
-                        Some(channel_name.clone()),
-                        "bot:stemcell".to_string(),
-                        "StemCell".to_string(),
-                        text_only.clone(),
-                        "text".into(),
-                        None,
-                    );
-                    if let Err(e) = state.channel_msg_repo.insert(&cm).await {
-                        tracing::warn!(
-                            "Slack: failed to record bot reply in channel_messages: {}",
-                            e
-                        );
-                    }
-                }
-                return;
-            }
-
-            for img_path in img_paths {
-                match tokio::fs::read(&img_path).await {
-                    Ok(bytes) => {
-                        let fname = std::path::Path::new(&img_path)
-                            .file_name()
-                            .and_then(|n| n.to_str())
-                            .unwrap_or("image.png")
-                            .to_string();
-                        #[allow(deprecated)]
-                        let req = SlackApiFilesUploadRequest {
-                            channels: Some(vec![SlackChannelId::new(channel_id.clone())]),
-                            binary_content: Some(bytes),
-                            filename: Some(fname),
-                            filetype: None,
-                            content: None,
-                            initial_comment: None,
-                            thread_ts: None,
-                            title: None,
-                            file_content_type: Some("image/png".to_string()),
-                        };
-                        #[allow(deprecated)]
-                        if let Err(e) = session.files_upload(&req).await {
-                            tracing::error!("Slack: failed to upload generated image: {}", e);
-                        }
-                    }
-                    Err(e) => {
-                        tracing::error!("Slack: failed to read image {}: {}", img_path, e);
-                    }
-                }
-            }
-
-            // Context budget footer will be sent as a separate message after
-            // all response delivery is complete, with a 2-second delay.
-
-            for chunk in split_message(&text_only, 3000) {
-                if chunk.is_empty() {
-                    continue;
-                }
-                let mut request = SlackApiChatPostMessageRequest::new(
-                    SlackChannelId::new(channel_id.clone()),
-                    SlackMessageContent::new().with_text(chunk.to_string()),
-                );
-                if let Some(ref ts) = thread_ts {
-                    request = request.with_thread_ts(ts.clone());
-                }
-                if let Err(e) = session.chat_post_message(&request).await {
-                    tracing::error!("Slack: failed to send reply: {}", e);
-                }
-            }
-
-            // Post-completion sweep: defense-in-depth for any IntermediateText
-            // spawn that pushed AFTER the dedup check above (e.g. a stream
-            // chunk delivered post-stream-end, or any future progress source
-            // that races with the final post). Drain remaining handles, await
-            // them, re-read the list, and delete any late entry that matches
-            // `final_hash` and wasn't already classified.
-            let late_pending = {
-                let mut g = intermediate_handles_final.lock().expect("poisoned");
-                std::mem::take(&mut *g)
-            };
-            for h in late_pending {
-                let _ = h.await;
-            }
-            let final_intermediates = sent_intermediate_ts_final.lock().await.clone();
-            let already_seen: std::collections::HashSet<String> = matching_keep
-                .iter()
-                .chain(to_delete.iter())
-                .map(|t| t.to_string())
-                .collect();
-            for (ts, hash) in &final_intermediates {
-                if *hash == final_hash && !already_seen.contains(&ts.to_string()) {
-                    tracing::info!(
-                        "Slack: post-completion sweep — deleting late intermediate ts={} (hash matches final)",
-                        ts
-                    );
-                    let del = SlackApiChatDeleteRequest::new(
-                        SlackChannelId::new(channel_id.clone()),
-                        ts.clone(),
-                    );
-                    if let Err(e) = session.chat_delete(&del).await {
-                        tracing::warn!(
-                            "Slack: chat_delete failed (post-completion sweep, ts={}): {}",
-                            ts,
-                            e
-                        );
-                    }
-                }
-            }
-
-            // Record the bot's reply in channel_messages so recent() context
-            // queries on the next turn see both sides of the conversation,
-            // not only user messages. Matches the Telegram/Discord/WhatsApp
-            // pattern. Applies to all Slack chats (channels + DMs) since
-            // store_channel_msg above also stores for both.
-            if !text_only.trim().is_empty() {
-                let cm = DbChannelMessage::new(
-                    "slack".into(),
-                    channel_id.clone(),
-                    Some(channel_name.clone()),
-                    "bot:stemcell".to_string(),
-                    "StemCell".to_string(),
-                    text_only.clone(),
-                    "text".into(),
-                    None,
-                );
-                if let Err(e) = state.channel_msg_repo.insert(&cm).await {
-                    tracing::warn!(
-                        "Slack: failed to record bot reply in channel_messages: {}",
-                        e
-                    );
-                }
-            }
-
-            // If input was audio AND TTS is enabled, also upload a voice note
-            // (OGG/Opus) alongside the text reply. Slack doesn't have a
-            // dedicated "voice note" primitive like Telegram's send_voice —
-            // audio files uploaded via files.upload play inline with a
-            // waveform UI, which is the closest analogue.
-            if is_voice && voice_config.tts_enabled {
-                tracing::info!(
-                    "Slack: TTS requested — synthesizing response text (len={})",
-                    response.content.len()
-                );
-                match crate::channels::voice::synthesize(&response.content, &voice_config).await {
-                    Ok(audio_bytes) => {
-                        tracing::info!(
-                            "Slack: TTS succeeded — {} bytes of audio, uploading to channel {}",
-                            audio_bytes.len(),
-                            channel_id
-                        );
-                        #[allow(deprecated)]
-                        let req = SlackApiFilesUploadRequest {
-                            channels: Some(vec![SlackChannelId::new(channel_id.clone())]),
-                            binary_content: Some(audio_bytes),
-                            filename: Some("response.ogg".to_string()),
-                            filetype: Some(SlackFileType("ogg".to_string())),
-                            content: None,
-                            initial_comment: None,
-                            thread_ts: thread_ts.clone(),
-                            title: None,
-                            file_content_type: Some("audio/ogg".to_string()),
-                        };
-                        #[allow(deprecated)]
-                        if let Err(e) = session.files_upload(&req).await {
-                            tracing::error!("Slack: failed to upload TTS voice note: {}", e);
-                        }
-                    }
-                    Err(e) => {
-                        tracing::error!("Slack: TTS synthesis failed: {:#}", e);
-                    }
-                }
-            }
-
-            // Send context budget footer as a separate message after 2-second delay
-            // This ensures it appears at the very end, after all response delivery is complete
-            tokio::time::sleep(std::time::Duration::from_secs(2)).await;
-            let ctx_max = state.agent.context_limit_for_session(session_id);
-            let footer = crate::utils::format_ctx_footer(
-                response.context_tokens,
-                ctx_max,
-                response.tokens_per_second,
-            );
-            let mut footer_request = SlackApiChatPostMessageRequest::new(
-                SlackChannelId::new(channel_id.clone()),
-                SlackMessageContent::new().with_text(footer.clone()),
-            );
-            if let Some(ref ts) = thread_ts {
-                footer_request = footer_request.with_thread_ts(ts.clone());
-            }
-            if let Err(e) = session.chat_post_message(&footer_request).await {
-                tracing::warn!("Slack: failed to send ctx footer: {}", e);
-            } else {
-                tracing::info!(
-                    "Slack: sent ctx footer='{}' after 2s delay (context_tokens={}, ctx_max={})",
-                    footer,
-                    response.context_tokens,
-                    ctx_max,
-                );
-            }
-        }
-        Err(ref e) if matches!(e, crate::brain::agent::AgentError::Cancelled) => {
-            tracing::info!("Slack: agent call cancelled for session {}", session_id);
-        }
-        Err(e) => {
-            tracing::error!("Slack: agent error: {}", e);
-            let token = SlackApiToken::new(SlackApiTokenValue::from(state.current_bot_token()));
-            let session = client.open_session(&token);
-            // Shared helper — same wording as TUI / Telegram / Discord /
-            // WhatsApp so a user moving between channels sees consistent
-            // failure messages.
-            let error_msg = format!("❌ Error\n\n{}", crate::brain::agent::format_user_error(&e));
-            let mut request = SlackApiChatPostMessageRequest::new(
-                SlackChannelId::new(channel_id),
-                SlackMessageContent::new().with_text(error_msg),
-            );
-            if let Some(ref ts) = thread_ts {
-                request = request.with_thread_ts(ts.clone());
-            }
-            let _ = session.chat_post_message(&request).await;
-        }
+    if !state.gateway.publish_inbound(inbound) {
+        tracing::warn!(
+            "Slack: gateway rejected inbound (queue full or closed) for channel {}",
+            channel_id
+        );
     }
 }
 

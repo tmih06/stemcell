@@ -890,52 +890,43 @@ async fn cmd_chat_inner(
         }
     }
 
-    // Channel manager — handles dynamic spawn/stop of channel agents on config reload
-    #[cfg(any(
-        feature = "telegram",
-        feature = "whatsapp",
-        feature = "discord",
-        feature = "slack",
-        feature = "trello"
-    ))]
-    let channel_manager = Arc::new(crate::channels::ChannelManager::new(
-        #[cfg(any(
-            feature = "telegram",
-            feature = "whatsapp",
-            feature = "discord",
-            feature = "slack",
-            feature = "trello"
-        ))]
-        channel_factory.clone(),
-        #[cfg(any(
-            feature = "telegram",
-            feature = "whatsapp",
-            feature = "discord",
-            feature = "slack",
-            feature = "trello"
-        ))]
-        db.pool().clone(),
-        #[cfg(feature = "telegram")]
-        telegram_state.clone(),
-        #[cfg(feature = "whatsapp")]
-        whatsapp_state.clone(),
-        #[cfg(feature = "discord")]
-        discord_state.clone(),
-        #[cfg(feature = "slack")]
-        slack_state.clone(),
-        #[cfg(feature = "trello")]
-        trello_state.clone(),
-    ));
-
-    // Initial channel spawn — reconcile against current config
-    #[cfg(any(
-        feature = "telegram",
-        feature = "whatsapp",
-        feature = "discord",
-        feature = "slack",
-        feature = "trello"
-    ))]
-    channel_manager.reconcile(config).await;
+    // ── Unified channel gateway ───────────────────────────────────────────
+    // All channels (and the TUI) run as `Surface`s on the gateway, which owns
+    // their lifecycle (start/stop on config change) and the single
+    // inbound→agent→outbound pipeline. The legacy `ChannelManager` is gone.
+    let gateway_handle = {
+        let surface_deps = crate::channels::gateway::SurfaceDeps {
+            agent: app.agent_service().clone(),
+            service_context: service_context.clone(),
+            config_rx: channel_factory.config_rx(),
+            shared_session_id: app.shared_session_id(),
+            db_pool: db.pool().clone(),
+            tui_event_tx: app.event_sender(),
+            #[cfg(feature = "telegram")]
+            telegram_state: telegram_state.clone(),
+            #[cfg(feature = "discord")]
+            discord_state: discord_state.clone(),
+            #[cfg(feature = "slack")]
+            slack_state: slack_state.clone(),
+            #[cfg(feature = "whatsapp")]
+            whatsapp_state: whatsapp_state.clone(),
+            #[cfg(feature = "trello")]
+            trello_state: trello_state.clone(),
+        };
+        let surfaces = crate::channels::gateway::registered_surfaces(&surface_deps);
+        let ctx = crate::channels::gateway::GatewayContext {
+            agent: app.agent_service().clone(),
+            session_service: crate::services::SessionService::new(service_context.clone()),
+            config_rx: channel_factory.config_rx(),
+        };
+        let mut gateway = crate::channels::gateway::Gateway::new(ctx, surfaces);
+        gateway.reconcile(config).await;
+        let handle = gateway.handle();
+        tokio::spawn(gateway.run());
+        tracing::info!("Channel gateway started");
+        handle
+    };
+    let _ = &gateway_handle;
 
     // Spawn config hot-reload watcher — fires on any change to config.toml, keys.toml,
     // or commands.toml without requiring a restart.
@@ -977,23 +968,9 @@ async fn cmd_chat_inner(
             }));
         }
 
-        // Channel lifecycle — spawn/stop channels when enabled flag changes
-        #[cfg(any(
-            feature = "telegram",
-            feature = "whatsapp",
-            feature = "discord",
-            feature = "slack",
-            feature = "trello"
-        ))]
-        {
-            let channel_mgr = channel_manager.clone();
-            callbacks.push(Arc::new(move |cfg: crate::config::Config| {
-                let mgr = channel_mgr.clone();
-                tokio::task::block_in_place(|| {
-                    tokio::runtime::Handle::current().block_on(mgr.reconcile(&cfg));
-                });
-            }));
-        }
+        // Channel lifecycle on config change is handled inside the gateway run
+        // loop, which watches `config_rx` and re-reconciles surfaces itself — no
+        // separate config-reload callback needed.
 
         let _config_watcher = config_watcher::spawn(callbacks);
     }
@@ -1038,8 +1015,8 @@ async fn cmd_chat_inner(
         });
     }
 
-    // Channel spawning is handled by channel_manager.reconcile() above (line ~669).
-    // On config reload, reconcile() is called again to spawn/stop channels dynamically.
+    // Channel spawning is handled by the gateway run loop, which reconciles
+    // surfaces on startup and on every config reload (it watches config_rx).
 
     // Run TUI or block in headless daemon mode
     if headless {

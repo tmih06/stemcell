@@ -4,7 +4,7 @@
 //! session routing (owner shares TUI session, others get per-phone sessions).
 
 use crate::brain::agent::AgentService;
-use crate::brain::agent::{ApprovalCallback, ProgressCallback, ProgressEvent};
+use crate::brain::agent::ApprovalCallback;
 use crate::channels::whatsapp::WhatsAppState;
 use crate::config::Config;
 use crate::db::ChannelMessageRepository;
@@ -14,11 +14,9 @@ use crate::utils::sanitize::redact_secrets;
 use crate::utils::truncate_str;
 use std::collections::HashSet;
 use std::sync::Arc;
-use std::sync::Mutex;
 use tokio::sync::Mutex as TokioMutex;
 use uuid::Uuid;
 
-use tokio_util::sync::CancellationToken;
 use wacore::types::message::MessageInfo;
 use waproto::whatsapp::Message;
 use whatsapp_rust::client::Client;
@@ -251,6 +249,7 @@ pub(crate) async fn handle_message(
     wa_state: Arc<WhatsAppState>,
     config_rx: tokio::sync::watch::Receiver<Config>,
     channel_msg_repo: ChannelMessageRepository,
+    gateway: crate::channels::gateway::bus::GatewayHandle,
 ) {
     let phone = sender_phone(&info);
     tracing::debug!(
@@ -775,441 +774,285 @@ pub(crate) async fn handle_message(
          There is no whatsapp_send tool. Just reply with text.]\n{agent_input}"
     );
 
-    // Typing indicator — send composing every 5 s while the agent thinks
-    let typing_cancel = CancellationToken::new();
-    tokio::spawn({
-        let client = client.clone();
-        let chat_jid = info.source.chat.clone();
-        let cancel = typing_cancel.clone();
-        async move {
-            loop {
-                let _ = client.chatstate().send_composing(&chat_jid).await;
-                tokio::select! {
-                    _ = cancel.cancelled() => break,
-                    _ = tokio::time::sleep(std::time::Duration::from_secs(5)) => {}
-                }
-            }
-            let _ = client.chatstate().send_paused(&chat_jid).await;
-        }
-    });
-
-    // Progress callback: forward intermediate texts (between tool-call iterations)
-    // to WhatsApp in real time. WhatsApp doesn't support message editing, so we
-    // send each chunk as a new message. Images (<<IMG:...>>) are stripped here —
-    // the main handler delivers them as actual WhatsApp image messages.
-    let was_streamed = Arc::new(std::sync::atomic::AtomicBool::new(false));
-    let sent_intermediates: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
-    // Track spawned intermediate sends so the follow-up-question callback
-    // can await them before posting the question (issue #142). Sync Mutex
-    // because the progress callback closure is synchronous.
-    let intermediate_handles: Arc<std::sync::Mutex<Vec<tokio::task::JoinHandle<()>>>> =
-        Arc::new(std::sync::Mutex::new(Vec::new()));
-    let intermediate_handles_cb = intermediate_handles.clone();
-    let progress_cb: ProgressCallback = {
-        let client_cb = client.clone();
-        let jid_cb = info.source.chat.clone();
-        let was_streamed_cb = was_streamed.clone();
-        Arc::new(move |_session_id, event| match event {
-            ProgressEvent::IntermediateText { text, .. } => {
-                let (clean, _) = crate::utils::extract_img_markers(&text);
-                let clean = redact_secrets(&clean);
-                let clean = crate::utils::sanitize::strip_llm_artifacts(&clean);
-                let clean = crate::utils::slack_fmt::markdown_to_mrkdwn(&clean);
-                if !clean.trim().is_empty() {
-                    // Pre-send dedup: skip if this exact text was already sent
-                    let mut prev = sent_intermediates.lock().unwrap();
-                    if prev.iter().any(|s| s == &clean) {
-                        drop(prev);
-                        return;
-                    }
-                    prev.push(clean.clone());
-                    drop(prev);
-                    was_streamed_cb.store(true, std::sync::atomic::Ordering::Relaxed);
-                    let client = client_cb.clone();
-                    let jid = jid_cb.clone();
-                    let tagged = format!("{}\n\n{}", MSG_HEADER, clean.trim());
-                    let handle = tokio::spawn(async move {
-                        for chunk in split_message(&tagged, 4000) {
-                            let msg = waproto::whatsapp::Message {
-                                conversation: Some(chunk.to_string()),
-                                ..Default::default()
-                            };
-                            if let Err(e) = client.send_message(jid.clone(), msg).await {
-                                tracing::error!("WhatsApp: intermediate text send failed: {}", e);
-                            }
-                        }
-                    });
-                    if let Ok(mut g) = intermediate_handles_cb.lock() {
-                        g.push(handle);
-                    }
-                }
-            }
-            ProgressEvent::SelfHealingAlert { message } => {
-                let client = client_cb.clone();
-                let jid = jid_cb.clone();
-                let alert = format!("{}\n\n🔧 {}", MSG_HEADER, message);
-                tokio::spawn(async move {
-                    let msg = waproto::whatsapp::Message {
-                        conversation: Some(alert),
-                        ..Default::default()
-                    };
-                    if let Err(e) = client.send_message(jid, msg).await {
-                        tracing::error!("WhatsApp: self-healing alert send failed: {}", e);
-                    }
-                });
-            }
-            _ => {}
-        })
-    };
-
-    // Build per-call approval callback.
-    // If the user previously chose "Always (session)", auto-approve without asking.
-    // Otherwise send a 3-button message (Yes / Always / No) and wait up to 5 min.
-    let approval_cb: ApprovalCallback = {
-        use crate::channels::whatsapp::WaApproval;
-        use crate::utils::{check_approval_policy, persist_auto_session_policy};
-
-        let client = client.clone();
-        let chat_jid = info.source.chat.clone();
-        let phone_key = phone.clone();
-        let wa_state = wa_state.clone();
-        Arc::new(move |tool_info| {
-            let client = client.clone();
-            let chat_jid = chat_jid.clone();
-            let phone_key = phone_key.clone();
-            let wa_state = wa_state.clone();
-            Box::pin(async move {
-                // Respect config-level approval policy (single source of truth)
-                if let Some(result) = check_approval_policy() {
-                    return Ok(result);
-                }
-
-                // Redact secrets before display
-                let safe_input = crate::utils::redact_tool_input(&tool_info.tool_input);
-                let input_preview = serde_json::to_string_pretty(&safe_input).unwrap_or_default();
-                let body = format!(
-                    "🔐 *Tool Approval Required*\n\nTool: `{}`\n```\n{}\n```",
-                    tool_info.tool_name,
-                    truncate_str(&input_preview, 600),
-                );
-
-                // Send plain text approval request (ButtonsMessage is deprecated
-                // by WhatsApp and silently never renders — use text only)
-                let text_msg = waproto::whatsapp::Message {
-                    conversation: Some(format!(
-                        "{}\n\n{}\n\nReply *yes*, *always* (session), *yolo* (permanent), or *no* (5 min timeout).",
-                        MSG_HEADER, body
-                    )),
-                    ..Default::default()
-                };
-                tracing::info!(
-                    "WhatsApp approval: sending request for tool '{}' to {}",
-                    tool_info.tool_name,
-                    phone_key
-                );
-                if let Err(e) = client.send_message(chat_jid.clone(), text_msg).await {
-                    tracing::error!("WhatsApp: failed to send approval request: {}", e);
-                    return Ok((false, false));
-                }
-
-                let (tx, rx) = tokio::sync::oneshot::channel::<WaApproval>();
-                wa_state
-                    .register_pending_approval(phone_key.clone(), tx)
-                    .await;
-                tracing::info!(
-                    "WhatsApp approval: registered pending for phone={}, waiting for response",
-                    phone_key
-                );
-
-                match tokio::time::timeout(std::time::Duration::from_secs(300), rx).await {
-                    Ok(Ok(WaApproval::Yes)) => {
-                        tracing::info!("WhatsApp approval: user approved (phone={})", phone_key);
-                        Ok((true, false))
-                    }
-                    Ok(Ok(WaApproval::Always)) => {
-                        tracing::info!(
-                            "WhatsApp approval: user chose Always (phone={})",
-                            phone_key
-                        );
-                        persist_auto_session_policy();
-                        Ok((true, true))
-                    }
-                    Ok(Ok(WaApproval::Yolo)) => {
-                        tracing::info!("WhatsApp approval: user chose YOLO (phone={})", phone_key);
-                        crate::utils::persist_auto_always_policy();
-                        Ok((true, true))
-                    }
-                    Ok(Ok(WaApproval::No)) => {
-                        tracing::info!("WhatsApp approval: user denied (phone={})", phone_key);
-                        Ok((false, false))
-                    }
-                    _ => {
-                        tracing::warn!(
-                            "WhatsApp: approval timed out or channel dropped — denying (phone={})",
-                            phone_key
-                        );
-                        let timeout_msg = waproto::whatsapp::Message {
-                            conversation: Some(format!(
-                                "{}\n\n⏰ No response in 5 minutes — *{}* was denied.\n\nSend your message again and reply *yes*, *always*, or *no* when prompted.",
-                                MSG_HEADER, tool_info.tool_name,
-                            )),
-                            ..Default::default()
-                        };
-                        let _ = client.send_message(chat_jid, timeout_msg).await;
-                        Ok((false, false))
-                    }
-                }
-            })
-        })
-    };
-
-    // Send to agent with WhatsApp approval + progress callbacks
-    let cancel_token = CancellationToken::new();
-    wa_state
-        .store_cancel_token(session_id, cancel_token.clone())
-        .await;
-
+    // ── Publish onto the gateway bus ───────────────────────────────────────────
+    // The gateway runs the agent turn and routes the response back through
+    // `WhatsAppSurface::deliver`. The session was resolved here, so it rides
+    // along as `session_hint`. The phone allowlist gate already passed above
+    // (WhatsApp isn't covered by the shared allowlist), so publishing means the
+    // surface authorized this turn. Stash per-turn context the surface's
+    // callbacks (phone-keyed approval/question) and `deliver` (group-record +
+    // TTS) need but the generic envelope doesn't carry.
     let wa_chat_id = format!("{}", info.source.chat);
-    let question_cb = super::follow_up_question::make_question_callback(
-        client.clone(),
-        info.source.chat.clone(),
-        phone.clone(),
-        wa_state.clone(),
-        intermediate_handles.clone(),
-    );
-    let result = agent
-        .send_message_with_tools_and_display(
+    wa_state
+        .set_delivery_context(
             session_id,
-            agent_input,
-            Some(display_text),
-            None,
-            Some(cancel_token),
-            Some(approval_cb),
-            Some(progress_cb),
-            Some(question_cb),
-            "whatsapp",
-            Some(&wa_chat_id),
+            crate::channels::whatsapp::WhatsAppDeliveryContext {
+                phone: phone.clone(),
+                chat_jid: info.source.chat.clone(),
+                is_group: info.source.is_group,
+                is_voice: has_aud,
+                voice_config: voice_config.clone(),
+            },
         )
         .await;
 
-    // Await any in-flight intermediate spawns before cleanup so dedup
-    // can compare against what was actually delivered (mirrors Slack's
-    // intermediate_handles_final pattern).
-    {
-        let pending = {
-            let mut g = intermediate_handles.lock().expect("poisoned");
-            std::mem::take(&mut *g)
-        };
-        for h in pending {
-            let _ = h.await;
+    let mut inbound = crate::channels::gateway::envelope::Inbound::new(
+        "whatsapp",
+        wa_chat_id.clone(),
+        crate::channels::gateway::envelope::SenderRef::new(phone.clone(), info.push_name.clone()),
+        agent_input,
+    );
+    inbound.display_text = Some(display_text);
+    inbound.session_hint = Some(session_id);
+    inbound.routing = crate::channels::gateway::envelope::Routing {
+        is_direct: !info.source.is_group,
+        is_mention: false,
+    };
+
+    if !gateway.publish_inbound(inbound) {
+        tracing::warn!(
+            "WhatsApp: gateway rejected inbound (queue full or closed) for chat {}",
+            wa_chat_id
+        );
+    }
+}
+
+/// Deliver an agent reply back to a WhatsApp chat: send extracted images, the
+/// text reply (chunked), record the bot reply for context, optionally a TTS
+/// voice note, then the context-budget footer. Called by the surface's
+/// `deliver` after the gateway runs the turn. Replaces the old inline delivery
+/// block; the live progress-streaming is gone ("simplify replies"), but the
+/// non-streaming concerns (group-record + TTS) are preserved.
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn deliver_reply(
+    client: &Arc<Client>,
+    chat_jid: wacore_binary::jid::Jid,
+    full_text: &str,
+    is_group: bool,
+    is_voice: bool,
+    voice_config: Option<&crate::config::VoiceConfig>,
+    ctx_max: u32,
+    response: &crate::brain::agent::AgentResponse,
+    channel_msg_repo: &ChannelMessageRepository,
+) {
+    // Extract <<IMG:path>> markers — send each as a real WhatsApp image message.
+    let (text_content, img_paths) = crate::utils::extract_img_markers(full_text);
+    let text_content = crate::utils::sanitize::strip_llm_artifacts(&text_content);
+    let text_content = redact_secrets(&text_content);
+    let text_content = crate::utils::slack_fmt::markdown_to_mrkdwn(&text_content);
+
+    for img_path in img_paths {
+        match tokio::fs::read(&img_path).await {
+            Ok(bytes) => {
+                use wacore::download::MediaType;
+                use waproto::whatsapp::message::ImageMessage;
+                use whatsapp_rust::upload::UploadOptions;
+                match client
+                    .upload(bytes, MediaType::Image, UploadOptions::default())
+                    .await
+                {
+                    Ok(upload) => {
+                        let mime = if img_path.ends_with(".png") {
+                            "image/png"
+                        } else {
+                            "image/jpeg"
+                        };
+                        let img_msg = waproto::whatsapp::Message {
+                            image_message: Some(Box::new(ImageMessage {
+                                url: Some(upload.url),
+                                direct_path: Some(upload.direct_path),
+                                media_key: Some(upload.media_key.to_vec()),
+                                file_enc_sha256: Some(upload.file_enc_sha256.to_vec()),
+                                file_sha256: Some(upload.file_sha256.to_vec()),
+                                file_length: Some(upload.file_length),
+                                mimetype: Some(mime.to_string()),
+                                ..Default::default()
+                            })),
+                            ..Default::default()
+                        };
+                        if let Err(e) = client.send_message(chat_jid.clone(), img_msg).await {
+                            tracing::error!("WhatsApp: failed to send generated image: {}", e);
+                        }
+                    }
+                    Err(e) => {
+                        tracing::error!("WhatsApp: image upload failed for {}: {}", img_path, e)
+                    }
+                }
+            }
+            Err(e) => tracing::error!("WhatsApp: failed to read image {}: {}", img_path, e),
         }
     }
 
-    wa_state.remove_cancel_token(session_id).await;
-    typing_cancel.cancel();
-
-    match result {
-        Ok(response) => {
-            let reply_jid = info.source.chat.clone();
-
-            // Extract <<IMG:path>> markers — send each as a real WhatsApp image message.
-            let (text_content, img_paths) = crate::utils::extract_img_markers(&response.content);
-            let text_content = crate::utils::sanitize::strip_llm_artifacts(&text_content);
-            let text_content = redact_secrets(&text_content);
-            let text_content = crate::utils::slack_fmt::markdown_to_mrkdwn(&text_content);
-
-            // Context budget footer will be sent as a separate message after
-            // all response delivery is complete, with a 2-second delay.
-
-            // Send images before text
-            for img_path in img_paths {
-                match tokio::fs::read(&img_path).await {
-                    Ok(bytes) => {
-                        use wacore::download::MediaType;
-                        use waproto::whatsapp::message::ImageMessage;
-                        use whatsapp_rust::upload::UploadOptions;
-                        match client
-                            .upload(bytes, MediaType::Image, UploadOptions::default())
-                            .await
-                        {
-                            Ok(upload) => {
-                                let mime = if img_path.ends_with(".png") {
-                                    "image/png"
-                                } else {
-                                    "image/jpeg"
-                                };
-                                let img_msg = waproto::whatsapp::Message {
-                                    image_message: Some(Box::new(ImageMessage {
-                                        url: Some(upload.url),
-                                        direct_path: Some(upload.direct_path),
-                                        media_key: Some(upload.media_key.to_vec()),
-                                        file_enc_sha256: Some(upload.file_enc_sha256.to_vec()),
-                                        file_sha256: Some(upload.file_sha256.to_vec()),
-                                        file_length: Some(upload.file_length),
-                                        mimetype: Some(mime.to_string()),
-                                        ..Default::default()
-                                    })),
-                                    ..Default::default()
-                                };
-                                if let Err(e) =
-                                    client.send_message(reply_jid.clone(), img_msg).await
-                                {
-                                    tracing::error!(
-                                        "WhatsApp: failed to send generated image: {}",
-                                        e
-                                    );
-                                }
-                            }
-                            Err(e) => {
-                                tracing::error!(
-                                    "WhatsApp: image upload failed for {}: {}",
-                                    img_path,
-                                    e
-                                );
-                            }
-                        }
-                    }
-                    Err(e) => {
-                        tracing::error!("WhatsApp: failed to read image {}: {}", img_path, e);
-                    }
-                }
-            }
-
-            // Send text response (markers stripped).
-            // Skip if already delivered progressively via the intermediate-text callback
-            // (happens when the agent used tool calls — text was sent between iterations).
-            if !text_content.is_empty() && !was_streamed.load(std::sync::atomic::Ordering::Relaxed)
-            {
-                let tagged = format!("{}\n\n{}", MSG_HEADER, text_content);
-                for chunk in split_message(&tagged, 4000) {
-                    let reply_msg = waproto::whatsapp::Message {
-                        conversation: Some(chunk.to_string()),
-                        ..Default::default()
-                    };
-                    if let Err(e) = client.send_message(reply_jid.clone(), reply_msg).await {
-                        tracing::error!("WhatsApp: failed to send reply: {}", e);
-                    }
-                }
-            }
-
-            // Record the bot's reply in channel_messages so recent() context
-            // queries on the next turn see both sides of the conversation,
-            // not only user messages. Matches the pattern added for Telegram
-            // and Discord. Applies to both group and DM threads — WhatsApp
-            // stores user messages for both, so we stay symmetric.
-            if !text_content.trim().is_empty() {
-                let chat_id = format!("{}", info.source.chat);
-                let is_group = info.source.is_group;
-                let cm = DbChannelMessage::new(
-                    "whatsapp".into(),
-                    chat_id,
-                    if is_group {
-                        Some(format!("{}", info.source.chat))
-                    } else {
-                        None
-                    },
-                    "bot:stemcell".to_string(),
-                    "StemCell".to_string(),
-                    text_content.clone(),
-                    "text".into(),
-                    None,
-                );
-                if let Err(e) = channel_msg_repo.insert(&cm).await {
-                    tracing::warn!(
-                        "WhatsApp: failed to record bot reply in channel_messages: {}",
-                        e
-                    );
-                }
-            }
-
-            // If input was voice AND TTS is enabled, also send voice note after text
-            if has_aud && voice_config.tts_enabled {
-                match crate::channels::voice::synthesize(&response.content, &voice_config).await {
-                    Ok(audio_bytes) => {
-                        // WhatsApp requires uploading media to its servers first,
-                        // then sending the message with the returned URL + crypto keys.
-                        use wacore::download::MediaType;
-                        use waproto::whatsapp::message::AudioMessage;
-                        use whatsapp_rust::upload::UploadOptions;
-                        match client
-                            .upload(audio_bytes, MediaType::Audio, UploadOptions::default())
-                            .await
-                        {
-                            Ok(upload) => {
-                                let audio_msg = waproto::whatsapp::Message {
-                                    audio_message: Some(Box::new(AudioMessage {
-                                        url: Some(upload.url),
-                                        direct_path: Some(upload.direct_path),
-                                        media_key: Some(upload.media_key.to_vec()),
-                                        file_enc_sha256: Some(upload.file_enc_sha256.to_vec()),
-                                        file_sha256: Some(upload.file_sha256.to_vec()),
-                                        file_length: Some(upload.file_length),
-                                        mimetype: Some("audio/ogg; codecs=opus".to_string()),
-                                        ptt: Some(true),
-                                        ..Default::default()
-                                    })),
-                                    ..Default::default()
-                                };
-                                if let Err(e) =
-                                    client.send_message(reply_jid.clone(), audio_msg).await
-                                {
-                                    tracing::error!("WhatsApp: failed to send TTS voice: {}", e);
-                                }
-                            }
-                            Err(e) => {
-                                tracing::error!("WhatsApp: TTS audio upload failed: {}", e);
-                            }
-                        }
-                    }
-                    Err(e) => {
-                        tracing::error!("WhatsApp: TTS synthesis error: {}", e);
-                    }
-                }
-            }
-
-            // Send context budget footer as a separate message after 2-second delay
-            // This ensures it appears at the very end, after all response delivery is complete
-            tokio::time::sleep(std::time::Duration::from_secs(2)).await;
-            let ctx_max = agent.context_limit_for_session(session_id);
-            let footer = crate::utils::format_ctx_footer(
-                response.context_tokens,
-                ctx_max,
-                response.tokens_per_second,
-            );
-            let footer_msg = waproto::whatsapp::Message {
-                conversation: Some(footer.clone()),
+    // Send text reply (single message, chunked; no progressive streaming).
+    if !text_content.is_empty() {
+        let tagged = format!("{}\n\n{}", MSG_HEADER, text_content);
+        for chunk in split_message(&tagged, 4000) {
+            let reply_msg = waproto::whatsapp::Message {
+                conversation: Some(chunk.to_string()),
                 ..Default::default()
             };
-            if let Err(e) = client.send_message(reply_jid.clone(), footer_msg).await {
-                tracing::warn!("WhatsApp: failed to send ctx footer: {}", e);
-            } else {
-                tracing::info!(
-                    "WhatsApp: sent ctx footer='{}' after 2s delay (context_tokens={}, ctx_max={})",
-                    footer,
-                    response.context_tokens,
-                    ctx_max,
-                );
+            if let Err(e) = client.send_message(chat_jid.clone(), reply_msg).await {
+                tracing::error!("WhatsApp: failed to send reply: {}", e);
             }
         }
-        Err(ref e) if matches!(e, crate::brain::agent::AgentError::Cancelled) => {
-            tracing::info!("WhatsApp: agent call cancelled for session {}", session_id);
+    }
+
+    // Record bot reply into channel_messages so next-turn context sees both
+    // sides (applies to groups + DMs, matching the listener's capture).
+    if !text_content.trim().is_empty() {
+        let chat_id = format!("{}", chat_jid);
+        let cm = DbChannelMessage::new(
+            "whatsapp".into(),
+            chat_id.clone(),
+            if is_group { Some(chat_id) } else { None },
+            "bot:stemcell".to_string(),
+            "StemCell".to_string(),
+            text_content.clone(),
+            "text".into(),
+            None,
+        );
+        if let Err(e) = channel_msg_repo.insert(&cm).await {
+            tracing::warn!(
+                "WhatsApp: failed to record bot reply in channel_messages: {}",
+                e
+            );
         }
-        Err(e) => {
-            tracing::error!("WhatsApp: agent error: {}", e);
-            // Shared helper translates the raw error into something
-            // actionable. Same wording as TUI / Telegram / Discord /
-            // Slack.
-            let error_msg = waproto::whatsapp::Message {
+    }
+
+    // TTS voice note for voice-input turns.
+    if is_voice
+        && let Some(vc) = voice_config
+        && vc.tts_enabled
+    {
+        match crate::channels::voice::synthesize(&response.content, vc).await {
+            Ok(audio_bytes) => {
+                use wacore::download::MediaType;
+                use waproto::whatsapp::message::AudioMessage;
+                use whatsapp_rust::upload::UploadOptions;
+                match client
+                    .upload(audio_bytes, MediaType::Audio, UploadOptions::default())
+                    .await
+                {
+                    Ok(upload) => {
+                        let audio_msg = waproto::whatsapp::Message {
+                            audio_message: Some(Box::new(AudioMessage {
+                                url: Some(upload.url),
+                                direct_path: Some(upload.direct_path),
+                                media_key: Some(upload.media_key.to_vec()),
+                                file_enc_sha256: Some(upload.file_enc_sha256.to_vec()),
+                                file_sha256: Some(upload.file_sha256.to_vec()),
+                                file_length: Some(upload.file_length),
+                                mimetype: Some("audio/ogg; codecs=opus".to_string()),
+                                ptt: Some(true),
+                                ..Default::default()
+                            })),
+                            ..Default::default()
+                        };
+                        if let Err(e) = client.send_message(chat_jid.clone(), audio_msg).await {
+                            tracing::error!("WhatsApp: failed to send TTS voice: {}", e);
+                        }
+                    }
+                    Err(e) => tracing::error!("WhatsApp: TTS upload failed: {}", e),
+                }
+            }
+            Err(e) => tracing::error!("WhatsApp: TTS synthesis failed: {:#}", e),
+        }
+    }
+
+    // Context-budget footer.
+    let footer = crate::utils::format_ctx_footer(
+        response.context_tokens,
+        ctx_max,
+        response.tokens_per_second,
+    );
+    if !footer.trim().is_empty() {
+        let footer_msg = waproto::whatsapp::Message {
+            conversation: Some(footer),
+            ..Default::default()
+        };
+        if let Err(e) = client.send_message(chat_jid, footer_msg).await {
+            tracing::warn!("WhatsApp: failed to send ctx footer: {}", e);
+        }
+    }
+}
+
+/// Build the surface-side tool-approval callback. Resolves the sender phone +
+/// chat JID + client from the per-chat delivery context the listener stashed
+/// (the generic `Surface::callbacks` signature can't carry them). Preserves the
+/// 3-choice (yes / always / yolo) text approval flow — dropping it would
+/// silently auto-approve every tool call on WhatsApp.
+pub(crate) fn make_surface_approval_callback(state: Arc<WhatsAppState>) -> ApprovalCallback {
+    use crate::channels::whatsapp::WaApproval;
+    use crate::utils::{check_approval_policy, persist_auto_session_policy};
+
+    Arc::new(move |tool_info| {
+        let state = state.clone();
+        Box::pin(async move {
+            if let Some(result) = check_approval_policy() {
+                return Ok(result);
+            }
+            let (Some(client), Some(ctx)) = (
+                state.client().await,
+                // The chat JID is the conversation key; the context is keyed by
+                // it. We resolve via the session→? — but callbacks only know
+                // session_id. Find the one stashed context whose session is
+                // active by scanning is unnecessary: the approval fires inside a
+                // single in-flight turn, so look it up by the session's chat.
+                state
+                    .delivery_context_for_session(tool_info.session_id)
+                    .await,
+            ) else {
+                tracing::warn!("WhatsApp approval: no client/context — denying");
+                return Ok((false, false));
+            };
+            let phone = ctx.phone.clone();
+            let chat_jid = ctx.chat_jid.clone();
+
+            let safe_input = crate::utils::redact_tool_input(&tool_info.tool_input);
+            let input_preview = serde_json::to_string_pretty(&safe_input).unwrap_or_default();
+            let body = format!(
+                "🔐 *Tool Approval Required*\n\nTool: `{}`\n```\n{}\n```",
+                tool_info.tool_name,
+                truncate_str(&input_preview, 600),
+            );
+            let text_msg = waproto::whatsapp::Message {
                 conversation: Some(format!(
-                    "{}\n\n❌ Error\n\n{}",
-                    MSG_HEADER,
-                    crate::brain::agent::format_user_error(&e)
+                    "{}\n\n{}\n\nReply *yes*, *always* (session), *yolo* (permanent), or *no* (5 min timeout).",
+                    MSG_HEADER, body
                 )),
                 ..Default::default()
             };
-            let _ = client
-                .send_message(info.source.chat.clone(), error_msg)
-                .await;
-        }
-    }
+            if let Err(e) = client.send_message(chat_jid.clone(), text_msg).await {
+                tracing::error!("WhatsApp: failed to send approval request: {}", e);
+                return Ok((false, false));
+            }
+
+            let (tx, rx) = tokio::sync::oneshot::channel::<WaApproval>();
+            state.register_pending_approval(phone.clone(), tx).await;
+
+            match tokio::time::timeout(std::time::Duration::from_secs(300), rx).await {
+                Ok(Ok(WaApproval::Yes)) => Ok((true, false)),
+                Ok(Ok(WaApproval::Always)) => {
+                    persist_auto_session_policy();
+                    Ok((true, true))
+                }
+                Ok(Ok(WaApproval::Yolo)) => {
+                    crate::utils::persist_auto_always_policy();
+                    Ok((true, true))
+                }
+                Ok(Ok(WaApproval::No)) => Ok((false, false)),
+                _ => {
+                    let timeout_msg = waproto::whatsapp::Message {
+                        conversation: Some(format!(
+                            "{}\n\n⏰ No response in 5 minutes — *{}* was denied.\n\nSend your message again and reply *yes*, *always*, or *no* when prompted.",
+                            MSG_HEADER, tool_info.tool_name,
+                        )),
+                        ..Default::default()
+                    };
+                    let _ = client.send_message(chat_jid, timeout_msg).await;
+                    Ok((false, false))
+                }
+            }
+        })
+    })
 }
