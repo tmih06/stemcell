@@ -12,7 +12,7 @@ Two subsystems: **Database** (SQLite) and **Memory** (FTS5 + vector embeddings).
 | SQL driver | `rusqlite` |
 | Schema management | `rusqlite_migration` (24 timestamped migrations in `src/migrations/`) |
 | Data access | Repository pattern in `src/db/repository/` |
-| Retry | Exponential backoff via `src/db/retry.rs` |
+| Contention | SQLite WAL mode + 30s `busy_timeout` (set in `src/db/database.rs`) |
 
 ## Memory — `src/memory/`
 

@@ -62,7 +62,6 @@ cargo test --all-features
 | **Config — Update** | 4 | `src/config/update.rs` |
 | **Config — Crabrace** | 3 | `src/config/crabrace.rs` |
 | **DB — Repository (Plan)** | 15 | `src/db/repository/plan.rs` |
-| **DB — Retry** | 8 | `src/db/retry.rs` |
 | **DB — Repository (Other)** | 9 | `src/db/repository/` |
 | **DB — Database** | 5 | `src/db/database.rs` |
 | **DB — Models** | 4 | `src/db/models.rs` |
@@ -88,7 +87,6 @@ cargo test --all-features
 | **Memory — Search** | 3 | `src/memory/search.rs` |
 | **Pricing** | 17 | `src/pricing.rs` |
 | **Utils — Sanitize** | 41 | `src/utils/sanitize.rs` + `src/tests/sanitize_redaction_test.rs` |
-| **Utils — Retry** | 8 | `src/utils/retry.rs` |
 | **Utils — String** | 6 | `src/utils/string.rs` |
 | **Utils — Install** | 6 | `src/utils/install.rs` |
 | **Utils — Config Watcher** | 2 | `src/utils/config_watcher.rs` |
