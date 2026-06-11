@@ -34,6 +34,10 @@
 | `skills_dialog/state.rs` | Skills dialog state |
 | `skills_dialog/input.rs` | Skills dialog input handling |
 | `skills_dialog/actions.rs` | Skills dialog action dispatch |
+| `statusline_dialog/mod.rs` | Statusline dialog — module root |
+| `statusline_dialog/state.rs` | Statusline dialog state |
+| `statusline_dialog/input.rs` | Statusline dialog input handling |
+| `statusline_dialog/actions.rs` | Statusline dialog action dispatch |
 
 ## Rendering (`src/tui/render/`)
 
@@ -62,6 +66,8 @@
 | `skills_dialog/mod.rs` | Skills dialog render module |
 | `skills_dialog/card.rs` | Skills card rendering |
 | `skills_dialog/dispatch.rs` | Skills dialog render dispatch |
+| `statusline_dialog/mod.rs` | Statusline dialog render module |
+| `statusline_dialog/dispatch.rs` | Statusline dialog render dispatch |
 
 ## Components (`src/tui/components/`)
 
