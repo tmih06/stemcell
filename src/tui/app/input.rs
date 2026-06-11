@@ -1254,13 +1254,26 @@ impl App {
                 }
                 return Ok(());
             } else if keys::is_enter(&event) || keys::is_submit(&event) {
-                // Select the highlighted command and execute it
+                // Enter: select the highlighted command and run it immediately.
                 if let Some(&cmd_idx) = self.slash_filtered.get(self.slash_selected_index) {
                     let cmd_name = self.slash_command_name(cmd_idx).unwrap_or("").to_string();
                     self.input_buffer.clear();
                     self.cursor_position = 0;
                     self.slash_suggestions_active = false;
                     self.handle_slash_command(&cmd_name).await;
+                }
+                return Ok(());
+            } else if event.code == KeyCode::Tab {
+                // Tab: complete the input to the highlighted command name without
+                // running it. The trailing space lets arguments be typed and makes
+                // `update_slash_suggestions` dismiss the dropdown; Enter then launches.
+                if let Some(&cmd_idx) = self.slash_filtered.get(self.slash_selected_index) {
+                    let cmd_name = self.slash_command_name(cmd_idx).unwrap_or("").to_string();
+                    if !cmd_name.is_empty() {
+                        self.input_buffer = format!("{cmd_name} ");
+                        self.cursor_position = self.input_buffer.len();
+                        self.update_slash_suggestions();
+                    }
                 }
                 return Ok(());
             } else if keys::is_cancel(&event) {
