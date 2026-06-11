@@ -853,9 +853,11 @@ impl App {
         let user_commands = command_loader.load();
         let skills = crate::brain::skills::load_all_skills();
 
-        // Load persisted approval policy from config.toml
-        let (approval_auto_session, approval_auto_always) =
-            Self::read_approval_policy_from_config();
+        // Load persisted approval policy + statusline preferences once so
+        // App startup does not re-parse config.toml for each UI setting.
+        let ((approval_auto_session, approval_auto_always), statusline_fields) =
+            Self::load_ui_state_from_config()
+                .unwrap_or(((false, false), crate::config::StatusLineConfig::default()));
 
         let this = Self {
             current_session: None,
@@ -924,7 +926,7 @@ impl App {
             mc: crate::tui::app::mission_control::McState::default(),
             skills_dialog: crate::tui::app::skills_dialog::SkillsDialogState::default(),
             statusline_dialog: crate::tui::app::statusline_dialog::StatusLineDialogState::default(),
-            statusline_fields: Self::read_statusline_from_config(),
+            statusline_fields,
             onboarding: None,
             force_onboard: false,
             processing_sessions: HashSet::new(),
@@ -2580,9 +2582,19 @@ impl App {
             TuiEvent::ConfigReloaded => {
                 // Refresh commands autocomplete
                 self.reload_user_commands();
-                // Refresh approval policy
-                (self.approval_auto_session, self.approval_auto_always) =
-                    Self::read_approval_policy_from_config();
+                // Refresh approval policy + statusline visibility from the
+                // same config snapshot so runtime edits take effect without a
+                // restart and we only parse config.toml once per reload.
+                match Self::load_ui_state_from_config() {
+                    Ok(((approval_auto_session, approval_auto_always), statusline_fields)) => {
+                        self.approval_auto_session = approval_auto_session;
+                        self.approval_auto_always = approval_auto_always;
+                        self.statusline_fields = statusline_fields;
+                    }
+                    Err(e) => {
+                        tracing::warn!("Config reload UI sync failed: {}", e);
+                    }
+                }
                 // Provider swap is already handled by the ConfigWatcher callback
                 // (ui.rs). Do NOT re-create the provider here — it causes a
                 // redundant create_provider call every reload, and the model-name

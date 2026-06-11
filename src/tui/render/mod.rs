@@ -49,9 +49,17 @@ use dialogs::{
     render_update_dialog,
 };
 use help::{render_help, render_settings};
-use input::{render_emoji_picker, render_input, render_slash_autocomplete, render_status_bar};
+use input::{
+    render_emoji_picker, render_input, render_queue, render_slash_autocomplete, render_status_bar,
+};
 use plan_widget::render_plan_checklist;
 use sessions::render_sessions;
+
+#[derive(Clone, Copy)]
+enum ChatShellMode {
+    RespectSplitPanes,
+    SinglePane,
+}
 
 /// Render the entire UI
 pub fn render(f: &mut Frame, app: &mut App) {
@@ -61,8 +69,6 @@ pub fn render(f: &mut Frame, app: &mut App) {
         }
         return;
     }
-
-    use input::render_queue;
 
     // Compute queue height (2 rows if current session has queued message)
     let queue_height: u16 = {
@@ -147,26 +153,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
             // Handled by early return above
         }
         AppMode::Chat => {
-            if app.pane_manager.is_split() {
-                render_split_panes(f, app, chunks[0]);
-            } else {
-                render_chat(f, app, chunks[0]);
-            }
-            if plan_height > 0 {
-                render_plan_checklist(f, app, chunks[1]);
-            }
-            // Render queue preview above input
-            if queue_height > 0 {
-                render_queue(f, app, chunks[2]);
-            }
-            // Store input area coordinates for mouse event mapping
-            // chunks[3] is always the input slot (indices are fixed)
-            app.input_area_x = chunks[3].x;
-            app.input_area_y = chunks[3].y;
-            app.input_area_width = chunks[3].width;
-            app.input_area_height = chunks[3].height;
-            render_input(f, app, chunks[3]);
-            render_status_bar(f, app, chunks[4]);
+            render_chat_shell(f, app, chunks.as_ref(), ChatShellMode::RespectSplitPanes);
             if app.slash_suggestions_active {
                 render_slash_autocomplete(f, app, chunks[3]);
             } else if app.emoji_picker_active {
@@ -202,23 +189,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
         AppMode::StatusLine => {
             // Keep the regular chat shell visible so toggling fields gives an
             // immediate preview in the status bar without leaving the overlay.
-            if app.pane_manager.is_split() {
-                render_split_panes(f, app, chunks[0]);
-            } else {
-                render_chat(f, app, chunks[0]);
-            }
-            if plan_height > 0 {
-                render_plan_checklist(f, app, chunks[1]);
-            }
-            if queue_height > 0 {
-                render_queue(f, app, chunks[2]);
-            }
-            app.input_area_x = chunks[3].x;
-            app.input_area_y = chunks[3].y;
-            app.input_area_width = chunks[3].width;
-            app.input_area_height = chunks[3].height;
-            render_input(f, app, chunks[3]);
-            render_status_bar(f, app, chunks[4]);
+            render_chat_shell(f, app, chunks.as_ref(), ChatShellMode::RespectSplitPanes);
             statusline_dialog::draw(f, app, chunks[3], full_content_area);
         }
         AppMode::Settings => {
@@ -233,77 +204,55 @@ pub fn render(f: &mut Frame, app: &mut App) {
             render_directory_picker(f, app, full_content_area);
         }
         AppMode::ModelSelector => {
-            render_chat(f, app, chunks[0]);
-            if plan_height > 0 {
-                render_plan_checklist(f, app, chunks[1]);
-            }
-            if queue_height > 0 {
-                render_queue(f, app, chunks[2]);
-            }
-            app.input_area_x = chunks[3].x;
-            app.input_area_y = chunks[3].y;
-            app.input_area_width = chunks[3].width;
-            app.input_area_height = chunks[3].height;
-            render_input(f, app, chunks[3]);
-            render_status_bar(f, app, chunks[4]);
+            render_chat_shell(f, app, chunks.as_ref(), ChatShellMode::SinglePane);
             render_model_selector(f, app, f.area());
         }
         AppMode::UsageDashboard => {
-            render_chat(f, app, chunks[0]);
-            if plan_height > 0 {
-                render_plan_checklist(f, app, chunks[1]);
-            }
-            if queue_height > 0 {
-                render_queue(f, app, chunks[2]);
-            }
-            app.input_area_x = chunks[3].x;
-            app.input_area_y = chunks[3].y;
-            app.input_area_width = chunks[3].width;
-            app.input_area_height = chunks[3].height;
-            render_input(f, app, chunks[3]);
-            render_status_bar(f, app, chunks[4]);
+            render_chat_shell(f, app, chunks.as_ref(), ChatShellMode::SinglePane);
             if let Some(ref ds) = app.dashboard_state {
                 crate::usage::dashboard::render(f, ds, f.area());
             }
         }
         AppMode::RestartPending => {
-            render_chat(f, app, chunks[0]);
-            if plan_height > 0 {
-                render_plan_checklist(f, app, chunks[1]);
-            }
-            if queue_height > 0 {
-                render_queue(f, app, chunks[2]);
-            }
-            app.input_area_x = chunks[3].x;
-            app.input_area_y = chunks[3].y;
-            app.input_area_width = chunks[3].width;
-            app.input_area_height = chunks[3].height;
-            render_input(f, app, chunks[3]);
-            render_status_bar(f, app, chunks[4]);
+            render_chat_shell(f, app, chunks.as_ref(), ChatShellMode::SinglePane);
             render_restart_dialog(f, app, f.area());
         }
         AppMode::UpdatePrompt => {
             // Overlay the update dialog on top of the normal chat UI.
-            if app.pane_manager.is_split() {
-                render_split_panes(f, app, chunks[0]);
-            } else {
-                render_chat(f, app, chunks[0]);
-            }
-            if plan_height > 0 {
-                render_plan_checklist(f, app, chunks[1]);
-            }
-            if queue_height > 0 {
-                render_queue(f, app, chunks[2]);
-            }
-            app.input_area_x = chunks[3].x;
-            app.input_area_y = chunks[3].y;
-            app.input_area_width = chunks[3].width;
-            app.input_area_height = chunks[3].height;
-            render_input(f, app, chunks[3]);
-            render_status_bar(f, app, chunks[4]);
+            render_chat_shell(f, app, chunks.as_ref(), ChatShellMode::RespectSplitPanes);
             render_update_dialog(f, app, f.area());
         }
     }
+}
+
+fn render_chat_shell(f: &mut Frame, app: &mut App, chunks: &[Rect], mode: ChatShellMode) {
+    debug_assert!(chunks.len() >= 5, "chat shell expects 5 layout chunks");
+
+    match mode {
+        ChatShellMode::RespectSplitPanes if app.pane_manager.is_split() => {
+            render_split_panes(f, app, chunks[0]);
+        }
+        ChatShellMode::RespectSplitPanes | ChatShellMode::SinglePane => {
+            render_chat(f, app, chunks[0]);
+        }
+    }
+
+    if chunks[1].height > 0 {
+        render_plan_checklist(f, app, chunks[1]);
+    }
+    if chunks[2].height > 0 {
+        render_queue(f, app, chunks[2]);
+    }
+
+    // Store input area coordinates for mouse event mapping.
+    // `chunks[3]` is always the input slot (indices are fixed).
+    app.input_area_x = chunks[3].x;
+    app.input_area_y = chunks[3].y;
+    app.input_area_width = chunks[3].width;
+    app.input_area_height = chunks[3].height;
+
+    render_input(f, app, chunks[3]);
+    render_status_bar(f, app, chunks[4]);
 }
 
 /// Render the chat area as split panes.

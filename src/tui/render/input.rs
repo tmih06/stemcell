@@ -825,96 +825,6 @@ pub(super) fn render_status_bar(f: &mut Frame, app: &App, area: Rect) {
 
     let orange = Color::Rgb(215, 100, 20);
 
-    // --- Session name (left) ---
-    let session_name = app
-        .current_session
-        .as_ref()
-        .and_then(|s| s.title.as_deref())
-        .unwrap_or("Chat")
-        .to_string();
-
-    // --- Provider / model ---
-    // Read from the authoritative source: agent_service.session_providers.
-    // DB records (current_session.provider_name/model) can lag behind
-    // after sticky fallbacks or /models swaps. session_providers is always
-    // live and per-session isolated.
-    let (provider_str, model_str) = if let Some(ref session) = app.current_session {
-        let prov = app.agent_service.provider_name_for_session(session.id);
-        let model = app.agent_service.provider_model_for_session(session.id);
-        let prefix = format!("{}/", prov);
-        let stripped = model.strip_prefix(&prefix).unwrap_or(&model);
-        (
-            prov,
-            crate::tui::provider_selector::model_display_label(stripped).to_string(),
-        )
-    } else {
-        (
-            app.agent_service.provider_name(),
-            crate::tui::provider_selector::model_display_label(
-                app.agent_service.provider_model().as_str(),
-            )
-            .to_string(),
-        )
-    };
-
-    // Working directory — collapse $HOME to ~, then truncate if still long
-    let raw_dir = app.working_directory.to_string_lossy();
-    let home_dir = dirs::home_dir()
-        .map(|h| h.to_string_lossy().to_string())
-        .unwrap_or_default();
-    let short_dir = if !home_dir.is_empty() && raw_dir.starts_with(&home_dir) {
-        format!("~{}", &raw_dir[home_dir.len()..])
-    } else {
-        raw_dir.to_string()
-    };
-    let short_dir = if short_dir.len() > 40 {
-        let mut start = short_dir.len().saturating_sub(37);
-        while start > 0 && !short_dir.is_char_boundary(start) {
-            start -= 1;
-        }
-        format!("...{}", &short_dir[start..])
-    } else {
-        short_dir
-    };
-    // Git branch suffix: when the working directory sits inside a git
-    // repo, render `(branch)` as a separate cyan span after the dir.
-    // Read per render via `utils::git_branch::current_branch` so a
-    // `git checkout` in another terminal shows up on the very next
-    // frame — no cache, no manual refresh. The HEAD file is ~30 bytes
-    // and stays in the OS page cache, so the read cost is sub-millisecond.
-    let git_branch = crate::utils::git_branch::current_branch(&app.working_directory);
-
-    // --- Approval policy (centre-left) ---
-    let (policy_text, policy_color) = if app.approval_auto_always {
-        ("⚡ yolo", Color::Red)
-    } else if app.approval_auto_session {
-        ("⚡ auto (session)", orange)
-    } else {
-        ("🔒 approve", Color::DarkGray)
-    };
-
-    // Tokens/sec footer field.
-    //   - Live: output_tokens / active_streaming_window_secs (the
-    //     accumulator excludes tool execution waits, between-stream
-    //     idle, network round-trips — only counts time the model is
-    //     actually emitting tokens). 2026-05-28 user report: pre-fix
-    //     this divided by total wall-clock so a 30s tool exec made
-    //     "200 tok/s" decay to "8 tok/s" mid-turn.
-    //   - Persisted: when no live turn is active, keep showing the
-    //     last finalized rate (from `finalize_tps` on response complete)
-    //     until the next turn's first token replaces it.
-    let live_tps = if app.is_processing && app.streaming_output_tokens > 0 {
-        let active = app.current_streaming_active_secs();
-        if active > 0.0 {
-            Some(app.streaming_output_tokens as f64 / active)
-        } else {
-            None
-        }
-    } else {
-        None
-    };
-    let display_tps = live_tps.or(app.last_tps());
-
     // Build each visible field as an independent segment, then join with
     // a `·` separator. Gating happens per-field via `app.statusline_fields`
     // (toggled by `/statusline`). Building segments first — rather than
@@ -923,55 +833,140 @@ pub(super) fn render_status_bar(f: &mut Frame, app: &App, area: Rect) {
     let blue = Color::Rgb(90, 110, 150);
     let green = Color::Rgb(80, 200, 120);
     let fields = &app.statusline_fields;
-    let mut segments: Vec<Vec<Span<'static>>> = Vec::new();
+    let separator_style = Style::default().fg(Color::DarkGray);
+    let mut spans: Vec<Span<'static>> = Vec::with_capacity(17);
+    spans.push(Span::raw(" "));
+
+    let mut has_field = false;
+    let mut push_field = |span: Span<'static>| {
+        if has_field {
+            spans.push(Span::styled("  ·  ", separator_style));
+        } else {
+            has_field = true;
+        }
+        spans.push(span);
+    };
 
     if fields.session_name {
-        segments.push(vec![Span::styled(
-            session_name,
+        let session_name = app
+            .current_session
+            .as_ref()
+            .and_then(|s| s.title.as_deref())
+            .unwrap_or("Chat");
+        push_field(Span::styled(
+            session_name.to_owned(),
             Style::default().fg(orange).add_modifier(Modifier::BOLD),
-        )]);
+        ));
     }
     if fields.provider_model {
-        segments.push(vec![Span::styled(
+        // Read from the authoritative source: agent_service.session_providers.
+        // DB records (current_session.provider_name/model) can lag behind
+        // after sticky fallbacks or /models swaps. session_providers is always
+        // live and per-session isolated.
+        let (provider_str, model_str) = if let Some(ref session) = app.current_session {
+            let prov = app.agent_service.provider_name_for_session(session.id);
+            let model = app.agent_service.provider_model_for_session(session.id);
+            let prefix = format!("{}/", prov);
+            let stripped = model.strip_prefix(&prefix).unwrap_or(&model);
+            (
+                prov,
+                crate::tui::provider_selector::model_display_label(stripped).to_string(),
+            )
+        } else {
+            (
+                app.agent_service.provider_name(),
+                crate::tui::provider_selector::model_display_label(
+                    app.agent_service.provider_model().as_str(),
+                )
+                .to_string(),
+            )
+        };
+        push_field(Span::styled(
             format!("{} / {}", provider_str, model_str),
             Style::default().fg(blue),
-        )]);
+        ));
     }
     if fields.profile {
         // Shown only when a profile is explicitly active (via `-p <name>`
         // or `OPENCRABS_PROFILE`). `None` means the base `~/.opencrabs/`
         // dir — no real profile to name — so the chip is omitted (#167).
         if let Some(name) = crate::config::profile::active_profile() {
-            segments.push(vec![Span::styled(
+            push_field(Span::styled(
                 format!("profile: {name}"),
                 Style::default().fg(blue),
-            )]);
+            ));
         }
     }
     if fields.working_dir {
-        segments.push(vec![Span::styled(short_dir, Style::default().fg(blue))]);
+        // Collapse $HOME to `~`, then truncate if still long.
+        let raw_dir = app.working_directory.to_string_lossy();
+        let home_dir = dirs::home_dir()
+            .map(|h| h.to_string_lossy().to_string())
+            .unwrap_or_default();
+        let short_dir = if !home_dir.is_empty() && raw_dir.starts_with(&home_dir) {
+            format!("~{}", &raw_dir[home_dir.len()..])
+        } else {
+            raw_dir.to_string()
+        };
+        let short_dir = if short_dir.len() > 40 {
+            let mut start = short_dir.len().saturating_sub(37);
+            while start > 0 && !short_dir.is_char_boundary(start) {
+                start -= 1;
+            }
+            format!("...{}", &short_dir[start..])
+        } else {
+            short_dir
+        };
+        push_field(Span::styled(short_dir, Style::default().fg(blue)));
     }
     if fields.git_branch
-        && let Some(branch) = git_branch
+        // Read per render so `git checkout` in another terminal shows up on
+        // the very next frame, but skip the HEAD read entirely when the field
+        // is hidden.
+        && let Some(branch) = crate::utils::git_branch::current_branch(&app.working_directory)
     {
-        segments.push(vec![Span::styled(
+        push_field(Span::styled(
             format!("({branch})"),
             Style::default().fg(Color::Cyan),
-        )]);
+        ));
     }
-    if fields.tokens_per_sec
-        && let Some(tps) = display_tps
-    {
-        segments.push(vec![Span::styled(
-            format!("{:.0} tok/s", tps),
-            Style::default().fg(green),
-        )]);
+    if fields.tokens_per_sec {
+        // Tokens/sec footer field.
+        //   - Live: output_tokens / active_streaming_window_secs (the
+        //     accumulator excludes tool execution waits, between-stream
+        //     idle, network round-trips — only counts time the model is
+        //     actually emitting tokens). 2026-05-28 user report: pre-fix
+        //     this divided by total wall-clock so a 30s tool exec made
+        //     "200 tok/s" decay to "8 tok/s" mid-turn.
+        //   - Persisted: when no live turn is active, keep showing the
+        //     last finalized rate (from `finalize_tps` on response complete)
+        //     until the next turn's first token replaces it.
+        let live_tps = if app.is_processing && app.streaming_output_tokens > 0 {
+            let active = app.current_streaming_active_secs();
+            if active > 0.0 {
+                Some(app.streaming_output_tokens as f64 / active)
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+        if let Some(tps) = live_tps.or(app.last_tps()) {
+            push_field(Span::styled(
+                format!("{:.0} tok/s", tps),
+                Style::default().fg(green),
+            ));
+        }
     }
     if fields.approval_policy {
-        segments.push(vec![Span::styled(
-            policy_text,
-            Style::default().fg(policy_color),
-        )]);
+        let (policy_text, policy_color) = if app.approval_auto_always {
+            ("⚡ yolo", Color::Red)
+        } else if app.approval_auto_session {
+            ("⚡ auto (session)", orange)
+        } else {
+            ("🔒 approve", Color::DarkGray)
+        };
+        push_field(Span::styled(policy_text, Style::default().fg(policy_color)));
     }
     if fields.split_pane && app.pane_manager.is_split() {
         let pane_count = app.pane_manager.pane_count();
@@ -982,20 +977,10 @@ pub(super) fn render_status_bar(f: &mut Frame, app: &App, area: Rect) {
             .position(|id| *id == app.pane_manager.focused)
             .map(|i| i + 1)
             .unwrap_or(1);
-        segments.push(vec![Span::styled(
+        push_field(Span::styled(
             format!("[{}/{}]", focused_idx, pane_count),
             Style::default().fg(green),
-        )]);
-    }
-
-    // Interleave segments with the `·` separator and a single leading pad
-    // space so the bar doesn't hug the left edge.
-    let mut spans: Vec<Span> = vec![Span::raw(" ")];
-    for (i, seg) in segments.into_iter().enumerate() {
-        if i > 0 {
-            spans.push(Span::styled("  ·  ", Style::default().fg(Color::DarkGray)));
-        }
-        spans.extend(seg);
+        ));
     }
 
     let line = Line::from(spans);
