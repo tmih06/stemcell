@@ -54,7 +54,8 @@ All verification commands, sourced from `Makefile` and `Cargo.toml`.
 
 GitHub Actions in `.github/workflows/`:
 
-- **CI**: push → lint → build → test → audit → coverage → deny → typos → secrets → docs-coverage → msrv → release (on tag)
+- **CI**: push → lint → build → test → audit → coverage → deny → typos → secrets → docs-coverage → msrv → docker (multi-arch parallel via matrix)
+- **Release** (on tag): CI gate → release binary build/publish → multi-arch Docker publish (parallelized natively for ARM, merged to GHCR) → GitHub Release creation
 
 ## Profile-Specific Builds
 
