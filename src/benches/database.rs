@@ -9,8 +9,8 @@
 #![allow(clippy::all)]
 
 use criterion::{BenchmarkId, Criterion, black_box, criterion_group, criterion_main};
-use opencrabs::db::{Database, models::Session};
 use rusqlite::params;
+use stemcell::db::{Database, models::Session};
 use tempfile::TempDir;
 
 /// Helper to create a test database in memory

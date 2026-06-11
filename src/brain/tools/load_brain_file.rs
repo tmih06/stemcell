@@ -1,6 +1,6 @@
 //! Load Brain File Tool
 //!
-//! Loads a specific brain context file from `~/.opencrabs/` on demand.
+//! Loads a specific brain context file from `~/.stemcell/` on demand.
 //! Use this to fetch USER.md, MEMORY.md, AGENTS.md, etc. only when the
 //! current request actually needs that context, rather than injecting all
 //! files into every turn.
@@ -21,11 +21,11 @@ impl Tool for LoadBrainFileTool {
     }
 
     fn description(&self) -> &str {
-        "Load any .md file from the OpenCrabs home directory (~/.opencrabs/). \
+        "Load any .md file from the StemCell home directory (~/.stemcell/). \
          Works with built-in files (USER.md, MEMORY.md, AGENTS.md, TOOLS.md, SECURITY.md) \
          and user-created files (VOICE.md, custom notes, etc.). \
          Pass name=\"all\" to load all .md files at once. \
-         To edit or update brain files, use the `write_opencrabs_file` tool."
+         To edit or update brain files, use the `write_stemcell_file` tool."
     }
 
     fn input_schema(&self) -> Value {
@@ -60,7 +60,7 @@ impl Tool for LoadBrainFileTool {
             return Ok(ToolResult::error("name parameter is required".to_string()));
         }
 
-        let home = crate::config::opencrabs_home();
+        let home = crate::config::stemcell_home();
 
         // Read-time empty-section stripping. Default on; opt out via
         // `[brain] strip_empty_sections = false` in config.toml.
@@ -178,7 +178,7 @@ impl Tool for LoadBrainFileTool {
                 }
             }
             Err(_) => Ok(ToolResult::success(format!(
-                "{} not found at ~/.opencrabs/{}. No content available.",
+                "{} not found at ~/.stemcell/{}. No content available.",
                 canonical, canonical
             ))),
         }

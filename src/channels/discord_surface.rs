@@ -181,7 +181,7 @@ impl Surface for DiscordSurface {
                 .bot_user_id()
                 .await
                 .map(|id| id.to_string())
-                .unwrap_or_else(|| "bot:opencrabs".to_string());
+                .unwrap_or_else(|| "bot:stemcell".to_string());
             let guild_name = dctx
                 .as_ref()
                 .map(|d| d.guild_name.clone())
@@ -191,7 +191,7 @@ impl Surface for DiscordSurface {
                 channel_id.to_string(),
                 Some(guild_name),
                 bot_sender_id,
-                "OpenCrabs".into(),
+                "StemCell".into(),
                 text_only.clone(),
                 "text".into(),
                 None,

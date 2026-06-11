@@ -9,7 +9,7 @@
 //! When the user says "show me what RSI proposed" or "implement those
 //! proposals", the agent calls this. No approval prompt — by design:
 //! the user already triggered this verbally, and the audit trail under
-//! `~/.opencrabs/rsi/applied/` and `rejected/` retains everything.
+//! `~/.stemcell/rsi/applied/` and `rejected/` retains everything.
 
 use super::error::Result;
 use super::r#trait::{Tool, ToolCapability, ToolExecutionContext, ToolResult};
@@ -41,7 +41,7 @@ impl RsiProposalsTool {
 
     fn store(&self) -> ProposalsStore {
         // Always recompute against the actual rsi dir — keeps the tool
-        // honest against profile switches that move opencrabs_home().
+        // honest against profile switches that move stemcell_home().
         ProposalsStore::with_dir(self.brain_path.join("rsi"))
     }
 
@@ -199,7 +199,7 @@ impl RsiProposalsTool {
     }
 
     /// Apply a brain dedup proposal by invoking the same logic as
-    /// `write_opencrabs_file` with `dedup_intent=true`: find the
+    /// `write_stemcell_file` with `dedup_intent=true`: find the
     /// duplicate_text in the target file and remove it. Refuses if the
     /// text isn't found verbatim (file may have been edited since the
     /// scan ran).
@@ -377,7 +377,7 @@ fn format_brain_dedup_proposal(p: &BrainDedupProposal) -> String {
 fn format_skill_proposal(p: &SkillProposal) -> String {
     let body_lines = p.skill.body.lines().count();
     format!(
-        "- **{id}** — `{name}`\n  {desc}\n  Body: {lines} lines (lands at ~/.opencrabs/skills/{name}/SKILL.md)\n  Why: {why}\n  Filed: {when}\n\n",
+        "- **{id}** — `{name}`\n  {desc}\n  Body: {lines} lines (lands at ~/.stemcell/skills/{name}/SKILL.md)\n  Why: {why}\n  Filed: {when}\n\n",
         id = p.id,
         name = p.skill.name,
         desc = p.skill.description,
@@ -397,7 +397,7 @@ impl Tool for RsiProposalsTool {
         "List, apply, or reject tools/commands proposed by the autonomous RSI loop. \
          Use 'list' to show pending proposals, 'apply' to install one (or 'all') into \
          the live tools.toml/commands.toml, 'reject' to discard with an optional reason. \
-         Applied/rejected entries archive to ~/.opencrabs/rsi/{applied,rejected}/."
+         Applied/rejected entries archive to ~/.stemcell/rsi/{applied,rejected}/."
     }
 
     fn input_schema(&self) -> Value {

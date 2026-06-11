@@ -1,6 +1,6 @@
 //! Qwen (DashScope) header + body-transform helpers.
 //!
-//! OpenCrabs talks to Qwen through the standard OpenAI-compatible DashScope
+//! StemCell talks to Qwen through the standard OpenAI-compatible DashScope
 //! endpoint with a regular API key (DashScope or Alibaba Coding Plan). This
 //! file only contains the wire-level fingerprinting logic that the factory
 //! layers on top of `OpenAIProvider`:

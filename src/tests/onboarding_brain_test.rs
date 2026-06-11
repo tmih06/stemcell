@@ -87,10 +87,10 @@ fn brain_char_appends_to_about_me() {
 fn brain_char_appends_to_about_agent_when_focused() {
     let mut w = make_wizard_at_brain();
     w.brain_field = BrainField::AboutAgent;
-    w.about_opencrabs.clear(); // clear any pre-loaded content
+    w.about_stemcell.clear(); // clear any pre-loaded content
     w.handle_key(key(KeyCode::Char('A')));
     w.handle_key(key(KeyCode::Char('I')));
-    assert_eq!(w.about_opencrabs, "AI");
+    assert_eq!(w.about_stemcell, "AI");
 }
 
 #[test]
@@ -134,8 +134,8 @@ fn brain_enter_skips_when_inputs_unchanged_from_loaded() {
     w.brain_field = BrainField::AboutAgent;
     w.about_me = "existing".to_string();
     w.original_about_me = "existing".to_string();
-    w.about_opencrabs = "same".to_string();
-    w.original_about_opencrabs = "same".to_string();
+    w.about_stemcell = "same".to_string();
+    w.original_about_stemcell = "same".to_string();
     let action = w.handle_key(key(KeyCode::Enter));
     assert_eq!(action, WizardAction::Complete);
 }
@@ -148,7 +148,7 @@ fn brain_enter_skips_when_inputs_unchanged_from_loaded() {
 fn brain_prompt_contains_user_input() {
     let mut w = OnboardingWizard::new();
     w.about_me = "I am a developer".to_string();
-    w.about_opencrabs = "Be helpful".to_string();
+    w.about_stemcell = "Be helpful".to_string();
     let prompt = w.build_brain_prompt();
     assert!(prompt.contains("I am a developer"));
     assert!(prompt.contains("Be helpful"));
@@ -158,7 +158,7 @@ fn brain_prompt_contains_user_input() {
 fn brain_prompt_uses_not_provided_when_empty() {
     let mut w = OnboardingWizard::new();
     w.about_me.clear();
-    w.about_opencrabs.clear();
+    w.about_stemcell.clear();
     let prompt = w.build_brain_prompt();
     assert!(prompt.contains("Not provided"));
 }
@@ -232,7 +232,7 @@ fn test_plain_text_auto_formats_into_markdown() {
     let mut w = make_wizard_at_brain();
     w.brain_field = BrainField::AboutAgent;
     w.about_me = "I build Rust TUIs".to_string();
-    w.about_opencrabs = "Be direct, ship fast".to_string();
+    w.about_stemcell = "Be direct, ship fast".to_string();
     let action = w.handle_key(key(KeyCode::Enter));
     assert_eq!(action, WizardAction::GenerateBrain);
     assert!(w.formatted_about_me.contains("# About Me"));

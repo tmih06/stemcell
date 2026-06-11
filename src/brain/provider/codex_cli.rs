@@ -2,7 +2,7 @@
 //!
 //! Spawns the `codex` CLI binary in non-interactive mode (`codex exec`)
 //! and reads its JSONL stream output, converting it to standard
-//! `StreamEvent`s. OpenCrabs handles all tools, memory, and context
+//! `StreamEvent`s. StemCell handles all tools, memory, and context
 //! locally; codex is used as the LLM backend so users can piggyback on
 //! their existing ChatGPT/Codex auth (`~/.codex/auth.json`) without
 //! needing a separate API key.
@@ -91,7 +91,7 @@ impl CodexCliProvider {
                                     _ => "png",
                                 };
                                 let tmp = std::env::temp_dir().join(format!(
-                                    "opencrabs_cli_img_{}.{}",
+                                    "stemcell_cli_img_{}.{}",
                                     uuid::Uuid::new_v4(),
                                     ext
                                 ));
@@ -291,11 +291,11 @@ impl Provider for CodexCliProvider {
             .arg("exec")
             .arg("--json")
             // Skip approvals + sandbox: we run codex non-interactively, so
-            // any approval prompt would block forever. The workspace OpenCrabs
+            // any approval prompt would block forever. The workspace StemCell
             // owns the trust boundary at the channel level (TUI / Telegram /
             // Slack), not at the codex level.
             .arg("--dangerously-bypass-approvals-and-sandbox")
-            // Don't persist session files under ~/.codex/sessions/. OpenCrabs
+            // Don't persist session files under ~/.codex/sessions/. StemCell
             // owns conversation state — codex's stored sessions would just
             // accumulate stale forks.
             .arg("--ephemeral")
@@ -735,7 +735,7 @@ impl Provider for CodexCliProvider {
     }
 
     fn supports_tools(&self) -> bool {
-        // Codex runs its own tool loop (shell, file edits, web). OpenCrabs
+        // Codex runs its own tool loop (shell, file edits, web). StemCell
         // tool_loop sees the calls via cli_handles_tools() and renders them
         // for display without re-executing.
         true
@@ -753,7 +753,7 @@ impl Provider for CodexCliProvider {
 
     fn cli_manages_context(&self) -> bool {
         // We feed codex the full conversation each invocation via stdin
-        // (--ephemeral, no --resume). OpenCrabs owns context + compaction.
+        // (--ephemeral, no --resume). StemCell owns context + compaction.
         false
     }
 }

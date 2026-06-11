@@ -1,4 +1,4 @@
--- Initial database schema for OpenCrabs
+-- Initial database schema for StemCell
 -- SQLite database for local-first AI assistant
 
 -- Sessions table: Stores chat sessions

@@ -1,22 +1,22 @@
 //! Self-Update Module
 //!
-//! Handles building, testing, and hot-restarting OpenCrabs.
+//! Handles building, testing, and hot-restarting StemCell.
 //! The running binary is in memory — modifying source on disk is safe.
 //! After a successful build, `exec()` replaces the current process with the new binary.
 //!
 //! If the binary was downloaded (no source tree), `auto_detect()` automatically
-//! clones the repo into `~/.opencrabs/source/` so `/rebuild` works everywhere.
+//! clones the repo into `~/.stemcell/source/` so `/rebuild` works everywhere.
 
 use anyhow::Result;
 use std::path::PathBuf;
 use uuid::Uuid;
 
 /// GitHub repo URL for auto-cloning when source is not available locally.
-const REPO_URL: &str = "https://github.com/adolfousier/opencrabs.git";
+const REPO_URL: &str = "https://github.com/tmih06/stemcell.git";
 
-/// Handles building, testing, and restarting OpenCrabs from source.
+/// Handles building, testing, and restarting StemCell from source.
 pub struct SelfUpdater {
-    /// Root of the OpenCrabs project (where Cargo.toml lives)
+    /// Root of the StemCell project (where Cargo.toml lives)
     project_root: PathBuf,
     /// Path to the compiled binary
     binary_path: PathBuf,
@@ -37,7 +37,7 @@ impl SelfUpdater {
     /// Auto-detect project root and binary path from the current executable.
     ///
     /// First walks up from the binary looking for `Cargo.toml` (build-from-source).
-    /// If not found (pre-built binary), checks `~/.opencrabs/source/` for a
+    /// If not found (pre-built binary), checks `~/.stemcell/source/` for a
     /// previous clone. If that doesn't exist either, clones the repo there.
     pub fn auto_detect() -> Result<Self> {
         let exe = std::env::current_exe()?;
@@ -50,7 +50,7 @@ impl SelfUpdater {
 
         loop {
             if search_dir.join("Cargo.toml").exists() {
-                let binary_path = search_dir.join("target").join("release").join("opencrabs");
+                let binary_path = search_dir.join("target").join("release").join("stemcell");
                 return Ok(Self {
                     project_root: search_dir,
                     binary_path,
@@ -61,8 +61,8 @@ impl SelfUpdater {
             }
         }
 
-        // No source tree found — use ~/.opencrabs/source/
-        let source_dir = crate::config::opencrabs_home().join("source");
+        // No source tree found — use ~/.stemcell/source/
+        let source_dir = crate::config::stemcell_home().join("source");
 
         if source_dir.join("Cargo.toml").exists() {
             // Source already cloned — pull latest
@@ -73,7 +73,7 @@ impl SelfUpdater {
                 .output();
         } else {
             // Clone the repo
-            tracing::info!("Cloning OpenCrabs source to {}", source_dir.display());
+            tracing::info!("Cloning StemCell source to {}", source_dir.display());
             let output = std::process::Command::new("git")
                 .args([
                     "clone",
@@ -93,7 +93,7 @@ impl SelfUpdater {
             }
         }
 
-        let binary_path = source_dir.join("target").join("release").join("opencrabs");
+        let binary_path = source_dir.join("target").join("release").join("stemcell");
 
         Ok(Self {
             project_root: source_dir,
@@ -118,7 +118,7 @@ impl SelfUpdater {
         use tokio::io::{AsyncBufReadExt, BufReader};
         use tokio::process::Command;
 
-        tracing::info!("Building OpenCrabs at {}", self.project_root.display());
+        tracing::info!("Building StemCell at {}", self.project_root.display());
 
         let mut child = Command::new("cargo")
             .args(["build", "--release"])
@@ -183,14 +183,14 @@ impl SelfUpdater {
         use std::os::unix::process::CommandExt;
 
         tracing::info!(
-            "Restarting OpenCrabs: {} chat --session {}",
+            "Restarting StemCell: {} chat --session {}",
             self.binary_path.display(),
             session_id
         );
 
         let err = std::process::Command::new(&self.binary_path)
             .args(["chat", "--session", &session_id.to_string()])
-            .env("OPENCRABS_EVOLVED_FROM", crate::VERSION)
+            .env("STEMCELL_EVOLVED_FROM", crate::VERSION)
             .exec(); // Replaces the process — only returns on error
 
         Err(anyhow::anyhow!("exec() failed: {}", err))
@@ -223,12 +223,12 @@ mod tests {
     fn test_new() {
         let updater = SelfUpdater::new(
             PathBuf::from("/tmp/project"),
-            PathBuf::from("/tmp/project/target/release/opencrabs"),
+            PathBuf::from("/tmp/project/target/release/stemcell"),
         );
         assert_eq!(updater.project_root(), std::path::Path::new("/tmp/project"));
         assert_eq!(
             updater.binary_path(),
-            std::path::Path::new("/tmp/project/target/release/opencrabs")
+            std::path::Path::new("/tmp/project/target/release/stemcell")
         );
     }
 }

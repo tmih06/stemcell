@@ -251,17 +251,27 @@ pub const PROVIDERS: &[ProviderInfo] = &[
         key_label: "OAuth",
         help_lines: &[
             "Authenticate with OpenAI Codex subscription via device-code flow",
-            "No CLI needed — sign in through OpenCrabs onboarding",
+            "No CLI needed — sign in through StemCell onboarding",
         ],
     },
     ProviderInfo {
         id: "opencode",
         name: "OpenCode",
-        models: &[], // Fetched from opencode.ai API
+        models: &[],
         key_label: "API Key",
         help_lines: &[
             "Go and Zen plans — opencode.ai",
             "Get key from opencode.ai/settings",
+        ],
+    },
+    ProviderInfo {
+        id: "opencode_zen_free",
+        name: "OpenCode Zen Free",
+        models: &[],
+        key_label: "",
+        help_lines: &[
+            "Free models from opencode.ai — no login required",
+            "No API key needed",
         ],
     },
     ProviderInfo {
@@ -326,31 +336,31 @@ pub const CHANNEL_NAMES: &[(&str, &str)] = &[
 pub const TEMPLATE_FILES: &[(&str, &str)] = &[
     (
         "SOUL.md",
-        include_str!("../../docs/reference/templates/SOUL.md"),
+        include_str!("../../../wiki/reference/templates/SOUL.md"),
     ),
     (
         "USER.md",
-        include_str!("../../docs/reference/templates/USER.md"),
+        include_str!("../../../wiki/reference/templates/USER.md"),
     ),
     (
         "AGENTS.md",
-        include_str!("../../docs/reference/templates/AGENTS.md"),
+        include_str!("../../../wiki/reference/templates/AGENTS.md"),
     ),
     (
         "TOOLS.md",
-        include_str!("../../docs/reference/templates/TOOLS.md"),
+        include_str!("../../../wiki/reference/templates/TOOLS.md"),
     ),
     (
         "MEMORY.md",
-        include_str!("../../docs/reference/templates/MEMORY.md"),
+        include_str!("../../../wiki/reference/templates/MEMORY.md"),
     ),
     (
         "CODE.md",
-        include_str!("../../docs/reference/templates/CODE.md"),
+        include_str!("../../../wiki/reference/templates/CODE.md"),
     ),
     (
         "SECURITY.md",
-        include_str!("../../docs/reference/templates/SECURITY.md"),
+        include_str!("../../../wiki/reference/templates/SECURITY.md"),
     ),
 ];
 

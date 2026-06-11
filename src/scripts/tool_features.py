@@ -118,7 +118,7 @@ TOGGLE_TO_FEATURES: dict[str, tuple[str, ...]] = {
         "tool-slash-command",
         "tool-rename-session",
         "tool-load-brain-file",
-        "tool-write-opencrabs-file",
+        "tool-write-stemcell-file",
         "tool-a2a-send",
     ),
     # providers

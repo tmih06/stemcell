@@ -27,7 +27,7 @@ fn runtime_info_with_collapsed_wd() -> RuntimeInfo {
         provider: Some("test-provider".to_string()),
         // Pre-collapsed form — that's what the CLI sites pass after
         // running `collapse_home` on the absolute working directory.
-        working_directory: Some("~/srv/rs/opencrabs".to_string()),
+        working_directory: Some("~/srv/rs/stemcell".to_string()),
     }
 }
 
@@ -38,7 +38,7 @@ fn full_brain_renders_home_anchor_when_wd_present() {
     let prompt = loader.build_system_brain(Some(&info), None, None);
 
     // The collapsed wd is still visible (the original feature)
-    assert!(prompt.contains("Working directory: ~/srv/rs/opencrabs"));
+    assert!(prompt.contains("Working directory: ~/srv/rs/stemcell"));
     // Home anchor is emitted right under it so the model has ground
     // truth instead of guessing the username.
     let home = dirs::home_dir().expect("home dir");
@@ -84,7 +84,7 @@ fn core_brain_renders_home_anchor_when_wd_present() {
     let info = runtime_info_with_collapsed_wd();
     let prompt = loader.build_core_brain(Some(&info), None, None);
 
-    assert!(prompt.contains("Working directory: ~/srv/rs/opencrabs"));
+    assert!(prompt.contains("Working directory: ~/srv/rs/stemcell"));
     let home = dirs::home_dir().expect("home dir");
     assert!(prompt.contains(&format!("Home: {}", home.display())));
     assert!(prompt.contains("Path expansion:"));

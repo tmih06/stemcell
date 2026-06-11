@@ -104,8 +104,8 @@ pub mod session_search;
 pub mod slash_command;
 #[cfg(feature = "tool-task-manager")]
 pub mod task;
-#[cfg(feature = "tool-write-opencrabs-file")]
-pub mod write_opencrabs_file;
+#[cfg(feature = "tool-write-stemcell-file")]
+pub mod write_stemcell_file;
 
 // Tool implementations - Phase 5: Multi-Agent Orchestration (tools-multi-agent)
 #[cfg(any(

@@ -1,12 +1,12 @@
 //! Tests for the skill proposal path added to `ProposalsStore` +
-//! `rsi_propose`. Skills (~/.opencrabs/skills/<name>/SKILL.md) are
+//! `rsi_propose`. Skills (~/.stemcell/skills/<name>/SKILL.md) are
 //! the third proposal kind alongside tools and commands — cheaper to
 //! author than dynamic tools (no schema, no executor wiring), the
 //! right shape for "RSI noticed a sequence of bash + http calls
 //! keeps coming up; codify it as a workflow".
 //!
 //! Tests touch the store via `ProposalsStore::with_dir(tmpdir)` so
-//! they never write to the user's real `~/.opencrabs/rsi/` inbox.
+//! they never write to the user's real `~/.stemcell/rsi/` inbox.
 
 use crate::brain::rsi_proposals::{ProposalsStore, ProposedSkill};
 
@@ -221,7 +221,7 @@ async fn rsi_propose_skill_strips_leading_slash_in_name() {
     let ctx = ToolExecutionContext::new(uuid::Uuid::new_v4());
     // This test exercises the validation path only — we can't easily
     // verify the persisted file without a tmpdir override on the
-    // tool (the tool uses opencrabs_home()). What we CAN check: the
+    // tool (the tool uses stemcell_home()). What we CAN check: the
     // tool succeeds (name accepted after normalisation).
     let input = serde_json::json!({
         "kind": "skill",

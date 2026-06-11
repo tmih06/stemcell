@@ -1,6 +1,6 @@
 //! Install method detection.
 //!
-//! Determines how OpenCrabs was installed so that evolve, crash recovery,
+//! Determines how StemCell was installed so that evolve, crash recovery,
 //! and other update paths can use the correct upgrade strategy.
 
 /// How the current binary was installed.
@@ -9,7 +9,7 @@ pub enum InstallMethod {
     /// Built from source — exe lives inside a cargo `target/` dir with a `Cargo.toml` ancestor.
     /// Contains the project root path.
     Source(std::path::PathBuf),
-    /// Installed via `cargo install opencrabs` — exe lives in `~/.cargo/bin/`.
+    /// Installed via `cargo install stemcell` — exe lives in `~/.cargo/bin/`.
     CargoInstall,
     /// Pre-built binary downloaded from GitHub releases (or installed manually).
     PrebuiltBinary,
@@ -91,9 +91,9 @@ pub fn platform_suffix() -> Option<&'static str> {
 /// Binary filename for the current platform.
 pub fn binary_name() -> &'static str {
     if std::env::consts::OS == "windows" {
-        "opencrabs.exe"
+        "stemcell.exe"
     } else {
-        "opencrabs"
+        "stemcell"
     }
 }
 
@@ -147,9 +147,9 @@ mod tests {
     fn binary_name_matches_platform() {
         let name = binary_name();
         if std::env::consts::OS == "windows" {
-            assert_eq!(name, "opencrabs.exe");
+            assert_eq!(name, "stemcell.exe");
         } else {
-            assert_eq!(name, "opencrabs");
+            assert_eq!(name, "stemcell");
         }
     }
 }

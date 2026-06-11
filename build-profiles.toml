@@ -1,4 +1,4 @@
-# OpenCrabs Build Profiles
+# StemCell Build Profiles
 # 
 # Use with: ./build.sh <profile>
 # Or: make build-<profile>

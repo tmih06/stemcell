@@ -3,6 +3,7 @@ use crossterm::event::{KeyCode, KeyEvent};
 use super::helpers::{handle_text_paste, is_clear_field};
 use super::types::*;
 use super::wizard::OnboardingWizard;
+use crate::tui::events::keys;
 
 impl OnboardingWizard {
     /// Handle key events for the current step
@@ -78,7 +79,7 @@ impl OnboardingWizard {
             // Paste replaces untouched template, appends to edited field
             let field = match self.brain_field {
                 BrainField::AboutMe => &mut self.about_me,
-                BrainField::AboutAgent => &mut self.about_opencrabs,
+                BrainField::AboutAgent => &mut self.about_stemcell,
             };
             let edited = match self.brain_field {
                 BrainField::AboutMe => self.brain_me_edited,
@@ -439,6 +440,12 @@ impl OnboardingWizard {
     }
 
     pub(super) fn handle_provider_auth_key(&mut self, event: KeyEvent) -> WizardAction {
+        if self.ps.models_fetching
+            && matches!(self.auth_field, AuthField::Model | AuthField::CustomModel)
+        {
+            return WizardAction::None;
+        }
+
         match self.auth_field {
             AuthField::Provider => match event.code {
                 KeyCode::Up | KeyCode::Char('k') => {
@@ -579,6 +586,9 @@ impl OnboardingWizard {
                 _ => {}
             },
             AuthField::Model => match event.code {
+                _ if keys::is_refresh_models(&event) => {
+                    return WizardAction::FetchModels;
+                }
                 KeyCode::Up => {
                     self.ps.selected_model = self.ps.selected_model.saturating_sub(1);
                 }
@@ -740,6 +750,10 @@ impl OnboardingWizard {
                 _ => {}
             },
             AuthField::CustomModel => {
+                if keys::is_refresh_models(&event) && !self.ps.base_url.is_empty() {
+                    return WizardAction::FetchModels;
+                }
+
                 // If models were fetched, treat as list picker; otherwise free-text
                 if self.ps.models.is_empty() {
                     match event.code {

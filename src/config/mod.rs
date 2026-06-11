@@ -15,6 +15,5 @@ pub use types::*;
 pub use update::{ProviderUpdater, UpdateResult};
 
 // `merge_provider_keys` is internal to the crate but must be reachable
-// from the regression tests in `src/tests/merge_provider_keys_test.rs`.
-#[cfg(test)]
+// from regression tests and the startup model-warming job.
 pub(crate) use types::merge_provider_keys;

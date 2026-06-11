@@ -1,9 +1,9 @@
-//! Error types and error codes for OpenCrabs.
+//! Error types and error codes for Stemcell.
 
 use thiserror::Error;
 
 #[derive(Error, Debug)]
-pub enum OpenCrabsError {
+pub enum StemCellError {
     #[error("Database error: {0}")]
     Database(#[from] rusqlite::Error),
 
@@ -54,7 +54,7 @@ pub enum ErrorCode {
     PermissionNotGranted = 4001,
 }
 
-impl OpenCrabsError {
+impl StemCellError {
     pub fn code(&self) -> Option<ErrorCode> {
         match self {
             Self::Config { code, .. } => Some(*code),
@@ -68,7 +68,7 @@ impl OpenCrabsError {
         match self {
             Self::Config { message, .. } => {
                 format!(
-                    "Configuration error: {}\nPlease check your opencrabs.json file.",
+                    "Configuration error: {}\nPlease check your stemcell.json file.",
                     message
                 )
             }

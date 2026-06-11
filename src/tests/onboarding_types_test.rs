@@ -69,7 +69,7 @@ fn all_steps_have_titles() {
 
 #[test]
 fn provider_count_matches_expected() {
-    assert_eq!(PROVIDERS.len(), 15);
+    assert_eq!(PROVIDERS.len(), 16);
 }
 
 #[test]
@@ -93,6 +93,7 @@ fn all_providers_have_key_label_and_help() {
         "opencode-cli",
         "codex-cli",
         "opencode",
+        "opencode_zen_free",
         "ollama",
     ];
 

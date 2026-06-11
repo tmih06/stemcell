@@ -11,7 +11,7 @@ use std::sync::Arc;
 
 use qrcode::QrCode;
 
-use crate::config::opencrabs_home;
+use crate::config::stemcell_home;
 
 /// Render a QR code as pure Unicode block characters (no ANSI escapes).
 /// Uses upper/lower half blocks to pack two rows per line. Includes a 4-module
@@ -80,7 +80,7 @@ pub fn subscribe_whatsapp_pairing(
     wipe_session: bool,
 ) -> WhatsAppConnectHandle {
     if wipe_session {
-        let wa_dir = opencrabs_home().join("whatsapp");
+        let wa_dir = stemcell_home().join("whatsapp");
         let _ = std::fs::remove_file(wa_dir.join("session.db"));
         let _ = std::fs::remove_file(wa_dir.join("session.db-wal"));
         let _ = std::fs::remove_file(wa_dir.join("session.db-shm"));

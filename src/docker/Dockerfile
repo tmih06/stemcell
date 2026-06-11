@@ -31,7 +31,7 @@ RUN mkdir -p src && echo 'fn main() {}' > src/main.rs \
 # Copy full source and build for real
 COPY . .
 RUN cargo build --release --all-features \
-    && strip target/release/opencrabs
+    && strip target/release/stemcell
 
 # ── Stage 2: Runtime ───────────────────────────────────────────
 # Minimal image — just the binary + runtime deps
@@ -45,15 +45,15 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # Create non-root user
-RUN useradd -m -s /bin/bash opencrabs
+RUN useradd -m -s /bin/bash stemcell
 
 # Copy binary from builder
-COPY --from=builder /build/target/release/opencrabs /usr/local/bin/opencrabs
+COPY --from=builder /build/target/release/stemcell /usr/local/bin/stemcell
 
 # Workspace and config persist via volume
-VOLUME /home/opencrabs/.opencrabs
+VOLUME /home/stemcell/.stemcell
 
-USER opencrabs
-WORKDIR /home/opencrabs
+USER stemcell
+WORKDIR /home/stemcell
 
-ENTRYPOINT ["opencrabs"]
+ENTRYPOINT ["stemcell"]

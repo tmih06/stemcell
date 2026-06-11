@@ -1,7 +1,7 @@
 //! RSI-side proposal authoring tool.
 //!
 //! Called only by the autonomous RSI agent. Writes a tool or command
-//! proposal to the inbox in `~/.opencrabs/rsi/`. Never installs anything
+//! proposal to the inbox in `~/.stemcell/rsi/`. Never installs anything
 //! live — that's the user-facing `rsi_proposals` tool's job.
 //!
 //! This split is deliberate: RSI's restricted tool whitelist must not
@@ -29,7 +29,7 @@ impl Tool for RsiProposeTool {
 
     fn description(&self) -> &str {
         "Propose a new dynamic tool, slash command, or skill for the user to install. \
-         Proposals are written to the inbox at ~/.opencrabs/rsi/ — they DO NOT \
+         Proposals are written to the inbox at ~/.stemcell/rsi/ — they DO NOT \
          install live. The user (or the user-facing agent on their behalf) reviews \
          and applies proposals via rsi_proposals. \
          \n\nWHEN TO USE EACH KIND: \
@@ -50,7 +50,7 @@ impl Tool for RsiProposeTool {
                 "kind": {
                     "type": "string",
                     "enum": ["tool", "command", "skill"],
-                    "description": "What to propose: a dynamic tool (tools.toml), a slash command (commands.toml), or a skill (~/.opencrabs/skills/<name>/SKILL.md)"
+                    "description": "What to propose: a dynamic tool (tools.toml), a slash command (commands.toml), or a skill (~/.stemcell/skills/<name>/SKILL.md)"
                 },
                 "rationale": {
                     "type": "string",
@@ -120,7 +120,7 @@ impl Tool for RsiProposeTool {
     }
 
     fn capabilities(&self) -> Vec<ToolCapability> {
-        // Pure file-write into the inbox under ~/.opencrabs/rsi/.
+        // Pure file-write into the inbox under ~/.stemcell/rsi/.
         // No shell exec, no network, no installation.
         vec![]
     }
@@ -333,7 +333,7 @@ impl Tool for RsiProposeTool {
 
                 match store.add_skill_proposal(proposer, &rationale, skill) {
                     Ok(id) => Ok(ToolResult::success(format!(
-                        "Skill proposal filed: {id} (name={normalised_name}). On apply it lands at ~/.opencrabs/skills/{normalised_name}/SKILL.md."
+                        "Skill proposal filed: {id} (name={normalised_name}). On apply it lands at ~/.stemcell/skills/{normalised_name}/SKILL.md."
                     ))),
                     Err(e) => Ok(ToolResult::error(format!("Failed to write proposal: {e}"))),
                 }

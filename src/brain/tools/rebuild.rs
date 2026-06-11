@@ -1,6 +1,6 @@
 //! Rebuild Tool
 //!
-//! Lets the agent build OpenCrabs from source and exec() restart automatically.
+//! Lets the agent build StemCell from source and exec() restart automatically.
 //! The build runs via `SelfUpdater::build_streaming` — progress lines are forwarded
 //! through the ProgressCallback so the TUI shows them live.  On success, a
 //! `ProgressEvent::RestartReady` is emitted which triggers an automatic exec() restart
@@ -31,7 +31,7 @@ impl Tool for RebuildTool {
     }
 
     fn description(&self) -> &str {
-        "Build OpenCrabs from source (cargo build --release) and signal the TUI to hot-restart. \
+        "Build StemCell from source (cargo build --release) and signal the TUI to hot-restart. \
          Call this after editing source code to apply your changes. On success the binary is \
          exec()-replaced automatically (no prompt). On failure the compiler output is returned."
     }

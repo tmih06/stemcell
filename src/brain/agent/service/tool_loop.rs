@@ -487,7 +487,7 @@ impl AgentService {
         //
         // `is_cli_provider` controls TWO unrelated behaviors:
         //   1. Skip local tool execution (CLI runs tools internally)
-        //   2. Skip OpenCrabs-side context compaction (CLI persists session)
+        //   2. Skip StemCell-side context compaction (CLI persists session)
         //
         // `is_local_provider` relaxes the phantom-tool-call detector so
         // local llama.cpp/MLX models that answer in prose when they should
@@ -587,7 +587,7 @@ impl AgentService {
         // When a channel handler supplies `display_text_override`, the DB row
         // (and therefore the TUI chat history) shows that clean text instead
         // of the LLM-context-augmented `user_message`. This keeps Telegram /
-        // Discord / Slack / WhatsApp / Trello sessions readable in OpenCrabs
+        // Discord / Slack / WhatsApp / Trello sessions readable in StemCell
         // — no sender brackets, no reply context, no recent-history dump.
         let is_system_continuation = user_message.starts_with("[System:");
         if !is_system_continuation {
@@ -2435,7 +2435,7 @@ impl AgentService {
             // Claude CLI handles caching internally — its reported cache_read /
             // cache_creation tokens reflect Claude's own cached system prompt +
             // tool schemas + accumulated session state, NOT the conversation
-            // OpenCrabs sent. Adding those to context_input() inflates the
+            // StemCell sent. Adding those to context_input() inflates the
             // counter past the model's window (e.g. 484k/200k = 242%) on every
             // turn, which then triggers spurious auto-compaction that drops
             // the in-flight request. We manage the context we send; Claude
@@ -2723,7 +2723,7 @@ impl AgentService {
                     let drop_msg = format!(
                         "Provider stream dropped {} times consecutively. \
                          The request could not be completed. \
-                         Check logs at ~/.opencrabs/logs/ for details.",
+                         Check logs at ~/.stemcell/logs/ for details.",
                         MAX_STREAM_RETRIES,
                     );
                     tracing::error!(
@@ -4011,7 +4011,7 @@ impl AgentService {
                          (3) `browser_navigate` to a new URL. If you can't find the \
                          element you need, call `browser_find` with mode=\"text\" or \
                          mode=\"aria\" to enumerate candidates and get back stable \
-                         `[data-opencrabs-match=\"N\"]` selectors. Do not screenshot \
+                         `[data-stemcell-match=\"N\"]` selectors. Do not screenshot \
                          again on this turn.]"
                             .to_string(),
                     ));
@@ -4605,7 +4605,7 @@ impl AgentService {
             // push — exceeding the model's window AND the compaction
             // summarizer's window, triggering a hard-truncate-to-zero
             // cascade observed today on session 5ed9ff25 (read of
-            // opencrabs-retro-release.html, 1,025,562 bytes → ctx jumps
+            // stemcell-retro-release.html, 1,025,562 bytes → ctx jumps
             // 8k → 738k → 0 messages after truncate). Truncate generously
             // (50 KB chars ≈ 12k tokens, ~6% of a 200k window) and
             // instruct the agent to re-call with offsets / grep / line

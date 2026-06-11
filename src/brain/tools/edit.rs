@@ -196,14 +196,14 @@ impl Tool for EditTool {
 
         // Brain-file guardrail (issue #91): protected brain files
         // (SOUL.md, MEMORY.md, USER.md, etc.) must go through
-        // `write_opencrabs_file`, which enforces append-only,
+        // `write_stemcell_file`, which enforces append-only,
         // dedup-aware shrink, and `.bak` snapshots. Generic edit_file
         // does none of those, so reject the call before mutating
         // anything and tell the agent to switch tools.
         if super::brain_file_safety::is_protected_path(&path) {
             return Ok(ToolResult::error(format!(
                 "Refusing to edit protected brain file '{}' with generic edit_file. \
-                 Use the `write_opencrabs_file` tool instead. It enforces append-only \
+                 Use the `write_stemcell_file` tool instead. It enforces append-only \
                  writes, dedup-aware shrinking, and saves a `.bak` snapshot before every \
                  change.",
                 path.display()

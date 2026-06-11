@@ -1178,7 +1178,7 @@ async fn handle_message(
 
     // Build the human-readable display text (used for DB persistence + TUI).
     // Owner DMs show bare text; multi-user/group conversations get a
-    // `Sender: text` prefix so OpenCrabs sessions stay readable.
+    // `Sender: text` prefix so StemCell sessions stay readable.
     let display_text = if is_owner && is_dm {
         content.clone()
     } else {

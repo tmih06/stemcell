@@ -562,13 +562,13 @@ impl ToolModule for ImageModule {
     }
 }
 
-/// Brain & session management: load_brain_file, write_opencrabs_file,
+/// Brain & session management: load_brain_file, write_stemcell_file,
 /// rename_session, slash_command, a2a_send
 #[cfg(any(
     feature = "tool-slash-command",
     feature = "tool-rename-session",
     feature = "tool-load-brain-file",
-    feature = "tool-write-opencrabs-file",
+    feature = "tool-write-stemcell-file",
     feature = "tool-a2a-send"
 ))]
 struct BrainModule;
@@ -577,7 +577,7 @@ struct BrainModule;
     feature = "tool-slash-command",
     feature = "tool-rename-session",
     feature = "tool-load-brain-file",
-    feature = "tool-write-opencrabs-file",
+    feature = "tool-write-stemcell-file",
     feature = "tool-a2a-send"
 ))]
 impl ToolModule for BrainModule {
@@ -594,7 +594,7 @@ impl ToolModule for BrainModule {
         use super::{
             a2a_send::A2aSendTool, load_brain_file::LoadBrainFileTool,
             rename_session::RenameSessionTool, slash_command::SlashCommandTool,
-            write_opencrabs_file::WriteOpenCrabsFileTool,
+            write_stemcell_file::WriteStemCellFileTool,
         };
 
         #[cfg(feature = "tool-slash-command")]
@@ -602,12 +602,12 @@ impl ToolModule for BrainModule {
         #[cfg(feature = "tool-rename-session")]
         ctx.register(Arc::new(RenameSessionTool));
 
-        // Full mode only: brain file loader, opencrabs file writer, A2A
+        // Full mode only: brain file loader, stemcell file writer, A2A
         if ctx.mode == RegistrationMode::Full {
             #[cfg(feature = "tool-load-brain-file")]
             ctx.register(Arc::new(LoadBrainFileTool));
-            #[cfg(feature = "tool-write-opencrabs-file")]
-            ctx.register(Arc::new(WriteOpenCrabsFileTool));
+            #[cfg(feature = "tool-write-stemcell-file")]
+            ctx.register(Arc::new(WriteStemCellFileTool));
             #[cfg(feature = "tool-a2a-send")]
             ctx.register(Arc::new(A2aSendTool::new()));
         }
@@ -745,7 +745,7 @@ impl ToolModule for MetaModule {
         ctx.register(Arc::new(RsiProposalsTool::new(
             ctx.registry.clone(),
             tools_toml_path,
-            crate::config::opencrabs_home(),
+            crate::config::stemcell_home(),
         )));
     }
 }
@@ -849,7 +849,7 @@ pub fn all_modules() -> Vec<Box<dyn ToolModule>> {
         feature = "tool-slash-command",
         feature = "tool-rename-session",
         feature = "tool-load-brain-file",
-        feature = "tool-write-opencrabs-file",
+        feature = "tool-write-stemcell-file",
         feature = "tool-a2a-send"
     ))]
     modules.push(Box::new(BrainModule));

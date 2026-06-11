@@ -504,7 +504,7 @@ pub(crate) async fn handle_message(
 
     // Build the human-readable display text (used for DB persistence + TUI).
     // Owner DMs show the bare text; everything else gets a `Sender: text`
-    // prefix so multi-user channels stay readable in OpenCrabs without
+    // prefix so multi-user channels stay readable in StemCell without
     // surfacing the LLM-only metadata brackets.
     let display_text = if is_owner && msg.guild_id.is_none() {
         content.clone()

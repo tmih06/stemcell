@@ -122,7 +122,7 @@ pub struct AgentService {
     /// Working directory for tool execution (shared, mutable at runtime via /cd or agent NLP)
     pub(super) working_directory: Arc<std::sync::RwLock<std::path::PathBuf>>,
 
-    /// Brain path (~/.opencrabs/) for loading brain files
+    /// Brain path (~/.stemcell/) for loading brain files
     pub(super) brain_path: Option<std::path::PathBuf>,
 
     /// Notification channel — fired after every `run_tool_loop` completion so
@@ -356,7 +356,7 @@ impl AgentService {
         Arc::clone(&self.working_directory)
     }
 
-    /// Set the brain path (~/.opencrabs/)
+    /// Set the brain path (~/.stemcell/)
     pub fn with_brain_path(mut self, brain_path: std::path::PathBuf) -> Self {
         self.brain_path = Some(brain_path);
         self
@@ -412,7 +412,7 @@ impl AgentService {
     }
 
     /// Baseline for the ctx-footer display BEFORE any API response has
-    /// landed for this session. Returns 0 — opencrabs uses ONLY
+    /// landed for this session. Returns 0 — stemcell uses ONLY
     /// real-time data from the provider's `usage.input_tokens`. There
     /// is no local tokenizer estimate, no per-provider calibration
     /// ratio, no prediction. On `/new` the footer shows `0/max` until

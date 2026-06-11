@@ -30,7 +30,7 @@ use std::sync::{LazyLock, Mutex};
 /// The `file:line:col` alone usually points at ratatui internals
 /// (e.g. `ratatui-core/.../buffer.rs:250`) — useless without knowing
 /// which of *our* widgets called in. The filtered backtrace picks the
-/// first frame under `opencrabs::tui::` so the caller widget is named.
+/// first frame under `stemcell::tui::` so the caller widget is named.
 static LAST_PANIC_LOCATION: LazyLock<Mutex<Option<PanicInfo>>> = LazyLock::new(|| Mutex::new(None));
 
 #[derive(Clone)]
@@ -38,14 +38,14 @@ struct PanicInfo {
     file: String,
     line: u32,
     column: u32,
-    /// First OpenCrabs frame pulled out of the backtrace, if any.
+    /// First StemCell frame pulled out of the backtrace, if any.
     /// Format `module::fn at path:line` — typically the widget render call
     /// that fed ratatui an out-of-bounds coord.
-    opencrabs_frame: Option<String>,
+    stemcell_frame: Option<String>,
 }
 
 /// Walk a captured `Backtrace` and return the first frame whose symbol
-/// name starts with `opencrabs::`. `Backtrace`'s `Display` impl renders
+/// name starts with `stemcell::`. `Backtrace`'s `Display` impl renders
 /// one frame per two lines:
 ///
 /// ```text
@@ -53,18 +53,18 @@ struct PanicInfo {
 ///              at src/path.rs:LINE:COL
 /// ```
 ///
-/// We scan for any line containing `opencrabs::` (skipping the panic
+/// We scan for any line containing `stemcell::` (skipping the panic
 /// hook itself), pull the symbol + `at ...` pair, and return them so
 /// the render-panic log points at the actual widget that called
 /// ratatui with an out-of-bounds coord, not ratatui's internal bounds
 /// check.
-fn first_opencrabs_frame(bt: &std::backtrace::Backtrace) -> Option<String> {
+fn first_stemcell_frame(bt: &std::backtrace::Backtrace) -> Option<String> {
     let text = format!("{}", bt);
     let mut lines = text.lines().peekable();
     while let Some(line) = lines.next() {
         let trimmed = line.trim();
-        if trimmed.contains("opencrabs::")
-            && !trimmed.contains("first_opencrabs_frame")
+        if trimmed.contains("stemcell::")
+            && !trimmed.contains("first_stemcell_frame")
             && !trimmed.contains("runner::")
         {
             let symbol = trimmed
@@ -112,13 +112,13 @@ pub async fn run(mut app: App) -> Result<()> {
             // Force-capture unconditionally — render panics are rare,
             // and RUST_BACKTRACE=1 is usually unset in TUI sessions.
             let bt = std::backtrace::Backtrace::force_capture();
-            let opencrabs_frame = first_opencrabs_frame(&bt);
+            let stemcell_frame = first_stemcell_frame(&bt);
             if let Ok(mut slot) = LAST_PANIC_LOCATION.lock() {
                 *slot = Some(PanicInfo {
                     file: loc.file().to_string(),
                     line: loc.line(),
                     column: loc.column(),
-                    opencrabs_frame,
+                    stemcell_frame,
                 });
             }
         }
@@ -296,7 +296,7 @@ async fn run_loop(
                     .map(|info| {
                         let loc = format!(" at {}:{}:{}", info.file, info.line, info.column);
                         let caller = info
-                            .opencrabs_frame
+                            .stemcell_frame
                             .map(|f| format!(" — caller: {}", f))
                             .unwrap_or_default();
                         (loc, caller)

@@ -53,6 +53,10 @@ fn state() -> ProviderSelectorState {
         showing_providers: false,
         codex_user_code: None,
         codex_device_flow_status: crate::tui::onboarding::CodexDeviceFlowStatus::Idle,
+        max_provider_width: 12,
+        is_refreshing: false,
+        refresh_start: None,
+        refresh_message: None,
     }
 }
 

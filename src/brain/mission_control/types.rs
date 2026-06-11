@@ -51,10 +51,10 @@ pub enum McInboxKind {
     ProposedTool,
     /// RSI-proposed slash command (lands in `commands.toml` on apply).
     ProposedCommand,
-    /// RSI-proposed skill (lands at `~/.opencrabs/skills/<name>/SKILL.md`
+    /// RSI-proposed skill (lands at `~/.stemcell/skills/<name>/SKILL.md`
     /// on apply, with YAML frontmatter wrapping the proposed body).
     ProposedSkill,
-    /// RSI-proposed brain file dedup (applied via `write_opencrabs_file`
+    /// RSI-proposed brain file dedup (applied via `write_stemcell_file`
     /// with `dedup_intent=true` to shrink a brain file).
     ProposedBrainDedup,
 }
@@ -108,7 +108,7 @@ pub struct McScheduleItem {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum McScheduleKind {
-    /// Recurring cron job from `~/.opencrabs/cron/*.toml`.
+    /// Recurring cron job from `~/.stemcell/cron/*.toml`.
     Cron,
     /// One-shot agent action waiting on a user approval prompt.
     PendingApproval,

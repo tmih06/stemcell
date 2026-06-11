@@ -1,16 +1,16 @@
-# OpenCrabs Configuration File
+# StemCell Configuration File
 # Copy this file to one of these locations:
-#   - Linux/macOS: ~/.opencrabs/config.toml
-#   - Windows: %APPDATA%\opencrabs\config.toml or opencrabs\config.toml
+#   - Linux/macOS: ~/.stemcell/config.toml
+#   - Windows: %APPDATA%\stemcell\config.toml or stemcell\config.toml
 #
 # IMPORTANT: API keys should NOT be stored here!
 # Instead, store API keys in keys.toml (chmod 600) for security:
-#   - ~/.opencrabs/keys.toml
+#   - ~/.stemcell/keys.toml
 # Keys in keys.toml take priority over this file.
 
 [database]
 # Database file location (stores conversation history)
-# path = "~/.opencrabs/opencrabs.db"  # Default; only override if needed
+# path = "~/.stemcell/stemcell.db"  # Default; only override if needed
 
 [providers]
 # ========================================
@@ -146,7 +146,7 @@ models = [
 # Codex (OAuth — no CLI needed)
 # ========================================
 # Authenticates directly with OpenAI Codex subscription via device-code
-# OAuth flow. Tokens stored in ~/.opencrabs/auth/codex.json with automatic
+# OAuth flow. Tokens stored in ~/.stemcell/auth/codex.json with automatic
 # refresh. No `codex` CLI binary required — authenticate through the
 # onboarding wizard (/onboard:provider).
 # Uses the same public client ID as Codex CLI: app_EMoamEEZ73f0CkXaXp7hrann
@@ -294,7 +294,7 @@ profile_id = ""
 # subagent_model = "GLM 5"
 
 # Auto-install new releases on startup (default: true).
-# When true, OpenCrabs checks GitHub on startup and silently installs any
+# When true, StemCell checks GitHub on startup and silently installs any
 # new release, then hot-restarts. Set to false if you prefer to be prompted
 # before each update (or to /evolve manually).
 # auto_update = true
@@ -314,7 +314,7 @@ profile_id = ""
 #   multi_agent          — Sub-agent spawning and team management (spawn, wait, send_input, close, resume, team_*)
 #   rsi                  — Recursive self-improvement (feedback_record, feedback_analyze, self_improve)
 #   image                — Image generation and vision (generate_image, analyze_image, analyze_video)
-#   brain                — Brain file I/O, session management, A2A (load_brain_file, write_opencrabs_file, rename_session, slash_command, a2a_send)
+#   brain                — Brain file I/O, session management, A2A (load_brain_file, write_stemcell_file, rename_session, slash_command, a2a_send)
 #   channel_integrations — Messaging platform connectors (telegram, discord, slack, whatsapp, trello)
 #   browser              — Headless Chrome automation (navigate, click, type, screenshot, etc.)
 #   meta                 — Tool management and RSI proposals (tool_manage, rsi_proposals)
@@ -361,7 +361,7 @@ model = "gemini-3.1-flash-image-preview"   # Gemini image-gen model ("Nano Banan
 #
 # When vision is unavailable for any reason, `is_vision_available`
 # now logs the exact reason at INFO level in
-# `~/.opencrabs/logs/opencrabs.YYYY-MM-DD` — search for `target=vision`.
+# `~/.stemcell/logs/stemcell.YYYY-MM-DD` — search for `target=vision`.
 #
 # Easiest setup: run `/onboard:image` and it walks you through Gemini.
 
@@ -372,7 +372,7 @@ model = "gemini-3.1-flash-image-preview"   # Gemini vision model
 # ========================================
 # Tips for Using Local LLMs
 # ========================================
-# 1. Make sure LM Studio is running before starting OpenCrabs
+# 1. Make sure LM Studio is running before starting StemCell
 # 2. Load a model in LM Studio first
 # 3. Set default_model to EXACTLY match the model name shown in LM Studio
 # 4. Increase context length in LM Studio if you get overflow errors:
@@ -436,7 +436,7 @@ allowed_users = []                      # Trello member IDs allowed to @mention 
 # ========================================
 # Daemon Mode (systemd / launchd service)
 # ========================================
-# Settings for `opencrabs daemon` headless mode.
+# Settings for `stemcell daemon` headless mode.
 [daemon]
 # HTTP health check port. When set, GET /health returns 200 OK + JSON.
 # Useful for systemd watchdog, uptime monitors, and external health probes.

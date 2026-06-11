@@ -35,10 +35,10 @@ struct ManagerInner {
 /// Best-effort cleanup when the last `BrowserManager` clone (and
 /// therefore the inner Arc) is dropped — typically app exit.
 ///
-/// Previously, opencrabs shutdown left the CDP handler task running
+/// Previously, stemcell shutdown left the CDP handler task running
 /// as a tokio zombie and the headed Chrome process alive (visible
 /// window, orphaned Arc<Browser>), since no signal handler or Drop
-/// impl closed either. Subsequent opencrabs restarts would then hit
+/// impl closed either. Subsequent stemcell restarts would then hit
 /// the SingletonLock path (fixed in P0) or fight over the user's
 /// profile.
 ///
@@ -200,7 +200,7 @@ impl BrowserManager {
         // *starting up*, Chrome briefly holds the profile lock before
         // releasing it for additional instances — falling straight
         // through on the first locked check drops the user into the
-        // empty opencrabs fallback profile and silently loses all
+        // empty stemcell fallback profile and silently loses all
         // their logins/cookies. Cap at ~10s total wait
         // (250ms → 500 → 1000 → 2000 → 4000 ≈ 7.75s; next retry
         // would exceed the cap so we stop).
@@ -213,7 +213,7 @@ impl BrowserManager {
             }
             _ => {
                 used_native = false;
-                let fallback = crate::config::opencrabs_home().join("chrome-profile");
+                let fallback = crate::config::stemcell_home().join("chrome-profile");
                 if !fallback.exists() {
                     let _ = std::fs::create_dir_all(&fallback);
                 }
@@ -223,13 +223,13 @@ impl BrowserManager {
 
         // Sweep stale lock files in our OWN fallback profile before launch.
         // The 2026-04-11 / 17 logs all had the same failure: a previous
-        // opencrabs Chrome process crashed, leaving `SingletonLock` behind
-        // in `~/.opencrabs/chrome-profile`, and the next launch refused to
+        // stemcell Chrome process crashed, leaving `SingletonLock` behind
+        // in `~/.stemcell/chrome-profile`, and the next launch refused to
         // start with "Failed to create SingletonLock: File exists (17)".
-        // Restricted to the opencrabs-owned fallback path — never touch
+        // Restricted to the stemcell-owned fallback path — never touch
         // the user's native Chrome/Brave profile locks (that's their
         // running browser).
-        let fallback_root = crate::config::opencrabs_home().join("chrome-profile");
+        let fallback_root = crate::config::stemcell_home().join("chrome-profile");
         if profile_dir == fallback_root {
             clean_stale_locks(&profile_dir);
         }
@@ -824,8 +824,8 @@ pub(crate) const STEALTH_JS: &str = r#"
             : originalQuery(parameters);
 "#;
 
-/// Remove stale Chrome singleton lock files from the OPENCRABS-OWNED
-/// profile directory. A previous opencrabs Chrome process that crashed
+/// Remove stale Chrome singleton lock files from the STEMCELL-OWNED
+/// profile directory. A previous stemcell Chrome process that crashed
 /// leaves these files behind — the next launch then refuses to start
 /// with "Failed to create SingletonLock: File exists (17)" (see
 /// 2026-04-11 16:57 / 2026-04-17 15:00 logs).

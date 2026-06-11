@@ -239,7 +239,7 @@ impl Surface for TelegramSurface {
                 .bot_username()
                 .await
                 .map(|u| format!("@{}", u))
-                .unwrap_or_else(|| "OpenCrabs".to_string());
+                .unwrap_or_else(|| "StemCell".to_string());
             let chat_title = dctx
                 .as_ref()
                 .map(|d| d.chat_title.clone())
@@ -249,7 +249,7 @@ impl Surface for TelegramSurface {
                 "telegram".to_string(),
                 chat_id.to_string(),
                 Some(chat_title),
-                "bot:opencrabs".to_string(),
+                "bot:stemcell".to_string(),
                 bot_display_name,
                 text_only.clone(),
                 "text".to_string(),

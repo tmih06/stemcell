@@ -345,7 +345,7 @@ impl DynamicTool {
         context: &ToolExecutionContext,
     ) -> Result<ToolResult> {
         // Write all parameters to a temporary JSON file and expose the
-        // path via OPENCRABS_PARAMS environment variable. This lets tool
+        // path via STEMCELL_PARAMS environment variable. This lets tool
         // commands read structured data (JSON arrays, multiline strings,
         // nested objects) without shell quoting or heredoc fragility.
         //
@@ -387,7 +387,7 @@ impl DynamicTool {
         let output = tokio::process::Command::new("sh")
             .arg("-c")
             .arg(&cmd)
-            .env("OPENCRABS_PARAMS", &params_path)
+            .env("STEMCELL_PARAMS", &params_path)
             .current_dir(context.working_dir())
             .stdin(std::process::Stdio::null())
             .output()

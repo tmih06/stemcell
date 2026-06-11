@@ -1,6 +1,6 @@
 //! Mission Control — data services
 //!
-//! Aggregates and adapts data from existing OpenCrabs subsystems
+//! Aggregates and adapts data from existing StemCell subsystems
 //! (`rsi_proposals`, RSI improvements log, cron registry, approval queue)
 //! into uniform per-panel types the TUI renderer consumes.
 //!

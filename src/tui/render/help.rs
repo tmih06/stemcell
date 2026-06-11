@@ -66,7 +66,18 @@ pub(super) fn render_help(f: &mut Frame, app: &App, area: Rect) {
         kv("Ctrl+J", "New line (alt)", cyan),
         kv("Escape (x2)", "Cancel / abort immediately", cyan),
         kv("Page Up/Down", "Scroll history", cyan),
+        kv("Ctrl+S", "Select mode (copy text)", cyan),
+        kv("Drag mouse", "Select text (auto-scrolls at edges)", cyan),
+        kv("Right-click", "Copy message", cyan),
         kv("@", "File picker", cyan),
+        Line::from(""),
+        section_header("SELECT MODE"),
+        kv("↑↓←→", "Move caret (auto-scrolls)", cyan),
+        kv("Shift+arrows", "Extend selection", cyan),
+        kv("v", "Start/stop selection", cyan),
+        kv("Home / End", "Line start / end", cyan),
+        kv("y / c / Enter", "Copy selection", cyan),
+        kv("Esc", "Exit select mode", cyan),
         Line::from(""),
         section_header("INPUT EDITING"),
         kv("↑ / ↓", "Line nav / start-end / history", cyan),
@@ -137,7 +148,7 @@ pub(super) fn render_help(f: &mut Frame, app: &App, area: Rect) {
         Line::from(vec![
             Span::styled(" 📖 ", Style::default().fg(Color::Rgb(215, 100, 20))),
             Span::styled(
-                "docs.opencrabs.com",
+                "github.com/tmih06/stemcell",
                 Style::default()
                     .fg(Color::Cyan)
                     .add_modifier(Modifier::UNDERLINED),
@@ -304,7 +315,7 @@ pub(super) fn render_settings(f: &mut Frame, app: &App, area: Rect) {
     // Config file path
     let config_path = crate::config::Config::system_config_path()
         .map(|p| p.display().to_string())
-        .unwrap_or_else(|| "~/.opencrabs/config.toml".into());
+        .unwrap_or_else(|| "~/.stemcell/config.toml".into());
 
     let home_dir = dirs::home_dir()
         .map(|h| h.to_string_lossy().to_string())

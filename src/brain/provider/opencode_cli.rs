@@ -2,7 +2,7 @@
 //!
 //! Spawns the `opencode` CLI binary in non-interactive mode and reads
 //! its NDJSON stream output, converting it to standard `StreamEvent`s.
-//! OpenCrabs handles all tools, memory, and context locally — opencode
+//! StemCell handles all tools, memory, and context locally — opencode
 //! is used purely as an LLM backend for its model access (including free models).
 
 use super::error::{ProviderError, Result};
@@ -106,7 +106,7 @@ impl OpenCodeCliProvider {
                                     _ => "png",
                                 };
                                 let tmp = std::env::temp_dir().join(format!(
-                                    "opencrabs_cli_img_{}.{}",
+                                    "stemcell_cli_img_{}.{}",
                                     uuid::Uuid::new_v4(),
                                     ext
                                 ));
@@ -765,7 +765,7 @@ impl Provider for OpenCodeCliProvider {
     }
 
     fn supports_tools(&self) -> bool {
-        false // OpenCrabs handles tools — opencode is just the LLM pipe
+        false // StemCell handles tools — opencode is just the LLM pipe
     }
 
     fn cli_handles_tools(&self) -> bool {
