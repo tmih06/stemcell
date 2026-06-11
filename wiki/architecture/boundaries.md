@@ -37,7 +37,7 @@ Provider trait (src/brain/provider/trait.rs)
 - All providers implement the same `#[async_trait] pub trait Provider`
 - Fallback chain wraps multiple providers; cascades on failure
 - CLI wrappers (claude-cli, codex-cli, opencode-cli) manage their own context/tools
-- Cost calculation via `calculate_cost()` (overrideable per-provider) + `PricingConfig`
+- Cost calculation via `calculate_cost()` (overridable per-provider) + `PricingConfig`
 
 ## Tool Boundary
 
