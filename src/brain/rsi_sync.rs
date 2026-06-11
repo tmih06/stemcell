@@ -30,7 +30,7 @@ use crate::brain::tools::brain_file_safety;
 
 /// GitHub raw URL base for templates.
 const TEMPLATE_BASE_URL: &str =
-    "https://raw.githubusercontent.com/adolfousier/stemcell/main/src/docs/reference/templates";
+    "https://raw.githubusercontent.com/tmih06/stemcell/main/src/docs/reference/templates";
 
 /// Brain files tracked for upstream sync.
 const TRACKED_FILES: &[&str] = &[

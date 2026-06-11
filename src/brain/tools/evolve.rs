@@ -18,7 +18,7 @@ use crate::utils::install::{InstallMethod, binary_name, platform_suffix};
 use async_trait::async_trait;
 use serde_json::Value;
 
-const GITHUB_API: &str = "https://api.github.com/repos/adolfousier/stemcell/releases/latest";
+const GITHUB_API: &str = "https://api.github.com/repos/tmih06/stemcell/releases/latest";
 
 /// Build an honest, status-aware error string for a non-success
 /// response from `releases/latest`. Replaces the prior hardcoded

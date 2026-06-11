@@ -257,11 +257,34 @@ pub const PROVIDERS: &[ProviderInfo] = &[
     ProviderInfo {
         id: "opencode",
         name: "OpenCode",
-        models: &[], // Fetched from opencode.ai API
+        models: &[
+            "claude-opus-4-8",
+            "claude-sonnet-4-6",
+            "gpt-5.5",
+            "deepseek-v4-pro",
+            "glm-5.1",
+        ],
         key_label: "API Key",
         help_lines: &[
             "Go and Zen plans — opencode.ai",
             "Get key from opencode.ai/settings",
+        ],
+    },
+    ProviderInfo {
+        id: "opencode_zen_free",
+        name: "OpenCode Zen Free",
+        models: &[
+            "deepseek-v4-flash-free",
+            "mimo-v2.5-free",
+            "qwen3.6-plus-free",
+            "minimax-m3-free",
+            "nemotron-3-ultra-free",
+            "north-mini-code-free",
+        ],
+        key_label: "",
+        help_lines: &[
+            "Free models from opencode.ai — no login required",
+            "No API key needed",
         ],
     },
     ProviderInfo {

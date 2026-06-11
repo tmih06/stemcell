@@ -1,4 +1,4 @@
-//! Error types for OpenCrabs.
+//! Error types for Stemcell.
 
 mod types;
 

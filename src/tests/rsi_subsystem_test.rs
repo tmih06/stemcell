@@ -216,7 +216,7 @@ fn case_insensitive_match() {
 
 #[test]
 fn classifies_long_realistic_gh_command() {
-    let cmd = "gh pr comment 130 --repo adolfousier/stemcell --body \"$(cat <<'EOF'\nLooks good!\nEOF\n)\"";
+    let cmd = "gh pr comment 130 --repo tmih06/stemcell --body \"$(cat <<'EOF'\nLooks good!\nEOF\n)\"";
     assert_eq!(classify_bash_command(cmd), Some("gh"));
 }
 

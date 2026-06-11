@@ -117,6 +117,14 @@ static REGISTRATIONS: LazyLock<Vec<ProviderRegistration>> = LazyLock::new(|| {
             config_field: |c| c.providers.opencode.as_ref(),
         },
         ProviderRegistration {
+            display_name: "OpenCode Zen Free",
+            session_id: "opencode_zen_free",
+            aliases: &[],
+            is_enabled: |c| c.providers.opencode_zen_free.as_ref().is_some_and(|p| p.enabled),
+            factory: Box::new(|config| Box::pin(try_create_opencode_zen_free(config))),
+            config_field: |c| c.providers.opencode_zen_free.as_ref(),
+        },
+        ProviderRegistration {
             display_name: "Qwen",
             session_id: "qwen",
             aliases: &[],
@@ -209,6 +217,7 @@ pub const PROVIDER_NAMES: &[&str] = &[
     "Codex CLI",
     "Codex",
     "OpenCode",
+    "OpenCode Zen Free",
     "Qwen",
     "Anthropic",
     "OpenAI",
@@ -1325,6 +1334,37 @@ async fn try_create_opencode(config: &Config) -> Result<Option<Arc<dyn Provider>
     let provider = configure_openai_compatible(
         OpenAIProvider::with_base_url(api_key.clone(), base_url)
             .with_name("opencode")
+            .with_default_model(model.clone()),
+        opencode_config,
+    );
+
+    Ok(Some(Arc::new(provider.build())))
+}
+
+/// Try to create OpenCode Zen Free API provider
+async fn try_create_opencode_zen_free(config: &Config) -> Result<Option<Arc<dyn Provider>>> {
+    let opencode_config = match &config.providers.opencode_zen_free {
+        Some(cfg) if cfg.enabled => cfg,
+        _ => return Ok(None),
+    };
+
+    let api_key = opencode_config.api_key.clone().unwrap_or_else(|| "public".to_string());
+
+    let base_url = opencode_config
+        .base_url
+        .clone()
+        .unwrap_or_else(|| "https://opencode.ai/zen/v1/chat/completions".to_string());
+
+    let model = opencode_config
+        .default_model
+        .clone()
+        .unwrap_or_else(|| "deepseek-v4-flash-free".to_string());
+
+    tracing::info!("Using OpenCode Zen Free API at: {} (model={})", base_url, model);
+
+    let provider = configure_openai_compatible(
+        OpenAIProvider::with_base_url(api_key, base_url)
+            .with_name("opencode_zen_free")
             .with_default_model(model.clone()),
         opencode_config,
     );
