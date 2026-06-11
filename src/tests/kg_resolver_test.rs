@@ -4,8 +4,14 @@ use crate::brain::kg::resolver::{self, Resolver};
 
 fn sample_resolver() -> Resolver {
     Resolver::from_notes(vec![
-        ("concepts/Rust Async.md".to_string(), "Rust Async".to_string()),
-        ("concepts/Tokio.md".to_string(), "The Tokio Runtime".to_string()),
+        (
+            "concepts/Rust Async.md".to_string(),
+            "Rust Async".to_string(),
+        ),
+        (
+            "concepts/Tokio.md".to_string(),
+            "The Tokio Runtime".to_string(),
+        ),
         ("people/Alice.md".to_string(), "Alice".to_string()),
     ])
 }

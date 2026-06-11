@@ -35,7 +35,12 @@ async fn index_and_get_round_trips() {
     let (_db, repo) = setup().await;
     let id = repo
         .index_note(
-            note("concepts/Rust Async.md", "Rust Async", "Futures are lazy", "c1"),
+            note(
+                "concepts/Rust Async.md",
+                "Rust Async",
+                "Futures are lazy",
+                "c1",
+            ),
             vec![],
             vec![],
         )
@@ -93,12 +98,20 @@ async fn fts_search_matches_title_and_body_with_limit() {
     )
     .await
     .expect("a");
-    repo.index_note(note("b.md", "Tokio Runtime", "Work-stealing scheduler", "c2"), vec![], vec![])
-        .await
-        .expect("b");
-    repo.index_note(note("c.md", "Pinning", "Self-referential futures", "c3"), vec![], vec![])
-        .await
-        .expect("c");
+    repo.index_note(
+        note("b.md", "Tokio Runtime", "Work-stealing scheduler", "c2"),
+        vec![],
+        vec![],
+    )
+    .await
+    .expect("b");
+    repo.index_note(
+        note("c.md", "Pinning", "Self-referential futures", "c3"),
+        vec![],
+        vec![],
+    )
+    .await
+    .expect("c");
 
     // Title hit
     let by_title = repo.search_fts("tokio", 5).await.expect("search");
@@ -234,7 +247,11 @@ async fn reindex_replaces_children_and_updates_checksum() {
         .expect("second");
 
     assert_eq!(id1, id2, "upsert keeps the same row id");
-    let got = repo.get_note_by_path("a.md").await.expect("q").expect("present");
+    let got = repo
+        .get_note_by_path("a.md")
+        .await
+        .expect("q")
+        .expect("present");
     assert_eq!(got.checksum, "c2");
     let obs = repo.observations_for_note(id2).await.expect("obs");
     assert_eq!(obs.len(), 1);

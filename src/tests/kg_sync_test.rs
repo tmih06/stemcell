@@ -21,7 +21,10 @@ async fn setup() -> (tempfile::TempDir, Database, Vault, KnowledgeGraphRepositor
 async fn reindex_indexes_notes_and_scaffolds() {
     let (_dir, _db, vault, repo) = setup().await;
     vault
-        .write_note("concepts/Rust Async.md", "---\ntitle: Rust Async\n---\n\n# Rust Async\n\nFutures are lazy.\n")
+        .write_note(
+            "concepts/Rust Async.md",
+            "---\ntitle: Rust Async\n---\n\n# Rust Async\n\nFutures are lazy.\n",
+        )
         .expect("write");
     vault
         .write_note("people/Alice.md", "# Alice\n\nWorks on async.\n")
@@ -66,7 +69,9 @@ async fn changed_file_is_reindexed() {
     vault.write_note("b.md", "# B\nbody\n").expect("write");
     reindex(&vault, &repo).await.expect("first");
 
-    vault.write_note("a.md", "# A\nedited content\n").expect("rewrite");
+    vault
+        .write_note("a.md", "# A\nedited content\n")
+        .expect("rewrite");
     let stats = reindex(&vault, &repo).await.expect("second");
     assert_eq!(stats.indexed, 1, "only the edited file reindexes");
     assert_eq!(stats.skipped, 1);
@@ -100,7 +105,10 @@ async fn dangling_links_back_fill_after_reindex() {
         )
         .expect("write");
     vault
-        .write_note("concepts/Tokio Runtime.md", "# Tokio Runtime\n\nThe runtime.\n")
+        .write_note(
+            "concepts/Tokio Runtime.md",
+            "# Tokio Runtime\n\nThe runtime.\n",
+        )
         .expect("write");
 
     let stats = reindex(&vault, &repo).await.expect("reindex");

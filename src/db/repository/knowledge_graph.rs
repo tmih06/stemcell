@@ -297,12 +297,15 @@ impl KnowledgeGraphRepository {
                      ORDER BY (lower(title) = ?1) DESC \
                      LIMIT 1",
                 )?;
-                stmt.query_row(params![name_lc, exact_md, like_pattern], note_record_from_row)
-                    .map(Some)
-                    .or_else(|e| match e {
-                        rusqlite::Error::QueryReturnedNoRows => Ok(None),
-                        other => Err(other),
-                    })
+                stmt.query_row(
+                    params![name_lc, exact_md, like_pattern],
+                    note_record_from_row,
+                )
+                .map(Some)
+                .or_else(|e| match e {
+                    rusqlite::Error::QueryReturnedNoRows => Ok(None),
+                    other => Err(other),
+                })
             })
             .await
             .map_err(interact_err)?
@@ -313,10 +316,10 @@ impl KnowledgeGraphRepository {
     /// (ending in `.md`) or a wikilink-style name (title / filename stem).
     pub async fn get_note_by_ref(&self, reference: &str) -> Result<Option<NoteRecord>> {
         let r = reference.trim();
-        if r.ends_with(".md") {
-            if let Some(note) = self.get_note_by_path(r).await? {
-                return Ok(Some(note));
-            }
+        if r.ends_with(".md")
+            && let Some(note) = self.get_note_by_path(r).await?
+        {
+            return Ok(Some(note));
         }
         self.get_note_by_name(r).await
     }
@@ -504,8 +507,9 @@ impl KnowledgeGraphRepository {
             .context("Failed to get connection")?
             .interact(move |conn| -> rusqlite::Result<Vec<(String, String)>> {
                 let mut stmt = conn.prepare_cached("SELECT path, checksum FROM kg_note")?;
-                let rows =
-                    stmt.query_map([], |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)))?;
+                let rows = stmt.query_map([], |row| {
+                    Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+                })?;
                 rows.collect()
             })
             .await
@@ -538,9 +542,11 @@ impl KnowledgeGraphRepository {
             .interact(move |conn| -> rusqlite::Result<bool> {
                 let tx = conn.transaction()?;
                 let id: Option<i64> = tx
-                    .query_row("SELECT id FROM kg_note WHERE path = ?1", params![path], |r| {
-                        r.get(0)
-                    })
+                    .query_row(
+                        "SELECT id FROM kg_note WHERE path = ?1",
+                        params![path],
+                        |r| r.get(0),
+                    )
                     .map(Some)
                     .or_else(|e| match e {
                         rusqlite::Error::QueryReturnedNoRows => Ok(None),
@@ -580,12 +586,10 @@ impl KnowledgeGraphRepository {
                     rows.collect::<rusqlite::Result<Vec<_>>>()?
                 } else {
                     let placeholders = vec!["?"; keep.len()].join(",");
-                    let sql = format!(
-                        "SELECT id FROM kg_note WHERE path NOT IN ({placeholders})"
-                    );
+                    let sql = format!("SELECT id FROM kg_note WHERE path NOT IN ({placeholders})");
                     let mut stmt = tx.prepare(&sql)?;
-                    let rows = stmt
-                        .query_map(params_from_iter(keep.iter()), |r| r.get::<_, i64>(0))?;
+                    let rows =
+                        stmt.query_map(params_from_iter(keep.iter()), |r| r.get::<_, i64>(0))?;
                     rows.collect::<rusqlite::Result<Vec<_>>>()?
                 };
 
@@ -617,7 +621,11 @@ fn note_record_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<NoteRecord>
     })
 }
 
-fn collect_outgoing(conn: &Connection, note_id: i64, out: &mut Vec<Neighbor>) -> rusqlite::Result<()> {
+fn collect_outgoing(
+    conn: &Connection,
+    note_id: i64,
+    out: &mut Vec<Neighbor>,
+) -> rusqlite::Result<()> {
     let mut stmt = conn.prepare_cached(
         "SELECT r.relation_type, r.to_id, r.to_name, n.title, n.path \
          FROM kg_relation r LEFT JOIN kg_note n ON n.id = r.to_id \
@@ -639,7 +647,11 @@ fn collect_outgoing(conn: &Connection, note_id: i64, out: &mut Vec<Neighbor>) ->
     Ok(())
 }
 
-fn collect_incoming(conn: &Connection, note_id: i64, out: &mut Vec<Neighbor>) -> rusqlite::Result<()> {
+fn collect_incoming(
+    conn: &Connection,
+    note_id: i64,
+    out: &mut Vec<Neighbor>,
+) -> rusqlite::Result<()> {
     let mut stmt = conn.prepare_cached(
         "SELECT r.relation_type, r.from_id, src.title, src.path \
          FROM kg_relation r JOIN kg_note src ON src.id = r.from_id \
@@ -717,7 +729,10 @@ mod tests {
 
     #[test]
     fn fts_query_tokenizes_and_quotes() {
-        assert_eq!(fts_match_query("rust async"), Some("\"rust\" \"async\"".into()));
+        assert_eq!(
+            fts_match_query("rust async"),
+            Some("\"rust\" \"async\"".into())
+        );
         assert_eq!(fts_match_query("  "), None);
         assert_eq!(fts_match_query("a-b.c"), Some("\"a\" \"b\" \"c\"".into()));
     }

@@ -104,7 +104,11 @@ impl Tool for KgLinksTool {
                 out.push_str("  (none)\n");
             }
             for n in &outgoing {
-                let ghost = if n.other_id.is_none() { "  (unresolved)" } else { "" };
+                let ghost = if n.other_id.is_none() {
+                    "  (unresolved)"
+                } else {
+                    ""
+                };
                 out.push_str(&format!(
                     "  {} → [[{}]]{}\n",
                     n.relation_type, n.other_name, ghost
@@ -118,10 +122,7 @@ impl Tool for KgLinksTool {
                 out.push_str("  (none)\n");
             }
             for n in &incoming {
-                out.push_str(&format!(
-                    "  [[{}]] → {}\n",
-                    n.other_name, n.relation_type
-                ));
+                out.push_str(&format!("  [[{}]] → {}\n", n.other_name, n.relation_type));
             }
         }
 

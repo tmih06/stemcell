@@ -33,11 +33,8 @@ pub async fn reindex(vault: &Vault, repo: &KnowledgeGraphRepository) -> Result<S
         .ensure_scaffold()
         .with_context(|| format!("Failed to scaffold vault at {:?}", vault.root()))?;
 
-    let existing: std::collections::HashMap<String, String> = repo
-        .all_paths_with_checksums()
-        .await?
-        .into_iter()
-        .collect();
+    let existing: std::collections::HashMap<String, String> =
+        repo.all_paths_with_checksums().await?.into_iter().collect();
 
     let mut stats = SyncStats::default();
     let mut seen: Vec<String> = Vec::new();
@@ -63,7 +60,8 @@ pub async fn reindex(vault: &Vault, repo: &KnowledgeGraphRepository) -> Result<S
 
         let content = String::from_utf8_lossy(&bytes).into_owned();
         let meta = std::fs::metadata(&abs).ok();
-        let (note, observations, relations) = build_inputs(&rel, &content, &checksum, meta.as_ref());
+        let (note, observations, relations) =
+            build_inputs(&rel, &content, &checksum, meta.as_ref());
         repo.index_note(note, observations, relations)
             .await
             .with_context(|| format!("Failed to index {rel}"))?;

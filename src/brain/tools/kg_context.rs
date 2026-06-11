@@ -144,7 +144,11 @@ impl Tool for KgContextTool {
         let mut out = format!(
             "Knowledge-graph context for {label} — depth {depth}, {} note(s){}:\n",
             result.nodes.len(),
-            if result.truncated { " (budget-truncated)" } else { "" }
+            if result.truncated {
+                " (budget-truncated)"
+            } else {
+                ""
+            }
         );
 
         for node in &result.nodes {

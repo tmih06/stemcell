@@ -120,9 +120,12 @@ impl Tool for KgReadTool {
             out.push_str(&format!("tags: {}\n", parsed.frontmatter.tags.join(", ")));
         }
         if !parsed.frontmatter.aliases.is_empty() {
-            out.push_str(&format!("aliases: {}\n", parsed.frontmatter.aliases.join(", ")));
+            out.push_str(&format!(
+                "aliases: {}\n",
+                parsed.frontmatter.aliases.join(", ")
+            ));
         }
-        out.push_str("\n");
+        out.push('\n');
 
         // Resolve an anchor/section to a slice if requested.
         let slice = if let Some(a) = anchor {
@@ -137,7 +140,10 @@ impl Tool for KgReadTool {
 
         let body = match (anchor.or(section), slice) {
             (Some(label), Some(range)) => {
-                format!("(section: {label})\n{}", resolver::slice_lines(&content, range))
+                format!(
+                    "(section: {label})\n{}",
+                    resolver::slice_lines(&content, range)
+                )
             }
             (Some(label), None) => {
                 format!(

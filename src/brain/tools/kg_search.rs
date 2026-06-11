@@ -68,7 +68,11 @@ impl Tool for KgSearchTool {
         if query.is_empty() {
             return Ok(ToolResult::error("query parameter is required".to_string()));
         }
-        let n = input.get("n").and_then(|v| v.as_u64()).unwrap_or(5).clamp(1, 25) as usize;
+        let n = input
+            .get("n")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(5)
+            .clamp(1, 25) as usize;
 
         match self.repo.search_fts(&query, n).await {
             Ok(hits) if hits.is_empty() => Ok(ToolResult::success(format!(

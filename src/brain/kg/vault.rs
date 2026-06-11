@@ -103,7 +103,11 @@ impl Vault {
             .map(|c| c.as_os_str().to_string_lossy())
             .collect::<Vec<_>>()
             .join("/");
-        if joined.is_empty() { None } else { Some(joined) }
+        if joined.is_empty() {
+            None
+        } else {
+            Some(joined)
+        }
     }
 
     /// All markdown files in the vault as absolute paths (skipping `.obsidian/`,
@@ -182,15 +186,15 @@ pub fn type_from_path(rel: &str) -> Option<String> {
 }
 
 fn expand_tilde(path: &str) -> PathBuf {
-    if let Some(rest) = path.strip_prefix("~/") {
-        if let Some(home) = dirs::home_dir() {
-            return home.join(rest);
-        }
+    if let Some(rest) = path.strip_prefix("~/")
+        && let Some(home) = dirs::home_dir()
+    {
+        return home.join(rest);
     }
-    if path == "~" {
-        if let Some(home) = dirs::home_dir() {
-            return home;
-        }
+    if path == "~"
+        && let Some(home) = dirs::home_dir()
+    {
+        return home;
     }
     PathBuf::from(path)
 }

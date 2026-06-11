@@ -139,7 +139,11 @@ pub fn parse(content: &str) -> ParsedNote {
             } else {
                 Section::Other
             };
-            headings.push(Heading { level, text, line: i });
+            headings.push(Heading {
+                level,
+                text,
+                line: i,
+            });
             continue;
         }
 
@@ -317,17 +321,17 @@ fn set_field(fm: &mut Frontmatter, key: &str, val: FieldVal) {
 
     match key {
         "title" => {
-            if let FieldVal::Str(s) = &val {
-                if !s.is_empty() {
-                    fm.title = Some(s.clone());
-                }
+            if let FieldVal::Str(s) = &val
+                && !s.is_empty()
+            {
+                fm.title = Some(s.clone());
             }
         }
         "type" => {
-            if let FieldVal::Str(s) = &val {
-                if !s.is_empty() {
-                    fm.note_type = Some(s.clone());
-                }
+            if let FieldVal::Str(s) = &val
+                && !s.is_empty()
+            {
+                fm.note_type = Some(s.clone());
             }
         }
         "tags" => fm.tags = as_list(&val),
@@ -439,7 +443,10 @@ fn split_trailing_context(s: &str) -> (String, Option<String>) {
         // Require a whitespace boundary before the paren.
         if open == 0 || before.ends_with(char::is_whitespace) {
             let ctx = s[open + 1..s.len() - 1].trim().to_string();
-            return (before.trim_end().to_string(), if ctx.is_empty() { None } else { Some(ctx) });
+            return (
+                before.trim_end().to_string(),
+                if ctx.is_empty() { None } else { Some(ctx) },
+            );
         }
     }
     (s.to_string(), None)
@@ -452,11 +459,11 @@ fn parse_observation(bullet: &str) -> Option<Observation> {
     }
     let mut rest = s;
     let mut category = None;
-    if let Some(after) = rest.strip_prefix('[') {
-        if let Some(end) = after.find(']') {
-            category = Some(after[..end].trim().to_string());
-            rest = after[end + 1..].trim_start();
-        }
+    if let Some(after) = rest.strip_prefix('[')
+        && let Some(end) = after.find(']')
+    {
+        category = Some(after[..end].trim().to_string());
+        rest = after[end + 1..].trim_start();
     }
     let tags = scan_tags(rest);
     let (content_no_ctx, context) = split_trailing_context(rest);

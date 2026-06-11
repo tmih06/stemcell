@@ -6,8 +6,8 @@
 //! MOC/hub notes, and truncate to a hard node budget — lowest-ranked first.
 //! The `kg_context` tool renders the result without dumping whole files.
 
-use crate::db::repository::LinkDirection;
 use crate::db::KnowledgeGraphRepository;
+use crate::db::repository::LinkDirection;
 use anyhow::Result;
 use std::collections::HashMap;
 
@@ -63,11 +63,11 @@ pub async fn traverse(
         let mut next = Vec::new();
         for &node_id in &frontier {
             for nb in repo.neighbors(node_id, LinkDirection::Both).await? {
-                if let Some(other) = nb.other_id {
-                    if !visited.contains_key(&other) && add_node(repo, &mut visited, other, d).await?
-                    {
-                        next.push(other);
-                    }
+                if let Some(other) = nb.other_id
+                    && !visited.contains_key(&other)
+                    && add_node(repo, &mut visited, other, d).await?
+                {
+                    next.push(other);
                 }
             }
         }

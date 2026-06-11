@@ -46,11 +46,29 @@ async fn build_graph(repo: &KnowledgeGraphRepository) -> (i64, i64, i64, i64) {
         "MOCs/Async.md",
         "Async",
         "moc",
-        &[("links_to", "Rust Async"), ("links_to", "Tokio"), ("links_to", "Pinning")],
+        &[
+            ("links_to", "Rust Async"),
+            ("links_to", "Tokio"),
+            ("links_to", "Pinning"),
+        ],
     )
     .await;
-    let a = idx(repo, "concepts/Rust Async.md", "Rust Async", "concept", &[("depends_on", "Tokio")]).await;
-    let b = idx(repo, "concepts/Tokio.md", "Tokio", "concept", &[("depends_on", "Pinning")]).await;
+    let a = idx(
+        repo,
+        "concepts/Rust Async.md",
+        "Rust Async",
+        "concept",
+        &[("depends_on", "Tokio")],
+    )
+    .await;
+    let b = idx(
+        repo,
+        "concepts/Tokio.md",
+        "Tokio",
+        "concept",
+        &[("depends_on", "Pinning")],
+    )
+    .await;
     let c = idx(repo, "concepts/Pinning.md", "Pinning", "concept", &[]).await;
     repo.resolve_dangling_links().await.expect("resolve");
     (moc, a, b, c)
@@ -95,7 +113,11 @@ async fn nodes_are_deduplicated() {
     let len_before = ids.len();
     ids.sort_unstable();
     ids.dedup();
-    assert_eq!(ids.len(), len_before, "C reachable via two paths appears once");
+    assert_eq!(
+        ids.len(),
+        len_before,
+        "C reachable via two paths appears once"
+    );
 }
 
 #[tokio::test]
@@ -107,7 +129,10 @@ async fn moc_ranks_above_equal_degree_leaf() {
     let pos = |id: i64| result.nodes.iter().position(|n| n.id == id);
     let moc_pos = pos(moc).expect("moc present");
     let b_pos = pos(b).expect("b present");
-    assert!(moc_pos < b_pos, "MOC hub ranks ahead of an equal-degree leaf");
+    assert!(
+        moc_pos < b_pos,
+        "MOC hub ranks ahead of an equal-degree leaf"
+    );
 }
 
 #[tokio::test]

@@ -929,7 +929,9 @@ impl ToolModule for KnowledgeGraphModule {
             vault.clone(),
         )));
         #[cfg(feature = "tool-kg-context")]
-        ctx.register(Arc::new(super::kg_context::KgContextTool::new(repo.clone())));
+        ctx.register(Arc::new(super::kg_context::KgContextTool::new(
+            repo.clone(),
+        )));
     }
 }
 

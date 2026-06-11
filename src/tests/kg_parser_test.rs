@@ -31,7 +31,10 @@ fn parses_frontmatter_fields() {
     assert_eq!(note.frontmatter.aliases, vec!["async rust", "tokio model"]);
     // Unknown keys are preserved in the raw field map.
     assert_eq!(
-        note.frontmatter.fields.get("created").and_then(|v| v.as_str()),
+        note.frontmatter
+            .fields
+            .get("created")
+            .and_then(|v| v.as_str()),
         Some("2026-06-11")
     );
     // JSON serialization round-trips the raw fields.
@@ -64,7 +67,10 @@ fn parses_typed_observations() {
 
     let gotcha = &note.observations[1];
     assert_eq!(gotcha.category.as_deref(), Some("gotcha"));
-    assert_eq!(gotcha.content, "Holding a std Mutex across .await deadlocks");
+    assert_eq!(
+        gotcha.content,
+        "Holding a std Mutex across .await deadlocks"
+    );
     assert_eq!(gotcha.context.as_deref(), Some("deadlock risk"));
 }
 
@@ -88,7 +94,8 @@ fn parses_typed_and_bare_relations() {
 
 #[test]
 fn parses_wikilink_variants() {
-    let line = "See [[Note A]], [[Note B|alias]], [[Note C#Heading]], [[Note D#^block1]] and ![[Embed E]]";
+    let line =
+        "See [[Note A]], [[Note B|alias]], [[Note C#Heading]], [[Note D#^block1]] and ![[Embed E]]";
     let links = parser::scan_wikilinks(line);
     assert_eq!(links.len(), 5);
 
@@ -114,7 +121,8 @@ fn parses_wikilink_variants() {
 
 #[test]
 fn prose_links_fold_into_links_to_without_duplicating_typed() {
-    let content = "# N\n\n## Relations\n- depends_on [[A]]\n\n## Notes\nSee also [[B]] and [[A]] again.\n";
+    let content =
+        "# N\n\n## Relations\n- depends_on [[A]]\n\n## Notes\nSee also [[B]] and [[A]] again.\n";
     let note = parser::parse(content);
     // A keeps its typed relation; B becomes a links_to; A is not duplicated.
     let a = note.relations.iter().filter(|r| r.target == "A").count();
@@ -165,5 +173,8 @@ fn no_frontmatter_is_fine() {
 fn heading_run_without_space_is_not_a_heading() {
     // "#rust" is a tag, not a heading.
     assert_eq!(parser::parse_heading("#rust"), None);
-    assert_eq!(parser::parse_heading("## Real"), Some((2, "Real".to_string())));
+    assert_eq!(
+        parser::parse_heading("## Real"),
+        Some((2, "Real".to_string()))
+    );
 }

@@ -98,7 +98,10 @@ impl Tool for KgNoteTool {
             .and_then(|v| v.as_str())
             .map(|s| s.trim().to_string())
             .filter(|s| !s.is_empty());
-        let mode = input.get("mode").and_then(|v| v.as_str()).unwrap_or("create");
+        let mode = input
+            .get("mode")
+            .and_then(|v| v.as_str())
+            .unwrap_or("create");
 
         let observation_bullets: Vec<String> = input
             .get("observations")
@@ -106,7 +109,7 @@ impl Tool for KgNoteTool {
             .map(|a| {
                 a.iter()
                     .filter_map(|v| v.as_str())
-                    .map(|s| observation_bullet(s))
+                    .map(observation_bullet)
                     .collect()
             })
             .unwrap_or_default();
@@ -148,7 +151,12 @@ impl Tool for KgNoteTool {
             content = insert_bullets(&content, "Relations", &relation_bullets);
             content
         } else {
-            build_note(&title, note_type.as_deref(), &observation_bullets, &relation_bullets)
+            build_note(
+                &title,
+                note_type.as_deref(),
+                &observation_bullets,
+                &relation_bullets,
+            )
         };
 
         if let Err(e) = self.vault.write_note(&rel, &content) {
@@ -250,11 +258,12 @@ fn insert_bullets(content: &str, section_title: &str, bullets: &[String]) -> Str
 
     let mut section_line = None;
     for (i, line) in lines.iter().enumerate() {
-        if let Some((level, text)) = parse_heading(line) {
-            if level == 2 && text.eq_ignore_ascii_case(section_title) {
-                section_line = Some(i);
-                break;
-            }
+        if let Some((level, text)) = parse_heading(line)
+            && level == 2
+            && text.eq_ignore_ascii_case(section_title)
+        {
+            section_line = Some(i);
+            break;
         }
     }
 
@@ -263,11 +272,11 @@ fn insert_bullets(content: &str, section_title: &str, bullets: &[String]) -> Str
             // Find the end of the section (next level<=2 heading, else EOF).
             let mut end = lines.len();
             for (j, line) in lines.iter().enumerate().skip(h + 1) {
-                if let Some((level, _)) = parse_heading(line) {
-                    if level <= 2 {
-                        end = j;
-                        break;
-                    }
+                if let Some((level, _)) = parse_heading(line)
+                    && level <= 2
+                {
+                    end = j;
+                    break;
                 }
             }
             // Trim trailing blank lines inside the section before inserting.
