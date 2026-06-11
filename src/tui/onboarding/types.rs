@@ -326,31 +326,31 @@ pub const CHANNEL_NAMES: &[(&str, &str)] = &[
 pub const TEMPLATE_FILES: &[(&str, &str)] = &[
     (
         "SOUL.md",
-        include_str!("../../docs/reference/templates/SOUL.md"),
+        include_str!("../../../wiki/reference/templates/SOUL.md"),
     ),
     (
         "USER.md",
-        include_str!("../../docs/reference/templates/USER.md"),
+        include_str!("../../../wiki/reference/templates/USER.md"),
     ),
     (
         "AGENTS.md",
-        include_str!("../../docs/reference/templates/AGENTS.md"),
+        include_str!("../../../wiki/reference/templates/AGENTS.md"),
     ),
     (
         "TOOLS.md",
-        include_str!("../../docs/reference/templates/TOOLS.md"),
+        include_str!("../../../wiki/reference/templates/TOOLS.md"),
     ),
     (
         "MEMORY.md",
-        include_str!("../../docs/reference/templates/MEMORY.md"),
+        include_str!("../../../wiki/reference/templates/MEMORY.md"),
     ),
     (
         "CODE.md",
-        include_str!("../../docs/reference/templates/CODE.md"),
+        include_str!("../../../wiki/reference/templates/CODE.md"),
     ),
     (
         "SECURITY.md",
-        include_str!("../../docs/reference/templates/SECURITY.md"),
+        include_str!("../../../wiki/reference/templates/SECURITY.md"),
     ),
 ];
 

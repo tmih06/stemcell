@@ -234,6 +234,10 @@ pub const SLASH_COMMANDS: &[SlashCommand] = &[
         name: "/quit",
         description: "Exit and quit the app — quit, exit, close, leave, bye, /exit, /q, ctrl+c",
     },
+    SlashCommand {
+        name: "/statusline",
+        description: "Toggle status bar fields",
+    },
 ];
 
 /// True if `query` is a prefix of any whitespace/punctuation-delimited word in
@@ -638,6 +642,15 @@ pub struct App {
     /// "single-struct field" pattern as MC.
     pub skills_dialog: crate::tui::app::skills_dialog::SkillsDialogState,
 
+    /// Statusline dialog state — checklist selection index. Same
+    /// "single-struct field" pattern as the skills dialog.
+    pub statusline_dialog: crate::tui::app::statusline_dialog::StatusLineDialogState,
+
+    /// Live status-bar field visibility flags. Read from config at startup
+    /// and mutated in place by the `/statusline` dialog (which also persists
+    /// each change to config.toml).
+    pub statusline_fields: crate::config::StatusLineConfig,
+
     /// Onboarding wizard state
     pub onboarding: Option<OnboardingWizard>,
     pub force_onboard: bool,
@@ -840,9 +853,11 @@ impl App {
         let user_commands = command_loader.load();
         let skills = crate::brain::skills::load_all_skills();
 
-        // Load persisted approval policy from config.toml
-        let (approval_auto_session, approval_auto_always) =
-            Self::read_approval_policy_from_config();
+        // Load persisted approval policy + statusline preferences once so
+        // App startup does not re-parse config.toml for each UI setting.
+        let ((approval_auto_session, approval_auto_always), statusline_fields) =
+            Self::load_ui_state_from_config()
+                .unwrap_or(((false, false), crate::config::StatusLineConfig::default()));
 
         let this = Self {
             current_session: None,
@@ -910,6 +925,8 @@ impl App {
             skills,
             mc: crate::tui::app::mission_control::McState::default(),
             skills_dialog: crate::tui::app::skills_dialog::SkillsDialogState::default(),
+            statusline_dialog: crate::tui::app::statusline_dialog::StatusLineDialogState::default(),
+            statusline_fields,
             onboarding: None,
             force_onboard: false,
             processing_sessions: HashSet::new(),
@@ -1193,7 +1210,7 @@ impl App {
                     format!(
                         " You just evolved from v{old} to v{new}. \
                          Check the CHANGELOG at the repo root for what's new in v{new}. \
-                         Compare the brain templates in src/docs/reference/templates/ against \
+                         Compare the brain templates in wiki/reference/templates/ against \
                          the user's brain files in ~/.stemcell/ (TOOLS.md, AGENTS.md, etc.) \
                          and tell the user what changed. Offer to update their brain files \
                          with the new content. Be specific about what's new.",
@@ -1276,7 +1293,7 @@ impl App {
                 let msg = format!(
                     "[SYSTEM: You just evolved from v{old} to v{new}. \
                      Check the CHANGELOG at the repo root for what's new in v{new}. \
-                     Compare the brain templates in src/docs/reference/templates/ against \
+                     Compare the brain templates in wiki/reference/templates/ against \
                      the user's brain files in ~/.stemcell/ (TOOLS.md, AGENTS.md, etc.) \
                      and tell the user what changed. Offer to update their brain files \
                      with the new content. Be specific about what's new.]",
@@ -2565,9 +2582,19 @@ impl App {
             TuiEvent::ConfigReloaded => {
                 // Refresh commands autocomplete
                 self.reload_user_commands();
-                // Refresh approval policy
-                (self.approval_auto_session, self.approval_auto_always) =
-                    Self::read_approval_policy_from_config();
+                // Refresh approval policy + statusline visibility from the
+                // same config snapshot so runtime edits take effect without a
+                // restart and we only parse config.toml once per reload.
+                match Self::load_ui_state_from_config() {
+                    Ok(((approval_auto_session, approval_auto_always), statusline_fields)) => {
+                        self.approval_auto_session = approval_auto_session;
+                        self.approval_auto_always = approval_auto_always;
+                        self.statusline_fields = statusline_fields;
+                    }
+                    Err(e) => {
+                        tracing::warn!("Config reload UI sync failed: {}", e);
+                    }
+                }
                 // Provider swap is already handled by the ConfigWatcher callback
                 // (ui.rs). Do NOT re-create the provider here — it causes a
                 // redundant create_provider call every reload, and the model-name
@@ -3553,6 +3580,9 @@ impl App {
             }
             AppMode::SkillsList => {
                 crate::tui::app::skills_dialog::input::handle_key(self, event).await;
+            }
+            AppMode::StatusLine => {
+                crate::tui::app::statusline_dialog::input::handle_key(self, event).await;
             }
         }
 

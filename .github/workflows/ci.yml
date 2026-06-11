@@ -370,6 +370,17 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+  # Wiki integrity check (links, source refs, formatting)
+  docs-coverage:
+    name: Wiki Integrity
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Check wiki integrity
+        run: bash src/scripts/check-wiki.sh
+
   # ── Stage 11: No-default-features build ─────────────────────────────────
   # Catches conditional compilation bugs when features are disabled.
   # NOTE: Currently soft-fail because the codebase has missing cfg guards
@@ -403,7 +414,7 @@ jobs:
   ci-gate:
     name: CI Required Gate
     if: always()
-    needs: [lint, build, test, audit, coverage, msrv, doc, docker, deny, typos, secrets, build-no-default]
+    needs: [lint, build, test, audit, coverage, msrv, doc, docker, deny, typos, secrets, docs-coverage, build-no-default]
     runs-on: ubuntu-latest
     steps:
       - name: Check results
