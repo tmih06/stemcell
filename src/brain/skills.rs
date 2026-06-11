@@ -51,31 +51,31 @@ use std::path::PathBuf;
 const BUILTIN_SKILLS: &[(&str, &str)] = &[
     (
         "cost-estimate",
-        include_str!("../docs/reference/templates/skills/cost-estimate/SKILL.md"),
+        include_str!("../../wiki/reference/templates/skills/cost-estimate/SKILL.md"),
     ),
     (
         "security-audit",
-        include_str!("../docs/reference/templates/skills/security-audit/SKILL.md"),
+        include_str!("../../wiki/reference/templates/skills/security-audit/SKILL.md"),
     ),
     (
         "repo-audit",
-        include_str!("../docs/reference/templates/skills/repo-audit/SKILL.md"),
+        include_str!("../../wiki/reference/templates/skills/repo-audit/SKILL.md"),
     ),
     (
         "opencli",
-        include_str!("../docs/reference/templates/skills/opencli/SKILL.md"),
+        include_str!("../../wiki/reference/templates/skills/opencli/SKILL.md"),
     ),
     (
         "browser-cdp",
-        include_str!("../docs/reference/templates/skills/browser-cdp/SKILL.md"),
+        include_str!("../../wiki/reference/templates/skills/browser-cdp/SKILL.md"),
     ),
     (
         "a2a-gateway",
-        include_str!("../docs/reference/templates/skills/a2a-gateway/SKILL.md"),
+        include_str!("../../wiki/reference/templates/skills/a2a-gateway/SKILL.md"),
     ),
     (
         "dynamic-tools",
-        include_str!("../docs/reference/templates/skills/dynamic-tools/SKILL.md"),
+        include_str!("../../wiki/reference/templates/skills/dynamic-tools/SKILL.md"),
     ),
 ];
 
