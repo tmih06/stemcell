@@ -17,7 +17,11 @@ env:
   RUST_BACKTRACE: 1
   CARGO_INCREMENTAL: 0
   DOCKERFILE_PATH: src/docker/Dockerfile
-  DOCKER_PLATFORMS: linux/amd64,linux/arm64
+  # Linux platform intersection supported by both rust:slim-bookworm
+  # and debian:bookworm-slim. Docker images are Linux-only; native
+  # release binaries for Windows/macOS are built in the matrix below.
+  DOCKER_PLATFORMS: linux/amd64,linux/386,linux/arm/v7,linux/arm64,linux/ppc64le,linux/s390x
+  DOCKER_QEMU_PLATFORMS: 386,arm,arm64,ppc64le,s390x
 
 jobs:
   # ── Stage 1: Lint (fast gate — fails early before burning compute) ────────
@@ -273,7 +277,7 @@ jobs:
 
   # ── Stage 8: Multi-arch container build ─────────────────────────────────
   docker:
-    name: Docker Build (linux/amd64, linux/arm64)
+    name: Docker Build (all supported Linux architectures)
     needs: [lint]
     runs-on: ubuntu-latest
     timeout-minutes: 240
@@ -283,7 +287,7 @@ jobs:
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
         with:
-          platforms: arm64
+          platforms: ${{ env.DOCKER_QEMU_PLATFORMS }}
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
