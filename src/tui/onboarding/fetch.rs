@@ -445,11 +445,7 @@ pub async fn fetch_provider_models(
                                         .and_then(|c| c.get("input"))
                                         .and_then(|i| i.as_f64())
                                         .map_or(true, |input| input == 0.0);
-                                    if is_free {
-                                        Some(id.clone())
-                                    } else {
-                                        None
-                                    }
+                                    if is_free { Some(id.clone()) } else { None }
                                 })
                                 .collect();
                             free_models.sort();
