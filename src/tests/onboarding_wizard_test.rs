@@ -198,9 +198,9 @@ fn clean_wizard() -> OnboardingWizard {
     w.ps.base_url = String::new();
     w.ps.custom_model = String::new();
     w.about_me = String::new();
-    w.about_opencrabs = String::new();
+    w.about_stemcell = String::new();
     w.original_about_me = String::new();
-    w.original_about_opencrabs = String::new();
+    w.original_about_stemcell = String::new();
     w
 }
 
@@ -490,7 +490,7 @@ fn test_health_check_initial_state() {
 fn test_brain_setup_defaults() {
     let wizard = clean_wizard();
     assert!(wizard.about_me.is_empty());
-    assert!(wizard.about_opencrabs.is_empty());
+    assert!(wizard.about_stemcell.is_empty());
     assert_eq!(wizard.brain_field, BrainField::AboutMe);
 }
 

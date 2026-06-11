@@ -16,7 +16,7 @@ use ratatui::{
     widgets::{Block, Borders, Paragraph, Wrap},
 };
 
-/// Main color palette (matches existing OpenCrabs theme)
+/// Main color palette (matches existing StemCell theme)
 const BRAND_BLUE: Color = Color::Rgb(120, 120, 120);
 const BRAND_GOLD: Color = Color::Rgb(215, 100, 20);
 const ACCENT_GOLD: Color = Color::Rgb(215, 100, 20);
@@ -388,12 +388,12 @@ pub fn render_onboarding(f: &mut Frame, wizard: &OnboardingWizard) {
     let wizard_area = h_chunks[0];
 
     let title_string = if step == OnboardingStep::Complete {
-        " OpenCrabs Setup Complete ".to_string()
+        " StemCell Setup Complete ".to_string()
     } else if wizard.quick_jump {
         format!(" {} ", step.title())
     } else {
         format!(
-            " OpenCrabs Setup ({}/{}) ",
+            " StemCell Setup ({}/{}) ",
             step.number(),
             OnboardingStep::total()
         )
@@ -1815,7 +1815,7 @@ fn render_whatsapp_setup(lines: &mut Vec<Line<'static>>, wizard: &OnboardingWiza
             Style::default().fg(Color::Red),
         )));
         lines.push(Line::from(Span::styled(
-            "  Logs: ~/.opencrabs/logs/",
+            "  Logs: ~/.stemcell/logs/",
             Style::default().fg(Color::DarkGray),
         )));
         lines.push(Line::from(""));
@@ -1826,7 +1826,7 @@ fn render_whatsapp_setup(lines: &mut Vec<Line<'static>>, wizard: &OnboardingWiza
             )));
         }
     } else if conn_focused {
-        let session_db = crate::config::opencrabs_home()
+        let session_db = crate::config::stemcell_home()
             .join("whatsapp")
             .join("session.db");
         if session_db.exists() {
@@ -2688,10 +2688,10 @@ fn render_brain_setup(
 
     lines.push(Line::from(""));
 
-    // "Your OpenCrabs" text area
+    // "Your StemCell" text area
     let agent_focused = wizard.brain_field == BrainField::AboutAgent;
     lines.push(Line::from(Span::styled(
-        "  Your OpenCrabs:".to_string(),
+        "  Your StemCell:".to_string(),
         Style::default()
             .fg(if agent_focused {
                 BRAND_BLUE
@@ -2703,7 +2703,7 @@ fn render_brain_setup(
 
     render_brain_field(
         lines,
-        &wizard.about_opencrabs,
+        &wizard.about_stemcell,
         agent_focused,
         "  personality, vibe, how I should talk to you",
         wrap_width,
@@ -2721,7 +2721,7 @@ fn render_brain_setup(
     }
 
     // Show loaded hint if brain files exist
-    if !wizard.original_about_me.is_empty() || !wizard.original_about_opencrabs.is_empty() {
+    if !wizard.original_about_me.is_empty() || !wizard.original_about_stemcell.is_empty() {
         lines.push(Line::from(Span::styled(
             "  Loaded from existing brain files".to_string(),
             Style::default().fg(ACCENT_GOLD),
@@ -2888,7 +2888,7 @@ fn render_complete(lines: &mut Vec<Line<'static>>, wizard: &OnboardingWizard) {
     lines.push(Line::from(""));
     lines.push(Line::from(""));
     lines.push(Line::from(Span::styled(
-        "Entering OpenCrabs...".to_string(),
+        "Entering StemCell...".to_string(),
         Style::default()
             .fg(ACCENT_GOLD)
             .add_modifier(Modifier::BOLD | Modifier::ITALIC),

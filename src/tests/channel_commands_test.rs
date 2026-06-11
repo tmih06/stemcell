@@ -160,9 +160,9 @@ fn user_command_prompt_with_args() {
 
 #[test]
 fn user_command_system_action() {
-    let cmds = vec![make_cmd("/info", "system", "OpenCrabs v0.2")];
+    let cmds = vec![make_cmd("/info", "system", "StemCell v0.2")];
     match match_user_command_inner("/info", &cmds, &[]) {
-        ChannelCommand::UserSystem(t) => assert_eq!(t, "OpenCrabs v0.2"),
+        ChannelCommand::UserSystem(t) => assert_eq!(t, "StemCell v0.2"),
         other => panic!("expected UserSystem, got {:?}", variant_name(&other)),
     }
 }

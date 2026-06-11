@@ -210,7 +210,7 @@ pub(crate) fn is_rtk_supported(token: &str) -> bool {
 ///
 /// # Example
 /// ```rust,ignore
-/// use opencrabs::rtk::rewrite_command;
+/// use stemcell::rtk::rewrite_command;
 ///
 /// let result = rewrite_command("git status");
 /// // Returns Some(RtkResult { rewritten_command: "/path/to/rtk git status", ... })

@@ -1,4 +1,4 @@
-//! A2A (Agent-to-Agent) Protocol implementation for OpenCrabs.
+//! A2A (Agent-to-Agent) Protocol implementation for StemCell.
 //!
 //! Implements the A2A Protocol RC v1.0 specification:
 //! - Agent Card discovery (`.well-known/agent.json`)

@@ -1052,12 +1052,12 @@ async fn cmd_chat_inner(
             });
         }
 
-        tracing::info!("OpenCrabs daemon started — press Ctrl+C to stop");
-        println!("🦀 OpenCrabs daemon running. Press Ctrl+C to stop.");
+        tracing::info!("StemCell daemon started — press Ctrl+C to stop");
+        println!("🦀 StemCell daemon running. Press Ctrl+C to stop.");
         tokio::signal::ctrl_c()
             .await
             .context("Failed to listen for ctrl_c")?;
-        tracing::info!("OpenCrabs daemon shutting down");
+        tracing::info!("StemCell daemon shutting down");
         crate::config::profile::release_all_locks();
         return Ok(());
     }
@@ -1101,7 +1101,7 @@ async fn cmd_chat_inner(
                 // User wants to retry — return the original error so the process
                 // exits, and they can relaunch manually. A full retry would need
                 // re-initializing everything which is not practical here.
-                println!("\n  Relaunch OpenCrabs to try again.\n");
+                println!("\n  Relaunch StemCell to try again.\n");
             }
             Ok(super::crash_recovery::CrashRecoveryAction::Installed(v)) => {
                 println!("\n  Installed v{}. Relaunch to use it.\n", v);
@@ -1129,7 +1129,7 @@ enum BannerKind {
     Exit,
 }
 
-/// Print the OpenCrabs banner (logo + tagline + version/provider/model +
+/// Print the StemCell banner (logo + tagline + version/provider/model +
 /// tools + quick commands + tips) to the terminal before the TUI takes
 /// over and again after it exits. Mirrors the in-TUI header card so the
 /// user has a persistent record in their terminal scrollback.

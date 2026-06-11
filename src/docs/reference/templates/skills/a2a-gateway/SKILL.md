@@ -5,11 +5,11 @@ description: "Agent-to-Agent (A2A) protocol gateway reference. JSON-RPC 2.0 peer
 
 # A2A Gateway Reference
 
-OpenCrabs exposes an A2A Protocol HTTP gateway for peer-to-peer agent communication.
+StemCell exposes an A2A Protocol HTTP gateway for peer-to-peer agent communication.
 
 ## What it does
 
-Other A2A-compatible agents send tasks via JSON-RPC 2.0. OpenCrabs processes them using its full tool suite and returns results.
+Other A2A-compatible agents send tasks via JSON-RPC 2.0. StemCell processes them using its full tool suite and returns results.
 
 ## Endpoints
 
@@ -19,7 +19,7 @@ Other A2A-compatible agents send tasks via JSON-RPC 2.0. OpenCrabs processes the
 
 ## Setup
 
-Enable in `~/.opencrabs/config.toml`:
+Enable in `~/.stemcell/config.toml`:
 
 ```toml
 [a2a]

@@ -121,12 +121,12 @@ async fn test_agent_retrieves_user_file_on_demand() {
     let dir = TempDir::new().unwrap();
     std::fs::write(dir.path().join("USER.md"), "Name: Alice\nRole: Engineer").unwrap();
 
-    // Verify the file is readable via standard fs (tool reads from opencrabs_home(),
+    // Verify the file is readable via standard fs (tool reads from stemcell_home(),
     // so we test the read logic directly here by confirming the content exists)
     let content = std::fs::read_to_string(dir.path().join("USER.md")).unwrap();
     assert!(content.contains("Alice"));
 
-    // The tool itself (pointing at real ~/.opencrabs/) either finds the file or
+    // The tool itself (pointing at real ~/.stemcell/) either finds the file or
     // returns a graceful "not found" — never panics
     let result = tool()
         .execute(serde_json::json!({"name": "USER.md"}), &ctx())

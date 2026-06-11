@@ -226,7 +226,7 @@ impl PaneManager {
 
     /// Path to the layout persistence file.
     fn layout_path() -> std::path::PathBuf {
-        crate::config::opencrabs_home().join("layout.json")
+        crate::config::stemcell_home().join("layout.json")
     }
 
     /// Save current layout to disk.

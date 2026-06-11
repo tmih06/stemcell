@@ -1,7 +1,7 @@
 //! Self-Improve Tool — Recursive Self-Improvement (RSI)
 //!
 //! Autonomously applies improvements to brain files based on feedback analysis.
-//! Writes to ~/.opencrabs/rsi/ directory — no human approval required.
+//! Writes to ~/.stemcell/rsi/ directory — no human approval required.
 //! Each improvement is logged to rsi/improvements.md and archived daily in rsi/history/.
 
 use super::error::Result;
@@ -107,7 +107,7 @@ impl Tool for SelfImproveTool {
     fn description(&self) -> &str {
         "Autonomously apply self-improvements based on feedback analysis. \
          Modifies brain files (SOUL.md, AGENTS.md, etc.) and logs changes to \
-         ~/.opencrabs/rsi/improvements.md. No human approval needed — the agent \
+         ~/.stemcell/rsi/improvements.md. No human approval needed — the agent \
          identifies patterns via feedback_analyze and applies fixes directly. \
          Use feedback_analyze first to identify what needs improvement."
     }
@@ -170,8 +170,8 @@ impl Tool for SelfImproveTool {
     async fn execute(&self, input: Value, context: &ToolExecutionContext) -> Result<ToolResult> {
         let action = input.get("action").and_then(|v| v.as_str()).unwrap_or("");
 
-        // Brain files always go to ~/.opencrabs/, never the working directory.
-        let home = crate::config::opencrabs_home();
+        // Brain files always go to ~/.stemcell/, never the working directory.
+        let home = crate::config::stemcell_home();
 
         match action {
             "read" => {

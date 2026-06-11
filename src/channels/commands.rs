@@ -392,7 +392,7 @@ pub(crate) fn format_help() -> String {
     }
 
     lines.push(String::new());
-    lines.push("🦀 Any other message is sent to OpenCrabs. 🦀".to_string());
+    lines.push("🦀 Any other message is sent to StemCell. 🦀".to_string());
     lines.join("\n")
 }
 
@@ -693,7 +693,7 @@ pub fn unconfigured_provider_help(provider_name: &str) -> String {
         "🔒 *{display}* is not configured yet.\n\n\
          To enable it, add this to `{path}`:\n\n\
          ```toml\n[providers.{section}]\napi_key = \"YOUR-{display}-KEY\"\n```\n\n\
-         Then restart OpenCrabs. Do NOT paste your API key here — \
+         Then restart StemCell. Do NOT paste your API key here — \
          Telegram keeps message history that bots cannot delete in DMs."
     )
 }
@@ -790,7 +790,7 @@ pub async fn models_for_provider(provider_name: &str) -> ModelsResponse {
                 "🤖 *{display_name} Models*\n\n\
                  No models configured for this provider.\n\n\
                  Add a `default_model` to `[providers.{section}]` in `{path}`, \
-                 then restart OpenCrabs. Example:\n\n\
+                 then restart StemCell. Example:\n\n\
                  ```toml\n[providers.{section}]\ndefault_model = \"YOUR-MODEL-NAME\"\n```",
             );
             return ModelsResponse {
@@ -1044,7 +1044,7 @@ pub async fn run_evolve() -> String {
 fn trigger_restart() {
     use std::os::unix::process::CommandExt;
 
-    let exe = std::env::current_exe().unwrap_or_else(|_| std::path::PathBuf::from("opencrabs"));
+    let exe = std::env::current_exe().unwrap_or_else(|_| std::path::PathBuf::from("stemcell"));
     let args: Vec<String> = std::env::args().skip(1).collect();
 
     tracing::info!("Restarting daemon via exec()");

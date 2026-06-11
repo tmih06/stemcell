@@ -24,7 +24,7 @@ use waproto::whatsapp::Message;
 use whatsapp_rust::client::Client;
 
 /// Header prepended to all outgoing messages so the user knows it's from the agent.
-pub const MSG_HEADER: &str = "\u{1f980} *OpenCrabs*";
+pub const MSG_HEADER: &str = "\u{1f980} *StemCell*";
 
 /// Unwrap nested message wrappers (device_sent, ephemeral, view_once, etc.)
 /// Returns the innermost Message that contains actual content.
@@ -696,7 +696,7 @@ pub(crate) async fn handle_message(
 
     // Build the human-readable display text (used for DB persistence + TUI).
     // Owner DMs keep the bare text; non-owner / group messages prefix with
-    // sender so OpenCrabs sessions stay readable without the LLM-only
+    // sender so StemCell sessions stay readable without the LLM-only
     // metadata brackets.
     let display_text = if is_owner && !info.source.is_group {
         content.clone()
@@ -1108,8 +1108,8 @@ pub(crate) async fn handle_message(
                     } else {
                         None
                     },
-                    "bot:opencrabs".to_string(),
-                    "OpenCrabs".to_string(),
+                    "bot:stemcell".to_string(),
+                    "StemCell".to_string(),
                     text_content.clone(),
                     "text".into(),
                     None,

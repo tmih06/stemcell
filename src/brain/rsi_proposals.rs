@@ -7,7 +7,7 @@
 //! bigger blast radius than a hallucinated paragraph in `SOUL.md`).
 //!
 //! This module is the workaround: RSI writes *proposals* into TOML
-//! inboxes under `~/.opencrabs/rsi/`. The user-facing agent reads them
+//! inboxes under `~/.stemcell/rsi/`. The user-facing agent reads them
 //! on request ("show me proposed tools", "implement the proposed
 //! command") and applies them via the same plumbing as `tool_manage`
 //! `add` and `config_manager` `add_command`. Applied/rejected entries
@@ -16,7 +16,7 @@
 //! ## Layout
 //!
 //! ```text
-//! ~/.opencrabs/rsi/
+//! ~/.stemcell/rsi/
 //! ├── proposed_tools.toml      # pending tool proposals
 //! ├── proposed_commands.toml   # pending command proposals
 //! ├── applied/
@@ -91,7 +91,7 @@ pub struct CommandProposal {
 /// up — codify it as a workflow".
 ///
 /// On apply, the user writes the body to
-/// `~/.opencrabs/skills/<name>/SKILL.md` with the description in
+/// `~/.stemcell/skills/<name>/SKILL.md` with the description in
 /// YAML frontmatter.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SkillProposal {
@@ -140,7 +140,7 @@ struct SkillProposalsFile {
 /// blocks across brain files (SOUL.md, AGENTS.md, MEMORY.md, etc.), it
 /// files one of these proposals per duplicate cluster. The user reviews
 /// in Mission Control and applies to shrink the file via
-/// `write_opencrabs_file` with `dedup_intent=true`.
+/// `write_stemcell_file` with `dedup_intent=true`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BrainDedupProposal {
     pub id: String,
@@ -188,10 +188,10 @@ pub struct ProposalsStore {
 }
 
 impl ProposalsStore {
-    /// Create a store rooted at `<opencrabs_home>/rsi/`.
+    /// Create a store rooted at `<stemcell_home>/rsi/`.
     pub fn new() -> Self {
         Self {
-            rsi_dir: crate::config::opencrabs_home().join("rsi"),
+            rsi_dir: crate::config::stemcell_home().join("rsi"),
         }
     }
 

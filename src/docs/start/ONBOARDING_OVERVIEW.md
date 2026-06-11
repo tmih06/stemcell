@@ -1,5 +1,5 @@
 ---
-summary: "Overview of OpenCrabs onboarding options and flows"
+summary: "Overview of StemCell onboarding options and flows"
 read_when:
   - Choosing an onboarding path
   - Setting up a new environment
@@ -9,7 +9,7 @@ sidebarTitle: "Onboarding Overview"
 
 # Onboarding Overview
 
-OpenCrabs supports multiple onboarding paths depending on where the Gateway runs
+StemCell supports multiple onboarding paths depending on where the Gateway runs
 and how you prefer to configure providers.
 
 ## Choose your onboarding path
@@ -22,18 +22,18 @@ and how you prefer to configure providers.
 Run the wizard in a terminal:
 
 ```bash
-opencrabs onboard
+stemcell onboard
 ```
 
 Use the CLI wizard when you want full control of the Gateway, workspace,
 channels, and skills. Docs:
 
 - [Onboarding Wizard (CLI)](/start/wizard)
-- [`opencrabs onboard` command](/cli/onboard)
+- [`stemcell onboard` command](/cli/onboard)
 
 ## macOS app onboarding
 
-Use the OpenCrabs app when you want a fully guided setup on macOS. Docs:
+Use the StemCell app when you want a fully guided setup on macOS. Docs:
 
 - [Onboarding (macOS App)](/start/onboarding)
 

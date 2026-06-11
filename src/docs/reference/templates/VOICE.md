@@ -36,7 +36,7 @@ pitch = 0      # -12 to +12 semitones
 
 ### WhisperCrabs
 
-[WhisperCrabs](https://github.com/adolfousier/whispercrabs) — floating voice-to-text tool controllable via D-Bus.
+[WhisperCrabs](https://github.com/tmih06/whispercrabs) — floating voice-to-text tool controllable via D-Bus.
 
 **D-Bus Interface:**
 - `StartRecording()` — begin capture
@@ -62,8 +62,8 @@ When receiving voice messages (Telegram/WhatsApp):
 
 ```bash
 # Check if WhisperCrabs is running
-dbus-send --session --dest=com.github.adolfousier.WhisperCrabs --type=method_call /com/github/adolfousier/WhisperCrabs com.github.adolfousier.WhisperCrabs.IsRunning
+dbus-send --session --dest=com.github.tmih06.WhisperCrabs --type=method_call /com/github/tmih06/WhisperCrabs com.github.tmih06.WhisperCrabs.IsRunning
 
 # Start recording
-dbus-send --session --dest=com.github.adolfousier.WhisperCrabs --type=method_call /com/github/adolfousier/WhisperCrabs com.github.adolfousier.WhisperCrabs.StartRecording
+dbus-send --session --dest=com.github.tmih06.WhisperCrabs --type=method_call /com/github/tmih06/WhisperCrabs com.github.tmih06.WhisperCrabs.StartRecording
 ```

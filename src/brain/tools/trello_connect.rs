@@ -13,7 +13,7 @@ use serde_json::Value;
 use std::sync::Arc;
 use std::time::Duration;
 
-/// Tool that connects a Trello board to OpenCrabs.
+/// Tool that connects a Trello board to StemCell.
 pub struct TrelloConnectTool {
     channel_factory: Arc<ChannelFactory>,
     trello_state: Arc<TrelloState>,
@@ -35,7 +35,7 @@ impl Tool for TrelloConnectTool {
     }
 
     fn description(&self) -> &str {
-        "Connect one or more Trello boards to OpenCrabs. Accepts a Trello API Key and API Token \
+        "Connect one or more Trello boards to StemCell. Accepts a Trello API Key and API Token \
          from https://trello.com/power-ups/admin, plus board names or IDs to monitor. \
          Board names are resolved automatically — you can mix names and 24-char hex IDs. \
          Once connected, the agent polls every 30 s for new card comments and replies. \

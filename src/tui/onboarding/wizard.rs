@@ -122,10 +122,10 @@ pub struct OnboardingWizard {
     /// Step 8: Brain Setup
     pub brain_field: BrainField,
     pub about_me: String,
-    pub about_opencrabs: String,
+    pub about_stemcell: String,
     /// Original values loaded from workspace brain files (for change detection)
     pub original_about_me: String,
-    pub original_about_opencrabs: String,
+    pub original_about_stemcell: String,
     /// Whether the user has started editing each field (arrow key or char input).
     /// First backspace on an untouched template clears the entire field.
     pub brain_me_edited: bool,
@@ -184,7 +184,7 @@ impl OnboardingWizard {
     /// Create a new wizard with default state
     /// Loads existing config if available to pre-fill settings
     pub fn new() -> Self {
-        let default_workspace = crate::config::opencrabs_home();
+        let default_workspace = crate::config::stemcell_home();
 
         // config_models loaded on demand per provider via reload_config_models()
         let config_models = Vec::new();
@@ -449,9 +449,9 @@ impl OnboardingWizard {
 
             brain_field: BrainField::AboutMe,
             about_me: String::new(),
-            about_opencrabs: String::new(),
+            about_stemcell: String::new(),
             original_about_me: String::new(),
-            original_about_opencrabs: String::new(),
+            original_about_stemcell: String::new(),
             brain_me_edited: false,
             brain_agent_edited: false,
             brain_generating: false,
@@ -886,7 +886,7 @@ impl OnboardingWizard {
             wizard.whatsapp_phone_input = sentinel();
         }
         // WhatsApp: check if session.db exists (means it's paired)
-        let wa_session = crate::config::opencrabs_home()
+        let wa_session = crate::config::stemcell_home()
             .join("whatsapp")
             .join("session.db");
         wizard.whatsapp_connected = wa_session.exists();

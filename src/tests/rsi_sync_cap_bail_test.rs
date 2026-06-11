@@ -5,7 +5,7 @@
 //! syncs without any warning. Now: count the merged line total, bail if
 //! it exceeds the per-file cap (or the default cap), and surface the
 //! bail with a structured `CapBailReport` plus an entry in
-//! `~/.opencrabs/rsi/improvements.md` so the user can act on it.
+//! `~/.stemcell/rsi/improvements.md` so the user can act on it.
 //!
 //! We can't easily exercise `sync_single_file` directly here (it does
 //! network I/O for the upstream template fetch and writes to the user's
@@ -154,7 +154,7 @@ fn cap_bail_logs_to_improvements_md() {
     let src = rsi_sync_src_code();
     assert!(
         src.contains("log_cap_bail_to_improvements"),
-        "cap-bail must persist a diagnostic entry to ~/.opencrabs/rsi/improvements.md \
+        "cap-bail must persist a diagnostic entry to ~/.stemcell/rsi/improvements.md \
          so the user sees the bail next session without scraping stdout."
     );
     // The log function itself must mention improvements.md to confirm

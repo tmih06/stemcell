@@ -16,7 +16,7 @@ impl Tool for ConfigTool {
     }
 
     fn description(&self) -> &str {
-        "Read or write OpenCrabs configuration (config.toml) and user commands (commands.toml). \
+        "Read or write StemCell configuration (config.toml) and user commands (commands.toml). \
          Use this to change settings like approval policy, view current config, \
          add/remove user slash commands, change working directory, or trigger a config reload."
     }

@@ -68,15 +68,15 @@ impl Drop for HomeGuard {
 
 fn write_temp_home(config_toml: &str, keys_toml: &str) -> tempfile::TempDir {
     let dir = tempfile::tempdir().expect("tempdir");
-    let opencrabs = dir.path().join(".opencrabs");
-    std::fs::create_dir_all(&opencrabs).expect("create .opencrabs");
-    std::fs::write(opencrabs.join("config.toml"), config_toml).expect("write config");
-    std::fs::write(opencrabs.join("keys.toml"), keys_toml).expect("write keys");
+    let stemcell = dir.path().join(".stemcell");
+    std::fs::create_dir_all(&stemcell).expect("create .stemcell");
+    std::fs::write(stemcell.join("config.toml"), config_toml).expect("write config");
+    std::fs::write(stemcell.join("keys.toml"), keys_toml).expect("write keys");
     dir
 }
 
 fn read_keys_toml(temp: &tempfile::TempDir) -> String {
-    std::fs::read_to_string(temp.path().join(".opencrabs").join("keys.toml"))
+    std::fs::read_to_string(temp.path().join(".stemcell").join("keys.toml"))
         .expect("read keys.toml")
 }
 
@@ -202,7 +202,7 @@ fn cleanup_preserves_keys_when_every_entry_has_config_counterpart() {
 #[test]
 fn cleanup_no_op_when_keys_toml_does_not_exist() {
     let temp = tempfile::tempdir().expect("tempdir");
-    std::fs::create_dir_all(temp.path().join(".opencrabs")).unwrap();
+    std::fs::create_dir_all(temp.path().join(".stemcell")).unwrap();
     // No keys.toml file at all.
     let _guard = HomeGuard::new(temp.path());
 
@@ -210,7 +210,7 @@ fn cleanup_no_op_when_keys_toml_does_not_exist() {
     Config::cleanup_keys_custom_providers();
 
     assert!(
-        !temp.path().join(".opencrabs").join("keys.toml").exists(),
+        !temp.path().join(".stemcell").join("keys.toml").exists(),
         "cleanup must not create keys.toml as a side effect when it didn't exist"
     );
 }

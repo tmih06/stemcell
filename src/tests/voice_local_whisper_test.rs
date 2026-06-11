@@ -306,13 +306,13 @@ fn all_presets_have_unique_ids() {
 }
 
 #[test]
-fn model_path_under_opencrabs_dir() {
+fn model_path_under_stemcell_dir() {
     let preset = &LOCAL_MODEL_PRESETS[0];
     let path = model_path(preset);
     let path_str = path.to_string_lossy();
     assert!(
-        path_str.contains("opencrabs"),
-        "Path should be under opencrabs dir"
+        path_str.contains("stemcell"),
+        "Path should be under stemcell dir"
     );
     assert!(
         path_str.contains("whisper"),

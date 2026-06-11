@@ -27,7 +27,7 @@ fn validate_path_within_working_directory() {
     let working_dir = temp_dir.path();
 
     let session_id = uuid::Uuid::new_v4();
-    let plan_file = working_dir.join(format!(".opencrabs_plan_{}.json", session_id));
+    let plan_file = working_dir.join(format!(".stemcell_plan_{}.json", session_id));
 
     let result = validate_plan_file_path(&plan_file, working_dir);
     assert!(result.is_ok());
@@ -40,7 +40,7 @@ fn validate_path_outside_working_directory() {
 
     let session_id = uuid::Uuid::new_v4();
     // Try to write outside working directory
-    let plan_file = PathBuf::from("/tmp").join(format!(".opencrabs_plan_{}.json", session_id));
+    let plan_file = PathBuf::from("/tmp").join(format!(".stemcell_plan_{}.json", session_id));
 
     let result = validate_plan_file_path(&plan_file, working_dir);
     assert!(result.is_err());
@@ -60,7 +60,7 @@ fn validate_path_traversal_attack() {
     let session_id = uuid::Uuid::new_v4();
     // Try path traversal - construct a path that goes outside working_dir
     let parent = working_dir.parent().unwrap_or(working_dir);
-    let plan_file = parent.join(format!(".opencrabs_plan_{}.json", session_id));
+    let plan_file = parent.join(format!(".stemcell_plan_{}.json", session_id));
 
     let result = validate_plan_file_path(&plan_file, working_dir);
     assert!(result.is_err());
@@ -90,7 +90,7 @@ fn validate_filename_requires_uuid() {
     let working_dir = temp_dir.path();
 
     // Invalid UUID in filename
-    let plan_file = working_dir.join(".opencrabs_plan_not-a-uuid.json");
+    let plan_file = working_dir.join(".stemcell_plan_not-a-uuid.json");
 
     let result = validate_plan_file_path(&plan_file, working_dir);
     assert!(result.is_err());
@@ -107,7 +107,7 @@ fn validate_symlink_rejection() {
 
     let session_id = uuid::Uuid::new_v4();
     let target_file = working_dir.join("target.json");
-    let plan_file = working_dir.join(format!(".opencrabs_plan_{}.json", session_id));
+    let plan_file = working_dir.join(format!(".stemcell_plan_{}.json", session_id));
 
     // Create a target file and symlink to it
     std::fs::write(&target_file, "{}").unwrap();
@@ -206,7 +206,7 @@ fn filename_with_special_characters() {
     let working_dir = temp_dir.path();
 
     // Try filename with special characters that might be injection attempts
-    let plan_file = working_dir.join(".opencrabs_plan_../../etc/passwd.json");
+    let plan_file = working_dir.join(".stemcell_plan_../../etc/passwd.json");
 
     let result = validate_plan_file_path(&plan_file, working_dir);
     assert!(result.is_err());
@@ -218,7 +218,7 @@ fn filename_with_null_byte() {
     let working_dir = temp_dir.path();
 
     let session_id = uuid::Uuid::new_v4();
-    let filename = format!(".opencrabs_plan_{}\0.json", session_id);
+    let filename = format!(".stemcell_plan_{}\0.json", session_id);
     let plan_file = working_dir.join(filename);
 
     // Rust's Path handling should prevent null bytes, but test anyway
@@ -234,7 +234,7 @@ fn validate_plan_file_path_canonical() {
 
     let session_id = uuid::Uuid::new_v4();
     // Use ./ which should resolve to working_dir
-    let plan_file = working_dir.join(format!("./.opencrabs_plan_{}.json", session_id));
+    let plan_file = working_dir.join(format!("./.stemcell_plan_{}.json", session_id));
 
     // Should still validate correctly after canonicalization
     let result = validate_plan_file_path(&plan_file, working_dir);

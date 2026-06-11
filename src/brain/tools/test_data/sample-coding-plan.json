@@ -2,8 +2,8 @@
   "id": "00000000-0000-0000-0000-000000000000",
   "session_id": "00000000-0000-0000-0000-000000000000",
   "title": "Full Coding Process — Feature Development",
-  "description": "Standard workflow for OpenCrabs development. Covers the complete pipeline from investigation through merge, following the project coding process.",
-  "context": "This plan follows the OpenCrabs coding process for features larger than 100 lines or 5+ steps. Each stage must be completed before the next begins.",
+  "description": "Standard workflow for StemCell development. Covers the complete pipeline from investigation through merge, following the project coding process.",
+  "context": "This plan follows the StemCell coding process for features larger than 100 lines or 5+ steps. Each stage must be completed before the next begins.",
   "risks": [
     "Forgetting to update the PR checklist",
     "Missing edge cases in test coverage",

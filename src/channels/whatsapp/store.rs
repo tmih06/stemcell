@@ -1,7 +1,7 @@
 //! Rusqlite-backed WhatsApp session store
 //!
 //! Implements `wacore::store::Backend` using deadpool-sqlite + rusqlite,
-//! matching the rest of the OpenCrabs database layer.
+//! matching the rest of the StemCell database layer.
 
 use async_trait::async_trait;
 use bytes::Bytes;
@@ -34,8 +34,8 @@ fn db_err(e: rusqlite::Error) -> StoreError {
 
 /// Rusqlite-backed storage for `whatsapp-rust`.
 ///
-/// Uses a dedicated SQLite file at `~/.opencrabs/whatsapp/session.db`,
-/// completely separate from the main OpenCrabs database.
+/// Uses a dedicated SQLite file at `~/.stemcell/whatsapp/session.db`,
+/// completely separate from the main StemCell database.
 #[derive(Clone)]
 pub struct Store {
     pool: Pool,

@@ -105,7 +105,7 @@ async fn cmd_list(repo: &CronJobRepository) -> Result<()> {
     if jobs.is_empty() {
         println!("No cron jobs configured.");
         println!(
-            "\n💡 Add one: opencrabs cron add --name \"My Job\" --cron \"0 9 * * *\" --prompt \"Do something\""
+            "\n💡 Add one: stemcell cron add --name \"My Job\" --cron \"0 9 * * *\" --prompt \"Do something\""
         );
         return Ok(());
     }
