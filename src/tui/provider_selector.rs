@@ -239,10 +239,10 @@ impl ProviderSelectorState {
         if idx < CUSTOM_PROVIDER_IDX {
             let provider = &PROVIDERS[idx];
 
-            // Models cached by the startup job (ModelDB / credentialed API).
+            // Models cached by the startup job (models.dev / credentialed API).
             if let Some(entry) = cache.get(provider.id) {
                 for model in &entry.models {
-                    push_unique_model(&mut models, model.clone());
+                    push_unique_model(&mut models, model.id.clone());
                 }
             }
 
