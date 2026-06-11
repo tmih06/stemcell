@@ -3,45 +3,31 @@
 //! that strip non-conversational bloat (embedding / image / audio / rerank /
 //! …) from the warmed model cache.
 
-use crate::startup::jobs::fetch_models::is_conversational_model_type;
+use crate::startup::jobs::fetch_models::is_chat_capable;
 use crate::startup::model_cache::is_chat_capable_model_id;
 
 #[test]
-fn modeldb_keeps_chat_and_responses_types() {
-    assert!(is_conversational_model_type(Some("chat")));
-    // OpenAI GPT-5 / o-series are served via the Responses API; the `chatgpt`
-    // provider exposes only this type and is fully chat + tool-use capable.
-    assert!(is_conversational_model_type(Some("responses")));
+fn catalog_keeps_tool_capable_text_models() {
+    // Tool-calling chat model with explicit text input.
+    assert!(is_chat_capable(Some(true), &["text".to_string()]));
+    // Multimodal chat model that also accepts images stays in.
+    assert!(is_chat_capable(
+        Some(true),
+        &["text".to_string(), "image".to_string()]
+    ));
+    // Empty modality list is treated as text-capable so a feed that omits the
+    // field does not silently drop an otherwise tool-capable model.
+    assert!(is_chat_capable(Some(true), &[]));
 }
 
 #[test]
-fn modeldb_drops_non_conversational_types() {
-    for t in [
-        "image",
-        "embedding",
-        "audio",
-        "rerank",
-        "video_generation",
-        "ocr",
-        "moderation",
-        "image_edit",
-        "search",
-        "vector_store",
-        "realtime",
-        // Legacy text completion predates the chat/tool-use contract.
-        "completion",
-    ] {
-        assert!(
-            !is_conversational_model_type(Some(t)),
-            "model_type {t:?} must be filtered out of the chat picker"
-        );
-    }
-}
-
-#[test]
-fn modeldb_missing_type_is_kept() {
-    // A missing model_type must not silently empty a provider's list.
-    assert!(is_conversational_model_type(None));
+fn catalog_drops_non_tool_or_non_text_models() {
+    // No tool calling → dropped (embeddings, image generation, etc.).
+    assert!(!is_chat_capable(Some(false), &["text".to_string()]));
+    // Missing tool_call flag → dropped.
+    assert!(!is_chat_capable(None, &["text".to_string()]));
+    // Tool-capable but image-only input (e.g. an image-edit surface) → dropped.
+    assert!(!is_chat_capable(Some(true), &["image".to_string()]));
 }
 
 #[test]
