@@ -1,11 +1,11 @@
 //! Evolve Tool
 //!
-//! Updates OpenCrabs to the latest release. Detects the install method
+//! Updates StemCell to the latest release. Detects the install method
 //! (pre-built binary, cargo install, or source build) and uses the
 //! appropriate upgrade strategy:
 //!
 //! - **Pre-built binary**: Downloads from GitHub releases, health-checks, swaps.
-//! - **cargo install**: Runs `cargo install opencrabs --force`.
+//! - **cargo install**: Runs `cargo install stemcell --force`.
 //! - **Source build**: Suggests using `/rebuild` instead.
 //!
 //! Before swapping binaries, it health-checks the new binary. If the swap
@@ -18,7 +18,7 @@ use crate::utils::install::{InstallMethod, binary_name, platform_suffix};
 use async_trait::async_trait;
 use serde_json::Value;
 
-const GITHUB_API: &str = "https://api.github.com/repos/adolfousier/opencrabs/releases/latest";
+const GITHUB_API: &str = "https://api.github.com/repos/adolfousier/stemcell/releases/latest";
 
 /// Build an honest, status-aware error string for a non-success
 /// response from `releases/latest`. Replaces the prior hardcoded
@@ -73,7 +73,7 @@ pub(crate) fn diagnose_releases_latest_status(
 
 /// Service-unit glob used by the systemd restart path. Matches every
 /// profile (default, ops, staging, ...) sharing the same binary.
-pub(crate) const SYSTEMD_UNIT_PATTERN: &str = "opencrabs*.service";
+pub(crate) const SYSTEMD_UNIT_PATTERN: &str = "stemcell*.service";
 
 /// Build the `systemd-run` command that schedules a delayed restart
 /// of every service unit matching `SYSTEMD_UNIT_PATTERN`. Extracted
@@ -82,14 +82,14 @@ pub(crate) const SYSTEMD_UNIT_PATTERN: &str = "opencrabs*.service";
 /// restart" symptom that issue #136 reported.
 ///
 /// Set `user` to `true` to target user-level units (`systemctl --user`),
-/// e.g. when OpenCrabs was installed via `install_systemd_service()` which
+/// e.g. when StemCell was installed via `install_systemd_service()` which
 /// writes to `~/.config/systemd/user/`.
 ///
 /// The `pid` argument is used to derive a unique transient unit
-/// name (`opencrabs-evolve-<pid>`) so concurrent evolve calls don't
+/// name (`stemcell-evolve-<pid>`) so concurrent evolve calls don't
 /// collide on the transient unit registry.
 pub(crate) fn build_systemd_restart_command(pid: u32, user: bool) -> std::process::Command {
-    let unit_name = format!("opencrabs-evolve-{pid}");
+    let unit_name = format!("stemcell-evolve-{pid}");
     let mut cmd = std::process::Command::new("systemd-run");
     let mut args = vec![];
     // --user on systemd-run itself is required when the daemon runs as a
@@ -153,7 +153,7 @@ pub async fn check_for_update() -> Option<String> {
     let client = reqwest::Client::new();
     let resp = match client
         .get(GITHUB_API)
-        .header("User-Agent", format!("opencrabs/{}", current_version))
+        .header("User-Agent", format!("stemcell/{}", current_version))
         .header("Accept", "application/vnd.github+json")
         .send()
         .await
@@ -245,8 +245,8 @@ pub(crate) fn has_platform_asset(release: &serde_json::Value, tag: &str) -> bool
     } else {
         "tar.gz"
     };
-    let expected = format!("opencrabs-{}-{}.{}", tag, suffix, ext);
-    let legacy = format!("opencrabs-{}.{}", suffix, ext);
+    let expected = format!("stemcell-{}-{}.{}", tag, suffix, ext);
+    let legacy = format!("stemcell-{}.{}", suffix, ext);
 
     release["assets"]
         .as_array()
@@ -375,7 +375,7 @@ impl Tool for EvolveTool {
     }
 
     fn description(&self) -> &str {
-        "Check for and install the latest OpenCrabs release. \
+        "Check for and install the latest StemCell release. \
          Automatically detects the install method (pre-built binary, \
          cargo install, or source) and uses the right update strategy. \
          Hot-restarts into the new version after installation."
@@ -441,7 +441,7 @@ impl Tool for EvolveTool {
         );
         let resp = match client
             .get(GITHUB_API)
-            .header("User-Agent", format!("opencrabs/{}", current_version))
+            .header("User-Agent", format!("stemcell/{}", current_version))
             .header("Accept", "application/vnd.github+json")
             .send()
             .await
@@ -576,7 +576,7 @@ impl Tool for EvolveTool {
 }
 
 impl EvolveTool {
-    /// Update via `cargo install opencrabs --force`.
+    /// Update via `cargo install stemcell --force`.
     async fn evolve_via_cargo_install(
         &self,
         sid: uuid::Uuid,
@@ -601,10 +601,10 @@ impl EvolveTool {
             current_version,
             latest_version,
             session_id = %sid,
-            "evolve: running `cargo install opencrabs --force`"
+            "evolve: running `cargo install stemcell --force`"
         );
         let output = tokio::process::Command::new("cargo")
-            .args(["install", "opencrabs", "--force"])
+            .args(["install", "stemcell", "--force"])
             .stdin(std::process::Stdio::null())
             .output()
             .await
@@ -675,7 +675,7 @@ impl EvolveTool {
 
         let is_windows = std::env::consts::OS == "windows";
         let ext = if is_windows { "zip" } else { "tar.gz" };
-        let expected_asset = format!("opencrabs-{}-{}.{}", latest_tag, suffix, ext);
+        let expected_asset = format!("stemcell-{}-{}.{}", latest_tag, suffix, ext);
 
         let assets = release["assets"].as_array();
         let download_url = assets
@@ -691,7 +691,7 @@ impl EvolveTool {
             })
             .or_else(|| {
                 // Fallback: try legacy naming without version tag
-                let legacy_asset = format!("opencrabs-{}.{}", suffix, ext);
+                let legacy_asset = format!("stemcell-{}.{}", suffix, ext);
                 assets.and_then(|arr| {
                     arr.iter().find_map(|a| {
                         let name = a["name"].as_str()?;
@@ -729,7 +729,7 @@ impl EvolveTool {
             cb(
                 sid,
                 ProgressEvent::IntermediateText {
-                    text: format!("Downloading opencrabs v{}...", latest_version),
+                    text: format!("Downloading stemcell v{}...", latest_version),
                     reasoning: None,
                 },
             );
@@ -1005,11 +1005,11 @@ impl EvolveTool {
         //
         // We use systemd-run --on-active=N, which creates a transient timer
         // unit tracked by PID 1, outside our service cgroup.  This means the
-        // timer survives even after `systemctl restart opencrabs*.service`
+        // timer survives even after `systemctl restart stemcell*.service`
         // kills the current process.
         //
         // Only units matching the glob pattern are restarted, so adding a
-        // new profile (e.g. opencrabs-staging.service) picks it up
+        // new profile (e.g. stemcell-staging.service) picks it up
         // automatically with no code change.
         //
         // Pre-flight: count units that match the glob. If zero match,
@@ -1019,7 +1019,7 @@ impl EvolveTool {
         // mismatch instead of missing restart). Skip the spawn and
         // tell the user honestly.
         //
-        // OpenCrabs is commonly installed as a user-level systemd service
+        // StemCell is commonly installed as a user-level systemd service
         // (`systemctl --user`), so if system-level units return 0 we
         // fall through and check user-level units too.
         let mut restart_status = RestartStatus::NotSystemd;
@@ -1028,7 +1028,7 @@ impl EvolveTool {
             let mut unit_count = count_matching_systemd_units(SYSTEMD_UNIT_PATTERN, false);
             if unit_count == Some(0) {
                 // No system-level units matched — try user-level.
-                // OpenCrabs's `install_systemd_service()` writes to
+                // StemCell's `install_systemd_service()` writes to
                 // ~/.config/systemd/user/ and uses `systemctl --user`.
                 let user_count = count_matching_systemd_units(SYSTEMD_UNIT_PATTERN, true);
                 match user_count {
@@ -1083,7 +1083,7 @@ impl EvolveTool {
                         );
                     }
                     let pid = std::process::id();
-                    let unit_name = format!("opencrabs-evolve-{pid}");
+                    let unit_name = format!("stemcell-evolve-{pid}");
                     // Failure to spawn systemd-run is the most user-visible
                     // regression mode: the binary on disk is updated, the
                     // agent says "Evolved!", but the daemon keeps running
@@ -1110,7 +1110,7 @@ impl EvolveTool {
                                 error = %e,
                                 session_id = %sid,
                                 "evolve: failed to spawn systemd-run — daemon will NOT auto-restart, \
-                                 manual `systemctl restart opencrabs*.service` (or `systemctl --user restart` \
+                                 manual `systemctl restart stemcell*.service` (or `systemctl --user restart` \
                                  for user services) is required to load the new binary"
                             );
                             restart_status = RestartStatus::SpawnFailed(e.to_string());
@@ -1150,7 +1150,7 @@ enum RestartStatus {
     /// signal — e.g. cargo-install / TUI launch paths handle that.
     NotSystemd,
     /// `systemctl list-units` matched zero units. systemd is present
-    /// but nothing in the unit registry corresponds to opencrabs;
+    /// but nothing in the unit registry corresponds to stemcell;
     /// scheduling a restart would be a no-op so we don't.
     NoUnitsMatched,
     /// systemd-run was spawned successfully — restart fires in 3s.

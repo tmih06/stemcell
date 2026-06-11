@@ -1,6 +1,6 @@
 //! Dynamic Tool System
 //!
-//! Runtime-defined tools loaded from `~/.opencrabs/tools.toml`.
+//! Runtime-defined tools loaded from `~/.stemcell/tools.toml`.
 //! These appear in the agent's tool list alongside compiled tools
 //! and can be added/removed/reloaded without restarting.
 

@@ -817,7 +817,7 @@ pub(super) fn render_emoji_picker(f: &mut Frame, app: &App, input_area: Rect) {
 
 /// Render the single-line status bar below the input box.
 ///
-/// Layout:  provider / model  ·  [policy]          ⠙ OpenCrabs is thinking... (3s)
+/// Layout:  provider / model  ·  [policy]          ⠙ StemCell is thinking... (3s)
 pub(super) fn render_status_bar(f: &mut Frame, app: &App, area: Rect) {
     if area.height == 0 || area.width == 0 {
         return;

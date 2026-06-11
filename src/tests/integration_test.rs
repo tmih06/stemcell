@@ -4,7 +4,7 @@
 
 use anyhow::Result;
 use async_trait::async_trait;
-use opencrabs::{
+use stemcell::{
     config::Config,
     db::Database,
     llm::{
@@ -44,7 +44,7 @@ impl Provider for MockProvider {
     async fn complete(
         &self,
         _request: LLMRequest,
-    ) -> opencrabs::llm::provider::error::Result<LLMResponse> {
+    ) -> stemcell::llm::provider::error::Result<LLMResponse> {
         let mut idx = self.current.lock().unwrap();
         let response_text = self
             .responses
@@ -70,8 +70,8 @@ impl Provider for MockProvider {
     async fn stream(
         &self,
         _request: LLMRequest,
-    ) -> opencrabs::llm::provider::error::Result<ProviderStream> {
-        Err(opencrabs::llm::provider::error::ProviderError::StreamingNotSupported)
+    ) -> stemcell::llm::provider::error::Result<ProviderStream> {
+        Err(stemcell::llm::provider::error::ProviderError::StreamingNotSupported)
     }
 
     fn name(&self) -> &str {
@@ -260,7 +260,7 @@ async fn test_end_to_end_session_management() -> Result<()> {
 
     // Test listing sessions
     let sessions = session_service
-        .list_sessions(opencrabs::db::repository::SessionListOptions {
+        .list_sessions(stemcell::db::repository::SessionListOptions {
             include_archived: false,
             limit: Some(10),
             offset: 0,
@@ -411,7 +411,7 @@ async fn test_config_loading() -> Result<()> {
 
     // Verify defaults
     assert_eq!(config.logging.level, "info");
-    assert!(config.database.path.ends_with("opencrabs.db"));
+    assert!(config.database.path.ends_with("stemcell.db"));
 
     // Verify providers structure exists
     assert!(config.providers.anthropic.is_some() || config.providers.anthropic.is_none());

@@ -104,7 +104,7 @@ impl SlashCommandTool {
         lines.push(String::new());
         lines.push("Provider Health:".to_string());
         let health_state: crate::config::health::HealthState =
-            std::fs::read_to_string(crate::config::opencrabs_home().join("provider_health.json"))
+            std::fs::read_to_string(crate::config::stemcell_home().join("provider_health.json"))
                 .ok()
                 .and_then(|s| serde_json::from_str(&s).ok())
                 .unwrap_or_default();
@@ -122,7 +122,7 @@ impl SlashCommandTool {
         }
 
         // Last known good config
-        let has_good = crate::config::opencrabs_home()
+        let has_good = crate::config::stemcell_home()
             .join("config.last_good.toml")
             .exists();
         lines.push(format!(
@@ -145,7 +145,7 @@ impl Tool for SlashCommandTool {
     }
 
     fn description(&self) -> &str {
-        "Execute any OpenCrabs slash command. Built-in: /help, /models (view/switch), \
+        "Execute any StemCell slash command. Built-in: /help, /models (view/switch), \
          /usage (session stats), /doctor (health check), /sessions (list), \
          /approve (get/set policy), /cd (change dir), /compact, /rebuild. \
          Also executes user-defined commands from commands.toml. /models with \

@@ -121,12 +121,12 @@ impl OnboardingWizard {
 /// First-time detection: no config file AND no API keys in environment.
 /// Once config.toml is written (by onboarding or manually), this returns false forever.
 /// If any API key env var is set, the user has already configured auth — skip onboarding.
-/// To re-run the wizard, use `opencrabs onboard`, `--onboard` flag, or `/onboard`.
+/// To re-run the wizard, use `stemcell onboard`, `--onboard` flag, or `/onboard`.
 pub fn is_first_time() -> bool {
     tracing::debug!("[is_first_time] checking if first time setup needed...");
 
     // Check if config exists
-    let config_path = crate::config::opencrabs_home().join("config.toml");
+    let config_path = crate::config::stemcell_home().join("config.toml");
     if !config_path.exists() {
         tracing::debug!("[is_first_time] no config found, need onboarding");
         return true;

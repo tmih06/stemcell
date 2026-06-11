@@ -261,7 +261,7 @@ pub fn all_known_providers_with_status(providers: &ProviderConfigs) -> Vec<(Stri
 /// Path hint shown to users when they tap an unconfigured provider in a
 /// channel `/models` picker — tells them where to add the API key.
 pub fn keys_toml_path_hint() -> String {
-    let dir = crate::config::profile::base_opencrabs_dir();
+    let dir = crate::config::profile::base_stemcell_dir();
     let collapsed = crate::utils::string::tilde_home(&dir.display().to_string());
     format!("{collapsed}/keys.toml")
 }

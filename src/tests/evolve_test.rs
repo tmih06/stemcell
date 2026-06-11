@@ -59,8 +59,8 @@ fn asset_name_format() {
     let tag = "v0.2.67";
     let suffix = "macos-arm64";
     let ext = "tar.gz";
-    let expected = format!("opencrabs-{}-{}.{}", tag, suffix, ext);
-    assert_eq!(expected, "opencrabs-v0.2.67-macos-arm64.tar.gz");
+    let expected = format!("stemcell-{}-{}.{}", tag, suffix, ext);
+    assert_eq!(expected, "stemcell-v0.2.67-macos-arm64.tar.gz");
 }
 
 #[test]
@@ -68,8 +68,8 @@ fn asset_name_windows() {
     let tag = "v0.2.67";
     let suffix = "windows-amd64";
     let ext = "zip";
-    let expected = format!("opencrabs-{}-{}.{}", tag, suffix, ext);
-    assert_eq!(expected, "opencrabs-v0.2.67-windows-amd64.zip");
+    let expected = format!("stemcell-{}-{}.{}", tag, suffix, ext);
+    assert_eq!(expected, "stemcell-v0.2.67-windows-amd64.zip");
 }
 
 #[test]
@@ -77,22 +77,22 @@ fn legacy_asset_name_fallback() {
     // Legacy naming without version tag
     let suffix = "linux-amd64";
     let ext = "tar.gz";
-    let legacy = format!("opencrabs-{}.{}", suffix, ext);
-    assert_eq!(legacy, "opencrabs-linux-amd64.tar.gz");
+    let legacy = format!("stemcell-{}.{}", suffix, ext);
+    assert_eq!(legacy, "stemcell-linux-amd64.tar.gz");
 }
 
-// ─── Binary extraction: always "opencrabs" (single binary) ──────────────────
+// ─── Binary extraction: always "stemcell" (single binary) ──────────────────
 
 #[test]
-fn binary_name_is_always_opencrabs() {
-    // The evolve tool always extracts "opencrabs" (or "opencrabs.exe" on Windows)
+fn binary_name_is_always_stemcell() {
+    // The evolve tool always extracts "stemcell" (or "stemcell.exe" on Windows)
     let is_windows = std::env::consts::OS == "windows";
     let binary_name = if is_windows {
-        "opencrabs.exe"
+        "stemcell.exe"
     } else {
-        "opencrabs"
+        "stemcell"
     };
-    assert!(binary_name.starts_with("opencrabs"));
+    assert!(binary_name.starts_with("stemcell"));
 }
 
 // ─── Platform suffix coverage ───────────────────────────────────────────────
@@ -145,9 +145,9 @@ fn install_method_descriptions_are_distinct() {
 fn binary_name_is_platform_correct() {
     let name = binary_name();
     if std::env::consts::OS == "windows" {
-        assert_eq!(name, "opencrabs.exe");
+        assert_eq!(name, "stemcell.exe");
     } else {
-        assert_eq!(name, "opencrabs");
+        assert_eq!(name, "stemcell");
     }
 }
 
@@ -174,7 +174,7 @@ fn has_platform_asset_finds_matching_asset() {
     } else {
         "tar.gz"
     };
-    let asset = format!("opencrabs-v0.2.68-{}.{}", suffix, ext);
+    let asset = format!("stemcell-v0.2.68-{}.{}", suffix, ext);
     let release = fake_release(&[&asset]);
     assert!(has_platform_asset(&release, "v0.2.68"));
 }
@@ -187,7 +187,7 @@ fn has_platform_asset_empty_assets() {
 
 #[test]
 fn has_platform_asset_wrong_platform() {
-    let release = fake_release(&["opencrabs-v0.2.68-fakeos-fakearch.tar.gz"]);
+    let release = fake_release(&["stemcell-v0.2.68-fakeos-fakearch.tar.gz"]);
     assert!(!has_platform_asset(&release, "v0.2.68"));
 }
 
@@ -205,7 +205,7 @@ fn has_platform_asset_legacy_naming() {
     } else {
         "tar.gz"
     };
-    let legacy = format!("opencrabs-{}.{}", suffix, ext);
+    let legacy = format!("stemcell-{}.{}", suffix, ext);
     let release = fake_release(&[&legacy]);
     assert!(has_platform_asset(&release, "v0.2.68"));
 }
@@ -219,7 +219,7 @@ fn has_platform_asset_wrong_tag_no_match() {
         "tar.gz"
     };
     // Asset is for v0.2.67 but we ask for v0.2.68
-    let asset = format!("opencrabs-v0.2.67-{}.{}", suffix, ext);
+    let asset = format!("stemcell-v0.2.67-{}.{}", suffix, ext);
     let release = fake_release(&[&asset]);
     assert!(!has_platform_asset(&release, "v0.2.68"));
 }
@@ -232,11 +232,11 @@ fn has_platform_asset_multiple_assets_finds_correct() {
     } else {
         "tar.gz"
     };
-    let correct = format!("opencrabs-v0.2.68-{}.{}", suffix, ext);
+    let correct = format!("stemcell-v0.2.68-{}.{}", suffix, ext);
     let release = fake_release(&[
-        "opencrabs-v0.2.68-fakeos-fakearch.tar.gz",
+        "stemcell-v0.2.68-fakeos-fakearch.tar.gz",
         &correct,
-        "opencrabs-v0.2.68-otheros-otherarch.zip",
+        "stemcell-v0.2.68-otheros-otherarch.zip",
     ]);
     assert!(has_platform_asset(&release, "v0.2.68"));
 }

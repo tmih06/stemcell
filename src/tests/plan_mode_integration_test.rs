@@ -6,11 +6,11 @@
 //! - Multiple concurrent plans
 //! - Database and JSON synchronization
 
-use opencrabs::db::models::Session;
-use opencrabs::db::repository::session::SessionRepository;
-use opencrabs::db::Database;
-use opencrabs::services::{PlanService, ServiceContext};
-use opencrabs::tui::plan::{PlanDocument, PlanStatus, PlanTask, TaskDep, TaskStatus, TaskType};
+use stemcell::db::models::Session;
+use stemcell::db::repository::session::SessionRepository;
+use stemcell::db::Database;
+use stemcell::services::{PlanService, ServiceContext};
+use stemcell::tui::plan::{PlanDocument, PlanStatus, PlanTask, TaskDep, TaskStatus, TaskType};
 use tempfile::TempDir;
 use uuid::Uuid;
 

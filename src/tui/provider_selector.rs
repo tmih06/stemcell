@@ -447,8 +447,8 @@ impl ProviderSelectorState {
                     .and_then(|p| p.api_key.as_ref())
                     .is_some_and(|k| !k.is_empty()),
                 "codex" => {
-                    // Check for OAuth tokens at ~/.opencrabs/auth/codex.json
-                    let token_path = crate::config::opencrabs_home()
+                    // Check for OAuth tokens at ~/.stemcell/auth/codex.json
+                    let token_path = crate::config::stemcell_home()
                         .join("auth")
                         .join("codex.json");
                     token_path.exists()
@@ -497,7 +497,7 @@ impl ProviderSelectorState {
                     // OAuth providers — check for token file, not API key
                     let id = PROVIDERS[self.selected_provider].id;
                     if id == "codex" {
-                        let token_path = crate::config::opencrabs_home()
+                        let token_path = crate::config::stemcell_home()
                             .join("auth")
                             .join("codex.json");
                         token_path.exists()

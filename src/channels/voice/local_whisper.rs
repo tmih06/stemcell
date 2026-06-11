@@ -62,7 +62,7 @@ pub fn find_local_model(id: &str) -> Option<&'static LocalModelPreset> {
 /// Directory where local models are stored.
 pub fn models_dir() -> PathBuf {
     let base = dirs::data_local_dir().unwrap_or_else(|| PathBuf::from("."));
-    let dir = base.join("opencrabs").join("models").join("whisper");
+    let dir = base.join("stemcell").join("models").join("whisper");
     std::fs::create_dir_all(&dir).ok();
     dir
 }

@@ -7,9 +7,9 @@ use crate::brain::agent::service::detect_text_repetition;
 #[test]
 fn detects_obvious_loop() {
     // Simulates MiniMax repeating the same tweet summary (block > 200 bytes)
-    let block = "Tweet 1 (main post): https://x.com/opencrabs/status/2032245500150226963 \
+    let block = "Tweet 1 (main post): https://x.com/stemcell/status/2032245500150226963 \
                  Tweet 2 (fixes): WhatsApp QR width fixed on Windows, assets consolidated \
-                 Tweet 3 (links): https://github.com/adolfousier/opencrabs/releases/tag/v0.2.75 ";
+                 Tweet 3 (links): https://github.com/adolfousier/stemcell/releases/tag/v0.2.75 ";
     assert!(block.len() > 200, "block must exceed min_match");
     let window = format!("{}{}", block, block);
     assert!(detect_text_repetition(&window, 200));
@@ -20,7 +20,7 @@ fn no_false_positive_on_unique_text() {
     let window = "This is a completely unique response that does not repeat. \
                   It contains different information in every sentence. \
                   The weather is sunny today. Rust is a great language. \
-                  OpenCrabs is an AI agent. Tests are important for quality. \
+                  StemCell is an AI agent. Tests are important for quality. \
                   This paragraph covers many topics without repetition. \
                   Each line brings new content to the table. \
                   No two sentences share the same meaning or structure. \
@@ -55,10 +55,10 @@ fn detects_realistic_minimax_loop() {
     // Real-world pattern: MiniMax repeating release notes
     let repeated = "The release v0.2.75 has been successfully posted to X/Twitter! \
                     Here's what went out:\n\n\
-                    **Tweet 1** (main post): https://x.com/opencrabs/status/2032245500150226963\n\n\
+                    **Tweet 1** (main post): https://x.com/stemcell/status/2032245500150226963\n\n\
                     **Tweet 2** (fixes): Fixes & Updates WhatsApp QR width fixed on Windows \
                     Assets consolidated into src/ Post-evolve shows version diff\n\n\
-                    **Tweet 3** (links): https://github.com/adolfousier/opencrabs/releases/tag/v0.2.75\n\n";
+                    **Tweet 3** (links): https://github.com/adolfousier/stemcell/releases/tag/v0.2.75\n\n";
     let window = format!("{}{}", repeated, repeated);
     assert!(detect_text_repetition(&window, 200));
 }

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# OpenCrabs Build Script
+# StemCell Build Script
 #
 # Usage:
 #   ./build.sh                    # Build with default features (full)
@@ -28,7 +28,7 @@ BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 usage() {
-    echo -e "${BLUE}OpenCrabs Build Script${NC}"
+    echo -e "${BLUE}StemCell Build Script${NC}"
     echo ""
     echo "Usage:"
     echo "  $0                    Build with default features (full)"
@@ -173,9 +173,9 @@ build() {
     echo -e "${GREEN}✓ Build complete!${NC}"
     
     if [[ -n "$release" ]]; then
-        echo -e "Binary: ${BLUE}./target/release/opencrabs${NC}"
+        echo -e "Binary: ${BLUE}./target/release/stemcell${NC}"
     else
-        echo -e "Binary: ${BLUE}./target/debug/opencrabs${NC}"
+        echo -e "Binary: ${BLUE}./target/debug/stemcell${NC}"
     fi
 }
 

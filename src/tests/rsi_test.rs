@@ -860,8 +860,8 @@ mod self_improve_tool {
         assert!(result.output.contains("applied"));
         assert!(result.output.contains("Add retry logic"));
 
-        // Verify rsi/improvements.md was written to ~/.opencrabs/
-        let home = crate::config::opencrabs_home();
+        // Verify rsi/improvements.md was written to ~/.stemcell/
+        let home = crate::config::stemcell_home();
         let improvements =
             std::fs::read_to_string(home.join("rsi").join("improvements.md")).unwrap();
         assert!(improvements.contains("Add retry logic"));
@@ -979,8 +979,8 @@ mod self_improve_tool {
         assert!(result.output.contains("applied"));
         assert!(result.output.contains("SOUL.md"));
 
-        // Verify content was appended to SOUL.md in ~/.opencrabs/
-        let home = crate::config::opencrabs_home();
+        // Verify content was appended to SOUL.md in ~/.stemcell/
+        let home = crate::config::stemcell_home();
         let soul = std::fs::read_to_string(home.join("SOUL.md")).unwrap();
         assert!(soul.contains("Conciseness"));
 
@@ -1059,7 +1059,7 @@ mod self_improve_tool {
             .unwrap();
         assert!(result.success);
         // Rationale defaults to "(none)"
-        let home = crate::config::opencrabs_home();
+        let home = crate::config::stemcell_home();
         let improvements =
             std::fs::read_to_string(home.join("rsi").join("improvements.md")).unwrap();
         assert!(improvements.contains("(none)"));
@@ -1519,7 +1519,7 @@ mod hash_opportunities {
 // 'Reinforcing Repeat Violations'. The prompt must instruct the RSI agent to
 // document repeat violations via evidence appends (date/session) and explicitly
 // forbid bumping inline counters in SOUL.md. The SQLite feedback ledger
-// (~/.opencrabs/feedback.db) is the canonical source of truth, not decorative
+// (~/.stemcell/feedback.db) is the canonical source of truth, not decorative
 // counters in brain files.
 #[cfg(test)]
 mod rsi_prompt_text {

@@ -1,6 +1,6 @@
 # Testing Guide
 
-Comprehensive test coverage for OpenCrabs. All tests run with:
+Comprehensive test coverage for StemCell. All tests run with:
 
 ```bash
 cargo test --all-features
@@ -29,7 +29,7 @@ cargo test --all-features
 | **Brain Tools — Bash** | 21 | `src/brain/tools/bash.rs` |
 | **Brain Tools — Plan Security** | 20 | `src/brain/tools/plan_tool.rs` |
 | **Brain Tools — Exa Search** | 18 | `src/brain/tools/exa_search.rs` |
-| **Brain Tools — Write File** | 17 | `src/brain/tools/write_opencrabs_file.rs` |
+| **Brain Tools — Write File** | 17 | `src/brain/tools/write_stemcell_file.rs` |
 | **Brain Tools — A2A Send** | 16 | `src/brain/tools/a2a_send.rs` |
 | **Brain Tools — Load Brain File** | 15 | `src/brain/tools/load_brain_file.rs` |
 | **Brain Tools — Brave Search** | 12 | `src/brain/tools/brave_search.rs` |
@@ -225,7 +225,7 @@ cargo test --all-features
 | **Hashline Edit** | 51 | `src/tests/hashline_test.rs` (28 integration tests) + inline unit tests in `hash.rs` (9) and `types.rs` (14) — hash computation, HashRef parsing, edit operations (replace/append/prepend), hash mismatch detection, overlap detection, batch edits, prefix stripping, read_file hashline mode |
 | Tests — Auto-Title (channel prefix preservation) | 9 | `src/tests/auto_title_test.rs` |
 | Tests — Self-Improve Failure Log Guard | 3 | `src/tests/self_improve_failure_log_guard_test.rs` |
-| **Total** | **2,883** | +20 tests since v0.3.25: hashline avalanche fix, auto-title prefix preservation, tool error output guard, RSI failure log guard, write_opencrabs_file path validator. |
+| **Total** | **2,883** | +20 tests since v0.3.25: hashline avalanche fix, auto-title prefix preservation, tool error output guard, RSI failure log guard, write_stemcell_file path validator. |
 
 ---
 
@@ -282,10 +282,10 @@ Profile tests live in `src/tests/profile_test.rs` and cover multi-instance isola
 
 ```bash
 # Run profile tests only
-cargo test --all-features -p opencrabs -- profile_test
+cargo test --all-features -p stemcell -- profile_test
 ```
 
-**Note:** All filesystem-touching tests acquire a global `fs_lock()` mutex to prevent concurrent write corruption of `~/.opencrabs/profiles.toml`. The mutex uses `unwrap_or_else(|p| p.into_inner())` to recover from poison (a prior test panic won't cascade-fail every subsequent test). In-memory tests run in parallel without the lock. The `test_set_and_get_active_profile` test accounts for `OnceLock` semantics (can only be set once per process).
+**Note:** All filesystem-touching tests acquire a global `fs_lock()` mutex to prevent concurrent write corruption of `~/.stemcell/profiles.toml`. The mutex uses `unwrap_or_else(|p| p.into_inner())` to recover from poison (a prior test panic won't cascade-fail every subsequent test). In-memory tests run in parallel without the lock. The `test_set_and_get_active_profile` test accounts for `OnceLock` semantics (can only be set once per process).
 
 ---
 

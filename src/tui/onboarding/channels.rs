@@ -382,7 +382,7 @@ impl OnboardingWizard {
                 KeyCode::Char('r') | KeyCode::Char('R') => {
                     if !self.whatsapp_connecting {
                         // Delete session.db to force fresh QR pairing
-                        let wa_dir = crate::config::opencrabs_home().join("whatsapp");
+                        let wa_dir = crate::config::stemcell_home().join("whatsapp");
                         let _ = std::fs::remove_file(wa_dir.join("session.db"));
                         let _ = std::fs::remove_file(wa_dir.join("session.db-wal"));
                         let _ = std::fs::remove_file(wa_dir.join("session.db-shm"));

@@ -17,7 +17,7 @@ pub fn list() -> Vec<McInboxItem> {
 }
 
 /// Same as [`list`] but takes an explicit store — used by tests so
-/// they can point at a tmpdir without touching `~/.opencrabs/`.
+/// they can point at a tmpdir without touching `~/.stemcell/`.
 pub fn list_with_store(store: &ProposalsStore) -> Vec<McInboxItem> {
     let mut items: Vec<McInboxItem> = store
         .list_tool_proposals()

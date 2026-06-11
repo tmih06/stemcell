@@ -877,9 +877,9 @@ impl App {
         self.cursor_position = word_start;
     }
 
-    /// History file path: ~/.opencrabs/history.txt
+    /// History file path: ~/.stemcell/history.txt
     fn history_path() -> Option<std::path::PathBuf> {
-        Some(crate::config::opencrabs_home().join("history.txt"))
+        Some(crate::config::stemcell_home().join("history.txt"))
     }
 
     /// Load input history from disk (one entry per line, most recent last)

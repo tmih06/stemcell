@@ -567,10 +567,10 @@ mod local_stt_tests {
     }
 
     #[test]
-    fn models_dir_is_inside_opencrabs() {
+    fn models_dir_is_inside_stemcell() {
         let dir = models_dir();
         let dir_str = dir.to_string_lossy();
-        assert!(dir_str.contains("opencrabs"));
+        assert!(dir_str.contains("stemcell"));
         assert!(dir_str.contains("whisper"));
     }
 

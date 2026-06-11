@@ -2512,7 +2512,7 @@ impl App {
                     // ChannelManager (re)starts the single agent bot.
                     #[cfg(feature = "whatsapp")]
                     {
-                        let wa_dir = crate::config::opencrabs_home().join("whatsapp");
+                        let wa_dir = crate::config::stemcell_home().join("whatsapp");
                         let _ = std::fs::remove_file(wa_dir.join("session.db"));
                         let _ = std::fs::remove_file(wa_dir.join("session.db-wal"));
                         let _ = std::fs::remove_file(wa_dir.join("session.db-shm"));
@@ -2565,7 +2565,7 @@ impl App {
                                 Ok(Err(e)) => {
                                     // Broadcast channel closed — agent crashed or failed to start
                                     let msg = format!(
-                                        "WhatsApp agent stopped unexpectedly: {}. Check logs at ~/.opencrabs/logs/",
+                                        "WhatsApp agent stopped unexpectedly: {}. Check logs at ~/.stemcell/logs/",
                                         e
                                     );
                                     tracing::error!("{}", msg);
@@ -3401,7 +3401,7 @@ impl App {
 
 /// Download WhisperCrabs binary if not cached, return the path to the binary.
 pub(crate) async fn ensure_whispercrabs() -> Result<PathBuf> {
-    let bin_dir = crate::config::opencrabs_home().join("bin");
+    let bin_dir = crate::config::stemcell_home().join("bin");
     std::fs::create_dir_all(&bin_dir)?;
 
     let binary_name = if cfg!(target_os = "windows") {
@@ -3429,7 +3429,7 @@ pub(crate) async fn ensure_whispercrabs() -> Result<PathBuf> {
     let release_url = "https://api.github.com/repos/adolfousier/whispercrabs/releases/latest";
     let release: serde_json::Value = client
         .get(release_url)
-        .header("User-Agent", "opencrabs")
+        .header("User-Agent", "stemcell")
         .send()
         .await?
         .json()
@@ -3453,7 +3453,7 @@ pub(crate) async fn ensure_whispercrabs() -> Result<PathBuf> {
     // Download the archive
     let bytes = client
         .get(download_url)
-        .header("User-Agent", "opencrabs")
+        .header("User-Agent", "stemcell")
         .send()
         .await?
         .bytes()

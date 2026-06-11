@@ -116,8 +116,8 @@ impl RetryConfig {
 ///
 /// # Example
 /// ```no_run
-/// use opencrabs::brain::provider::retry::{retry_with_backoff, RetryConfig};
-/// use opencrabs::brain::provider::ProviderError;
+/// use stemcell::brain::provider::retry::{retry_with_backoff, RetryConfig};
+/// use stemcell::brain::provider::ProviderError;
 ///
 /// async fn example() {
 ///     async fn make_api_call() -> Result<String, ProviderError> {

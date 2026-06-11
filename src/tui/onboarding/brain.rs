@@ -46,7 +46,7 @@ impl OnboardingWizard {
             }
             KeyCode::Enter => {
                 if self.brain_field == BrainField::AboutAgent {
-                    if self.about_me.is_empty() && self.about_opencrabs.is_empty() {
+                    if self.about_me.is_empty() && self.about_stemcell.is_empty() {
                         // Nothing to work with — skip straight to Complete
                         self.step = OnboardingStep::Complete;
                         return WizardAction::Complete;
@@ -101,7 +101,7 @@ impl OnboardingWizard {
     fn active_brain_field(&self) -> &str {
         match self.brain_field {
             BrainField::AboutMe => &self.about_me,
-            BrainField::AboutAgent => &self.about_opencrabs,
+            BrainField::AboutAgent => &self.about_stemcell,
         }
     }
 
@@ -109,7 +109,7 @@ impl OnboardingWizard {
     fn active_brain_field_mut(&mut self) -> &mut String {
         match self.brain_field {
             BrainField::AboutMe => &mut self.about_me,
-            BrainField::AboutAgent => &mut self.about_opencrabs,
+            BrainField::AboutAgent => &mut self.about_stemcell,
         }
     }
 
@@ -132,7 +132,7 @@ impl OnboardingWizard {
     /// Whether brain inputs have been modified since loading from file
     fn brain_inputs_changed(&self) -> bool {
         self.about_me != self.original_about_me
-            || self.about_opencrabs != self.original_about_opencrabs
+            || self.about_stemcell != self.original_about_stemcell
     }
 
     /// Truncate file content to first N chars for preview in the wizard
@@ -152,7 +152,7 @@ impl OnboardingWizard {
     /// Called right before generation kicks off.
     pub fn normalize_brain_inputs(&mut self) {
         self.formatted_about_me = auto_format_markdown(&self.about_me, "About Me");
-        self.formatted_about_agent = auto_format_markdown(&self.about_opencrabs, "About The Agent");
+        self.formatted_about_agent = auto_format_markdown(&self.about_stemcell, "About The Agent");
     }
 
     /// Build the prompt sent to the AI to generate personalized brain files.
@@ -188,7 +188,7 @@ The user dumped two blocks of info. One about themselves (name, role, links, pro
 {about_me}
 
 === ABOUT THE AGENT ===
-{about_opencrabs}
+{about_stemcell}
 
 === TODAY'S DATE ===
 {date}
@@ -239,12 +239,12 @@ CRITICAL OUTPUT RULES:
             } else {
                 self.about_me.as_str()
             },
-            about_opencrabs = if !self.formatted_about_agent.is_empty() {
+            about_stemcell = if !self.formatted_about_agent.is_empty() {
                 self.formatted_about_agent.as_str()
-            } else if self.about_opencrabs.is_empty() {
+            } else if self.about_stemcell.is_empty() {
                 "Not provided"
             } else {
-                self.about_opencrabs.as_str()
+                self.about_stemcell.as_str()
             },
             date = today,
             soul = soul_template,

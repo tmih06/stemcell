@@ -89,7 +89,7 @@ pub fn find_piper_voice(id: &str) -> Option<&'static PiperVoice> {
 /// Directory where Piper venv and voice models are stored.
 pub fn piper_dir() -> PathBuf {
     let base = dirs::data_local_dir().unwrap_or_else(|| PathBuf::from("."));
-    let dir = base.join("opencrabs").join("models").join("piper");
+    let dir = base.join("stemcell").join("models").join("piper");
     std::fs::create_dir_all(&dir).ok();
     dir
 }
@@ -584,7 +584,7 @@ pub(crate) fn encode_ogg_opus(samples: &[i16], sample_rate: u32) -> Result<Vec<u
     ogg.write_page(&[&head], 0, OggPageFlag::BOS);
 
     // Page 2: OpusTags header
-    let vendor = b"opencrabs";
+    let vendor = b"stemcell";
     let mut tags = Vec::new();
     tags.extend_from_slice(b"OpusTags");
     tags.extend_from_slice(&(vendor.len() as u32).to_le_bytes());
@@ -746,7 +746,7 @@ pub async fn preview_voice(voice_id: &str) -> Result<()> {
     };
 
     // Write WAV to temp file and play
-    let tmp = std::env::temp_dir().join(format!("opencrabs_preview_{voice_id}.wav"));
+    let tmp = std::env::temp_dir().join(format!("stemcell_preview_{voice_id}.wav"));
     std::fs::write(&tmp, &wav_bytes)?;
 
     let player = if cfg!(target_os = "macos") {

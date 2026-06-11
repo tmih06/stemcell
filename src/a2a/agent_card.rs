@@ -1,12 +1,12 @@
 //! Agent Card generation for `.well-known/agent.json`.
 //!
-//! Builds an `AgentCard` from the running OpenCrabs configuration,
+//! Builds an `AgentCard` from the running StemCell configuration,
 //! exposing available skills and capabilities to other A2A agents.
 
 use crate::a2a::types::*;
 use crate::brain::tools::registry::ToolRegistry;
 
-/// Build the Agent Card for this OpenCrabs instance.
+/// Build the Agent Card for this StemCell instance.
 ///
 /// Skills are generated dynamically based on available tools in the registry.
 pub fn build_agent_card(host: &str, port: u16, tool_registry: Option<&ToolRegistry>) -> AgentCard {
@@ -73,14 +73,14 @@ pub fn build_agent_card(host: &str, port: u16, tool_registry: Option<&ToolRegist
     });
 
     AgentCard {
-        name: format!("OpenCrabs Bee (v{})", crate::VERSION),
+        name: format!("StemCell Bee (v{})", crate::VERSION),
         description: Some(
             "High-performance AI orchestration agent with A2A protocol support. \
              Part of the Bee Colony multi-agent system."
                 .to_string(),
         ),
         version: Some(crate::VERSION.to_string()),
-        documentation_url: Some("https://github.com/adolfousier/opencrabs".to_string()),
+        documentation_url: Some("https://github.com/tmih06/stemcell".to_string()),
         icon_url: None,
         supported_interfaces: vec![SupportedInterface {
             url: format!("{}/a2a/v1", base_url),
@@ -88,8 +88,8 @@ pub fn build_agent_card(host: &str, port: u16, tool_registry: Option<&ToolRegist
             protocol_version: Some("1.0".to_string()),
         }],
         provider: Some(AgentProvider {
-            organization: "OpenCrabs Contributors".to_string(),
-            url: Some("https://github.com/adolfousier/opencrabs".to_string()),
+            organization: "StemCell Contributors".to_string(),
+            url: Some("https://github.com/tmih06/stemcell".to_string()),
         }),
         capabilities: Some(AgentCapabilities {
             streaming: true,
@@ -109,7 +109,7 @@ mod tests {
     #[test]
     fn test_build_agent_card_default() {
         let card = build_agent_card("127.0.0.1", 18790, None);
-        assert!(card.name.contains("OpenCrabs"));
+        assert!(card.name.contains("StemCell"));
         assert_eq!(card.skills.len(), 3);
         assert_eq!(
             card.supported_interfaces[0].url,

@@ -1,7 +1,7 @@
 //! Tool Manage — meta-tool for runtime tool management.
 //!
 //! Allows the agent to list, add, remove, enable, disable, and reload
-//! dynamic tools defined in `~/.opencrabs/tools.toml`.
+//! dynamic tools defined in `~/.stemcell/tools.toml`.
 
 use super::ToolRegistry;
 use super::dynamic::{DynamicToolDef, DynamicToolLoader, ExecutorType, ParamDef};

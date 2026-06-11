@@ -1205,7 +1205,7 @@ async fn handle_message(
 
     // Build the human-readable display text (used for DB persistence + TUI).
     // Owner DMs show bare text; multi-user/group conversations get a
-    // `Sender: text` prefix so OpenCrabs sessions stay readable.
+    // `Sender: text` prefix so StemCell sessions stay readable.
     let display_text = if is_owner && is_dm {
         content.clone()
     } else {
@@ -1671,8 +1671,8 @@ async fn handle_message(
                         "slack".into(),
                         channel_id.clone(),
                         Some(channel_name.clone()),
-                        "bot:opencrabs".to_string(),
-                        "OpenCrabs".to_string(),
+                        "bot:stemcell".to_string(),
+                        "StemCell".to_string(),
                         text_only.clone(),
                         "text".into(),
                         None,
@@ -1786,8 +1786,8 @@ async fn handle_message(
                     "slack".into(),
                     channel_id.clone(),
                     Some(channel_name.clone()),
-                    "bot:opencrabs".to_string(),
-                    "OpenCrabs".to_string(),
+                    "bot:stemcell".to_string(),
+                    "StemCell".to_string(),
                     text_only.clone(),
                     "text".into(),
                     None,

@@ -40,7 +40,7 @@ Write it down. Make it real.
 
 Ask which LLM they want to use — this is the brain powering your responses:
 
-- **Already configured** — check `~/.opencrabs/config.toml` for an `enabled = true` provider
+- **Already configured** — check `~/.stemcell/config.toml` for an `enabled = true` provider
 - **Anthropic Claude** — `[providers.anthropic]` + `api_key` in `keys.toml`
 - **OpenAI** — `[providers.openai]` + `api_key` in `keys.toml`
 - **OpenRouter** — `[providers.openrouter]` + `api_key` (400+ models, one key)

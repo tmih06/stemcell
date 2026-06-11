@@ -188,7 +188,7 @@ fn find_case_insensitive(haystack: &str, needle: &str) -> Option<usize> {
 
 /// Recursively replace the user's home directory path with `~` in all strings.
 ///
-/// Transforms `/Users/adolfousierstudio/srv/rs/opencrabs` → `~/srv/rs/opencrabs`
+/// Transforms `/Users/adolfousierstudio/srv/rs/stemcell` → `~/srv/rs/stemcell`
 /// This makes tool call displays much cleaner in the TUI and channels.
 fn shrink_home_paths(value: &Value) -> Value {
     // Cross-platform home directory detection:
@@ -1055,9 +1055,9 @@ mod tests {
     #[test]
     fn shrinks_home_path_in_string() {
         let home = std::env::var("HOME").unwrap_or_else(|_| "/Users/testuser".to_string());
-        let input = json!({"path": format!("{}/srv/rs/opencrabs", home)});
+        let input = json!({"path": format!("{}/srv/rs/stemcell", home)});
         let out = redact_tool_input(&input);
-        assert_eq!(out["path"], "~/srv/rs/opencrabs");
+        assert_eq!(out["path"], "~/srv/rs/stemcell");
     }
 
     #[cfg(unix)]
@@ -1066,12 +1066,12 @@ mod tests {
         let home = std::env::var("HOME").unwrap_or_else(|_| "/Users/testuser".to_string());
         let input = json!({
             "config": {
-                "dir": format!("{}/.opencrabs", home),
+                "dir": format!("{}/.stemcell", home),
                 "name": "test"
             }
         });
         let out = redact_tool_input(&input);
-        assert_eq!(out["config"]["dir"], "~/.opencrabs");
+        assert_eq!(out["config"]["dir"], "~/.stemcell");
         assert_eq!(out["config"]["name"], "test");
     }
 
@@ -1089,13 +1089,13 @@ mod tests {
     #[test]
     fn shrinks_home_path_in_bash_command() {
         let home = std::env::var("HOME").unwrap_or_else(|_| "/Users/testuser".to_string());
-        let input = json!({"command": format!("cat {}/.opencrabs/config.toml", home)});
+        let input = json!({"command": format!("cat {}/.stemcell/config.toml", home)});
         let out = redact_tool_input(&input);
         assert!(
             out["command"]
                 .as_str()
                 .unwrap()
-                .contains("~/.opencrabs/config.toml")
+                .contains("~/.stemcell/config.toml")
         );
     }
 

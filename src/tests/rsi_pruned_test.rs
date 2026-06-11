@@ -1,5 +1,5 @@
 //! Tests for the pruned-sections sidecar at
-//! `~/.opencrabs/rsi/pruned.toml`.
+//! `~/.stemcell/rsi/pruned.toml`.
 //!
 //! Originally lived as an inline `#[cfg(test)] mod tests` block in
 //! `src/brain/rsi_pruned.rs`; moved here per project policy that every

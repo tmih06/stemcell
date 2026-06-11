@@ -24,7 +24,7 @@ fn test_core_brain_contains_preamble() {
     let dir = TempDir::new().unwrap();
     let brain = loader(&dir).build_core_brain(None, None, None);
     assert!(
-        brain.contains("You are OpenCrabs"),
+        brain.contains("You are StemCell"),
         "preamble must always be present"
     );
 }
@@ -60,7 +60,7 @@ fn test_user_md_is_injected_in_core() {
 fn test_identity_md_not_injected_in_core_brain() {
     let dir = TempDir::new().unwrap();
     let brain = loader(&dir).build_core_brain(None, None, None);
-    assert!(!brain.contains("I am OpenCrabs the crab."),);
+    assert!(!brain.contains("I am StemCell the crab."),);
 }
 
 #[test]
@@ -171,7 +171,7 @@ fn test_memory_index_absent_when_no_contextual_files_exist() {
 // ── brain directory path is exposed ──────────────────────────────────────────
 
 /// Regression guard: when TOOLS.md was always-on it carried the literal
-/// `~/.opencrabs/` path inside its body, anchoring the agent to where brain
+/// `~/.stemcell/` path inside its body, anchoring the agent to where brain
 /// files live. After 2026-05-03 (eb58c63f) TOOLS.md became contextual and that
 /// anchor disappeared, leaving the agent grep'ing the codebase to find paths.
 /// The index header MUST now expose the brain dir path explicitly.

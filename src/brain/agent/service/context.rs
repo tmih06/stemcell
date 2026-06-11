@@ -196,7 +196,7 @@ impl AgentService {
 
         const CODE_MD_SUMMARY: &str =
 "## CODE.md — Coding Standards (SUMMARY)
-**Full file: ~/.opencrabs/CODE.md — use `load_brain_file(\"CODE.md\")` to read it before writing ANY code.**
+**Full file: ~/.stemcell/CODE.md — use `load_brain_file(\"CODE.md\")` to read it before writing ANY code.**
 If you are NOT doing code tasks, ignore this section entirely.
 
 Best practices:
@@ -213,7 +213,7 @@ Best practices:
 - Git diff before commit — match the request exactly, no more, no less.
 
 **CRITICAL: Before handling ANY code task, fetch full CODE.md:**
-Use the `load_brain_file` tool with name=\"CODE.md\" — reads from ~/.opencrabs/CODE.md.
+Use the `load_brain_file` tool with name=\"CODE.md\" — reads from ~/.stemcell/CODE.md.
 The summary above is NOT sufficient for implementation work.
 ";
 
@@ -223,11 +223,11 @@ The summary above is NOT sufficient for implementation work.
             ("TOOLS.md", "tool notes"),
         ];
 
-        let opencrabs_home = crate::config::opencrabs_home();
+        let stemcell_home = crate::config::stemcell_home();
         let mut result = String::new();
 
         for (filename, label) in full_files {
-            let path: PathBuf = opencrabs_home.join(filename);
+            let path: PathBuf = stemcell_home.join(filename);
             if let Ok(content) = std::fs::read_to_string(&path) {
                 let trimmed = content.trim();
                 if !trimmed.is_empty() {
@@ -512,7 +512,7 @@ The summary above is NOT sufficient for implementation work.
         }
 
         // Index the updated memory file in the background so memory_search picks it up.
-        let memory_path = crate::config::opencrabs_home()
+        let memory_path = crate::config::stemcell_home()
             .join("memory")
             .join(format!("{}.md", chrono::Local::now().format("%Y-%m-%d")));
         tokio::spawn(async move {
@@ -634,14 +634,14 @@ The summary above is NOT sufficient for implementation work.
         lines.join("\n")
     }
 
-    /// Save a compaction summary to a daily memory log at `~/.opencrabs/memory/YYYY-MM-DD.md`.
+    /// Save a compaction summary to a daily memory log at `~/.stemcell/memory/YYYY-MM-DD.md`.
     ///
     /// Multiple compactions per day append to the same file. The brain workspace's
     /// `MEMORY.md` is left untouched — it stays as user-curated durable memory.
     pub(super) async fn save_compaction_summary_to_memory(
         summary: &str,
     ) -> std::result::Result<(), String> {
-        let memory_dir = crate::config::opencrabs_home().join("memory");
+        let memory_dir = crate::config::stemcell_home().join("memory");
 
         std::fs::create_dir_all(&memory_dir)
             .map_err(|e| format!("Failed to create memory directory: {}", e))?;

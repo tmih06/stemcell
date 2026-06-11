@@ -4,7 +4,7 @@
 //! intentionally deleted, so that `sync_templates()` does not re-add
 //! them on the next upstream sync.
 //!
-//! State is persisted to `~/.opencrabs/rsi/pruned.toml`:
+//! State is persisted to `~/.stemcell/rsi/pruned.toml`:
 //! ```toml
 //! schema_version = 2
 //!
@@ -18,7 +18,7 @@
 //! ```
 //!
 //! Hook points:
-//! - `write_opencrabs_file` tool: when cleanup_intent or dedup_intent
+//! - `write_stemcell_file` tool: when cleanup_intent or dedup_intent
 //!   shrinks a protected brain file, diff old vs new to find removed
 //!   sections and record them.
 //! - `sync_templates()`: before appending a new upstream section,
@@ -82,7 +82,7 @@ impl Default for PrunedState {
 }
 
 impl PrunedState {
-    /// Load state from `~/.opencrabs/rsi/pruned.toml`.
+    /// Load state from `~/.stemcell/rsi/pruned.toml`.
     /// Returns default (empty) state if file does not exist or fails to parse.
     pub fn load() -> Self {
         let path = Self::state_path();
@@ -276,7 +276,7 @@ impl PrunedState {
         result
     }
 
-    /// Save state to `~/.opencrabs/rsi/pruned.toml`.
+    /// Save state to `~/.stemcell/rsi/pruned.toml`.
     ///
     /// Always writes `schema_version = SCHEMA_VERSION` at the top.
     /// Older v1 sidecars get auto-upgraded the first time a write happens
@@ -289,7 +289,7 @@ impl PrunedState {
         let mut content = format!(
             "# Pruned brain-file sections.\n\
              # Sections listed here will NOT be re-added by sync_templates().\n\
-             # Edit manually or use `opencrabs pruned clear` to reset.\n\n\
+             # Edit manually or use `stemcell pruned clear` to reset.\n\n\
              schema_version = {SCHEMA_VERSION}\n\n",
         );
 
@@ -343,7 +343,7 @@ impl PrunedState {
     }
 
     fn state_path() -> PathBuf {
-        crate::config::opencrabs_home().join("rsi/pruned.toml")
+        crate::config::stemcell_home().join("rsi/pruned.toml")
     }
 
     /// Check if a given header is pruned for a given file.

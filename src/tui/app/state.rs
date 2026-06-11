@@ -1110,7 +1110,7 @@ impl App {
     pub(crate) fn set_plan_file_for_session(&mut self, session_id: Uuid) {
         let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
         let path = std::path::PathBuf::from(format!(
-            "{}/.opencrabs/agents/session/.opencrabs_plan_{}.json",
+            "{}/.stemcell/agents/session/.stemcell_plan_{}.json",
             home, session_id
         ));
         self.plan_file_path = Some(path);
@@ -1200,18 +1200,18 @@ impl App {
             let event_sender = self.event_sender();
             let token = CancellationToken::new();
             self.cancel_token = Some(token.clone());
-            let evolution_context = std::env::var("OPENCRABS_EVOLVED_FROM")
+            let evolution_context = std::env::var("STEMCELL_EVOLVED_FROM")
                 .ok()
                 .filter(|old| old != crate::VERSION)
                 .map(|old| {
                     // Clear env var so it doesn't fire again
                     // SAFETY: single-threaded at this point in startup
-                    unsafe { std::env::remove_var("OPENCRABS_EVOLVED_FROM") };
+                    unsafe { std::env::remove_var("STEMCELL_EVOLVED_FROM") };
                     format!(
                         " You just evolved from v{old} to v{new}. \
                          Check the CHANGELOG at the repo root for what's new in v{new}. \
                          Compare the brain templates in src/docs/reference/templates/ against \
-                         the user's brain files in ~/.opencrabs/ (TOOLS.md, AGENTS.md, etc.) \
+                         the user's brain files in ~/.stemcell/ (TOOLS.md, AGENTS.md, etc.) \
                          and tell the user what changed. Offer to update their brain files \
                          with the new content. Be specific about what's new.",
                         new = crate::VERSION,
@@ -1284,17 +1284,17 @@ impl App {
         // Load sessions list
         self.load_sessions().await?;
 
-        // Post-evolve fallback: if OPENCRABS_EVOLVED_FROM is still set
+        // Post-evolve fallback: if STEMCELL_EVOLVED_FROM is still set
         // (e.g. /evolve without resume_session_id), handle it here.
         // Normally this is merged into the wake-up message above.
-        if let Ok(old_version) = std::env::var("OPENCRABS_EVOLVED_FROM") {
-            unsafe { std::env::remove_var("OPENCRABS_EVOLVED_FROM") };
+        if let Ok(old_version) = std::env::var("STEMCELL_EVOLVED_FROM") {
+            unsafe { std::env::remove_var("STEMCELL_EVOLVED_FROM") };
             if old_version != crate::VERSION && self.current_session.is_some() {
                 let msg = format!(
                     "[SYSTEM: You just evolved from v{old} to v{new}. \
                      Check the CHANGELOG at the repo root for what's new in v{new}. \
                      Compare the brain templates in src/docs/reference/templates/ against \
-                     the user's brain files in ~/.opencrabs/ (TOOLS.md, AGENTS.md, etc.) \
+                     the user's brain files in ~/.stemcell/ (TOOLS.md, AGENTS.md, etc.) \
                      and tell the user what changed. Offer to update their brain files \
                      with the new content. Be specific about what's new.]",
                     old = old_version,
@@ -1341,7 +1341,7 @@ impl App {
         if crate::config::Config::was_recovered() {
             self.push_system_message(
                 "🔧 Config recovered from last-known-good snapshot. \
-                 Review ~/.opencrabs/config.toml for issues."
+                 Review ~/.stemcell/config.toml for issues."
                     .to_string(),
             );
         }
@@ -2527,7 +2527,7 @@ impl App {
                     self.build_lines.remove(0);
                 }
                 // Build the display content: header + rolling lines
-                let content = format!("🦀 Building OpenCrabs...\n{}", self.build_lines.join("\n"));
+                let content = format!("🦀 Building StemCell...\n{}", self.build_lines.join("\n"));
                 if let Some(idx) = self.build_msg_idx {
                     // Update existing build message in place
                     if let Some(msg) = self.messages.get_mut(idx) {
@@ -3887,7 +3887,7 @@ impl App {
     pub(crate) fn reload_user_commands(&mut self) {
         let command_loader = CommandLoader::from_brain_path(&self.brain_path);
         self.user_commands = command_loader.load();
-        // Skills can also be edited live (~/.opencrabs/skills/<name>/SKILL.md);
+        // Skills can also be edited live (~/.stemcell/skills/<name>/SKILL.md);
         // reload alongside user commands so the autocomplete reflects edits
         // without restart.
         self.skills = crate::brain::skills::load_all_skills();

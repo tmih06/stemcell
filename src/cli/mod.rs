@@ -1,6 +1,6 @@
 //! CLI Module
 //!
-//! Command-line interface for OpenCrabs using Clap v4.
+//! Command-line interface for StemCell using Clap v4.
 
 mod args;
 mod commands;

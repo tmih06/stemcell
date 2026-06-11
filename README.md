@@ -2,10 +2,10 @@
 [![Rust Edition](https://img.shields.io/badge/rust-2024_edition-orange.svg)](https://www.rust-lang.org/)
 [![Ratatui](https://img.shields.io/badge/ratatui-%23000000.svg?style=for-the-badge&logo=rust&logoColor=white)](https://ratatui.rs)
 [![Docker](https://img.shields.io/badge/docker-%23000000.svg?style=for-the-badge&logo=docker&logoColor=white)](https://docker.com)
-[![CI](https://github.com/adolfousier/opencrabs/actions/workflows/ci.yml/badge.svg)](https://github.com/adolfousier/opencrabs/actions/workflows/ci.yml)
-[![GitHub Stars](https://img.shields.io/github/stars/adolfousier/opencrabs?style=social)](https://github.com/adolfousier/opencrabs)
+[![CI](https://github.com/tmih06/stemcell/actions/workflows/ci.yml/badge.svg)](https://github.com/tmih06/stemcell/actions/workflows/ci.yml)
+[![GitHub Stars](https://img.shields.io/github/stars/tmih06/stemcell?style=social)](https://github.com/tmih06/stemcell)
 
-# 🦀 OpenCrabs
+# 🦀 StemCell
 
 **The autonomous, self-improving AI agent. Single Rust binary. Every channel.**
 
@@ -22,25 +22,25 @@
 
 ```
 
-**Author:** [Adolfo Usier](https://github.com/adolfousier)
+**Author:** [tmih06](https://github.com/tmih06)
 
-⭐ Star us on [GitHub](https://github.com/adolfousier/opencrabs) if you like what you see!
+⭐ Star us on [GitHub](https://github.com/tmih06/stemcell) if you like what you see!
 
 ---
 
-## Why OpenCrabs?
+## Why StemCell?
 
-OpenCrabs runs as a **single binary on your terminal** — no server, no gateway, no infrastructure. It makes direct HTTPS calls to LLM providers from your machine. Nothing else leaves your computer.
+StemCell runs as a **single binary on your terminal** — no server, no gateway, no infrastructure. It makes direct HTTPS calls to LLM providers from your machine. Nothing else leaves your computer.
 
-### OpenCrabs vs Node.js Agent Frameworks
+### StemCell vs Node.js Agent Frameworks
 
-| | **OpenCrabs** (Rust) | **Node.js Frameworks** (e.g. Open Claw) |
+| | **StemCell** (Rust) | **Node.js Frameworks** (e.g. Open Claw) |
 |---|---|---|
 | **Binary size** | **26–29 MB** single binary, zero dependencies | **1 GB+** `node_modules` with hundreds of transitive packages |
 | **Runtime** | None — runs natively | Requires Node.js runtime + npm install |
 | **Attack surface** | Zero network listeners. Outbound HTTPS only | Server infrastructure: open ports, auth layers, middleware |
 | **API key security** | Keys on your machine only. `zeroize` clears them from RAM on drop, `[REDACTED]` in all debug output | Keys in env vars or config. GC doesn't guarantee memory clearing. Heap dumps can leak secrets |
-| **Data residency** | 100% local — SQLite DB, embeddings, brain files, all in `~/.opencrabs/` | Server-side storage, potential multi-tenant data, network transit |
+| **Data residency** | 100% local — SQLite DB, embeddings, brain files, all in `~/.stemcell/` | Server-side storage, potential multi-tenant data, network transit |
 | **Supply chain** | Single compiled binary. Rust's type system prevents buffer overflows, use-after-free, data races at compile time | npm ecosystem: typosquatting, dependency confusion, prototype pollution |
 | **Memory safety** | Compile-time guarantees — no GC, no null pointers, no data races | GC-managed, prototype pollution, type coercion bugs |
 | **Concurrency** | tokio async + Rust ownership = zero data races guaranteed | Single-threaded event loop, worker threads share memory unsafely |
@@ -68,7 +68,7 @@ OpenCrabs runs as a **single binary on your terminal** — no server, no gateway
 ## Table of Contents
 
 - [Screenshots](#-screenshots)
-- [Why OpenCrabs?](#why-opencrabs)
+- [Why StemCell?](#why-stemcell)
 - [Core Features](#-core-features)
 - [CLI Commands](#cli)
 - [Supported AI Providers](#-supported-ai-providers)
@@ -120,10 +120,10 @@ https://github.com/user-attachments/assets/7f45c5f8-acdf-48d5-b6a4-0e4811a9ee23
 | **Local LLM Support** | Run with LM Studio, Ollama, or any OpenAI-compatible endpoint — 100% private, zero-cost |
 | **Usage Dashboard** | Per-message token count and cost displayed in header; `/usage` opens an interactive dashboard with daily activity charts, cost breakdowns by project/model/activity, core tool usage stats, and period filtering (Today/Week/Month/All-Time). Sessions are auto-categorized on startup (Development, Bug Fixes, Features, Refactoring, Testing, Documentation, CI/Deploy, etc.). Estimated costs for historical sessions shown as `~$X.XX` |
 | **Context Awareness** | Live context usage indicator showing actual token counts (e.g. `ctx: 45K/200K (23%)`); auto-compaction at 70% with tool overhead budgeting; accurate tiktoken-based counting calibrated against API actuals |
-| **3-Tier Memory** | (1) **Brain MEMORY.md** — user-curated durable memory loaded every turn, (2) **Daily Logs** — auto-compaction summaries at `~/.opencrabs/memory/YYYY-MM-DD.md`, (3) **Hybrid Memory Search** — FTS5 keyword search + vector embeddings combined via Reciprocal Rank Fusion. Three modes: **Local** (embeddinggemma-300M, 768-dim, no API key, works offline), **API** (any OpenAI-compatible `/v1/embeddings` endpoint: OpenAI, Ollama, Jina, etc.), or **FTS5-only** (no embeddings, VPS-friendly, ~0 RAM overhead). Auto-detects VPS environments and disables local embeddings |
+| **3-Tier Memory** | (1) **Brain MEMORY.md** — user-curated durable memory loaded every turn, (2) **Daily Logs** — auto-compaction summaries at `~/.stemcell/memory/YYYY-MM-DD.md`, (3) **Hybrid Memory Search** — FTS5 keyword search + vector embeddings combined via Reciprocal Rank Fusion. Three modes: **Local** (embeddinggemma-300M, 768-dim, no API key, works offline), **API** (any OpenAI-compatible `/v1/embeddings` endpoint: OpenAI, Ollama, Jina, etc.), or **FTS5-only** (no embeddings, VPS-friendly, ~0 RAM overhead). Auto-detects VPS environments and disables local embeddings |
 | **Dynamic Brain System** | System brain assembled from workspace MD files (SOUL, USER, AGENTS, TOOLS, MEMORY) — all editable live between turns |
 | **Multi-Agent Orchestration** | Spawn typed child agents (General, Explore, Plan, Code, Research) for parallel task execution. Five tools: `spawn_agent`, `wait_agent`, `send_input`, `close_agent`, `resume_agent`. Each type gets a role-specific system prompt and filtered tool registry. Configurable subagent provider/model. Children run in isolated sessions with auto-approve — no recursive spawning |
-| **Recursive Self-Improvement** | ⚠️ Experimental. Automatic feedback ledger tracks every tool execution, user correction, and provider error. Three tools: `feedback_record` (log observations), `feedback_analyze` (query patterns), `self_improve` (autonomously apply brain file changes — no human approval). Changes logged to `~/.opencrabs/rsi/improvements.md` with daily archives. Startup digest injects performance summary into system prompt. **Upstream template sync** — automatically detects new releases, fetches updated brain file templates from the repo, diffs against local files, and appends only new sections (never overwrites user customizations). Backups created before every merge. Zero tokens spent when version unchanged. Zero setup — works out of the box via auto-migration |
+| **Recursive Self-Improvement** | ⚠️ Experimental. Automatic feedback ledger tracks every tool execution, user correction, and provider error. Three tools: `feedback_record` (log observations), `feedback_analyze` (query patterns), `self_improve` (autonomously apply brain file changes — no human approval). Changes logged to `~/.stemcell/rsi/improvements.md` with daily archives. Startup digest injects performance summary into system prompt. **Upstream template sync** — automatically detects new releases, fetches updated brain file templates from the repo, diffs against local files, and appends only new sections (never overwrites user customizations). Backups created before every merge. Zero tokens spent when version unchanged. Zero setup — works out of the box via auto-migration |
 
 ### Multimodal Input
 | Feature | Description |
@@ -164,7 +164,7 @@ api_key = "YOUR_GEMINI_KEY"
 
 > **Gotcha:** `[image.vision] api_key = "..."` in `config.toml` is silently ignored — the field carries `#[serde(skip)]` for security. Use `keys.toml` `[image]` section, or `[providers.image.gemini]` in config.toml + the key in keys.toml.
 
-**Diagnostic:** when vision is unavailable for any reason, `is_vision_available` logs the exact cause at INFO level in `~/.opencrabs/logs/opencrabs.YYYY-MM-DD` — search for `target=vision`.
+**Diagnostic:** when vision is unavailable for any reason, `is_vision_available` logs the exact cause at INFO level in `~/.stemcell/logs/stemcell.YYYY-MM-DD` — search for `target=vision`.
 
 ### Messaging Integrations
 | Feature | Description |
@@ -196,7 +196,7 @@ Videos uploaded on any channel (mp4, m4v, mov, webm, mkv, avi, 3gp, flv) auto-ro
 | Feature | Description |
 |---------|-------------|
 | **Cursor Navigation** | Full cursor movement: Left/Right arrows, Ctrl+Left/Right word jump, Home/End, Delete, Backspace at position |
-| **Input History** | Persistent command history (`~/.opencrabs/history.txt`), loaded on startup, capped at 500 entries |
+| **Input History** | Persistent command history (`~/.stemcell/history.txt`), loaded on startup, capped at 500 entries |
 | **Inline Tool Approval** | Claude Code-style `❯ Yes / Always / No` selector with arrow key navigation |
 | **Inline Plan Approval** | Interactive plan review selector (Approve / Reject / Request Changes / View Plan) |
 | **Session Management** | Create, rename, delete sessions with persistent SQLite storage; each session remembers its provider + model — switching sessions auto-restores the provider (no manual `/models` needed); token counts and context % per session. New sessions auto-generate a meaningful title from the first user message (no more "New Chat") |
@@ -218,84 +218,84 @@ Videos uploaded on any channel (mp4, m4v, mov, webm, mkv, avi, 3gp, flv) auto-ro
 | Feature | Description |
 |---------|-------------|
 | **Full Terminal Access** | 30+ built-in tools (file I/O, glob, grep, web search, code execution, image gen/analysis, memory search, cron jobs) plus **any CLI tool on your system** via `bash` — GitHub CLI, Docker, SSH, Python, Node, ffmpeg, curl, and everything else just work |
-| **RTK Token Savings** | Automatic bash output optimization via [RTK](https://github.com/rtk-ai/rtk) integration — enabled by default, zero config. Prepends `rtk` to supported commands (git, cargo, npm, pnpm, yarn, docker, kubectl, grep, find, ls, tree, curl, and 100+ more) to filter noise from command output. Reduces token usage on bash commands by 60-90% without losing critical information. Check savings with `/rtk` command. RTK binary bundled with OpenCrabs releases; for source builds, auto-downloads to `~/.local/bin/rtk` on first use |
+| **RTK Token Savings** | Automatic bash output optimization via [RTK](https://github.com/rtk-ai/rtk) integration — enabled by default, zero config. Prepends `rtk` to supported commands (git, cargo, npm, pnpm, yarn, docker, kubectl, grep, find, ls, tree, curl, and 100+ more) to filter noise from command output. Reduces token usage on bash commands by 60-90% without losing critical information. Check savings with `/rtk` command. RTK binary bundled with StemCell releases; for source builds, auto-downloads to `~/.local/bin/rtk` on first use |
 | **Per-Session Isolation** | Each session is an independent agent with its own provider, model, context, and tool state. Sessions can run tasks in parallel against different providers — ask Claude a question in one session while Kimi works on code in another |
 | **Self-Healing** | Detects and recovers from phantom tool calls, gaslighting preambles, text repetition loops, XML tool call failures, and provider errors. Short-circuits repeated failing bash commands and rejects interactive commands that would hang. Automatic context compaction at 65% (soft) and 90% (hard). Sticky fallback promotion when primary recovers |
 | **Self-Sustaining** | Agent can modify its own source, build, test, and hot-restart via Unix `exec()` |
 | **Self-Improving** | Learns from experience — saves reusable workflows as custom commands, writes lessons learned to memory, updates its own brain files. All local, no data leaves your machine |
-| **Dynamic Tools** | Define custom tools at runtime via `~/.opencrabs/tools.toml` — the agent can call them autonomously like built-in tools. HTTP and shell executors, template parameters (`{{param}}`), enable/disable without restart. The `tool_manage` meta-tool lets the agent create, remove, and reload tools on the fly |
-| **Skills (cross-harness)** | Multi-stage workflow templates in the de-facto `SKILL.md` format used by Claude Code, Anthropic managed agents, and OpenClaw. Drop a `SKILL.md` under `~/.opencrabs/skills/<name>/` and it auto-registers as `/<name>` — no `commands.toml` entry needed. Works in the TUI **and** every connected channel (Telegram, Discord, Slack, WhatsApp). Built-ins ship with the binary (always version-matched); user skills override by file presence. Two built-ins out of the box: `/security-audit` (language-agnostic CVE & static-analysis audit, scores 0-100) and `/cost-estimate` (codebase valuation with AI-assisted ROI). Same `SKILL.md` is portable across harnesses |
+| **Dynamic Tools** | Define custom tools at runtime via `~/.stemcell/tools.toml` — the agent can call them autonomously like built-in tools. HTTP and shell executors, template parameters (`{{param}}`), enable/disable without restart. The `tool_manage` meta-tool lets the agent create, remove, and reload tools on the fly |
+| **Skills (cross-harness)** | Multi-stage workflow templates in the de-facto `SKILL.md` format used by Claude Code, Anthropic managed agents, and OpenClaw. Drop a `SKILL.md` under `~/.stemcell/skills/<name>/` and it auto-registers as `/<name>` — no `commands.toml` entry needed. Works in the TUI **and** every connected channel (Telegram, Discord, Slack, WhatsApp). Built-ins ship with the binary (always version-matched); user skills override by file presence. Two built-ins out of the box: `/security-audit` (language-agnostic CVE & static-analysis audit, scores 0-100) and `/cost-estimate` (codebase valuation with AI-assisted ROI). Same `SKILL.md` is portable across harnesses |
 | **Mission Control** | Full-screen `/mission-control` dialog showing every actionable artifact in one place: pending RSI proposals (inbox cards), recent RSI activity (improvements log feed), and the schedule queue (cron jobs + paused/active state). Apply or reject inbox proposals inline with `a` / `r` — same machinery as the agent's `rsi_proposals` tool, byte-identical install. Tab between panels, j/k to navigate, Enter for the detail popup, Esc to close. Cron paused jobs flag in orange, active in teal — at-a-glance state |
 | **Skills picker** | Full-screen `/skills` dialog with a live filter input — start typing to narrow the list (case-insensitive on name + description), Tab / Shift-Tab cycle the filtered cards (wraps at the edges), Enter runs the selected skill (sends its body as a prompt to the agent), Esc closes. Built-in skills badge orange; user-installed skills badge teal. When the filter narrows to a single match, Enter just fires it — fastest path to launch a skill |
-| **Browser Automation** | Native browser control via CDP (Chrome DevTools Protocol). Auto-detects your default Chromium-based browser (Chrome, Brave, Edge, Arc, Vivaldi, Opera, Chromium) and uses its profile — your logins, cookies, and extensions carry over. 7 browser tools: navigate, click, type, screenshot, eval JS, extract content, wait for elements. Headed or headless mode with display auto-detection. **Note:** Firefox is not supported (no CDP) — if Firefox is your default, OpenCrabs falls back to the first available Chromium browser. Feature-gated under `browser` (included by default) |
-| **Natural Language Commands** | Tell OpenCrabs to create slash commands — it writes them to `commands.toml` autonomously via the `config_manager` tool |
+| **Browser Automation** | Native browser control via CDP (Chrome DevTools Protocol). Auto-detects your default Chromium-based browser (Chrome, Brave, Edge, Arc, Vivaldi, Opera, Chromium) and uses its profile — your logins, cookies, and extensions carry over. 7 browser tools: navigate, click, type, screenshot, eval JS, extract content, wait for elements. Headed or headless mode with display auto-detection. **Note:** Firefox is not supported (no CDP) — if Firefox is your default, StemCell falls back to the first available Chromium browser. Feature-gated under `browser` (included by default) |
+| **Natural Language Commands** | Tell StemCell to create slash commands — it writes them to `commands.toml` autonomously via the `config_manager` tool |
 | **Live Settings** | Agent can read/write `config.toml` at runtime; Settings TUI screen (press `S`) shows current config; approval policy persists across restarts. Default: auto-approve (use `/approve` to change) |
 | **Web Search** | DuckDuckGo (built-in, no key needed) + EXA AI (neural, free via MCP) by default; Brave Search optional (key in `keys.toml`) |
 | **Debug Logging** | `--debug` flag enables file logging; `DEBUG_LOGS_LOCATION` env var for custom log directory |
 | **Agent-to-Agent (A2A)** | HTTP gateway implementing A2A Protocol RC v1.0 — peer-to-peer agent communication via JSON-RPC 2.0. Supports `message/send`, `message/stream` (SSE), `tasks/get`, `tasks/cancel`. Built-in `a2a_send` tool lets the agent proactively call remote A2A agents. Optional Bearer token auth. Includes multi-agent debate (Bee Colony) with confidence-weighted consensus. Task persistence across restarts |
-| **Profiles** | Run multiple isolated instances from the same installation. Each profile gets its own config, keys, memory, sessions, and database. Create with `opencrabs profile create <name>`, switch with `-p <name>`. Migrate config between profiles with `profile migrate`. Export/import for sharing. Token-lock isolation prevents two profiles from using the same bot credential |
+| **Profiles** | Run multiple isolated instances from the same installation. Each profile gets its own config, keys, memory, sessions, and database. Create with `stemcell profile create <name>`, switch with `-p <name>`. Migrate config between profiles with `profile migrate`. Export/import for sharing. Token-lock isolation prevents two profiles from using the same bot credential |
 
 ### CLI
 | Command | Description |
 |---------|-------------|
-| `opencrabs` | Launch interactive TUI (default) |
-| `opencrabs chat` | Launch TUI with optional `--session <id>` to resume, `--onboard` to force wizard |
-| `opencrabs run <prompt>` | Execute a single prompt non-interactively. `--auto-approve` / `--yolo` for unattended. `--format text\|json\|markdown` |
-| `opencrabs agent` | Interactive CLI agent — multi-turn conversation in your terminal, no TUI. `-m <msg>` for single-message mode |
-| `opencrabs status` | System overview: version, provider, channels, database, brain, cron, dynamic tools |
-| `opencrabs doctor` | Full diagnostics: config, provider connectivity, database, brain, channels, CLI tools in PATH |
-| `opencrabs init` | Initialize configuration (`--force` to overwrite) |
-| `opencrabs config` | Show current configuration (`--show-secrets` to reveal keys) |
-| `opencrabs onboard` | Run the onboarding setup wizard |
-| `opencrabs channel list` | List all configured channels with enabled/disabled status |
-| `opencrabs channel doctor` | Run health checks on all enabled channels |
-| `opencrabs memory list` | List brain files and memory entries |
-| `opencrabs memory get <name>` | Show contents of a specific memory or brain file |
-| `opencrabs memory stats` | Memory statistics: file count, total size, entry count |
-| `opencrabs session list` | List all sessions with provider, model, token count (`--all` includes archived) |
-| `opencrabs session get <id>` | Show session details and recent messages |
-| `opencrabs db init` | Initialize database |
-| `opencrabs db stats` | Show database statistics |
-| `opencrabs db clear` | Clear all sessions and messages (`--force` to skip confirmation) |
-| `opencrabs cron add\|list\|remove\|enable\|disable\|test` | Manage scheduled cron jobs |
-| `opencrabs logs status\|view\|clean\|open` | Log management |
-| `opencrabs service install\|start\|stop\|restart\|status\|uninstall` | OS service management (launchd on macOS, systemd on Linux) |
-| `opencrabs daemon` | Run in headless daemon mode — channels only, no TUI |
-| `opencrabs completions <shell>` | Generate shell completions (bash, zsh, fish, powershell) |
-| `opencrabs version` | Print version and exit |
+| `stemcell` | Launch interactive TUI (default) |
+| `stemcell chat` | Launch TUI with optional `--session <id>` to resume, `--onboard` to force wizard |
+| `stemcell run <prompt>` | Execute a single prompt non-interactively. `--auto-approve` / `--yolo` for unattended. `--format text\|json\|markdown` |
+| `stemcell agent` | Interactive CLI agent — multi-turn conversation in your terminal, no TUI. `-m <msg>` for single-message mode |
+| `stemcell status` | System overview: version, provider, channels, database, brain, cron, dynamic tools |
+| `stemcell doctor` | Full diagnostics: config, provider connectivity, database, brain, channels, CLI tools in PATH |
+| `stemcell init` | Initialize configuration (`--force` to overwrite) |
+| `stemcell config` | Show current configuration (`--show-secrets` to reveal keys) |
+| `stemcell onboard` | Run the onboarding setup wizard |
+| `stemcell channel list` | List all configured channels with enabled/disabled status |
+| `stemcell channel doctor` | Run health checks on all enabled channels |
+| `stemcell memory list` | List brain files and memory entries |
+| `stemcell memory get <name>` | Show contents of a specific memory or brain file |
+| `stemcell memory stats` | Memory statistics: file count, total size, entry count |
+| `stemcell session list` | List all sessions with provider, model, token count (`--all` includes archived) |
+| `stemcell session get <id>` | Show session details and recent messages |
+| `stemcell db init` | Initialize database |
+| `stemcell db stats` | Show database statistics |
+| `stemcell db clear` | Clear all sessions and messages (`--force` to skip confirmation) |
+| `stemcell cron add\|list\|remove\|enable\|disable\|test` | Manage scheduled cron jobs |
+| `stemcell logs status\|view\|clean\|open` | Log management |
+| `stemcell service install\|start\|stop\|restart\|status\|uninstall` | OS service management (launchd on macOS, systemd on Linux) |
+| `stemcell daemon` | Run in headless daemon mode — channels only, no TUI |
+| `stemcell completions <shell>` | Generate shell completions (bash, zsh, fish, powershell) |
+| `stemcell version` | Print version and exit |
 
 Global flags: `--debug` (enable file logging), `--config <path>` (custom config file), `--profile <name>` / `-p <name>` (run as a named profile).
 
 ### Profiles — Multi-Instance Crab Agents
 
-Run multiple isolated OpenCrabs instances from the same installation. Each profile gets its own config, brain files, memory, sessions, database, and gateway service.
+Run multiple isolated StemCell instances from the same installation. Each profile gets its own config, brain files, memory, sessions, database, and gateway service.
 
 | Command | Description |
 |---------|-------------|
-| `opencrabs profile create <name>` | Create a new profile with fresh config and brain files |
-| `opencrabs profile list` | List all profiles with last-used timestamps |
-| `opencrabs profile delete <name>` | Delete a profile and all its data |
-| `opencrabs profile export <name> -o profile.tar.gz` | Export a profile as a portable archive |
-| `opencrabs profile import profile.tar.gz` | Import a profile from an archive |
-| `opencrabs profile migrate --from <name> --to <name>` | Copy config and brain files between profiles (no DB or sessions) |
-| `opencrabs -p <name>` | Launch OpenCrabs as the specified profile |
+| `stemcell profile create <name>` | Create a new profile with fresh config and brain files |
+| `stemcell profile list` | List all profiles with last-used timestamps |
+| `stemcell profile delete <name>` | Delete a profile and all its data |
+| `stemcell profile export <name> -o profile.tar.gz` | Export a profile as a portable archive |
+| `stemcell profile import profile.tar.gz` | Import a profile from an archive |
+| `stemcell profile migrate --from <name> --to <name>` | Copy config and brain files between profiles (no DB or sessions) |
+| `stemcell -p <name>` | Launch StemCell as the specified profile |
 
-**Default profile:** `~/.opencrabs/` — works exactly as before. No migration needed. Users who never touch profiles see zero difference.
+**Default profile:** `~/.stemcell/` — works exactly as before. No migration needed. Users who never touch profiles see zero difference.
 
-**TUI footer:** when you launch with `-p <name>` (or `OPENCRABS_PROFILE` set), the bottom status bar adds a `profile: <name>` chip so multi-profile users can tell at a glance which instance a given pane is bound to. Without `-p`, no chip is shown — the agent is using the base `~/.opencrabs/` directory and there is no real profile by that name to label.
+**TUI footer:** when you launch with `-p <name>` (or `STEMCELL_PROFILE` set), the bottom status bar adds a `profile: <name>` chip so multi-profile users can tell at a glance which instance a given pane is bound to. Without `-p`, no chip is shown — the agent is using the base `~/.stemcell/` directory and there is no real profile by that name to label.
 
-**Named profiles** live at `~/.opencrabs/profiles/<name>/` with full isolation:
+**Named profiles** live at `~/.stemcell/profiles/<name>/` with full isolation:
 ```
-~/.opencrabs/
+~/.stemcell/
 ├── config.toml          # default profile
-├── opencrabs.db
+├── stemcell.db
 ├── profiles.toml        # profile registry
 ├── locks/               # token-lock files
 └── profiles/
     ├── hermes/          # named profile
     │   ├── config.toml
     │   ├── keys.toml
-    │   ├── opencrabs.db
+    │   ├── stemcell.db
     │   ├── SOUL.md
     │   └── memory/
     └── scout/
@@ -304,7 +304,7 @@ Run multiple isolated OpenCrabs instances from the same installation. Each profi
 
 **Token-lock isolation:** Two profiles cannot use the same bot credential (Telegram token, Discord token, etc.). On startup, each profile acquires a lock on its channel tokens. If another profile already holds the lock, the channel refuses to start — preventing two instances from fighting over the same bot.
 
-**Profile migration:** Use `opencrabs profile migrate --from default --to hermes` to copy all `.md` brain files, `.toml` config files, and `memory/` entries to a new profile. Sessions and database are not copied — the new profile starts clean. Add `--force` to overwrite existing files in the target profile. After migrating, customize the new profile's `SOUL.md`, `IDENTITY.md`, and `config.toml` to give it a different personality and provider setup.
+**Profile migration:** Use `stemcell profile migrate --from default --to hermes` to copy all `.md` brain files, `.toml` config files, and `memory/` entries to a new profile. Sessions and database are not copied — the new profile starts clean. Add `--force` to overwrite existing files in the target profile. After migrating, customize the new profile's `SOUL.md`, `IDENTITY.md`, and `config.toml` to give it a different personality and provider setup.
 
 ### Daemon & Service
 
@@ -312,22 +312,22 @@ Run profiles as background services:
 
 ```bash
 # Install as system service (macOS launchd / Linux systemd)
-opencrabs -p hermes service install
-opencrabs -p hermes service start
+stemcell -p hermes service install
+stemcell -p hermes service start
 
 # Each profile gets its own service
-# macOS: com.opencrabs.daemon.hermes
-# Linux: opencrabs-hermes.service
+# macOS: com.stemcell.daemon.hermes
+# Linux: stemcell-hermes.service
 
 # Manage independently
-opencrabs -p hermes service status
-opencrabs -p hermes service stop
-opencrabs -p hermes service uninstall
+stemcell -p hermes service status
+stemcell -p hermes service stop
+stemcell -p hermes service uninstall
 ```
 
 Multiple profiles can run as simultaneous daemon services with full isolation.
 
-**Environment variable:** Set `OPENCRABS_PROFILE=hermes` to select a profile without the `-p` flag. Useful for systemd services, cron jobs, and daemon mode.
+**Environment variable:** Set `STEMCELL_PROFILE=hermes` to select a profile without the `-p` flag. Useful for systemd services, cron jobs, and daemon mode.
 
 ---
 
@@ -366,7 +366,7 @@ api_key = "sk-ant-api03-YOUR_KEY"
 
 #### Claude Code CLI 
 
-Use your Claude Code CLI. OpenCrabs spawns the local `claude` CLI for completion.
+Use your Claude Code CLI. StemCell spawns the local `claude` CLI for completion.
 
 **Setup:**
 1. Install [Claude Code CLI](https://github.com/anthropics/claude-code) and authenticate (`claude login`)
@@ -376,7 +376,7 @@ Use your Claude Code CLI. OpenCrabs spawns the local `claude` CLI for completion
 enabled = true
 ```
 
-OpenCrabs handles all tools, memory, and context locally — the CLI is just the LLM backend.
+StemCell handles all tools, memory, and context locally — the CLI is just the LLM backend.
 
 ### OpenAI
 
@@ -390,7 +390,7 @@ api_key = "sk-YOUR_KEY"
 
 ### GitHub Copilot
 
-**Use your GitHub Copilot subscription** — no API charges, no tokens to manage. OpenCrabs authenticates via the same OAuth device flow used by VS Code and other Copilot tools.
+**Use your GitHub Copilot subscription** — no API charges, no tokens to manage. StemCell authenticates via the same OAuth device flow used by VS Code and other Copilot tools.
 
 **Setup** — select GitHub Copilot in the onboarding wizard and press Enter. You'll see a one-time code to enter at [github.com/login/device](https://github.com/login/device). Once authorized, models are fetched from the Copilot API automatically.
 
@@ -486,7 +486,7 @@ Both use the same API key and model names. The endpoint type can be toggled in t
 
 ### OpenCode CLI
 
-Use the [OpenCode](https://github.com/opencode-ai/opencode) CLI as a free LLM backend — no API key or subscription needed. OpenCrabs spawns the local `opencode` binary for completions.
+Use the [OpenCode](https://github.com/opencode-ai/opencode) CLI as a free LLM backend — no API key or subscription needed. StemCell spawns the local `opencode` binary for completions.
 
 **Setup:**
 1. Install [OpenCode CLI](https://github.com/opencode-ai/opencode) (`go install github.com/opencode-ai/opencode@latest` or download from releases)
@@ -503,7 +503,7 @@ Models are fetched live from `opencode models`. Free models like `mimo-v2-pro-fr
 
 ### Codex CLI
 
-Use your **ChatGPT/Codex subscription** — no API key, no API charges. OpenCrabs spawns the local `codex` binary for completions and piggybacks on the auth stored in `~/.codex/auth.json`.
+Use your **ChatGPT/Codex subscription** — no API key, no API charges. StemCell spawns the local `codex` binary for completions and piggybacks on the auth stored in `~/.codex/auth.json`.
 
 **Setup:**
 1. Install [Codex CLI](https://github.com/openai/codex): `npm install -g @openai/codex`
@@ -523,7 +523,7 @@ default_model = "gpt-5.5"   # falls back to gpt-5.4 if 5.5 isn't in your account
 - `gpt-5.3-codex-spark` — research preview for ChatGPT Pro (real-time iteration)
 - `gpt-5.2` — alternative tier for hard debugging
 
-OpenCrabs handles all tools, memory, and context locally; codex is just the LLM backend. The CLI runs `codex exec --json --ephemeral --dangerously-bypass-approvals-and-sandbox` so each turn is a fresh session driven by OpenCrabs' conversation state.
+StemCell handles all tools, memory, and context locally; codex is just the LLM backend. The CLI runs `codex exec --json --ephemeral --dangerously-bypass-approvals-and-sandbox` so each turn is a fresh session driven by StemCell' conversation state.
 
 **Features:** Streaming, tools (codex executes its own shell commands and they're surfaced to the TUI for display), JSONL event protocol
 
@@ -533,7 +533,7 @@ Direct integration with Qwen's API via OAuth device flow — **no API key needed
 
 **Setup:** Select Qwen in `/onboard` or `/models` and follow the browser OAuth flow.
 
-**Multi-account rotation:** Multiply your free quota by authenticating multiple Qwen accounts. When one account hits rate limits, OpenCrabs automatically rotates to the next — only falling to the fallback provider when all accounts are exhausted.
+**Multi-account rotation:** Multiply your free quota by authenticating multiple Qwen accounts. When one account hits rate limits, StemCell automatically rotates to the next — only falling to the fallback provider when all accounts are exhausted.
 
 To enable rotation during setup:
 1. Select Qwen in `/onboard` or `/models`
@@ -562,7 +562,7 @@ With 3 accounts you get **180 req/min** and **3,000 req/day** before fallback ki
 
 ### Qwen Code CLI
 
-Use the [Qwen Code](https://github.com/qwen-code/qwen-code) CLI as a free LLM backend — **1,000 free requests/day** via Qwen OAuth. OpenCrabs spawns the local `qwen` binary for completions.
+Use the [Qwen Code](https://github.com/qwen-code/qwen-code) CLI as a free LLM backend — **1,000 free requests/day** via Qwen OAuth. StemCell spawns the local `qwen` binary for completions.
 
 **Setup:**
 1. Install Qwen Code CLI (`npm install -g @qwen-code/qwen-code` or `brew install qwen-code`)
@@ -580,7 +580,7 @@ default_model = "qwen3-coder-plus"
 
 ### Ollama
 
-Native built-in provider for [Ollama](https://ollama.com/) — no custom config needed. OpenCrabs auto-detects `localhost:11434` and lists your pulled models via `/models`.
+Native built-in provider for [Ollama](https://ollama.com/) — no custom config needed. StemCell auto-detects `localhost:11434` and lists your pulled models via `/models`.
 
 **Setup:**
 1. Install Ollama and pull a model: `ollama pull qwen2.5-coder:7b`
@@ -619,7 +619,7 @@ models = ["qwen2.5-coder-7b-instruct", "llama-3-8B", "mistral-7B-instruct"]
 
 > **Note:** `/chat/completions` is auto-appended to base URLs that don't include it.
 
-> **Local reasoning models (`enable_thinking`):** when a custom provider's `base_url` points at a local host (`localhost`, `127.0.0.1`, `*.local`, or an RFC1918 private IP like `192.168.x.x` / `10.x.x.x` / `172.16.x.x`–`172.31.x.x`), OpenCrabs injects `chat_template_kwargs: {"enable_thinking": true}` into every request. This mirrors `llama-server --jinja --chat-template-kwargs '{"enable_thinking":true}'` — what Unsloth Studio launches with by default — so Qwen3 / Kimi / DeepSeek-R1 templates render `<tool_call>` tags and reasoning blocks correctly, and tool calls actually execute instead of being hallucinated as text. Set `enable_thinking = false` in the provider block to disable (falls back to fast, non-thinking mode). Cloud providers are unaffected.
+> **Local reasoning models (`enable_thinking`):** when a custom provider's `base_url` points at a local host (`localhost`, `127.0.0.1`, `*.local`, or an RFC1918 private IP like `192.168.x.x` / `10.x.x.x` / `172.16.x.x`–`172.31.x.x`), StemCell injects `chat_template_kwargs: {"enable_thinking": true}` into every request. This mirrors `llama-server --jinja --chat-template-kwargs '{"enable_thinking":true}'` — what Unsloth Studio launches with by default — so Qwen3 / Kimi / DeepSeek-R1 templates render `<tool_call>` tags and reasoning blocks correctly, and tool calls actually execute instead of being hallucinated as text. Set `enable_thinking = false` in the provider block to disable (falls back to fast, non-thinking mode). Cloud providers are unaffected.
 >
 > ```toml
 > [providers.custom.lm_studio]
@@ -629,7 +629,7 @@ models = ["qwen2.5-coder-7b-instruct", "llama-3-8B", "mistral-7B-instruct"]
 > enable_thinking = false  # optional — default is true for local providers
 > ```
 
-> **Qwen / Alibaba cache (zero-config):** when a custom provider's `base_url` points at a known Qwen / Alibaba endpoint (`dashscope.aliyuncs.com`, `dashscope-intl.aliyuncs.com`, `aliyun.com`, `dialagram.me`) or the request model name starts with `qwen-`, OpenCrabs auto-injects `cache_control: {"type": "ephemeral"}` markers on the system message, the last message (streaming), and the last tool definition. This unlocks Alibaba's [explicit context cache](https://www.alibabacloud.com/help/en/model-studio/explicit-cache-best-practice) — cache hits bill input tokens at 10% of the standard price (≈90% off), with a 25% surcharge on first creation and a 5-minute TTL auto-renewed on every hit. The detection runs per-request so a provider routing between Qwen and non-Qwen models only marks the Qwen ones. Non-Qwen backends ignore the marker (it's an unknown JSON field), so the only cost on a mismatch is a few wasted bytes per request.
+> **Qwen / Alibaba cache (zero-config):** when a custom provider's `base_url` points at a known Qwen / Alibaba endpoint (`dashscope.aliyuncs.com`, `dashscope-intl.aliyuncs.com`, `aliyun.com`, `dialagram.me`) or the request model name starts with `qwen-`, StemCell auto-injects `cache_control: {"type": "ephemeral"}` markers on the system message, the last message (streaming), and the last tool definition. This unlocks Alibaba's [explicit context cache](https://www.alibabacloud.com/help/en/model-studio/explicit-cache-best-practice) — cache hits bill input tokens at 10% of the standard price (≈90% off), with a 25% surcharge on first creation and a 5-minute TTL auto-renewed on every hit. The detection runs per-request so a provider routing between Qwen and non-Qwen models only marks the Qwen ones. Non-Qwen backends ignore the marker (it's an unknown JSON field), so the only cost on a mismatch is a few wasted bytes per request.
 >
 > ```toml
 > [providers.custom.dashscope]
@@ -659,13 +659,13 @@ The name after `custom.` is a label you choose (e.g. `lm_studio`, `nvidia`, `gro
 
 [Kimi K2.5](https://build.nvidia.com/moonshotai/kimi-k2.5) is a frontier-scale multimodal Mixture-of-Experts (MoE) model available **for free** on the NVIDIA API Catalog — no billing setup or credit card required. It handles complex reasoning and image/video understanding, making it a strong free alternative to paid models like Claude or Gemini for experimentation and agentic workflows.
 
-**Tested and verified** with OpenCrabs Custom provider setup.
+**Tested and verified** with StemCell Custom provider setup.
 
 **Quick start:**
 
 1. Sign up at the [NVIDIA API Catalog](https://build.nvidia.com/) and verify your account
 2. Go to the [Kimi K2.5 model page](https://build.nvidia.com/moonshotai/kimi-k2.5) and click **Get API Key** (or "View Code" to see an auto-generated key)
-3. Configure in OpenCrabs via `/models` or `config.toml`:
+3. Configure in StemCell via `/models` or `config.toml`:
 
 ```toml
 [providers.custom.nvidia]
@@ -712,7 +712,7 @@ MiniMax auto-configures this on first run. Works with any provider — just set 
 
 ## 🖼️ Image Generation & Vision
 
-OpenCrabs supports image generation and vision analysis via Google Gemini by default — independent of the main chat provider, so you can use Claude for chat and Gemini for images. The `generate_image` tool can also be routed at any OpenAI-compatible images endpoint (OpenAI, OpenRouter, Together, etc.) via the per-provider `generation_model` override; see [Picking a different generation model](#picking-a-different-generation-model) below.
+StemCell supports image generation and vision analysis via Google Gemini by default — independent of the main chat provider, so you can use Claude for chat and Gemini for images. The `generate_image` tool can also be routed at any OpenAI-compatible images endpoint (OpenAI, OpenRouter, Together, etc.) via the per-provider `generation_model` override; see [Picking a different generation model](#picking-a-different-generation-model) below.
 
 ### Setup
 
@@ -742,7 +742,7 @@ When enabled, three tools become available to the agent automatically:
 
 | Tool | Description |
 |------|-------------|
-| `generate_image` | Generate an image from a text prompt — saves to `~/.opencrabs/images/` and returns the file path |
+| `generate_image` | Generate an image from a text prompt — saves to `~/.stemcell/images/` and returns the file path |
 | `analyze_image` | Analyze an image file or URL via Gemini vision — works even when your main model doesn't support vision |
 | `analyze_video` | Analyze a video file via Gemini's multimodal video API — inline ≤18 MB, resumable Files API for larger (up to 2 GB / ~1 hour). Requires Gemini config; frame-extraction fallback for non-Gemini providers not yet wired |
 
@@ -775,11 +775,11 @@ The OpenAI backend prefers `response_format=b64_json` and falls back to fetching
 
 ## 🤝 Agent-to-Agent (A2A) Protocol
 
-OpenCrabs includes a built-in A2A gateway — an HTTP server implementing the [A2A Protocol RC v1.0](https://google.github.io/A2A/) for peer-to-peer agent communication. Other A2A-compatible agents can discover OpenCrabs, send it tasks, and get results back — all via standard JSON-RPC 2.0. The agent can also proactively call remote A2A agents using the built-in `a2a_send` tool.
+StemCell includes a built-in A2A gateway — an HTTP server implementing the [A2A Protocol RC v1.0](https://google.github.io/A2A/) for peer-to-peer agent communication. Other A2A-compatible agents can discover StemCell, send it tasks, and get results back — all via standard JSON-RPC 2.0. The agent can also proactively call remote A2A agents using the built-in `a2a_send` tool.
 
 ### Enabling A2A
 
-Add to `~/.opencrabs/config.toml`:
+Add to `~/.stemcell/config.toml`:
 
 ```toml
 [a2a]
@@ -866,7 +866,7 @@ curl -X POST http://127.0.0.1:18790/a2a/v1 \
 
 ### Bee Colony Debate
 
-OpenCrabs supports multi-agent structured debate via the **Bee Colony** protocol — based on [ReConcile (ACL 2024)](https://arxiv.org/abs/2309.13007) confidence-weighted voting. Multiple "bee" agents argue across configurable rounds, each enriched with knowledge context from QMD memory search, then converge on a consensus answer with confidence scores.
+StemCell supports multi-agent structured debate via the **Bee Colony** protocol — based on [ReConcile (ACL 2024)](https://arxiv.org/abs/2309.13007) confidence-weighted voting. Multiple "bee" agents argue across configurable rounds, each enriched with knowledge context from QMD memory search, then converge on a consensus answer with confidence scores.
 
 ### Security & Persistence
 
@@ -882,23 +882,23 @@ OpenCrabs supports multi-agent structured debate via the **Bee Colony** protocol
 
 ### Option 1: Download Binary (just run it)
 
-Grab a pre-built binary from [GitHub Releases](https://github.com/adolfousier/opencrabs/releases) — available for Linux (amd64/arm64), macOS (amd64/arm64), and Windows.
+Grab a pre-built binary from [GitHub Releases](https://github.com/tmih06/stemcell/releases) — available for Linux (amd64/arm64), macOS (amd64/arm64), and Windows.
 
 ```bash
 # Download, extract, run
-tar xzf opencrabs-linux-amd64.tar.gz
-./opencrabs
+tar xzf stemcell-linux-amd64.tar.gz
+./stemcell
 ```
 
 The onboarding wizard handles everything on first run.
 
-> **Terminal permissions required.** OpenCrabs reads/writes brain files, config, and project files. Your terminal app needs filesystem access or the OS will block operations.
+> **Terminal permissions required.** StemCell reads/writes brain files, config, and project files. Your terminal app needs filesystem access or the OS will block operations.
 >
 > | OS | What to do |
 > |---|---|
 > | **macOS** | **System Settings → Privacy & Security → Full Disk Access** → toggle your terminal app ON (Alacritty, iTerm2, Terminal, etc.). If not listed, click "+" and add it from `/Applications/`. Without this, macOS repeatedly prompts "would like to access data from other apps". |
-> | **Windows** | Run your terminal (Windows Terminal, PowerShell, cmd) **as Administrator** on first run, or grant the terminal **write access** to `%USERPROFILE%\.opencrabs\` and your project directories. Windows Defender may also prompt — click "Allow". |
-> | **Linux** | Ensure your user owns `~/.opencrabs/` and project directories. On SELinux/AppArmor systems, the terminal process needs read/write access to those paths. Flatpak/Snap terminals may need `--filesystem=home` or equivalent permission. |
+> | **Windows** | Run your terminal (Windows Terminal, PowerShell, cmd) **as Administrator** on first run, or grant the terminal **write access** to `%USERPROFILE%\.stemcell\` and your project directories. Windows Defender may also prompt — click "Allow". |
+> | **Linux** | Ensure your user owns `~/.stemcell/` and project directories. On SELinux/AppArmor systems, the terminal process needs read/write access to those paths. Flatpak/Snap terminals may need `--filesystem=home` or equivalent permission. |
 
 > **Linux runtime dependencies:** The pre-built binary links against system libraries that may not be installed on minimal/VPS images:
 > ```bash
@@ -924,17 +924,17 @@ The onboarding wizard handles everything on first run.
 > ```
 > Not needed if you use API TTS (OpenAI) or disable TTS entirely.
 
-> **Note:** `/rebuild` works even with pre-built binaries — it auto-clones the source to `~/.opencrabs/source/` on first use, then builds and hot-restarts. For active development or adding custom tools, Option 2 gives you the source tree directly.
+> **Note:** `/rebuild` works even with pre-built binaries — it auto-clones the source to `~/.stemcell/source/` on first use, then builds and hot-restarts. For active development or adding custom tools, Option 2 gives you the source tree directly.
 
 ### Option 2: Install via Cargo
 
 ```bash
-cargo install opencrabs
+cargo install stemcell
 ```
 
 > **Linux (Debian/Ubuntu):** Install system deps first: `sudo apt-get install build-essential pkg-config clang libclang-dev libasound2-dev libssl-dev cmake`
 >
-> **Large build:** The build can use 8GB+ in `/tmp`. If you run out of space: `CARGO_TARGET_DIR=~/.cargo/target cargo install opencrabs`
+> **Large build:** The build can use 8GB+ in `/tmp`. If you run out of space: `CARGO_TARGET_DIR=~/.cargo/target cargo install stemcell`
 
 #### Feature Flags
 
@@ -942,10 +942,10 @@ All features are enabled by default. To customize, use `--no-default-features` a
 
 ```bash
 # Install with only Telegram and Discord
-cargo install opencrabs --no-default-features --features "telegram,discord"
+cargo install stemcell --no-default-features --features "telegram,discord"
 
 # Everything except browser automation
-cargo install opencrabs --no-default-features --features "telegram,whatsapp,discord,slack,trello,local-stt,local-tts"
+cargo install stemcell --no-default-features --features "telegram,whatsapp,discord,slack,trello,local-stt,local-tts"
 ```
 
 | Feature | Crate | Description |
@@ -972,41 +972,41 @@ Required for `/rebuild`, adding custom tools, or modifying the agent.
 - **Linux (Fedora/RHEL):** `sudo dnf install gcc gcc-c++ make pkg-config clang openssl-devel cmake alsa-lib-devel libgomp`
 - **Linux (Arch):** `sudo pacman -S base-devel pkg-config clang openssl cmake alsa-lib gcc-libs`
 
-> **One-liner setup:** `bash <(curl -sL https://raw.githubusercontent.com/adolfousier/opencrabs/main/src/scripts/setup.sh)` — detects your platform, installs all dependencies, and sets up Rust.
+> **One-liner setup:** `bash <(curl -sL https://raw.githubusercontent.com/tmih06/stemcell/main/src/scripts/setup.sh)` — detects your platform, installs all dependencies, and sets up Rust.
 
 ```bash
 # Clone
-git clone https://github.com/adolfousier/opencrabs.git
-cd opencrabs
+git clone https://github.com/tmih06/stemcell.git
+cd stemcell
 
 # Build & run (development)
-cargo run --bin opencrabs
+cargo run --bin stemcell
 
 # Or build release and run directly
 cargo build --release
-./target/release/opencrabs
+./target/release/stemcell
 ```
 
 > **Linux on older CPUs (Sandy Bridge / AVX1-only, no AVX2):** The local STT and embedding engine require at minimum AVX instructions. If your CPU has AVX but not AVX2 (e.g. Intel Sandy Bridge, Ivy Bridge — roughly 2011–2012), you must build with:
 > ```bash
-> RUSTFLAGS="-C target-cpu=native" cargo run --bin opencrabs
+> RUSTFLAGS="-C target-cpu=native" cargo run --bin stemcell
 > # or for release:
 > RUSTFLAGS="-C target-cpu=native" cargo build --release
 > ```
 > CPUs without AVX at all are not supported for local STT/embedding. API STT mode works on any machine.
 
-> **API Keys:** OpenCrabs uses `keys.toml` instead of `.env` for API keys. The onboarding wizard will help you set it up, or edit `~/.opencrabs/keys.toml` directly. Keys are handled at runtime — no OS environment pollution.
+> **API Keys:** StemCell uses `keys.toml` instead of `.env` for API keys. The onboarding wizard will help you set it up, or edit `~/.stemcell/keys.toml` directly. Keys are handled at runtime — no OS environment pollution.
 
 > **First run?** The onboarding wizard will guide you through provider setup, workspace, and more. See [Onboarding Wizard](#-onboarding-wizard).
 
 ### Option 3: Docker (sandboxed)
 
-Run OpenCrabs in an isolated container. Build takes ~15min (Rust release + LTO).
+Run StemCell in an isolated container. Build takes ~15min (Rust release + LTO).
 
 ```bash
 # Clone and run
-git clone https://github.com/adolfousier/opencrabs.git
-cd opencrabs
+git clone https://github.com/tmih06/stemcell.git
+cd stemcell
 
 # Run with docker compose
 # API keys are mounted from keys.toml on host
@@ -1019,69 +1019,69 @@ Config, workspace, and memory DB persist in a Docker volume across restarts. API
 
 ```bash
 # Interactive TUI (default)
-cargo run --bin opencrabs
-cargo run --bin opencrabs -- chat
+cargo run --bin stemcell
+cargo run --bin stemcell -- chat
 
 # Onboarding wizard (first-time setup)
-cargo run --bin opencrabs -- onboard
-cargo run --bin opencrabs -- chat --onboard   # Force wizard before chat
+cargo run --bin stemcell -- onboard
+cargo run --bin stemcell -- chat --onboard   # Force wizard before chat
 
 # Non-interactive single command
-cargo run --bin opencrabs -- run "What is Rust?"
-cargo run --bin opencrabs -- run --format json "List 3 programming languages"
-cargo run --bin opencrabs -- run --format markdown "Explain async/await"
+cargo run --bin stemcell -- run "What is Rust?"
+cargo run --bin stemcell -- run --format json "List 3 programming languages"
+cargo run --bin stemcell -- run --format markdown "Explain async/await"
 
 # Configuration
-cargo run --bin opencrabs -- init              # Initialize config
-cargo run --bin opencrabs -- config            # Show current config
-cargo run --bin opencrabs -- config --show-secrets
+cargo run --bin stemcell -- init              # Initialize config
+cargo run --bin stemcell -- config            # Show current config
+cargo run --bin stemcell -- config --show-secrets
 
 # Database
-cargo run --bin opencrabs -- db init           # Initialize database
-cargo run --bin opencrabs -- db stats          # Show statistics
+cargo run --bin stemcell -- db init           # Initialize database
+cargo run --bin stemcell -- db stats          # Show statistics
 
 # Profiles — multi-instance isolation
-cargo run --bin opencrabs -- profile create hermes
-cargo run --bin opencrabs -- profile list
-cargo run --bin opencrabs -- -p hermes         # Run as "hermes" profile
-cargo run --bin opencrabs -- profile migrate --from default --to hermes
-cargo run --bin opencrabs -- profile export hermes -o backup.tar.gz
-cargo run --bin opencrabs -- profile import backup.tar.gz
-cargo run --bin opencrabs -- profile delete hermes
+cargo run --bin stemcell -- profile create hermes
+cargo run --bin stemcell -- profile list
+cargo run --bin stemcell -- -p hermes         # Run as "hermes" profile
+cargo run --bin stemcell -- profile migrate --from default --to hermes
+cargo run --bin stemcell -- profile export hermes -o backup.tar.gz
+cargo run --bin stemcell -- profile import backup.tar.gz
+cargo run --bin stemcell -- profile delete hermes
 
 # Debug mode
-cargo run --bin opencrabs -- -d                # Enable file logging
-cargo run --bin opencrabs -- -d run "analyze this"
+cargo run --bin stemcell -- -d                # Enable file logging
+cargo run --bin stemcell -- -d run "analyze this"
 
 # Log management
-cargo run --bin opencrabs -- logs status
-cargo run --bin opencrabs -- logs view
-cargo run --bin opencrabs -- logs view -l 100
-cargo run --bin opencrabs -- logs clean
-cargo run --bin opencrabs -- logs clean -d 3
+cargo run --bin stemcell -- logs status
+cargo run --bin stemcell -- logs view
+cargo run --bin stemcell -- logs view -l 100
+cargo run --bin stemcell -- logs clean
+cargo run --bin stemcell -- logs clean -d 3
 ```
 
-> **Tip:** After `cargo build --release`, run the binary directly: `./target/release/opencrabs`
+> **Tip:** After `cargo build --release`, run the binary directly: `./target/release/stemcell`
 
 ### Make It Available System-Wide
 
-After downloading or building, add the binary to your PATH so you can run `opencrabs` from any project directory:
+After downloading or building, add the binary to your PATH so you can run `stemcell` from any project directory:
 
 ```bash
 # Symlink (recommended — always points to latest build)
-sudo ln -sf $(pwd)/target/release/opencrabs /usr/local/bin/opencrabs
+sudo ln -sf $(pwd)/target/release/stemcell /usr/local/bin/stemcell
 
 # Or copy
-sudo cp target/release/opencrabs /usr/local/bin/
+sudo cp target/release/stemcell /usr/local/bin/
 ```
 
 Then from any project:
 ```bash
 cd /your/project
-opencrabs
+stemcell
 ```
 
-Use `/cd` inside OpenCrabs to switch working directory at runtime without restarting.
+Use `/cd` inside StemCell to switch working directory at runtime without restarting.
 
 **Output formats** for non-interactive mode: `text` (default), `json`, `markdown`
 
@@ -1093,9 +1093,9 @@ First-time users are guided through a 9-step setup wizard that appears automatic
 
 ### How It Triggers
 
-- **Automatic:** When no `~/.opencrabs/config.toml` exists and no API keys are set in `keys.toml`
-- **CLI:** `cargo run --bin opencrabs -- onboard` (or `opencrabs onboard` after install)
-- **Chat flag:** `cargo run --bin opencrabs -- chat --onboard` to force the wizard before chat
+- **Automatic:** When no `~/.stemcell/config.toml` exists and no API keys are set in `keys.toml`
+- **CLI:** `cargo run --bin stemcell -- onboard` (or `stemcell onboard` after install)
+- **Chat flag:** `cargo run --bin stemcell -- chat --onboard` to force the wizard before chat
 - **Slash command:** Type `/onboard` in the chat to re-run it anytime
 
 ### The 9 Steps
@@ -1104,7 +1104,7 @@ First-time users are guided through a 9-step setup wizard that appears automatic
 |------|-------|-------------|
 | 1 | **Mode Selection** | QuickStart (sensible defaults) vs Advanced (full control) |
 | 2 | **Model & Auth** | Pick provider (Anthropic, OpenAI, GitHub Copilot, Gemini, OpenRouter, Minimax, z.ai GLM, Custom) → enter token/key or sign in via OAuth → model list fetched live from API → select model. Auto-detects existing keys from `keys.toml` |
-| 3 | **Workspace** | Set brain workspace path (default `~/.opencrabs/`) → seed template files (SOUL.md, etc.) |
+| 3 | **Workspace** | Set brain workspace path (default `~/.stemcell/`) → seed template files (SOUL.md, etc.) |
 | 4 | **Gateway** | Configure HTTP API gateway: port, bind address, auth mode |
 | 5 | **Channels** | Toggle messaging integrations (Telegram, Discord, WhatsApp, Slack, Trello) |
 | 6 | **Voice** | Choose STT provider: **Off** / **Groq Whisper (API)** / **OpenAI-compatible (API)** / **Voicebox (self-hosted)** / **Local whisper.cpp**. Choose TTS provider: **Off** / **OpenAI TTS (API)** / **OpenAI-compatible (API)** / **Voicebox (self-hosted)** / **Local Piper**. Local modes show model/voice picker with download progress. OpenAI-compatible modes take base URL + model + key. Voicebox modes take base URL + profile_id (TTS) / base URL (STT) |
@@ -1119,11 +1119,11 @@ Type `/onboard:voice` or `/onboard:image` in chat to jump directly to Voice or I
 
 #### Local STT (whisper.cpp)
 
-Run speech-to-text on-device with zero API cost. Included by default in prebuilt binaries and `cargo install opencrabs`.
+Run speech-to-text on-device with zero API cost. Included by default in prebuilt binaries and `cargo install stemcell`.
 
-In `/onboard:voice`, select **Local** mode, pick a model size, and press Enter to download. Models are stored at `~/.local/share/opencrabs/models/whisper/`.
+In `/onboard:voice`, select **Local** mode, pick a model size, and press Enter to download. Models are stored at `~/.local/share/stemcell/models/whisper/`.
 
-> **Building from source:** Local STT requires CMake and a C++ compiler (for whisper.cpp). To exclude it: `cargo install opencrabs --no-default-features --features telegram,whatsapp,discord,slack,trello`
+> **Building from source:** Local STT requires CMake and a C++ compiler (for whisper.cpp). To exclude it: `cargo install stemcell --no-default-features --features telegram,whatsapp,discord,slack,trello`
 
 | Model | Size | Quality |
 |-------|------|---------|
@@ -1183,7 +1183,7 @@ All TTS outputs are normalised to OGG/Opus via `ensure_opus` before reaching a c
 
 #### Brain Personalization (Step 10)
 
-Two input fields: **About You** (who you are) and **Your OpenCrabs** (how the agent should behave). The LLM uses these plus the 6 workspace template files to generate personalized brain files.
+Two input fields: **About You** (who you are) and **Your StemCell** (how the agent should behave). The LLM uses these plus the 6 workspace template files to generate personalized brain files.
 
 - **First run:** Empty fields, static templates as reference → LLM generates → writes to workspace
 - **Re-run:** Fields pre-populated with truncated preview of existing `USER.md` / `IDENTITY.md` → edit to regenerate or `Esc` to skip
@@ -1205,10 +1205,10 @@ Two input fields: **About You** (who you are) and **Your OpenCrabs** (how the ag
 
 ## 🔑 API Keys (keys.toml)
 
-OpenCrabs uses `~/.opencrabs/keys.toml` as the **single source** for all API keys, bot tokens, and search keys. No `.env` files, no OS keyring, no environment variables for secrets. Keys are loaded at runtime and can be modified by the agent.
+StemCell uses `~/.stemcell/keys.toml` as the **single source** for all API keys, bot tokens, and search keys. No `.env` files, no OS keyring, no environment variables for secrets. Keys are loaded at runtime and can be modified by the agent.
 
 ```toml
-# ~/.opencrabs/keys.toml — chmod 600!
+# ~/.stemcell/keys.toml — chmod 600!
 
 # LLM Providers
 [providers.anthropic]
@@ -1314,13 +1314,13 @@ fallback_chain = ["openai_compatible", "openai", "local"]
 
 > **Trello note:** `app_token` holds the Trello **API Key** and `token` holds the Trello **API Token** — `app_token` is the app-level credential and `token` is the user-level credential. Board IDs are configured via `board_ids` in `config.toml`.
 
-> **Security:** Always `chmod 600 ~/.opencrabs/keys.toml` and add `keys.toml` to `.gitignore`.
+> **Security:** Always `chmod 600 ~/.stemcell/keys.toml` and add `keys.toml` to `.gitignore`.
 
 ---
 
 ## 🔐 Secret Sanitization & Redaction
 
-OpenCrabs automatically redacts API keys and tokens from all outputs — conversation history, TUI display, tool approval dialogs, and external channel delivery (Telegram, Discord, Slack, WhatsApp). Secrets never persist to the database or appear in logs.
+StemCell automatically redacts API keys and tokens from all outputs — conversation history, TUI display, tool approval dialogs, and external channel delivery (Telegram, Discord, Slack, WhatsApp). Secrets never persist to the database or appear in logs.
 
 ### How It Works
 
@@ -1337,7 +1337,7 @@ OpenCrabs automatically redacts API keys and tokens from all outputs — convers
 
 ### Supported Key Prefixes
 
-OpenCrabs recognizes **60+ industry-standard key formats** out of the box:
+StemCell recognizes **60+ industry-standard key formats** out of the box:
 
 | Category | Prefixes |
 |----------|----------|
@@ -1352,7 +1352,7 @@ OpenCrabs recognizes **60+ industry-standard key formats** out of the box:
 
 ### Best Practice: Use Prefixed Keys
 
-If you build or configure services that integrate with OpenCrabs, **use industry-standard key prefixes**. Keys with recognized prefixes are caught by the first and most reliable layer of redaction. Opaque tokens (random alphanumeric strings with no prefix) rely on the generic safety-net regex, which has a higher threshold to avoid false positives.
+If you build or configure services that integrate with StemCell, **use industry-standard key prefixes**. Keys with recognized prefixes are caught by the first and most reliable layer of redaction. Opaque tokens (random alphanumeric strings with no prefix) rely on the generic safety-net regex, which has a higher threshold to avoid false positives.
 
 **Good:** `av_38947394723jkhkrjkhdfiuo83489732` — prefix makes it instantly recognizable
 **Risky:** `38947394723jkhkrjkhdfiuo83489732` — still caught by mixed-alnum regex, but no prefix context in `[REDACTED]` output
@@ -1368,7 +1368,7 @@ API keys stored via `SecretString` are:
 
 ## 🏠 Using Local LLMs
 
-OpenCrabs works with any OpenAI-compatible local inference server for **100% private, zero-cost** operation.
+StemCell works with any OpenAI-compatible local inference server for **100% private, zero-cost** operation.
 
 ### LM Studio (Recommended)
 
@@ -1456,55 +1456,55 @@ See [LM_STUDIO_GUIDE.md](src/docs/guides/LM_STUDIO_GUIDE.md) for detailed setup 
 
 ### Configuration Files
 
-OpenCrabs uses three config files — all **hot-reloaded at runtime** (no restart needed):
+StemCell uses three config files — all **hot-reloaded at runtime** (no restart needed):
 
 | File | Purpose | Secret? |
 |------|---------|---------|
-| `~/.opencrabs/config.toml` | Provider settings, models, channels, allowed users | No — safe to commit |
-| `~/.opencrabs/keys.toml` | API keys, bot tokens | **Yes** — `chmod 600`, never commit |
-| `~/.opencrabs/commands.toml` | User-defined slash commands | No |
-| `~/.opencrabs/tools.toml` | Runtime-defined agent tools (HTTP, shell) | No |
+| `~/.stemcell/config.toml` | Provider settings, models, channels, allowed users | No — safe to commit |
+| `~/.stemcell/keys.toml` | API keys, bot tokens | **Yes** — `chmod 600`, never commit |
+| `~/.stemcell/commands.toml` | User-defined slash commands | No |
+| `~/.stemcell/tools.toml` | Runtime-defined agent tools (HTTP, shell) | No |
 
-Changes to any of these files are picked up automatically within ~300ms while OpenCrabs is running. The active LLM provider, channel allowlists, approval policy, and slash command autocomplete all update without restart.
+Changes to any of these files are picked up automatically within ~300ms while StemCell is running. The active LLM provider, channel allowlists, approval policy, and slash command autocomplete all update without restart.
 
 ### Profiles (Multi-Instance)
 
-Run multiple isolated OpenCrabs instances from the same installation. Each profile gets its own config, memory, sessions, skills, and gateway service.
+Run multiple isolated StemCell instances from the same installation. Each profile gets its own config, memory, sessions, skills, and gateway service.
 
 ```bash
 # Create a new profile
-opencrabs profile create hermes
+stemcell profile create hermes
 
 # Run as a specific profile
-opencrabs -p hermes
+stemcell -p hermes
 
 # Or set via environment variable
-OPENCRABS_PROFILE=hermes opencrabs daemon
+STEMCELL_PROFILE=hermes stemcell daemon
 
 # List all profiles
-opencrabs profile list
+stemcell profile list
 
 # Migrate config and brain files from one profile to another
 # Copies: *.md, *.toml (config, keys, tools, commands), memory/ directory
 # Skips: database, sessions, logs, locks
-opencrabs profile migrate --from default --to hermes
-opencrabs profile migrate --from default --to hermes --force  # overwrite existing files
+stemcell profile migrate --from default --to hermes
+stemcell profile migrate --from default --to hermes --force  # overwrite existing files
 
 # Export/import for sharing or backup
-opencrabs profile export hermes -o hermes-backup.tar.gz
-opencrabs profile import hermes-backup.tar.gz
+stemcell profile export hermes -o hermes-backup.tar.gz
+stemcell profile import hermes-backup.tar.gz
 
 # Delete a profile
-opencrabs profile delete hermes
+stemcell profile delete hermes
 ```
 
 **Directory layout:**
 
 ```
-~/.opencrabs/                    # "default" profile (backward compatible)
+~/.stemcell/                    # "default" profile (backward compatible)
 ├── config.toml
 ├── keys.toml
-├── opencrabs.db
+├── stemcell.db
 ├── memory/
 ├── profiles.toml                # profile registry
 ├── locks/                       # token-lock files
@@ -1512,19 +1512,19 @@ opencrabs profile delete hermes
     └── hermes/                  # named profile — fully isolated
         ├── config.toml
         ├── keys.toml
-        ├── opencrabs.db
+        ├── stemcell.db
         ├── memory/
         └── *.md
 ```
 
-**Token-lock isolation:** Two profiles cannot use the same bot token (Telegram, Discord, Slack, Trello). On startup, OpenCrabs acquires PID-based locks for each channel credential. If another profile already holds that token, the channel refuses to start and notifies the user. Stale locks from crashed processes are automatically cleaned up.
+**Token-lock isolation:** Two profiles cannot use the same bot token (Telegram, Discord, Slack, Trello). On startup, StemCell acquires PID-based locks for each channel credential. If another profile already holds that token, the channel refuses to start and notifies the user. Stale locks from crashed processes are automatically cleaned up.
 
 **Migration workflow:** Use `profile migrate` to clone your configuration into a new profile, then customize the brain files (SOUL.md) to give the new instance its own personality. The original profile's database and sessions stay untouched.
 
 Search order for `config.toml`:
-1. `~/.opencrabs/config.toml` (primary)
-2. `~/.config/opencrabs/config.toml` (legacy fallback)
-3. `./opencrabs.toml` (current directory override)
+1. `~/.stemcell/config.toml` (primary)
+2. `~/.config/stemcell/config.toml` (legacy fallback)
+3. `./stemcell.toml` (current directory override)
 
 ---
 
@@ -1533,7 +1533,7 @@ Search order for `config.toml`:
 Full annotated example — the onboarding wizard writes this for you, but you can edit it directly:
 
 ```toml
-# ~/.opencrabs/config.toml
+# ~/.stemcell/config.toml
 
 [agent]
 approval_policy = "auto-always"  # auto-always (default) | auto-session | ask
@@ -1610,7 +1610,7 @@ default_model = "MiniMax-M2.7"    # Model for cron jobs that don't specify one
 User-defined slash commands — the agent writes these autonomously via the `config_manager` tool, or you can edit directly:
 
 ```toml
-# ~/.opencrabs/commands.toml
+# ~/.stemcell/commands.toml
 
 [[commands]]
 name = "/deploy"
@@ -1626,9 +1626,9 @@ prompt = "Summarize my recent git commits and open tasks for a standup. Be conci
 
 [[commands]]
 name = "/rebuild"
-description = "Build and restart OpenCrabs from source"
+description = "Build and restart StemCell from source"
 action = "prompt"
-prompt = 'Run `RUSTFLAGS="-C target-cpu=native" cargo build --release` in /srv/rs/opencrabs. If it succeeds, ask if I want to restart now.'
+prompt = 'Run `RUSTFLAGS="-C target-cpu=native" cargo build --release` in /srv/rs/stemcell. If it succeeds, ask if I want to restart now.'
 ```
 
 Commands appear instantly in autocomplete (type `/`) after saving — no restart needed. The `action` field supports:
@@ -1642,7 +1642,7 @@ Commands appear instantly in autocomplete (type `/`) after saving — no restart
 Runtime-defined tools that the agent can call autonomously — no rebuild, no restart. Unlike slash commands (`commands.toml`) which are user-triggered shortcuts, dynamic tools appear in the LLM's tool list and the agent decides when to use them.
 
 ```toml
-# ~/.opencrabs/tools.toml
+# ~/.stemcell/tools.toml
 
 [[tools]]
 name = "health_check"
@@ -1726,11 +1726,11 @@ See [`tools.toml.example`](tools.toml.example) for a complete reference.
 
 ### Connecting to Remote MCP Servers
 
-OpenCrabs can use tools from any [MCP (Model Context Protocol)](https://modelcontextprotocol.io) server by wiring the [`mcp`](https://github.com/avelino/mcp) CLI as a shell executor tool. This gives your agent access to external tools — GitHub repos, Slack, file systems, databases, or any custom MCP server — alongside its built-in toolset.
+StemCell can use tools from any [MCP (Model Context Protocol)](https://modelcontextprotocol.io) server by wiring the [`mcp`](https://github.com/avelino/mcp) CLI as a shell executor tool. This gives your agent access to external tools — GitHub repos, Slack, file systems, databases, or any custom MCP server — alongside its built-in toolset.
 
-**What this is:** A shell-based bridge. OpenCrabs runs the `mcp` CLI binary as a shell command. The CLI handles the MCP protocol (HTTP/SSE, JSON-RPC, auth) and returns results as plain text. This is zero-maintenance for us and zero-new-dependency for OpenCrabs — users who need MCP support install the binary and configure `tools.toml`.
+**What this is:** A shell-based bridge. StemCell runs the `mcp` CLI binary as a shell command. The CLI handles the MCP protocol (HTTP/SSE, JSON-RPC, auth) and returns results as plain text. This is zero-maintenance for us and zero-new-dependency for StemCell — users who need MCP support install the binary and configure `tools.toml`.
 
-**What this is not:** A native MCP client. OpenCrabs does not speak the MCP protocol directly. If you need native MCP support (e.g. to expose OpenCrabs tools TO other MCP clients), that would be a different feature.
+**What this is not:** A native MCP client. StemCell does not speak the MCP protocol directly. If you need native MCP support (e.g. to expose StemCell tools TO other MCP clients), that would be a different feature.
 
 ---
 
@@ -1808,7 +1808,7 @@ required = false
 default = 10
 ```
 
-The `{{param}}` template variables are substituted by OpenCrabs' shell executor before the command runs. Each `{{param}}` becomes the value passed by the agent (or the `default` if omitted).
+The `{{param}}` template variables are substituted by StemCell' shell executor before the command runs. Each `{{param}}` becomes the value passed by the agent (or the `default` if omitted).
 
 ---
 
@@ -1836,7 +1836,7 @@ For testing, you can put the token directly in the command — but don't commit 
 - **Always use `executor = "shell"`** — the HTTP executor body templating has known issues with JSON arguments. Shell executor is the supported path for `mcp` CLI.
 - **Quoting matters** — the `mcp` CLI expects the JSON arguments as a single string. Wrap in single quotes and escape inner quotes with `\'`.
 - **Timeouts** — MCP tools can be slow. Set `timeout_secs` (default 30s) to avoid hanging. The shell executor kills the command and returns an error if it exceeds this.
-- **Error handling** — if the `mcp` CLI returns a non-zero exit code, OpenCrabs treats it as a tool failure. Check the CLI's stdout/stderr for details.
+- **Error handling** — if the `mcp` CLI returns a non-zero exit code, StemCell treats it as a tool failure. Check the CLI's stdout/stderr for details.
 - **Optional params** — when a parameter is omitted, the shell executor sends an empty string unless `default` is set. For MCP tools that treat `null`/omitted differently, set `default = ""` in the param definition so the JSON field is always present.
 
 ---
@@ -1846,7 +1846,7 @@ For testing, you can put the token directly in the command — but don't commit 
 Here's a complete setup for two GitHub tools:
 
 ```toml
-# ~/.opencrabs/tools.toml
+# ~/.stemcell/tools.toml
 
 [[tool]]
 name = "github_search_repos"
@@ -1905,7 +1905,7 @@ After reloading `tools.toml`, these tools appear in the agent's toolset alongsid
 
 **Need more config options?**
 
-The `mcp` CLI supports custom transports, retry policies, and server-specific options. See its [README](https://github.com/avelino/mcp) for the full reference. OpenCrabs just invokes the binary — all protocol-level details are handled by the CLI.
+The `mcp` CLI supports custom transports, retry policies, and server-specific options. See its [README](https://github.com/avelino/mcp) for the full reference. StemCell just invokes the binary — all protocol-level details are handled by the CLI.
 
 ---
 
@@ -1937,18 +1937,18 @@ api_key = "sk-ant-api03-YOUR_KEY"
 
 ### Operational Environment Variables
 
-All API keys and secrets are stored in `keys.toml` — **not** in environment variables. The only env vars OpenCrabs uses are operational:
+All API keys and secrets are stored in `keys.toml` — **not** in environment variables. The only env vars StemCell uses are operational:
 
 | Variable | Description |
 |----------|-------------|
-| `DEBUG_LOGS_LOCATION` | Custom log directory path (default: `.opencrabs/logs/`) |
-| `OPENCRABS_BRAIN_PATH` | Custom brain workspace path (default: `~/.opencrabs/`) |
+| `DEBUG_LOGS_LOCATION` | Custom log directory path (default: `.stemcell/logs/`) |
+| `STEMCELL_BRAIN_PATH` | Custom brain workspace path (default: `~/.stemcell/`) |
 
 ---
 
 ## 💰 Pricing Customization (usage_pricing.toml)
 
-OpenCrabs tracks real token costs per model using a centralized pricing table at `~/.opencrabs/usage_pricing.toml`. It's written automatically on first run with sensible defaults.
+StemCell tracks real token costs per model using a centralized pricing table at `~/.stemcell/usage_pricing.toml`. It's written automatically on first run with sensible defaults.
 
 **Why it matters:**
 - `/usage` dashboard shows real costs broken down by day, project, model, activity, and tool usage
@@ -1958,7 +1958,7 @@ OpenCrabs tracks real token costs per model using a centralized pricing table at
 **Customizing prices:**
 
 ```toml
-# ~/.opencrabs/usage_pricing.toml
+# ~/.stemcell/usage_pricing.toml
 # Edit live — changes take effect on next /usage open, no restart needed.
 
 [providers.anthropic]
@@ -1986,7 +1986,7 @@ A full example with all built-in providers (Anthropic, OpenAI, MiniMax, Google, 
 
 ## 🔧 Tool System
 
-OpenCrabs includes 40+ built-in tools. The AI can use these during conversation:
+StemCell includes 40+ built-in tools. The AI can use these during conversation:
 
 #### File & Code
 | Tool | Description |
@@ -2042,8 +2042,8 @@ OpenCrabs includes 40+ built-in tools. The AI can use these during conversation:
 | `a2a_send` | Send tasks to remote A2A-compatible agents via JSON-RPC 2.0 |
 | `tool_manage` | Manage runtime tools — list, add, remove, enable, disable, reload (`tools.toml`) |
 | `slash_command` | Invoke any installed slash command (`/help`, `/usage`, `/models`, `/sessions`, custom commands from `commands.toml`) directly from the agent |
-| `load_brain_file` | Load any brain context file from `~/.opencrabs/` on demand (USER.md, MEMORY.md, AGENTS.md, TOOLS.md, SECURITY.md, etc.) |
-| `write_opencrabs_file` | Write or edit any file under `~/.opencrabs/` (brain files, memory logs, commands.toml). Enforces append-only + dedup-aware shrink + `.bak` snapshots on the 9 protected brain files (SOUL/USER/AGENTS/TOOLS/CODE/SECURITY/MEMORY/BOOT) |
+| `load_brain_file` | Load any brain context file from `~/.stemcell/` on demand (USER.md, MEMORY.md, AGENTS.md, TOOLS.md, SECURITY.md, etc.) |
+| `write_stemcell_file` | Write or edit any file under `~/.stemcell/` (brain files, memory logs, commands.toml). Enforces append-only + dedup-aware shrink + `.bak` snapshots on the 9 protected brain files (SOUL/USER/AGENTS/TOOLS/CODE/SECURITY/MEMORY/BOOT) |
 | `evolve` | Download latest release binary from GitHub and hot-restart (no Rust toolchain needed). Also runs automatically on startup and every 24h when `[agent] auto_update = true` (default), and via the `/evolve` slash command — both paths invoke the tool directly without the LLM, so they can't be dropped or refused by a provider |
 | `rebuild` | Build from source (`cargo build --release`) and hot-restart |
 
@@ -2052,14 +2052,14 @@ OpenCrabs includes 40+ built-in tools. The AI can use these during conversation:
 The `plan` tool manages multi-step workflows with dependency tracking, execution history, and automatic retry logic. Use it before any task with 3+ steps, dependencies between steps, or multi-file changes.
 
 **Bundled reference plans** are embedded in the binary and available at runtime:
-- `~/.opencrabs/profiles/<profile>/plans/coding-plans/` — Rust, Python plans (fast/medium/full variants)
-- `~/.opencrabs/profiles/<profile>/plans/plan-json-spec.md` — JSON schema documentation
+- `~/.stemcell/profiles/<profile>/plans/coding-plans/` — Rust, Python plans (fast/medium/full variants)
+- `~/.stemcell/profiles/<profile>/plans/plan-json-spec.md` — JSON schema documentation
 
 **Import a plan** from a bundled or local JSON file:
 ```json
 {
   "operation": "import",
-  "file_path": "~/.opencrabs/profiles/default/plans/coding-plans/rust-fast.json"
+  "file_path": "~/.stemcell/profiles/default/plans/coding-plans/rust-fast.json"
 }
 ```
 
@@ -2079,23 +2079,23 @@ The `plan` tool manages multi-step workflows with dependency tracking, execution
 
 #### Recursive Self-Improvement (RSI) ⚠️ *Experimental*
 
-Autonomous feedback loop that tracks performance and enables the agent to improve its own brain files over time — **no human approval needed**. The agent identifies patterns, applies fixes, and logs everything to `~/.opencrabs/rsi/`.
+Autonomous feedback loop that tracks performance and enables the agent to improve its own brain files over time — **no human approval needed**. The agent identifies patterns, applies fixes, and logs everything to `~/.stemcell/rsi/`.
 
-> ⚠️ **Experimental.** This feature is being tested and refined over the next few days. Brain file changes are logged and reversible, but monitor your `~/.opencrabs/rsi/improvements.md` to see what the agent is changing.
+> ⚠️ **Experimental.** This feature is being tested and refined over the next few days. Brain file changes are logged and reversible, but monitor your `~/.stemcell/rsi/improvements.md` to see what the agent is changing.
 
 | Tool | Description |
 |------|-------------|
 | `feedback_record` | Record an observation to the feedback ledger — tool outcomes, user corrections, patterns, provider errors. Auto-recorded for all tool executions; also callable manually |
 | `feedback_analyze` | Query the feedback ledger for patterns — overall summary, per-tool success rates, recent events, failure breakdown |
-| `self_improve` | Autonomously apply improvements to brain files (SOUL.md, AGENTS.md, TOOLS.md, etc.) based on feedback analysis. Changes are logged to `~/.opencrabs/rsi/improvements.md` and archived daily in `~/.opencrabs/rsi/history/YYYY-MM-DD.md` |
+| `self_improve` | Autonomously apply improvements to brain files (SOUL.md, AGENTS.md, TOOLS.md, etc.) based on feedback analysis. Changes are logged to `~/.stemcell/rsi/improvements.md` and archived daily in `~/.stemcell/rsi/history/YYYY-MM-DD.md` |
 
-> **How it works:** Every tool call automatically records success/failure to an append-only SQLite feedback ledger (fire-and-forget, never blocks). User corrections are detected via pattern matching (~30 negative signal phrases) and recorded automatically. On startup, a performance digest (failure rates, correction count, recent issues) is injected into the system prompt. The agent uses `feedback_analyze` to drill into patterns and `self_improve` to apply brain file edits autonomously — changes are logged to `~/.opencrabs/rsi/improvements.md` with daily archives. No human approval required.
+> **How it works:** Every tool call automatically records success/failure to an append-only SQLite feedback ledger (fire-and-forget, never blocks). User corrections are detected via pattern matching (~30 negative signal phrases) and recorded automatically. On startup, a performance digest (failure rates, correction count, recent issues) is injected into the system prompt. The agent uses `feedback_analyze` to drill into patterns and `self_improve` to apply brain file edits autonomously — changes are logged to `~/.stemcell/rsi/improvements.md` with daily archives. No human approval required.
 >
-> **Upstream template sync:** When a new OpenCrabs release is detected, the RSI engine automatically fetches updated brain file templates from the upstream repo, diffs them against your local files, and appends only new sections or subsections. Your personalized content is never overwritten. Backups are created before every merge. If no new release exists, zero network calls and zero tokens are spent.
+> **Upstream template sync:** When a new StemCell release is detected, the RSI engine automatically fetches updated brain file templates from the upstream repo, diffs them against your local files, and appends only new sections or subsections. Your personalized content is never overwritten. Backups are created before every merge. If no new release exists, zero network calls and zero tokens are spent.
 
 #### Browser Automation (feature: `browser`)
 
-Auto-detects your default Chromium-based browser and uses its native profile (cookies, logins, extensions). Supports **Chrome, Brave, Edge, Arc, Vivaldi, Opera, and Chromium**. If your default browser is Firefox or another non-Chromium browser, OpenCrabs falls back to the first available Chromium browser on your system. If no Chromium browser is found, a fresh Chrome instance is launched.
+Auto-detects your default Chromium-based browser and uses its native profile (cookies, logins, extensions). Supports **Chrome, Brave, Edge, Arc, Vivaldi, Opera, and Chromium**. If your default browser is Firefox or another non-Chromium browser, StemCell falls back to the first available Chromium browser on your system. If no Chromium browser is found, a fresh Chrome instance is launched.
 
 | Tool | Description |
 |------|-------------|
@@ -2111,7 +2111,7 @@ Auto-detects your default Chromium-based browser and uses its native profile (co
 
 #### Multi-Agent Orchestration
 
-OpenCrabs supports spawning specialized sub-agents that run autonomously in isolated sessions. Each sub-agent gets its own context, tool registry, and cancel token.
+StemCell supports spawning specialized sub-agents that run autonomously in isolated sessions. Each sub-agent gets its own context, tool registry, and cancel token.
 
 | Tool | Description |
 |------|-------------|
@@ -2168,7 +2168,7 @@ A typo in the `provider` field falls back to the parent's provider with a warnin
 
 ### System CLI Tools
 
-OpenCrabs can leverage **any CLI tool installed on your system** via `bash`. Common integrations:
+StemCell can leverage **any CLI tool installed on your system** via `bash`. Common integrations:
 
 | Tool | Purpose | Example |
 |------|---------|---------|
@@ -2181,7 +2181,7 @@ OpenCrabs can leverage **any CLI tool installed on your system** via `bash`. Com
 | `ffmpeg` | Audio/video processing | `ffmpeg -i input.mp4 output.gif` |
 | `curl` | HTTP requests (fallback when `http_request` insufficient) | `curl -s api.example.com` |
 
-Any tool on your `$PATH` works. If it runs in your terminal, OpenCrabs can use it.
+Any tool on your `$PATH` works. If it runs in your terminal, StemCell can use it.
 
 ---
 
@@ -2306,34 +2306,34 @@ Use `/approve` to change your approval policy at any time (persisted to `config.
 
 ## 🔍 Debug and Logging
 
-OpenCrabs uses a **conditional logging system** — no log files by default.
+StemCell uses a **conditional logging system** — no log files by default.
 
 ```bash
 # Stack traces on crash
-RUST_BACKTRACE=1 opencrabs
+RUST_BACKTRACE=1 stemcell
 
 # Verbose console output (no file logging)
-RUST_LOG=debug opencrabs
+RUST_LOG=debug stemcell
 
-# Debug mode: rolling file logs to ~/.opencrabs/logs/, auto-cleanup after 7 days
-opencrabs -d
+# Debug mode: rolling file logs to ~/.stemcell/logs/, auto-cleanup after 7 days
+stemcell -d
 
 # Both: file logs + verbose console output
-RUST_LOG=debug opencrabs -d
+RUST_LOG=debug stemcell -d
 ```
 
-All four work the same whether installed via `cargo install opencrabs` or built from source.
+All four work the same whether installed via `cargo install stemcell` or built from source.
 
 ```bash
 # Log management
-opencrabs logs status    # Check logging status
-opencrabs logs view      # View recent entries
-opencrabs logs clean     # Clean old logs
-opencrabs logs clean -d 3  # Clean logs older than 3 days
+stemcell logs status    # Check logging status
+stemcell logs view      # View recent entries
+stemcell logs clean     # Clean old logs
+stemcell logs clean -d 3  # Clean logs older than 3 days
 ```
 
 **When debug mode (`-d`) is enabled:**
-- Log files created in `~/.opencrabs/logs/`
+- Log files created in `~/.stemcell/logs/`
 - DEBUG level with thread IDs, file names, line numbers
 - Daily rolling rotation, noisy crates (hyper, h2, reqwest) suppressed to warn
 
@@ -2346,14 +2346,14 @@ opencrabs logs clean -d 3  # Clean logs older than 3 days
 
 ## 🧠 Brain System & 3-Tier Memory
 
-OpenCrabs's brain is **dynamic and self-sustaining**. Instead of a hardcoded system prompt, the agent assembles its personality, knowledge, and behavior from workspace files that can be edited between turns.
+StemCell's brain is **dynamic and self-sustaining**. Instead of a hardcoded system prompt, the agent assembles its personality, knowledge, and behavior from workspace files that can be edited between turns.
 
 ### Brain Workspace
 
-The brain reads markdown files from `~/.opencrabs/`:
+The brain reads markdown files from `~/.stemcell/`:
 
 ```
-~/.opencrabs/                  # Home — everything lives here
+~/.stemcell/                  # Home — everything lives here
 ├── SOUL.md                    # Personality, tone, hard behavioral rules
 ├── IDENTITY.md                # Agent name, vibe, style, workspace path
 ├── USER.md                    # Who the human is, how to work with them
@@ -2368,7 +2368,7 @@ The brain reads markdown files from `~/.opencrabs/`:
 ├── keys.toml                  # API keys (provider, channel, STT/TTS)
 ├── commands.toml              # User-defined slash commands
 ├── tools.toml                 # Runtime-defined agent tools (HTTP, shell)
-├── opencrabs.db               # SQLite — sessions, messages, plans
+├── stemcell.db               # SQLite — sessions, messages, plans
 └── memory/                    # Daily memory logs (auto-compaction summaries)
     └── YYYY-MM-DD.md          # One per day, multiple compactions stack
 ```
@@ -2379,13 +2379,13 @@ Brain files are re-read **every turn** — edit them between messages and the ag
 
 | Tier | Location | Purpose | Managed By |
 |------|----------|---------|------------|
-| **1. Brain MEMORY.md** | `~/.opencrabs/MEMORY.md` | Durable, curated knowledge loaded into system brain every turn | You (the user) |
-| **2. Daily Memory Logs** | `~/.opencrabs/memory/YYYY-MM-DD.md` | Auto-compaction summaries with structured breakdowns of each session | Auto (on compaction) |
+| **1. Brain MEMORY.md** | `~/.stemcell/MEMORY.md` | Durable, curated knowledge loaded into system brain every turn | You (the user) |
+| **2. Daily Memory Logs** | `~/.stemcell/memory/YYYY-MM-DD.md` | Auto-compaction summaries with structured breakdowns of each session | Auto (on compaction) |
 | **3. Hybrid Memory Search** | `memory_search` tool (FTS5 + vector) | Hybrid semantic search — BM25 keyword + vector embeddings combined via Reciprocal Rank Fusion. Local GGUF, OpenAI-compatible API, or FTS5-only mode | Agent (via tool call) |
 
 **How it works:**
 1. When context hits 70%, auto-compaction summarizes the conversation into a structured breakdown (current task, decisions, files modified, errors, next steps)
-2. The summary is saved to a daily log at `~/.opencrabs/memory/2026-02-15.md` (multiple compactions per day stack in the same file)
+2. The summary is saved to a daily log at `~/.stemcell/memory/2026-02-15.md` (multiple compactions per day stack in the same file)
 3. The summary is shown to you in chat so you see exactly what was remembered
 4. The file is indexed in the background into the FTS5 database so the agent can search past logs with `memory_search`
 5. Brain `MEMORY.md` is **never touched** by auto-compaction — it stays as your curated, always-loaded context
@@ -2409,7 +2409,7 @@ Auto-detects VPS environments and disables local embeddings automatically.
 
 ```
 ┌─────────────────────────────────────┐
-│  ~/.opencrabs/memory/               │
+│  ~/.stemcell/memory/               │
 │  ├── 2026-02-15.md                  │  Markdown files (daily logs)
 │  ├── 2026-02-16.md                  │
 │  └── 2026-02-17.md                  │
@@ -2451,7 +2451,7 @@ Auto-detects VPS environments and disables local embeddings automatically.
 
 ### User-Defined Slash Commands
 
-Tell OpenCrabs in natural language: *"Create a /deploy command that runs deploy.sh"* — and it writes the command to `~/.opencrabs/commands.toml` via the `config_manager` tool:
+Tell StemCell in natural language: *"Create a /deploy command that runs deploy.sh"* — and it writes the command to `~/.stemcell/commands.toml` via the `config_manager` tool:
 
 ```toml
 [[commands]]
@@ -2471,7 +2471,7 @@ Commands appear in autocomplete alongside built-in commands. After each agent re
 
 ### Self-Sustaining Architecture
 
-OpenCrabs can modify its own source code, build, test, and hot-restart itself — triggered by the agent via the `rebuild` tool or by the user via `/rebuild`:
+StemCell can modify its own source code, build, test, and hot-restart itself — triggered by the agent via the `rebuild` tool or by the user via `/rebuild`:
 
 ```
 /rebuild          # User-triggered: build → restart prompt
@@ -2485,7 +2485,7 @@ rebuild tool      # Agent-triggered: build → ProgressEvent::RestartReady → r
 3. On success, a `ProgressEvent::RestartReady` is emitted → bridged to `TuiEvent::RestartReady`
 4. The TUI switches to **RestartPending** mode — user presses Enter to confirm
 5. `SelfUpdater::restart(session_id)` replaces the process via Unix `exec()`
-6. The new binary starts with `opencrabs chat --session <uuid>` — resuming the same conversation
+6. The new binary starts with `stemcell chat --session <uuid>` — resuming the same conversation
 7. A hidden wake-up message is sent to the agent so it greets the user and continues where it left off
 
 **Two trigger paths:**
@@ -2511,13 +2511,13 @@ rebuild tool      # Agent-triggered: build → ProgressEvent::RestartReady → r
 
 ### Self-Improving Agent
 
-OpenCrabs learns from experience through three local mechanisms — no data ever leaves your machine:
+StemCell learns from experience through three local mechanisms — no data ever leaves your machine:
 
 **1. Procedural memory — custom commands from experience**
 When the agent completes a complex workflow, overcomes errors, or follows user corrections, it can save that workflow as a reusable slash command via `config_manager add_command`. Next session, the command appears in autocomplete and the agent knows it exists.
 
 **2. Episodic memory — lessons learned**
-The agent writes important knowledge to `~/.opencrabs/` brain files as it works:
+The agent writes important knowledge to `~/.stemcell/` brain files as it works:
 - `MEMORY.md` — infrastructure details, troubleshooting patterns, architecture decisions
 - `USER.md` — your preferences, communication style, project context
 - `memory/YYYY-MM-DD.md` — daily logs of integrations, fixes, and decisions
@@ -2532,7 +2532,7 @@ The `memory_search` and `session_search` tools use hybrid FTS5 + vector semantic
 
 ## ⏰ Cron Jobs & Heartbeats
 
-OpenCrabs runs as a daemon on your machine — a persistent terminal agent that's always on. This makes scheduled tasks and background jobs native and trivial.
+StemCell runs as a daemon on your machine — a persistent terminal agent that's always on. This makes scheduled tasks and background jobs native and trivial.
 
 ### Cron Jobs — Scheduled Isolated Sessions
 
@@ -2540,7 +2540,7 @@ Cron jobs run as isolated sessions in the background. Each job gets its own sess
 
 ```bash
 # Add a cron job via CLI
-opencrabs cron add \
+stemcell cron add \
   --name "morning-briefing" \
   --cron "0 9 * * *" \
   --tz "America/New_York" \
@@ -2548,14 +2548,14 @@ opencrabs cron add \
   --deliver telegram:123456789
 
 # List all jobs
-opencrabs cron list
+stemcell cron list
 
 # Enable/disable
-opencrabs cron enable morning-briefing
-opencrabs cron disable morning-briefing
+stemcell cron enable morning-briefing
+stemcell cron disable morning-briefing
 
 # Remove
-opencrabs cron remove morning-briefing
+stemcell cron remove morning-briefing
 ```
 
 The agent can also create, list, and manage cron jobs autonomously via the `cron_manage` tool — from any channel:
@@ -2583,7 +2583,7 @@ default_model = "MiniMax-M2.7"
 
 ### Heartbeats — Proactive Background Checks
 
-When running as a daemon, OpenCrabs can perform periodic heartbeat checks. Configure `HEARTBEAT.md` in your workspace (`~/.opencrabs/HEARTBEAT.md`) with a checklist of things to monitor:
+When running as a daemon, StemCell can perform periodic heartbeat checks. Configure `HEARTBEAT.md` in your workspace (`~/.stemcell/HEARTBEAT.md`) with a checklist of things to monitor:
 
 ```markdown
 # Heartbeat Checklist
@@ -2610,9 +2610,9 @@ The heartbeat prompt is loaded into the agent's brain every turn. When the heart
 
 ### Autostart on Boot
 
-To keep OpenCrabs always running, set it to start automatically with your system.
+To keep StemCell always running, set it to start automatically with your system.
 
-> **Profile-aware setup:** For named profiles, use `opencrabs -p <name> service install` instead of manual configuration. It generates the correct service name (`com.opencrabs.daemon.<name>` on macOS, `opencrabs-<name>.service` on Linux), includes the `-p` flag in the daemon args, and isolates log paths per profile. Multiple profiles can run as simultaneous daemon services.
+> **Profile-aware setup:** For named profiles, use `stemcell -p <name> service install` instead of manual configuration. It generates the correct service name (`com.stemcell.daemon.<name>` on macOS, `stemcell-<name>.service` on Linux), includes the `-p` flag in the daemon args, and isolates log paths per profile. Multiple profiles can run as simultaneous daemon services.
 
 The examples below show manual setup for the **default profile**. For named profiles, replace `daemon` with `-p <name> daemon` in the command arguments.
 
@@ -2621,48 +2621,48 @@ The examples below show manual setup for the **default profile**. For named prof
 ```bash
 mkdir -p ~/.config/systemd/user
 
-cat > ~/.config/systemd/user/opencrabs.service << 'EOF'
+cat > ~/.config/systemd/user/stemcell.service << 'EOF'
 [Unit]
-Description=OpenCrabs AI Agent
+Description=StemCell AI Agent
 After=network.target
 
 [Service]
-ExecStart=%h/.cargo/bin/opencrabs daemon
+ExecStart=%h/.cargo/bin/stemcell daemon
 Restart=on-failure
 RestartSec=5
-Environment=OPENCRABS_HOME=%h/.opencrabs
+Environment=STEMCELL_HOME=%h/.stemcell
 
 [Install]
 WantedBy=default.target
 EOF
 
 systemctl --user daemon-reload
-systemctl --user enable opencrabs
-systemctl --user start opencrabs
+systemctl --user enable stemcell
+systemctl --user start stemcell
 
 # Check status
-systemctl --user status opencrabs
+systemctl --user status stemcell
 
 # View logs
-journalctl --user -u opencrabs -f
+journalctl --user -u stemcell -f
 ```
 
-> Replace `%h/.cargo/bin/opencrabs` with the actual path to your binary if you installed it elsewhere (e.g. `/usr/local/bin/opencrabs`).
+> Replace `%h/.cargo/bin/stemcell` with the actual path to your binary if you installed it elsewhere (e.g. `/usr/local/bin/stemcell`).
 
 #### macOS (launchd)
 
 ```bash
-cat > ~/Library/LaunchAgents/com.opencrabs.agent.plist << 'EOF'
+cat > ~/Library/LaunchAgents/com.stemcell.agent.plist << 'EOF'
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
   "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
     <key>Label</key>
-    <string>com.opencrabs.agent</string>
+    <string>com.stemcell.agent</string>
     <key>ProgramArguments</key>
     <array>
-        <string>/usr/local/bin/opencrabs</string>
+        <string>/usr/local/bin/stemcell</string>
         <string>daemon</string>
     </array>
     <key>RunAtLoad</key>
@@ -2670,32 +2670,32 @@ cat > ~/Library/LaunchAgents/com.opencrabs.agent.plist << 'EOF'
     <key>KeepAlive</key>
     <true/>
     <key>StandardOutPath</key>
-    <string>/tmp/opencrabs.log</string>
+    <string>/tmp/stemcell.log</string>
     <key>StandardErrorPath</key>
-    <string>/tmp/opencrabs.err</string>
+    <string>/tmp/stemcell.err</string>
 </dict>
 </plist>
 EOF
 
-launchctl load ~/Library/LaunchAgents/com.opencrabs.agent.plist
+launchctl load ~/Library/LaunchAgents/com.stemcell.agent.plist
 
 # Check status
-launchctl list | grep opencrabs
+launchctl list | grep stemcell
 
 # Stop and unload
-launchctl unload ~/Library/LaunchAgents/com.opencrabs.agent.plist
+launchctl unload ~/Library/LaunchAgents/com.stemcell.agent.plist
 ```
 
-> Update the path in `ProgramArguments` to match your install. For cargo installs: `~/.cargo/bin/opencrabs`. For source builds: `/path/to/target/release/opencrabs`.
+> Update the path in `ProgramArguments` to match your install. For cargo installs: `~/.cargo/bin/stemcell`. For source builds: `/path/to/target/release/stemcell`.
 
 #### Windows (Task Scheduler)
 
 1. Press `Win + R`, type `taskschd.msc`, hit Enter
 2. Click **Create Basic Task** in the right panel
-3. Name: `OpenCrabs`, Description: `OpenCrabs AI Agent`
+3. Name: `StemCell`, Description: `StemCell AI Agent`
 4. Trigger: **When I log on**
 5. Action: **Start a program**
-6. Program: `C:\Users\<you>\.cargo\bin\opencrabs.exe` (or wherever your binary lives)
+6. Program: `C:\Users\<you>\.cargo\bin\stemcell.exe` (or wherever your binary lives)
 7. Arguments: `daemon`
 8. Check **Open the Properties dialog** before finishing
 9. In Properties > Settings, check **If the task fails, restart every 1 minute**
@@ -2703,10 +2703,10 @@ launchctl unload ~/Library/LaunchAgents/com.opencrabs.agent.plist
 Or via PowerShell:
 
 ```powershell
-$action = New-ScheduledTaskAction -Execute "$env:USERPROFILE\.cargo\bin\opencrabs.exe" -Argument "daemon"
+$action = New-ScheduledTaskAction -Execute "$env:USERPROFILE\.cargo\bin\stemcell.exe" -Argument "daemon"
 $trigger = New-ScheduledTaskTrigger -AtLogon
 $settings = New-ScheduledTaskSettingsSet -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1)
-Register-ScheduledTask -TaskName "OpenCrabs" -Action $action -Trigger $trigger -Settings $settings -Description "OpenCrabs AI Agent"
+Register-ScheduledTask -TaskName "StemCell" -Action $action -Trigger $trigger -Settings $settings -Description "StemCell AI Agent"
 ```
 
 > All platforms: cron jobs, heartbeats, and channel listeners (Telegram, Discord, Slack, WhatsApp) work in daemon mode. The TUI is not needed for background operation.
@@ -3082,11 +3082,11 @@ Integration Layer (LLM Providers, LSP)
 ## 📁 Project Structure
 
 ```
-opencrabs/
+stemcell/
 ├── src/
 │   ├── main.rs           # Entry point
 │   ├── lib.rs            # Library root (crate root — required by Rust)
-│   ├── error/            # Error types (OpenCrabsError, ErrorCode)
+│   ├── error/            # Error types (StemCellError, ErrorCode)
 │   ├── logging/          # Conditional logging system
 │   ├── app/              # Application lifecycle
 │   ├── brain/            # Intelligence layer — LLM providers, agent, tools, brain system
@@ -3252,7 +3252,7 @@ The default release binary requires AVX2 (Haswell 2013+). If you have an older C
 RUSTFLAGS="-C target-cpu=native" cargo build --release
 ```
 
-Pre-built `*-compat` binaries are also available on the [releases page](https://github.com/adolfousier/opencrabs/releases) for AVX-only CPUs. If your CPU lacks AVX entirely (pre-2011), or you're on a low-RAM VPS, set `vector_enabled = false` in `[memory]` to disable vector embeddings and use FTS5-only keyword search.
+Pre-built `*-compat` binaries are also available on the [releases page](https://github.com/tmih06/stemcell/releases) for AVX-only CPUs. If your CPU lacks AVX entirely (pre-2011), or you're on a low-RAM VPS, set `vector_enabled = false` in `[memory]` to disable vector embeddings and use FTS5-only keyword search.
 
 ### macOS
 
@@ -3265,7 +3265,7 @@ brew install cmake pkg-config
 
 #### Metal GPU crash on macOS 14 (Sonoma) or older
 
-If you see this error when running OpenCrabs:
+If you see this error when running StemCell:
 
 ```
 dyld: Symbol not found: _OBJC_CLASS_$_MTLResidencySetDescriptor
@@ -3307,20 +3307,20 @@ If the agent starts sending tool call approvals that don't render in the UI — 
 
 This reliably resolves the issue. A fix is coming in a future release.
 
-### Windows Defender Blocking OpenCrabs
+### Windows Defender Blocking StemCell
 
-Windows Defender (or other antivirus software) may flag `opencrabs.exe` as suspicious because it's an unsigned binary that executes shell commands and makes network requests. This is a false positive.
+Windows Defender (or other antivirus software) may flag `stemcell.exe` as suspicious because it's an unsigned binary that executes shell commands and makes network requests. This is a false positive.
 
 **Fix — Add an exclusion:**
 
 1. Open **Windows Security** → **Virus & threat protection**
 2. Scroll to **Virus & threat protection settings** → **Manage settings**
 3. Scroll to **Exclusions** → **Add or remove exclusions**
-4. Click **Add an exclusion** → **File** → select `opencrabs.exe`
+4. Click **Add an exclusion** → **File** → select `stemcell.exe`
 
 **Or via PowerShell (admin):**
 ```powershell
-Add-MpPreference -ExclusionPath "C:\path\to\opencrabs.exe"
+Add-MpPreference -ExclusionPath "C:\path\to\stemcell.exe"
 ```
 
 If SmartScreen blocks the first run, click **More info** → **Run anyway**.
@@ -3331,19 +3331,19 @@ If SmartScreen blocks the first run, click **More info** → **Run anyway**.
 
 ### WhisperCrabs — Voice-to-Text
 
-[WhisperCrabs](https://github.com/adolfousier/whispercrabs) is a floating voice-to-text tool. Click to record, click to stop, transcribes, copies to clipboard.
+[WhisperCrabs](https://github.com/tmih06/whispercrabs) is a floating voice-to-text tool. Click to record, click to stop, transcribes, copies to clipboard.
 
 - **Local** (whisper.cpp, on-device) or **API** transcription
 - Fully controllable via D-Bus — start/stop recording, switch providers, view history
-- Works as an OpenCrabs tool: use D-Bus to control WhisperCrabs from the agent
+- Works as an StemCell tool: use D-Bus to control WhisperCrabs from the agent
 
 ### SocialCrabs — Social Media Automation
 
-[SocialCrabs](https://github.com/adolfousier/socialcrabs) automates social media via **CLI + GraphQL** with human-like behavior simulation. Twitter/X, Instagram, LinkedIn. No browser needed for read operations.
+[SocialCrabs](https://github.com/tmih06/socialcrabs) automates social media via **CLI + GraphQL** with human-like behavior simulation. Twitter/X, Instagram, LinkedIn. No browser needed for read operations.
 
 **Setup:**
 ```bash
-git clone https://github.com/adolfousier/socialcrabs.git
+git clone https://github.com/tmih06/socialcrabs.git
 cd socialcrabs && npm install && npm run build
 
 # Add cookies from browser DevTools to .env (auth_token + ct0 for Twitter)
@@ -3355,7 +3355,7 @@ node dist/cli.js session login linkedin   # Authenticate LinkedIn
 node dist/cli.js session status           # Check all sessions
 ```
 
-**Usage with OpenCrabs:** Just ask naturally. OpenCrabs calls SocialCrabs CLI commands via `bash` automatically:
+**Usage with StemCell:** Just ask naturally. StemCell calls SocialCrabs CLI commands via `bash` automatically:
 
 > "Check my Twitter mentions" / "Search LinkedIn for AI founders" / "Post this to X"
 
@@ -3401,7 +3401,7 @@ node dist/cli.js linkedin engage --query="query"   # Full engagement session
 
 ### Development Status
 
-OpenCrabs is under active development. While functional, it may contain bugs or incomplete features.
+StemCell is under active development. While functional, it may contain bugs or incomplete features.
 
 ### Token Cost Responsibility
 
@@ -3414,7 +3414,7 @@ OpenCrabs is under active development. While functional, it may contain bugs or 
 
 ### Support
 
-Cloud API issues, billing questions, and account problems should be directed to the respective providers. OpenCrabs provides the tool; you manage your API relationships.
+Cloud API issues, billing questions, and account problems should be directed to the respective providers. StemCell provides the tool; you manage your API relationships.
 
 ---
 
@@ -3424,8 +3424,8 @@ Contributions welcome! Please read [CONTRIBUTING.md](CONTRIBUTING.md) for guidel
 
 ```bash
 # Setup
-git clone https://github.com/adolfousier/opencrabs.git
-cd opencrabs
+git clone https://github.com/tmih06/stemcell.git
+cd stemcell
 cargo build
 cargo test
 # Make changes, then submit a PR
@@ -3450,22 +3450,22 @@ cargo test
 
 ## 📞 Support
 
-- **Issues:** [GitHub Issues](https://github.com/adolfousier/opencrabs/issues)
-- **Discussions:** [GitHub Discussions](https://github.com/adolfousier/opencrabs/discussions)
-- **Docs:** [Documentation](https://github.com/adolfousier/opencrabs/tree/main/src/docs)
+- **Issues:** [GitHub Issues](https://github.com/tmih06/stemcell/issues)
+- **Discussions:** [GitHub Discussions](https://github.com/tmih06/stemcell/discussions)
+- **Docs:** [Documentation](https://github.com/tmih06/stemcell/tree/main/src/docs)
 
 ---
 
 ## Star History Chart
 
-[![Star History Chart](https://api.star-history.com/svg?repos=adolfousier/opencrabs&type=date&legend=top-left)](https://www.star-history.com/#adolfousier/opencrabs)
+[![Star History Chart](https://api.star-history.com/svg?repos=tmih06/stemcell&type=date&legend=top-left)](https://www.star-history.com/#tmih06/stemcell)
 
 ## ✨ Stay Tuned
 
 ---
 
-**Built with Rust 🦀 by [Adolfo Usier](https://github.com/adolfousier)**
+**Built with Rust 🦀 by [tmih06](https://github.com/tmih06)**
 
 ---
 
-[Latest Release](https://github.com/adolfousier/opencrabs/releases/tag/v0.2.81)
+[Latest Release](https://github.com/tmih06/stemcell/releases/tag/v0.2.81)

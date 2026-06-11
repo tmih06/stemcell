@@ -6,12 +6,12 @@ use clap::{Parser, Subcommand};
 use super::{commands, cron, ui};
 use crate::config::Config;
 
-/// OpenCrabs - High-Performance Terminal AI Orchestration Agent
+/// StemCell - High-Performance Terminal AI Orchestration Agent
 #[derive(Parser, Debug)]
-#[command(name = "opencrabs")]
+#[command(name = "stemcell")]
 #[command(version, about, long_about = None)]
 pub struct Cli {
-    /// Enable debug mode (creates log files in .opencrabs/logs/)
+    /// Enable debug mode (creates log files in .stemcell/logs/)
     #[arg(short, long, global = true)]
     pub debug: bool,
 
@@ -19,7 +19,7 @@ pub struct Cli {
     #[arg(short, long, global = true)]
     pub config: Option<String>,
 
-    /// Profile to use (default: "default", or OPENCRABS_PROFILE env)
+    /// Profile to use (default: "default", or STEMCELL_PROFILE env)
     #[arg(short, long, global = true)]
     pub profile: Option<String>,
 
@@ -137,7 +137,7 @@ pub enum Commands {
     /// Used by the systemd/LaunchAgent service installed during onboarding
     Daemon,
 
-    /// Manage profiles — isolated OpenCrabs instances with their own config, DB, and memory
+    /// Manage profiles — isolated StemCell instances with their own config, DB, and memory
     Profile {
         #[command(subcommand)]
         operation: ProfileCommands,
@@ -159,7 +159,7 @@ pub enum Commands {
     /// Print version and exit
     Version,
 
-    /// Check for and install the latest OpenCrabs release
+    /// Check for and install the latest StemCell release
     Evolve {
         /// Only check for updates without installing
         #[arg(long)]
@@ -383,7 +383,7 @@ pub enum OutputFormat {
 pub async fn run() -> Result<()> {
     let cli = Cli::parse();
 
-    // Set active profile BEFORE anything touches opencrabs_home()
+    // Set active profile BEFORE anything touches stemcell_home()
     crate::config::profile::set_active_profile(cli.profile.clone())
         .unwrap_or_else(|e| tracing::warn!("Profile already set: {}", e));
 
@@ -472,13 +472,13 @@ pub async fn run() -> Result<()> {
             clap_complete::generate(
                 shell,
                 &mut Cli::command(),
-                "opencrabs",
+                "stemcell",
                 &mut std::io::stdout(),
             );
             Ok(())
         }
         Some(Commands::Version) => {
-            println!("opencrabs {}", env!("CARGO_PKG_VERSION"));
+            println!("stemcell {}", env!("CARGO_PKG_VERSION"));
             Ok(())
         }
         Some(Commands::Evolve { check_only }) => commands::cmd_evolve(check_only).await,

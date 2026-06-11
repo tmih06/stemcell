@@ -29,7 +29,7 @@ fn vector_enabled() -> bool {
 
 /// Read the `[memory]` section from config.toml.
 fn read_memory_config() -> crate::config::MemoryConfig {
-    let config_path = crate::config::opencrabs_home().join("config.toml");
+    let config_path = crate::config::stemcell_home().join("config.toml");
     if let Ok(content) = std::fs::read_to_string(&config_path)
         && let Ok(table) = content.parse::<toml::Table>()
         && let Some(memory) = table.get("memory")

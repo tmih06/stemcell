@@ -224,12 +224,12 @@ fn coerce_empty_object_treated_as_empty() {
     assert!(result.success);
 }
 
-// ── Issue #171: OPENCRABS_PARAMS env var ──────────────────────────────
+// ── Issue #171: STEMCELL_PARAMS env var ──────────────────────────────
 
 #[test]
-fn shell_executor_sets_opencrabs_params_env_var() {
+fn shell_executor_sets_stemcell_params_env_var() {
     let def = shell_def(
-        "cat $OPENCRABS_PARAMS",
+        "cat $STEMCELL_PARAMS",
         vec![ParamDef {
             name: "msg".into(),
             param_type: "string".into(),
@@ -258,7 +258,7 @@ fn shell_executor_sets_opencrabs_params_env_var() {
 #[test]
 fn shell_executor_params_file_contains_json_arrays() {
     let def = shell_def(
-        "cat $OPENCRABS_PARAMS",
+        "cat $STEMCELL_PARAMS",
         vec![ParamDef {
             name: "files".into(),
             param_type: "array".into(),

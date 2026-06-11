@@ -144,7 +144,7 @@ impl BrainConfig {
 /// Daemon mode configuration (systemd / launchd service).
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct DaemonConfig {
-    /// Health check HTTP port. When set, `opencrabs daemon` binds a tiny HTTP
+    /// Health check HTTP port. When set, `stemcell daemon` binds a tiny HTTP
     /// server on `0.0.0.0:<port>` that responds to `GET /health` with 200 OK.
     /// Useful for systemd watchdog, uptime monitors, and external health probes.
     #[serde(default)]
@@ -944,7 +944,7 @@ impl MemoryConfig {
         }
 
         // Check if [memory] section already exists in config.toml
-        let config_path = opencrabs_home().join("config.toml");
+        let config_path = stemcell_home().join("config.toml");
         if let Ok(content) = std::fs::read_to_string(&config_path) {
             // If user already has a [memory] section, don't override
             if content.contains("[memory]") {
@@ -1032,7 +1032,7 @@ pub struct ProviderConfigs {
     #[serde(default)]
     pub codex_cli: Option<ProviderConfig>,
 
-    /// Codex OAuth — native device-code flow, stores tokens in ~/.opencrabs/auth/codex.json
+    /// Codex OAuth — native device-code flow, stores tokens in ~/.stemcell/auth/codex.json
     #[serde(default)]
     pub codex: Option<ProviderConfig>,
 
@@ -1104,7 +1104,7 @@ impl ProviderConfigs {
     /// Tuple shape: `(session_id, display_name, requires_api_key, &Option<ProviderConfig>)`.
     /// `requires_api_key=false` for CLI providers where `enabled=true`
     /// alone activates them (claude-cli, opencode-cli, codex-cli, codex
-    /// OAuth — the latter stores tokens in `~/.opencrabs/auth/`).
+    /// OAuth — the latter stores tokens in `~/.stemcell/auth/`).
     ///
     /// Priority order matches what `factory::create_provider` would pick:
     /// CLI providers first (free, no key), then API providers, with custom
@@ -1592,7 +1592,7 @@ impl Default for DatabaseConfig {
 }
 
 fn default_db_path() -> PathBuf {
-    opencrabs_home().join("opencrabs.db")
+    stemcell_home().join("stemcell.db")
 }
 
 /// Expand leading `~` or `~/` in a path to the actual home directory.
@@ -1608,16 +1608,16 @@ fn expand_tilde(p: &Path) -> PathBuf {
 
 /// Canonical base directory for the active profile.
 ///
-/// - Default profile: `~/.opencrabs/`
-/// - Named profile: `~/.opencrabs/profiles/<name>/`
+/// - Default profile: `~/.stemcell/`
+/// - Named profile: `~/.stemcell/profiles/<name>/`
 ///
-/// Selection priority: `set_active_profile()` > `OPENCRABS_PROFILE` env > default.
-pub fn opencrabs_home() -> PathBuf {
+/// Selection priority: `set_active_profile()` > `STEMCELL_PROFILE` env > default.
+pub fn stemcell_home() -> PathBuf {
     let p = super::profile::resolve_profile_home();
     if !p.exists()
         && let Err(e) = std::fs::create_dir_all(&p)
     {
-        tracing::error!("Failed to create opencrabs home directory {p:?}: {e}");
+        tracing::error!("Failed to create stemcell home directory {p:?}: {e}");
     }
     p
 }
@@ -1687,7 +1687,7 @@ pub fn daily_backup(path: &Path, max_days: usize) {
 /// On config parse failure, `Config::load()` falls back to these files.
 /// Silently ignores errors — must never block normal operation.
 pub fn save_last_good_config() {
-    let home = opencrabs_home();
+    let home = stemcell_home();
 
     let config_path = home.join("config.toml");
     let keys_path_src = home.join("keys.toml");
@@ -1710,7 +1710,7 @@ pub fn save_last_good_config() {
 ///
 /// Returns None if no snapshot exists or if it also fails to parse.
 pub fn load_last_good_config() -> Option<Config> {
-    let home = opencrabs_home();
+    let home = stemcell_home();
     let config_good = home.join("config.last_good.toml");
 
     if !config_good.exists() {
@@ -1744,7 +1744,7 @@ pub fn load_last_good_config() -> Option<Config> {
 
 /// Get path to keys.toml - separate file for sensitive API keys
 pub fn keys_path() -> PathBuf {
-    opencrabs_home().join("keys.toml")
+    stemcell_home().join("keys.toml")
 }
 
 /// Read the RAW set of custom provider names from config.toml — no merge,
@@ -1758,7 +1758,7 @@ pub fn keys_path() -> PathBuf {
 /// won't remove anything destructively from keys.toml.
 pub(crate) fn raw_config_custom_provider_names() -> std::collections::HashSet<String> {
     use toml_edit::DocumentMut;
-    let path = Config::system_config_path().unwrap_or_else(|| opencrabs_home().join("config.toml"));
+    let path = Config::system_config_path().unwrap_or_else(|| stemcell_home().join("config.toml"));
     let Ok(content) = std::fs::read_to_string(&path) else {
         return std::collections::HashSet::new();
     };
@@ -1817,7 +1817,7 @@ pub fn save_keys(keys: &ProviderConfigs) -> Result<()> {
 
 /// Write a single key-value pair into keys.toml at the given dotted section path.
 ///
-/// Equivalent to `Config::write_key` but targets `~/.opencrabs/keys.toml`.
+/// Equivalent to `Config::write_key` but targets `~/.stemcell/keys.toml`.
 /// Use for persisting secrets (tokens, API keys) that must not go into config.toml.
 ///
 /// Normalize a TOML section key: lowercase, replace dots/underscores/spaces
@@ -1837,7 +1837,7 @@ pub fn normalize_toml_key(key: &str) -> String {
 /// # Example
 /// ```no_run
 /// # fn main() -> anyhow::Result<()> {
-/// use opencrabs::config::write_secret_key;
+/// use stemcell::config::write_secret_key;
 /// write_secret_key("channels.telegram", "token", "123456:ABC...")?;
 /// // results in keys.toml: [channels.telegram] token = "123456:ABC..."
 /// # Ok(())
@@ -2422,8 +2422,8 @@ impl Config {
     ///
     /// Priority (lowest to highest):
     /// 1. Default values
-    /// 2. System config: ~/.opencrabs/config.toml
-    /// 3. Local config: ./opencrabs.toml
+    /// 2. System config: ~/.stemcell/config.toml
+    /// 3. Local config: ./stemcell.toml
     /// 4. Environment variables
     pub fn load() -> Result<Self> {
         match Self::load_inner() {
@@ -2479,7 +2479,7 @@ impl Config {
                 tracing::error!("Failed to load keys.toml: {:#}", e);
 
                 // Try recovering from last-good keys snapshot
-                let keys_good = opencrabs_home().join("keys.last_good.toml");
+                let keys_good = stemcell_home().join("keys.last_good.toml");
                 if keys_good.exists() {
                     match fs::read_to_string(&keys_good)
                         .context("reading keys.last_good.toml")
@@ -2834,14 +2834,14 @@ impl Config {
         }
     }
 
-    /// Get the system config path: ~/.opencrabs/config.toml
+    /// Get the system config path: ~/.stemcell/config.toml
     pub fn system_config_path() -> Option<PathBuf> {
-        Some(opencrabs_home().join("config.toml"))
+        Some(stemcell_home().join("config.toml"))
     }
 
-    /// Get the local config path: ./opencrabs.toml
+    /// Get the local config path: ./stemcell.toml
     fn local_config_path() -> PathBuf {
-        PathBuf::from("./opencrabs.toml")
+        PathBuf::from("./stemcell.toml")
     }
 
     /// Load and merge configuration from a TOML file
@@ -2881,39 +2881,39 @@ impl Config {
     /// Apply environment variable overrides
     fn apply_env_overrides(mut config: Self) -> Result<Self> {
         // Database path
-        if let Ok(db_path) = std::env::var("OPENCRABS_DB_PATH") {
+        if let Ok(db_path) = std::env::var("STEMCELL_DB_PATH") {
             config.database.path = PathBuf::from(db_path);
         }
 
         // Log level
-        if let Ok(log_level) = std::env::var("OPENCRABS_LOG_LEVEL") {
+        if let Ok(log_level) = std::env::var("STEMCELL_LOG_LEVEL") {
             config.logging.level = log_level;
         }
 
         // Log file
-        if let Ok(log_file) = std::env::var("OPENCRABS_LOG_FILE") {
+        if let Ok(log_file) = std::env::var("STEMCELL_LOG_FILE") {
             config.logging.file = Some(PathBuf::from(log_file));
         }
 
         // Debug options
-        if let Ok(debug_lsp) = std::env::var("OPENCRABS_DEBUG_LSP") {
+        if let Ok(debug_lsp) = std::env::var("STEMCELL_DEBUG_LSP") {
             config.debug.debug_lsp = debug_lsp.parse().unwrap_or(false);
         }
 
-        if let Ok(profiling) = std::env::var("OPENCRABS_PROFILING") {
+        if let Ok(profiling) = std::env::var("STEMCELL_PROFILING") {
             config.debug.profiling = profiling.parse().unwrap_or(false);
         }
 
         // Crabrace options
-        if let Ok(enabled) = std::env::var("OPENCRABS_CRABRACE_ENABLED") {
+        if let Ok(enabled) = std::env::var("STEMCELL_CRABRACE_ENABLED") {
             config.crabrace.enabled = enabled.parse().unwrap_or(true);
         }
 
-        if let Ok(base_url) = std::env::var("OPENCRABS_CRABRACE_URL") {
+        if let Ok(base_url) = std::env::var("STEMCELL_CRABRACE_URL") {
             config.crabrace.base_url = base_url;
         }
 
-        if let Ok(auto_update) = std::env::var("OPENCRABS_CRABRACE_AUTO_UPDATE") {
+        if let Ok(auto_update) = std::env::var("STEMCELL_CRABRACE_AUTO_UPDATE") {
             config.crabrace.auto_update = auto_update.parse().unwrap_or(true);
         }
 
@@ -2943,7 +2943,7 @@ impl Config {
         let _guard = CONFIG_FILE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
 
         let path =
-            Self::system_config_path().unwrap_or_else(|| opencrabs_home().join("config.toml"));
+            Self::system_config_path().unwrap_or_else(|| stemcell_home().join("config.toml"));
 
         // Format-preserving parse — only the targeted key is modified
         let mut doc: DocumentMut = if path.exists() {
@@ -3039,7 +3039,7 @@ impl Config {
         let value = value.trim();
         let _guard = CONFIG_FILE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
 
-        let path = opencrabs_home().join("keys.toml");
+        let path = stemcell_home().join("keys.toml");
 
         let mut doc: DocumentMut = if path.exists() {
             fs::read_to_string(&path)?.parse()?
@@ -3089,7 +3089,7 @@ impl Config {
 
         let _guard = CONFIG_FILE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
 
-        let path = opencrabs_home().join("keys.toml");
+        let path = stemcell_home().join("keys.toml");
         if !path.exists() {
             return Ok(());
         }
@@ -3130,7 +3130,7 @@ impl Config {
         let _guard = CONFIG_FILE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
 
         let path =
-            Self::system_config_path().unwrap_or_else(|| opencrabs_home().join("config.toml"));
+            Self::system_config_path().unwrap_or_else(|| stemcell_home().join("config.toml"));
         if !path.exists() {
             return Ok(());
         }
@@ -3267,7 +3267,7 @@ impl Config {
         use toml_edit::DocumentMut;
 
         let path =
-            Self::system_config_path().unwrap_or_else(|| opencrabs_home().join("config.toml"));
+            Self::system_config_path().unwrap_or_else(|| stemcell_home().join("config.toml"));
 
         let mut doc: DocumentMut = if path.exists() {
             fs::read_to_string(&path)?.parse()?
@@ -3559,14 +3559,14 @@ api_key = "test-openai-key"
         let path = Config::system_config_path();
         assert!(path.is_some());
         let path = path.unwrap();
-        assert!(path.to_string_lossy().contains("opencrabs"));
+        assert!(path.to_string_lossy().contains("stemcell"));
         assert!(path.to_string_lossy().ends_with("config.toml"));
     }
 
     #[test]
     fn test_local_config_path() {
         let path = Config::local_config_path();
-        assert_eq!(path, PathBuf::from("./opencrabs.toml"));
+        assert_eq!(path, PathBuf::from("./stemcell.toml"));
     }
 
     #[test]

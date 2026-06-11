@@ -55,7 +55,7 @@ pub trait Provider: Send + Sync {
     ///
     /// When `true`, the agent service skips its own context-budget
     /// enforcement and trusts the CLI to compact/manage history. When
-    /// `false`, OpenCrabs sends the full message history on every spawn
+    /// `false`, StemCell sends the full message history on every spawn
     /// and MUST run its own compaction to stay within the model's window.
     ///
     /// Defaults to `cli_handles_tools()` for backwards compatibility.

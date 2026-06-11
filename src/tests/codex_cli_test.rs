@@ -46,9 +46,9 @@ fn capability_flags_match_cli_subprocess_pattern() {
         return;
     };
     // Mirrors the Claude CLI / OpenCode CLI surface: codex runs its own
-    // tool loop, so OpenCrabs must NOT re-execute tool_use blocks.
+    // tool loop, so StemCell must NOT re-execute tool_use blocks.
     assert!(p.cli_handles_tools());
-    // ...but OpenCrabs DOES own context: we send the full conversation
+    // ...but StemCell DOES own context: we send the full conversation
     // each invocation (`--ephemeral`, no `--resume`).
     assert!(!p.cli_manages_context());
     // Vision goes through analyze_image because we don't pass `-i <FILE>`.

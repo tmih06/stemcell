@@ -1,6 +1,6 @@
 //! Brain-file write safety: backup + append-only enforcement.
 //!
-//! The 2026-04-26 RSI agent rewrote `~/.opencrabs/TOOLS.md` from 33 KB
+//! The 2026-04-26 RSI agent rewrote `~/.stemcell/TOOLS.md` from 33 KB
 //! down to a stub by passing the entire file as `old_content` to
 //! `self_improve` action="update". Same pattern hit `MEMORY.md`. Brain
 //! files are append-only by user policy: removal is allowed only when
@@ -147,7 +147,7 @@ pub enum ShrinkCheck {
 /// `updated` is what the caller wants to write.
 ///
 /// Allows shrinking when:
-/// - `cleanup_intent=true`: User-initiated cleanup with approval gate (only for write_opencrabs_file)
+/// - `cleanup_intent=true`: User-initiated cleanup with approval gate (only for write_stemcell_file)
 /// - `dedup_intent=true` AND every byte that disappeared can still be found in the result
 ///
 /// Otherwise any byte loss on a protected file is a hard reject.
@@ -166,7 +166,7 @@ pub fn check_no_shrink(
     }
 
     // User-initiated cleanup: bypass append-only restriction.
-    // This is only available in write_opencrabs_file (requires_approval: true),
+    // This is only available in write_stemcell_file (requires_approval: true),
     // not in self_improve (autonomous RSI, no approval mechanism).
     if cleanup_intent {
         return ShrinkCheck::Allowed;

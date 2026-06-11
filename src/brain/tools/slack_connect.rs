@@ -35,7 +35,7 @@ impl Tool for SlackConnectTool {
     }
 
     fn description(&self) -> &str {
-        "Connect a Slack bot to OpenCrabs via Socket Mode. Requires two tokens: \
+        "Connect a Slack bot to StemCell via Socket Mode. Requires two tokens: \
          a Bot Token (xoxb-...) and an App-Level Token (xapp-...). \
          The user must create an app at https://api.slack.com/apps, enable Socket Mode, \
          add an App-Level Token with 'connections:write' scope, and install the app to their workspace. \

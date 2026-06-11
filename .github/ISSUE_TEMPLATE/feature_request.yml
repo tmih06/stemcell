@@ -1,5 +1,5 @@
 name: Feature Request
-description: Suggest a feature for OpenCrabs
+description: Suggest a feature for StemCell
 title: "[Feature]: "
 labels: ["enhancement"]
 body:
@@ -28,7 +28,7 @@ body:
     id: use-case
     attributes:
       label: Use Case
-      description: Why is this useful to OpenCrabs users broadly (not just your use case)?
+      description: Why is this useful to StemCell users broadly (not just your use case)?
     validations:
       required: true
 
