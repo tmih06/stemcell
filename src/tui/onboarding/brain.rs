@@ -162,11 +162,11 @@ impl OnboardingWizard {
         let workspace = std::path::Path::new(&self.workspace_path);
 
         // Read current brain files from workspace, fall back to static templates
-        let soul_template_static = include_str!("../../docs/reference/templates/SOUL.md");
-        let user_template_static = include_str!("../../docs/reference/templates/USER.md");
-        let agents_template_static = include_str!("../../docs/reference/templates/AGENTS.md");
-        let tools_template_static = include_str!("../../docs/reference/templates/TOOLS.md");
-        let memory_template_static = include_str!("../../docs/reference/templates/MEMORY.md");
+        let soul_template_static = include_str!("../../../wiki/reference/templates/SOUL.md");
+        let user_template_static = include_str!("../../../wiki/reference/templates/USER.md");
+        let agents_template_static = include_str!("../../../wiki/reference/templates/AGENTS.md");
+        let tools_template_static = include_str!("../../../wiki/reference/templates/TOOLS.md");
+        let memory_template_static = include_str!("../../../wiki/reference/templates/MEMORY.md");
 
         let soul_template = std::fs::read_to_string(workspace.join("SOUL.md"))
             .unwrap_or_else(|_| soul_template_static.to_string());

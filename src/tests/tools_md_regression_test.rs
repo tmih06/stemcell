@@ -8,7 +8,7 @@
 
 use std::fs;
 
-const TEMPLATE_PATH: &str = "src/docs/reference/templates/TOOLS.md";
+const TEMPLATE_PATH: &str = "wiki/reference/templates/TOOLS.md";
 
 fn load_template() -> String {
     fs::read_to_string(TEMPLATE_PATH).unwrap_or_else(|_| panic!("Failed to read {TEMPLATE_PATH}"))
