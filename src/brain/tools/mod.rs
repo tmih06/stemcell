@@ -151,4 +151,4 @@ pub mod browser;
 // Re-exports
 pub use error::{Result, ToolError};
 pub use registry::ToolRegistry;
-pub use r#trait::{Tool, ToolCapability, ToolExecutionContext, ToolResult};
+pub use r#trait::{Tool, ToolCapability, ToolExecutionContext, ToolResult, parse_input};

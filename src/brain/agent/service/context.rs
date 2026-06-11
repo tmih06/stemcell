@@ -1,4 +1,5 @@
 use super::builder::AgentService;
+use super::tool_loop::guard_cross_provider_model_leak;
 use crate::brain::agent::context::AgentContext;
 use crate::brain::agent::error::{AgentError, Result};
 use crate::brain::provider::{ContentBlock, LLMRequest, Message, Provider};
@@ -466,17 +467,16 @@ The summary above is NOT sufficient for implementation work.
         // Never send a {provider, model} pair the user didn't configure.
         // If the requested model isn't supported by this provider, remap to
         // the provider's own default — same invariant `stream_complete` enforces.
-        let mut effective_model = model_name;
         let supported = provider.supported_models();
-        if !supported.is_empty() && !supported.iter().any(|m| m == &effective_model) {
-            let remapped = provider.default_model().to_string();
+        let (effective_model, leaked) =
+            guard_cross_provider_model_leak(model_name, provider.default_model(), &supported);
+        if let Some(leaked) = leaked {
             tracing::warn!(
                 "compute_compaction_summary: provider '{}' does not support model '{}' — remapping to '{}'",
                 provider.name(),
+                leaked,
                 effective_model,
-                remapped,
             );
-            effective_model = remapped;
         }
 
         let mut request = LLMRequest::new(effective_model, summary_messages)

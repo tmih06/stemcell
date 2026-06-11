@@ -49,6 +49,32 @@ pub struct Task {
     pub metadata: Option<HashMap<String, serde_json::Value>>,
 }
 
+impl Task {
+    /// Build a `TaskStatus` carrying a single agent text message for the given
+    /// state. Generates a fresh message id and an RFC3339 timestamp. Used by
+    /// the `message/send` handler for the Working/Completed/Failed transitions,
+    /// which only differ by state and text.
+    pub fn status_message(
+        state: TaskState,
+        context_id: impl Into<String>,
+        task_id: impl Into<String>,
+        text: impl Into<String>,
+    ) -> TaskStatus {
+        TaskStatus {
+            state,
+            message: Some(Message {
+                message_id: Some(uuid::Uuid::new_v4().to_string()),
+                context_id: Some(context_id.into()),
+                task_id: Some(task_id.into()),
+                role: Role::Agent,
+                parts: vec![Part::text(text)],
+                metadata: None,
+            }),
+            timestamp: Some(chrono::Utc::now().to_rfc3339()),
+        }
+    }
+}
+
 // ─── Message & Part ──────────────────────────────────────────
 
 /// Role per §4.1.5.

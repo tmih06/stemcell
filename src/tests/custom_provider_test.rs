@@ -5,6 +5,7 @@
 
 use crate::brain::provider::custom_openai_compatible::OpenAIProvider;
 use crate::brain::provider::factory::{create_provider, create_provider_by_name};
+use crate::brain::provider::{LLMRequest, Message, Provider};
 use crate::config::{Config, ProviderConfig, ProviderConfigs};
 use std::collections::BTreeMap;
 
@@ -406,6 +407,150 @@ fn wizard_existing_custom_names_populated_from_config() {
     // This test just verifies the field exists and is a Vec
     let wizard = OnboardingWizard::new();
     let _: &Vec<String> = &wizard.ps.custom_names;
+}
+
+// ── Custom header wiring (regression for the RigAdapter migration) ──
+//
+// `extra_headers` were stored on the provider but never read by `build()`
+// after the rig-core migration, so Copilot / OpenRouter / Qwen / codex
+// headers silently never reached requests. These tests drive the full
+// `build().complete()` path against a mock server and assert the headers
+// actually land on the wire — not just that they're stored on the struct.
+
+/// Minimal OpenAI chat/completions success body the rig client will accept.
+fn mock_chat_completion_body() -> &'static str {
+    r#"{
+        "id": "chatcmpl-test",
+        "object": "chat.completion",
+        "created": 0,
+        "model": "test-model",
+        "choices": [{
+            "index": 0,
+            "message": {"role": "assistant", "content": "ok"},
+            "finish_reason": "stop"
+        }],
+        "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2}
+    }"#
+}
+
+#[tokio::test]
+async fn extra_headers_reach_the_request() {
+    let mut server = mockito::Server::new_async().await;
+
+    // The mock only matches when BOTH custom headers are present on the
+    // outgoing request. If `build()` drops them (the pre-fix regression),
+    // this mock never matches and `complete()` fails.
+    let mock = server
+        .mock("POST", "/v1/chat/completions")
+        .match_header("x-title", "StemCell")
+        .match_header("http-referer", "https://stemcell.test")
+        .with_status(200)
+        .with_header("content-type", "application/json")
+        .with_body(mock_chat_completion_body())
+        .create_async()
+        .await;
+
+    let provider = OpenAIProvider::with_base_url(
+        "sk-test".to_string(),
+        format!("{}/v1/chat/completions", server.url()),
+    )
+    .with_name("openrouter")
+    .with_default_model("test-model".to_string())
+    .with_extra_headers(vec![
+        ("X-Title".to_string(), "StemCell".to_string()),
+        (
+            "HTTP-Referer".to_string(),
+            "https://stemcell.test".to_string(),
+        ),
+    ])
+    .build();
+
+    let request = LLMRequest::new("test-model", vec![Message::user("hi")]);
+    let result = provider.complete(request).await;
+
+    assert!(
+        result.is_ok(),
+        "complete() should succeed when custom headers are forwarded; \
+         a failure means the headers never reached the request: {:?}",
+        result.err()
+    );
+    // mockito's assert verifies the matcher (both headers) was actually hit.
+    mock.assert_async().await;
+}
+
+#[tokio::test]
+async fn extra_headers_coexist_with_bearer_auth() {
+    let mut server = mockito::Server::new_async().await;
+
+    // Custom header AND the bearer Authorization header must both be present —
+    // wiring custom headers must not clobber the api_key bearer auth.
+    let mock = server
+        .mock("POST", "/v1/chat/completions")
+        .match_header("authorization", "Bearer sk-secret")
+        .match_header("x-custom", "value")
+        .with_status(200)
+        .with_header("content-type", "application/json")
+        .with_body(mock_chat_completion_body())
+        .create_async()
+        .await;
+
+    let provider = OpenAIProvider::with_base_url(
+        "sk-secret".to_string(),
+        format!("{}/v1/chat/completions", server.url()),
+    )
+    .with_name("copilot")
+    .with_default_model("test-model".to_string())
+    .with_extra_headers(vec![("X-Custom".to_string(), "value".to_string())])
+    .build();
+
+    let request = LLMRequest::new("test-model", vec![Message::user("hi")]);
+    let result = provider.complete(request).await;
+
+    assert!(
+        result.is_ok(),
+        "complete() should succeed with both bearer auth and a custom header: {:?}",
+        result.err()
+    );
+    mock.assert_async().await;
+}
+
+#[tokio::test]
+async fn invalid_custom_header_name_is_skipped_not_fatal() {
+    let mut server = mockito::Server::new_async().await;
+
+    // A malformed header name must be skipped (logged) rather than panicking
+    // or aborting the request — the valid header still goes through.
+    let mock = server
+        .mock("POST", "/v1/chat/completions")
+        .match_header("x-good", "ok")
+        .with_status(200)
+        .with_header("content-type", "application/json")
+        .with_body(mock_chat_completion_body())
+        .create_async()
+        .await;
+
+    let provider = OpenAIProvider::with_base_url(
+        "sk-test".to_string(),
+        format!("{}/v1/chat/completions", server.url()),
+    )
+    .with_name("custom")
+    .with_default_model("test-model".to_string())
+    .with_extra_headers(vec![
+        // Spaces are illegal in a header name → from_bytes fails → skipped.
+        ("Invalid Header Name".to_string(), "x".to_string()),
+        ("X-Good".to_string(), "ok".to_string()),
+    ])
+    .build();
+
+    let request = LLMRequest::new("test-model", vec![Message::user("hi")]);
+    let result = provider.complete(request).await;
+
+    assert!(
+        result.is_ok(),
+        "an invalid custom header name must be skipped, not fatal: {:?}",
+        result.err()
+    );
+    mock.assert_async().await;
 }
 
 #[test]

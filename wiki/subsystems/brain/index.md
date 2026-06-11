@@ -25,7 +25,14 @@ The core AI layer of StemCell — LLM providers, agent orchestration, 30+ tools,
 - **OpenAI Compatible:** `custom_openai_compatible.rs` — LM Studio, Ollama, Groq, OpenCode Zen Free, any OpenAI-format endpoint
 - **CLI Wrappers:** Claude Code (`claude_cli.rs`), Codex CLI (`codex_cli.rs`), OpenCode CLI (`opencode_cli.rs`)
 - **Model Fetching:** Dynamic model fetching supported via `models.dev` cost metadata (e.g., filtering free models for OpenCode Zen Free).
-- **Infrastructure:** `fallback.rs` (fallback chain), `retry.rs` (exponential backoff), `rate_limiter.rs` (per-provider pacing), `factory.rs` (config-driven creation)
+- **Infrastructure:** `fallback.rs` (fallback chain), `rate_limiter.rs` (per-provider pacing), `factory.rs` (config-driven creation). DB/API retry is handled by SQLite WAL + `busy_timeout` and provider-level fallback rather than a standalone retry module.
+
+### Request pipeline (rig-core via `RigAdapter`)
+
+`custom_openai_compatible.rs` builds a `RigAdapter` (`rig_adapter.rs`) that owns request encoding. Notes on what the adapter does and does not wire through:
+
+- **Custom headers ARE wired.** `OpenAIProvider::extra_headers` (Copilot vscode telemetry, OpenRouter `X-Title`/`HTTP-Referer`, Qwen DashScope, codex `ChatGPT-Account-Id`, …) are applied via rig's `http_headers` on the client builder and reach every request. They do not clobber the bearer `Authorization` header. Regression-tested in `custom_provider_test.rs` (`extra_headers_reach_the_request`, `extra_headers_coexist_with_bearer_auth`, `invalid_custom_header_name_is_skipped_not_fatal`).
+- **NOT wired (known regressions from the rig migration, currently `warn!`-only):** `with_body_transform` (Qwen body shaping, local-model thinking toggle), `with_rate_limiter` (OpenRouter `:free` pacing), and `with_cache_enabled`. rig-core serializes the request body itself, so there is no safe hook for these without reimplementing rig's encoding. The builders log a warning instead of silently no-op-ing; restoring them is tracked follow-up work.
 
 ## Agent Service
 

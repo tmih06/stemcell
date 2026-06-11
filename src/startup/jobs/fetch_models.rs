@@ -3,12 +3,15 @@
 //!
 //! Strategy (two passes, both respect 24h cache freshness):
 //!
-//! 1. Fetch **ModelDB** (modeldb.axiom.co) — a free, no-auth, hourly-synced
-//!    LiteLLM catalog with 2700+ models from 90 providers.  Model IDs are
-//!    already in their native form, so no prefix-stripping is needed.
+//! 1. Fetch **models.dev** (models.dev/api.json) — a free, no-auth, community
+//!    catalog with curated per-model capability metadata (display name,
+//!    `tool_call`, `reasoning`, modalities, cost, context limits).  Model IDs
+//!    are already in their native form, so no prefix-stripping is needed.
 //!
 //! 2. For each credentialled provider, fetch from its **own** live API so
-//!    authoritative results overwrite the ModelDB-derived data.
+//!    authoritative results overwrite the models.dev-derived data.  Live
+//!    fetches know only model ids; [`model_cache::store`] preserves any
+//!    models.dev metadata already cached for those ids.
 //!
 //! Both passes skip providers whose cache entries are fresh (within 24h).
 //! Network-bound — exactly the kind of slow work that belongs in a background
@@ -17,7 +20,7 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::startup::job::{StartupContext, StartupJob};
-use crate::startup::model_cache;
+use crate::startup::model_cache::{self, CachedModel, ModelCost, ModelLimit};
 use async_trait::async_trait;
 
 pub struct FetchModelsJob;
@@ -44,18 +47,18 @@ impl StartupJob for FetchModelsJob {
             p
         };
 
-        // Pass 1: seed the cache from ModelDB (modeldb.axiom.co) — a free,
-        // no-auth, hourly-synced LiteLLM catalog with 2700+ models from 90
-        // providers.  Only fetches when at least one known provider is stale.
+        // Pass 1: seed the cache from models.dev (models.dev/api.json) — a
+        // free, no-auth catalog with curated per-model capability metadata.
+        // Only fetches when at least one known provider is stale.
         let ttl = model_cache::FRESH_TTL_SECS;
         let credentials = crate::utils::providers::configured_providers(&creds);
 
         // Snapshot which credentialed providers were already fresh BEFORE this
         // run seeds anything.  Pass 2 below uses this — not the live cache — to
-        // decide what to skip, so a ModelDB entry Pass 1 just wrote this run is
-        // not mistaken for a cache that's still fresh from a previous startup.
-        // Without this, Pass 1 makes every ModelDB-covered provider look fresh
-        // and Pass 2's authoritative live fetch never runs.
+        // decide what to skip, so a models.dev entry Pass 1 just wrote this run
+        // is not mistaken for a cache that's still fresh from a previous
+        // startup.  Without this, Pass 1 makes every models.dev-covered
+        // provider look fresh and Pass 2's authoritative live fetch never runs.
         let pre_run_fresh: HashSet<String> = credentials
             .iter()
             .map(|(provider, _)| provider.clone())
@@ -63,16 +66,16 @@ impl StartupJob for FetchModelsJob {
             .collect();
 
         let mut warmed: HashSet<String> = HashSet::new();
-        if needs_modeldb_refresh() {
-            for (pid, models) in fetch_modeldb_catalog().await {
-                model_cache::store(&pid, models);
+        if needs_catalog_refresh() {
+            for (pid, models) in fetch_modelsdev_catalog().await {
+                model_cache::store_rich(&pid, models);
                 warmed.insert(pid);
             }
         } else {
             // Cache is still fresh — note what we would have warmed so the
             // report line is still accurate.
             let cache = model_cache::load();
-            for our_id in modeldb_known_ids() {
+            for our_id in catalog_known_ids() {
                 if cache.contains_key(our_id) {
                     warmed.insert(our_id.to_string());
                 }
@@ -139,47 +142,45 @@ impl StartupJob for FetchModelsJob {
     }
 }
 
-// ── ModelDB catalog ─────────────────────────────────────────────────────────
+// ── models.dev catalog ───────────────────────────────────────────────────────
 
 /// The chat TUI is the main interface, so the model picker should only list
-/// models capable of conversation + tool use.  ModelDB tags each model with a
-/// `model_type`; we keep the conversational ones and drop everything else
-/// (image, embedding, audio, rerank, video_generation, ocr, moderation, …).
+/// models capable of conversation + tool use.  models.dev curates a
+/// `tool_call` boolean and `modalities.input` array per model, so we keep
+/// models that (a) advertise tool calling and (b) accept text input, and drop
+/// everything else (image, embedding, audio, rerank, video, …).
 ///
-/// `chat` is the standard conversational type.  `responses` is OpenAI's
-/// Responses-API surface for the GPT-5 / o-series models (the `chatgpt`
-/// provider exposes *only* this type), which are fully chat + tool-use
-/// capable.  Legacy text `completion` models are excluded — they predate the
-/// chat/tool-use contract the TUI depends on.
-///
-/// A missing `model_type` is treated as conversational so that providers/feeds
-/// that omit the field are not silently emptied.
-pub(crate) fn is_conversational_model_type(model_type: Option<&str>) -> bool {
-    matches!(model_type, None | Some("chat") | Some("responses"))
+/// `tool_call` absent is treated as non-tool-capable: models.dev populates it
+/// for every conversational model, so a missing flag reliably marks a
+/// non-chat surface (embeddings, image generation) rather than an omission.
+pub(crate) fn is_chat_capable(tool_call: Option<bool>, input_modalities: &[String]) -> bool {
+    let takes_text = input_modalities.is_empty()
+        || input_modalities
+            .iter()
+            .any(|m| m.eq_ignore_ascii_case("text"));
+    tool_call == Some(true) && takes_text
 }
 
-/// ModelDB provider_id → our internal provider ID.
-const MDB_PROVIDER_MAP: &[(&str, &str)] = &[
+/// models.dev provider key → our internal provider ID.
+const CATALOG_PROVIDER_MAP: &[(&str, &str)] = &[
     ("anthropic", "anthropic"),
     ("openai", "openai"),
-    ("chatgpt", "openai"),
     ("google", "gemini"),
     ("minimax", "minimax"),
-    ("dashscope", "qwen"),
+    ("alibaba", "qwen"),
     ("zai", "zhipu"),
     ("openrouter", "openrouter"),
-    ("github", "github"),
-    ("ollama", "ollama"),
-    ("bedrock", "bedrock"),
-    ("vertex", "vertex"),
+    ("github-copilot", "github"),
+    ("ollama-cloud", "ollama"),
+    ("amazon-bedrock", "bedrock"),
+    ("google-vertex", "vertex"),
 ];
 
-/// The internal provider IDs we expect ModelDB to cover, derived from the
-/// distinct values of [`MDB_PROVIDER_MAP`] so the two never drift (e.g.
-/// `openai` is reached via both `openai` and `chatgpt`).
-fn modeldb_known_ids() -> Vec<&'static str> {
+/// The internal provider IDs we expect models.dev to cover, derived from the
+/// distinct values of [`CATALOG_PROVIDER_MAP`] so the two never drift.
+fn catalog_known_ids() -> Vec<&'static str> {
     let mut ids: Vec<&'static str> = Vec::new();
-    for (_, our_id) in MDB_PROVIDER_MAP {
+    for (_, our_id) in CATALOG_PROVIDER_MAP {
         if !ids.contains(our_id) {
             ids.push(our_id);
         }
@@ -188,23 +189,30 @@ fn modeldb_known_ids() -> Vec<&'static str> {
 }
 
 /// True when at least one known provider has a stale or missing cache entry,
-/// meaning we should re-fetch from ModelDB.
-fn needs_modeldb_refresh() -> bool {
+/// meaning we should re-fetch from models.dev.
+fn needs_catalog_refresh() -> bool {
     let ttl = model_cache::FRESH_TTL_SECS;
-    !modeldb_known_ids()
+    !catalog_known_ids()
         .into_iter()
         .all(|id| model_cache::is_fresh(id, ttl))
 }
 
-/// Fetch model IDs from ModelDB (https://modeldb.axiom.co) — a free, no-auth,
-/// hourly-synced catalog built from LiteLLM's model pricing data.
+/// Fetch model metadata from models.dev (https://models.dev/api.json) — a
+/// free, no-auth catalog of curated per-model capability data.
 ///
-/// Only returns entries for providers in [`modeldb_known_ids`].  Unknown
-/// providers are silently dropped so the on-disk cache stays lean.
-async fn fetch_modeldb_catalog() -> HashMap<String, Vec<String>> {
-    let url = "https://modeldb.axiom.co/api/v1/models?project=model_id,provider_id,model_type";
+/// Only returns entries for providers in [`CATALOG_PROVIDER_MAP`].  Unknown
+/// providers are silently dropped so the on-disk cache stays lean.  Non-chat
+/// models (no tool calling / non-text input) are filtered out per
+/// [`is_chat_capable`].
+async fn fetch_modelsdev_catalog() -> HashMap<String, Vec<CachedModel>> {
+    let url = "https://models.dev/api.json";
+    // models.dev sits behind Cloudflare and gzip-compresses this response from
+    // ~2.26 MB down to ~190 KB.  Opt in explicitly: reqwest only negotiates
+    // gzip when the `gzip` feature is enabled *and* requested here, and it
+    // transparently decompresses the body before we parse it.
     let client = match reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(30))
+        .gzip(true)
         .build()
     {
         Ok(c) => c,
@@ -216,48 +224,101 @@ async fn fetch_modeldb_catalog() -> HashMap<String, Vec<String>> {
         _ => return HashMap::new(),
     };
 
-    let entries: Vec<serde_json::Value> = match resp.json().await {
+    // Top level is { provider_key: { models: { model_id: {..} } } }.
+    let root: HashMap<String, serde_json::Value> = match resp.json().await {
         Ok(v) => v,
         Err(_) => return HashMap::new(),
     };
 
-    let overrides: HashMap<&str, &str> = MDB_PROVIDER_MAP.iter().copied().collect();
-    let mut catalog: HashMap<String, Vec<String>> = HashMap::new();
+    let overrides: HashMap<&str, &str> = CATALOG_PROVIDER_MAP.iter().copied().collect();
+    let mut catalog: HashMap<String, Vec<CachedModel>> = HashMap::new();
 
-    for entry in &entries {
-        let model_id = match entry.get("model_id").and_then(|v| v.as_str()) {
-            Some(id) if !id.is_empty() => id,
-            _ => continue,
-        };
-        let raw_provider = match entry.get("provider_id").and_then(|v| v.as_str()) {
-            Some(p) if !p.is_empty() => p,
-            _ => continue,
-        };
-
-        // The chat TUI is the main interface, so only keep models capable of
-        // conversation + tool use.  ModelDB tags each model with a `model_type`
-        // (chat / image / embedding / audio / rerank / video_generation / …);
-        // everything that isn't a conversational type is bloat in the picker.
-        let model_type = entry.get("model_type").and_then(|v| v.as_str());
-        if !is_conversational_model_type(model_type) {
-            continue;
-        }
-
-        let our_id = match overrides.get(raw_provider).copied() {
+    for (provider_key, provider_val) in &root {
+        let our_id = match overrides.get(provider_key.as_str()).copied() {
             Some(id) => id,
             None => continue, // unknown provider, skip to keep cache lean
         };
 
-        catalog
-            .entry(our_id.to_string())
-            .or_default()
-            .push(model_id.to_string());
+        let models = match provider_val.get("models").and_then(|m| m.as_object()) {
+            Some(m) => m,
+            None => continue,
+        };
+
+        for (model_id, model_val) in models {
+            if model_id.is_empty() {
+                continue;
+            }
+
+            let tool_call = model_val.get("tool_call").and_then(|v| v.as_bool());
+            let reasoning = model_val.get("reasoning").and_then(|v| v.as_bool());
+            let input_modalities: Vec<String> = model_val
+                .get("modalities")
+                .and_then(|m| m.get("input"))
+                .and_then(|v| v.as_array())
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(|v| v.as_str().map(str::to_string))
+                        .collect()
+                })
+                .unwrap_or_default();
+
+            // The chat TUI is the main interface, so only keep models capable
+            // of conversation + tool use.  This authoritative capability check
+            // replaces the old id-substring heuristic for catalog-sourced data.
+            if !is_chat_capable(tool_call, &input_modalities) {
+                continue;
+            }
+
+            let name = model_val
+                .get("name")
+                .and_then(|v| v.as_str())
+                .map(str::to_string);
+
+            let cost_obj = model_val.get("cost");
+            let cost = ModelCost {
+                input: cost_obj
+                    .and_then(|c| c.get("input"))
+                    .and_then(|v| v.as_f64()),
+                output: cost_obj
+                    .and_then(|c| c.get("output"))
+                    .and_then(|v| v.as_f64()),
+                cache_read: cost_obj
+                    .and_then(|c| c.get("cache_read"))
+                    .and_then(|v| v.as_f64()),
+                cache_write: cost_obj
+                    .and_then(|c| c.get("cache_write"))
+                    .and_then(|v| v.as_f64()),
+            };
+
+            let limit_obj = model_val.get("limit");
+            let limit = ModelLimit {
+                context: limit_obj
+                    .and_then(|l| l.get("context"))
+                    .and_then(|v| v.as_u64()),
+                output: limit_obj
+                    .and_then(|l| l.get("output"))
+                    .and_then(|v| v.as_u64()),
+            };
+
+            catalog
+                .entry(our_id.to_string())
+                .or_default()
+                .push(CachedModel {
+                    id: model_id.clone(),
+                    name,
+                    tool_call,
+                    reasoning,
+                    input_modalities,
+                    cost,
+                    limit,
+                });
+        }
     }
 
-    // Deduplicate and sort newest-first within each bucket
+    // Deduplicate by id and sort newest-first within each bucket.
     for models in catalog.values_mut() {
-        models.sort();
-        models.dedup();
+        models.sort_by(|a, b| a.id.cmp(&b.id));
+        models.dedup_by(|a, b| a.id == b.id);
         models.reverse();
     }
 

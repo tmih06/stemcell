@@ -69,13 +69,6 @@
 | `jobs/rsi_proposals.rs` | RSI proposal loading |
 | `jobs/rsi_status.rs` | RSI system status |
 
-## Error — `src/error/`
-
-| File | Purpose |
-|------|---------|
-| `mod.rs` | Module root |
-| `types.rs` | `StemCellError` enum with `ErrorCode` |
-
 ## Logging — `src/logging/`
 
 | File | Purpose |

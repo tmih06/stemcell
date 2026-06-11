@@ -945,6 +945,18 @@ impl App {
         })
     }
 
+    /// The most recent pending `/approve` policy menu, if any.
+    /// Centralizes the `messages.iter_mut().rev().find_map(...).filter(...)`
+    /// walk that the chat-key handler otherwise repeats verbatim for every
+    /// navigation/selection key.
+    fn pending_approve_menu_mut(&mut self) -> Option<&mut ApproveMenu> {
+        self.messages
+            .iter_mut()
+            .rev()
+            .find_map(|m| m.approve_menu.as_mut())
+            .filter(|m| m.state == ApproveMenuState::Pending)
+    }
+
     /// Handle keys in chat mode
     pub(crate) async fn handle_chat_key(
         &mut self,
@@ -993,34 +1005,18 @@ impl App {
         // Intercept keys when /approve menu is pending
         if self.has_pending_approve_menu() {
             if keys::is_up(&event) {
-                if let Some(menu) = self
-                    .messages
-                    .iter_mut()
-                    .rev()
-                    .find_map(|m| m.approve_menu.as_mut())
-                    .filter(|m| m.state == ApproveMenuState::Pending)
-                {
+                if let Some(menu) = self.pending_approve_menu_mut() {
                     menu.selected_option = menu.selected_option.saturating_sub(1);
                 }
                 return Ok(());
             } else if keys::is_down(&event) {
-                if let Some(menu) = self
-                    .messages
-                    .iter_mut()
-                    .rev()
-                    .find_map(|m| m.approve_menu.as_mut())
-                    .filter(|m| m.state == ApproveMenuState::Pending)
-                {
+                if let Some(menu) = self.pending_approve_menu_mut() {
                     menu.selected_option = (menu.selected_option + 1).min(2);
                 }
                 return Ok(());
             } else if keys::is_enter(&event) || keys::is_submit(&event) {
                 let selected = self
-                    .messages
-                    .iter()
-                    .rev()
-                    .find_map(|m| m.approve_menu.as_ref())
-                    .filter(|m| m.state == ApproveMenuState::Pending)
+                    .pending_approve_menu_mut()
                     .map(|m| m.selected_option)
                     .unwrap_or(0);
 
@@ -1050,13 +1046,7 @@ impl App {
                 };
 
                 // Mark menu as resolved
-                if let Some(menu) = self
-                    .messages
-                    .iter_mut()
-                    .rev()
-                    .find_map(|m| m.approve_menu.as_mut())
-                    .filter(|m| m.state == ApproveMenuState::Pending)
-                {
+                if let Some(menu) = self.pending_approve_menu_mut() {
                     menu.state = ApproveMenuState::Selected(selected);
                 }
 
@@ -1084,13 +1074,7 @@ impl App {
                 return Ok(());
             } else if keys::is_cancel(&event) {
                 // Cancel — dismiss menu without changing policy
-                if let Some(menu) = self
-                    .messages
-                    .iter_mut()
-                    .rev()
-                    .find_map(|m| m.approve_menu.as_mut())
-                    .filter(|m| m.state == ApproveMenuState::Pending)
-                {
+                if let Some(menu) = self.pending_approve_menu_mut() {
                     menu.state = ApproveMenuState::Selected(99); // sentinel for cancelled
                 }
                 self.push_system_message("Approval policy unchanged.".to_string());
@@ -1270,13 +1254,26 @@ impl App {
                 }
                 return Ok(());
             } else if keys::is_enter(&event) || keys::is_submit(&event) {
-                // Select the highlighted command and execute it
+                // Enter: select the highlighted command and run it immediately.
                 if let Some(&cmd_idx) = self.slash_filtered.get(self.slash_selected_index) {
                     let cmd_name = self.slash_command_name(cmd_idx).unwrap_or("").to_string();
                     self.input_buffer.clear();
                     self.cursor_position = 0;
                     self.slash_suggestions_active = false;
                     self.handle_slash_command(&cmd_name).await;
+                }
+                return Ok(());
+            } else if event.code == KeyCode::Tab {
+                // Tab: complete the input to the highlighted command name without
+                // running it. The trailing space lets arguments be typed and makes
+                // `update_slash_suggestions` dismiss the dropdown; Enter then launches.
+                if let Some(&cmd_idx) = self.slash_filtered.get(self.slash_selected_index) {
+                    let cmd_name = self.slash_command_name(cmd_idx).unwrap_or("").to_string();
+                    if !cmd_name.is_empty() {
+                        self.input_buffer = format!("{cmd_name} ");
+                        self.cursor_position = self.input_buffer.len();
+                        self.update_slash_suggestions();
+                    }
                 }
                 return Ok(());
             } else if keys::is_cancel(&event) {

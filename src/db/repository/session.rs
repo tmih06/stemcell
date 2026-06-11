@@ -7,7 +7,7 @@ use crate::db::database::interact_err;
 use crate::db::models::Session;
 use anyhow::{Context, Result};
 use chrono::Utc;
-use rusqlite::params;
+use rusqlite::{OptionalExtension, params};
 use uuid::Uuid;
 
 /// Options for listing sessions
@@ -212,30 +212,21 @@ impl SessionRepository {
             .await
             .context("Failed to get connection")?
             .interact(move |conn| {
-                let (sql, params_vec): (&str, Vec<Box<dyn rusqlite::types::ToSql>>) =
-                    match (include_archived, limit) {
-                        (true, Some(lim)) => (
-                            "SELECT * FROM sessions ORDER BY updated_at DESC LIMIT ?1 OFFSET ?2",
-                            vec![Box::new(lim as i64), Box::new(offset as i64)],
-                        ),
-                        (false, Some(lim)) => (
-                            "SELECT * FROM sessions WHERE archived_at IS NULL ORDER BY updated_at DESC LIMIT ?1 OFFSET ?2",
-                            vec![Box::new(lim as i64), Box::new(offset as i64)],
-                        ),
-                        (true, None) => (
-                            "SELECT * FROM sessions ORDER BY updated_at DESC",
-                            vec![],
-                        ),
-                        (false, None) => (
-                            "SELECT * FROM sessions WHERE archived_at IS NULL ORDER BY updated_at DESC",
-                            vec![],
-                        ),
-                    };
-
-                let mut stmt = conn.prepare_cached(sql)?;
-                let params_refs: Vec<&dyn rusqlite::types::ToSql> =
-                    params_vec.iter().map(|p| p.as_ref()).collect();
-                let rows = stmt.query_map(params_refs.as_slice(), Session::from_row)?;
+                // One parameterized query instead of four hand-written variants:
+                // `?1 = 1 OR archived_at IS NULL` folds the archived filter, and
+                // SQLite treats `LIMIT -1` as "no limit", so a None limit maps to -1.
+                let mut stmt = conn.prepare_cached(
+                    "SELECT * FROM sessions WHERE (?1 = 1 OR archived_at IS NULL) \
+                     ORDER BY updated_at DESC LIMIT ?2 OFFSET ?3",
+                )?;
+                let rows = stmt.query_map(
+                    params![
+                        include_archived as i64,
+                        limit.map(|l| l as i64).unwrap_or(-1),
+                        offset as i64,
+                    ],
+                    Session::from_row,
+                )?;
                 rows.collect::<std::result::Result<Vec<_>, _>>()
             })
             .await
@@ -368,21 +359,6 @@ impl SessionRepository {
             .await
             .map_err(interact_err)?
             .context("Failed to count sessions")
-    }
-}
-
-/// Extension trait for rusqlite to add `.optional()` to query results
-trait OptionalExt<T> {
-    fn optional(self) -> rusqlite::Result<Option<T>>;
-}
-
-impl<T> OptionalExt<T> for rusqlite::Result<T> {
-    fn optional(self) -> rusqlite::Result<Option<T>> {
-        match self {
-            Ok(v) => Ok(Some(v)),
-            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
-            Err(e) => Err(e),
-        }
     }
 }
 

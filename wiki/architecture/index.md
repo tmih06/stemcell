@@ -25,7 +25,7 @@ AppState
 ## Key Properties
 
 - **Single binary** — everything statically linked, no plugin system
-- **Feature-gated compilation** — `Cargo.toml` has 90+ feature flags, `build_toggles.toml` drives build profiles, `build.rs` cross-checks expected features via `OPENCRABS_EXPECTED_FEATURES`
+- **Feature-gated compilation** — `Cargo.toml` has 90+ feature flags, `build_toggles.toml` drives build profiles, `build.rs` cross-checks expected features via `STEMCELL_EXPECTED_FEATURES`
 - **Local-first** — SQLite storage, no cloud dependency
 - **Session-oriented** — persistent chat sessions with token/cost tracking
 - **Concurrent channels** — multi-platform messaging through shared agent sessions
@@ -50,7 +50,6 @@ src/main.rs
     → src/rtk/        Rust Token Killer
     → src/usage/      Usage analytics
     → src/utils/      Shared utilities
-    → src/error/      Typed errors
 ```
 
 ## Subsystems

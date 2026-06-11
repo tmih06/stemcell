@@ -7,6 +7,12 @@
 //!
 //! Persisted to `startup_models_cache.json` in the stemcell base dir,
 //! following the `claude_cli_models.json` precedent.
+//!
+//! Each entry holds a list of [`CachedModel`] records. The startup job seeds
+//! them from [models.dev](https://models.dev) with rich metadata (display
+//! name, `tool_call` / `reasoning` flags, modalities, cost, context limits);
+//! per-provider live API fetches yield ids only and are merged in via
+//! [`store`], which preserves any models.dev metadata already known for a id.
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -84,10 +90,89 @@ pub fn is_chat_capable_model_id(id: &str) -> bool {
     true
 }
 
+/// Token cost (USD per million tokens) for one model, mirrored from
+/// models.dev's `cost` object. All fields optional — providers populate
+/// whichever they publish.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub struct ModelCost {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub input: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub output: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cache_read: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cache_write: Option<f64>,
+}
+
+impl ModelCost {
+    fn is_empty(&self) -> bool {
+        self == &ModelCost::default()
+    }
+}
+
+/// Token limits for one model, mirrored from models.dev's `limit` object.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub struct ModelLimit {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub context: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub output: Option<u64>,
+}
+
+impl ModelLimit {
+    fn is_empty(&self) -> bool {
+        self == &ModelLimit::default()
+    }
+}
+
+/// One model's id plus the metadata we mirror from models.dev. Live provider
+/// API fetches only know the `id`, so every other field is optional and is
+/// filled in (and preserved across merges) when models.dev covers the model.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CachedModel {
+    /// Native model id (e.g. `claude-opus-4-5`, `gpt-5`).
+    pub id: String,
+    /// Human-readable display name, when known.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    /// Whether the model supports tool / function calling.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_call: Option<bool>,
+    /// Whether the model supports reasoning / thinking mode.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reasoning: Option<bool>,
+    /// Accepted input modalities (e.g. `["text", "image"]`).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub input_modalities: Vec<String>,
+    /// Per-million-token pricing, when published.
+    #[serde(default, skip_serializing_if = "ModelCost::is_empty")]
+    pub cost: ModelCost,
+    /// Context / output token limits, when published.
+    #[serde(default, skip_serializing_if = "ModelLimit::is_empty")]
+    pub limit: ModelLimit,
+}
+
+impl CachedModel {
+    /// A bare id with no metadata — used for ids that arrive from a live
+    /// provider API fetch with no models.dev coverage.
+    pub fn id_only(id: impl Into<String>) -> Self {
+        CachedModel {
+            id: id.into(),
+            name: None,
+            tool_call: None,
+            reasoning: None,
+            input_modalities: Vec::new(),
+            cost: ModelCost::default(),
+            limit: ModelLimit::default(),
+        }
+    }
+}
+
 /// One provider's cached model list plus when it was fetched (epoch secs).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CachedEntry {
-    pub models: Vec<String>,
+    pub models: Vec<CachedModel>,
     pub fetched_at: u64,
 }
 
@@ -131,13 +216,23 @@ pub fn load() -> ModelCache {
         .and_then(|s| serde_json::from_str(&s).ok())
         .unwrap_or_default();
     for entry in cache.values_mut() {
-        entry.models.retain(|m| is_chat_capable_model_id(m));
+        entry.models.retain(|m| is_chat_capable_model_id(&m.id));
     }
     cache
 }
 
-/// Read the cached models for one provider, if present and non-empty.
+/// Read the cached model ids for one provider, if present and non-empty.
 pub fn models_for(provider: &str) -> Option<Vec<String>> {
+    load()
+        .get(provider)
+        .map(|e| e.models.iter().map(|m| m.id.clone()).collect::<Vec<_>>())
+        .filter(|m: &Vec<String>| !m.is_empty())
+}
+
+/// Read the full cached model records for one provider, if present and
+/// non-empty. Use this when display name, capabilities, cost, or limits are
+/// needed; [`models_for`] is the id-only fast path.
+pub fn models_full_for(provider: &str) -> Option<Vec<CachedModel>> {
     load()
         .get(provider)
         .map(|e| e.models.clone())
@@ -151,32 +246,63 @@ pub fn is_fresh(provider: &str, max_age_secs: u64) -> bool {
     })
 }
 
-/// One-load warm-start lookup: returns the provider's cached models (if present
-/// and non-empty) and whether the entry is fresh within `max_age_secs`. Folds
-/// what would otherwise be back-to-back [`models_for`] + [`is_fresh`] calls into
-/// a single disk read + parse on the `/models` open path.
+/// One-load warm-start lookup: returns the provider's cached model ids (if
+/// present and non-empty) and whether the entry is fresh within
+/// `max_age_secs`. Folds what would otherwise be back-to-back [`models_for`] +
+/// [`is_fresh`] calls into a single disk read + parse on the `/models` open
+/// path.
 pub fn warm_start(provider: &str, max_age_secs: u64) -> (Option<Vec<String>>, bool) {
     match load().get(provider) {
         Some(e) if !e.models.is_empty() => {
             let fresh = now_epoch().saturating_sub(e.fetched_at) < max_age_secs;
-            (Some(e.models.clone()), fresh)
+            (Some(e.models.iter().map(|m| m.id.clone()).collect()), fresh)
         }
         _ => (None, false),
     }
 }
 
-/// Insert/replace one provider's models and persist. Silently ignores IO
-/// errors — a failed write just means `/models` falls back to a live fetch.
+/// Insert/replace one provider's models from a live API fetch (ids only) and
+/// persist. Rich metadata already known for a id (seeded from models.dev) is
+/// preserved — the live fetch is authoritative about *which* ids exist, but it
+/// carries no capability/cost data of its own. Silently ignores IO errors — a
+/// failed write just means `/models` falls back to a live fetch.
 ///
-/// Non-chat models are filtered out before persisting (see
+/// Non-chat ids are filtered out before persisting (see
 /// [`is_chat_capable_model_id`]) so a manual Ctrl+R refresh writes a clean,
 /// chat-only list back to the cache.
 pub fn store(provider: &str, models: Vec<String>) {
     let mut cache = load();
-    let models: Vec<String> = models
+    // Preserve any rich metadata we already hold for these ids.
+    let prior: HashMap<String, CachedModel> = cache
+        .get(provider)
+        .map(|e| e.models.iter().map(|m| (m.id.clone(), m.clone())).collect())
+        .unwrap_or_default();
+    let models: Vec<CachedModel> = models
         .into_iter()
-        .filter(|m| is_chat_capable_model_id(m))
+        .filter(|id| is_chat_capable_model_id(id))
+        .map(|id| {
+            prior
+                .get(&id)
+                .cloned()
+                .unwrap_or_else(|| CachedModel::id_only(id))
+        })
         .collect();
+    write_entry(&mut cache, provider, models);
+}
+
+/// Insert/replace one provider's models with full models.dev metadata and
+/// persist. Non-chat ids are filtered out before persisting.
+pub fn store_rich(provider: &str, models: Vec<CachedModel>) {
+    let mut cache = load();
+    let models: Vec<CachedModel> = models
+        .into_iter()
+        .filter(|m| is_chat_capable_model_id(&m.id))
+        .collect();
+    write_entry(&mut cache, provider, models);
+}
+
+/// Replace one provider's entry and flush the whole cache to disk.
+fn write_entry(cache: &mut ModelCache, provider: &str, models: Vec<CachedModel>) {
     cache.insert(
         provider.to_string(),
         CachedEntry {
@@ -263,12 +389,58 @@ mod tests {
         cache.insert(
             "anthropic".to_string(),
             CachedEntry {
-                models: vec!["opus".into()],
+                models: vec![CachedModel::id_only("opus")],
                 fetched_at: 1,
             },
         );
         std::fs::write(&path, serde_json::to_string_pretty(&cache).unwrap()).unwrap();
         assert!(!is_fresh("anthropic", FRESH_TTL_SECS));
+
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn store_preserves_rich_metadata_across_id_only_merge() {
+        let dir = std::env::temp_dir().join(format!("oc-model-cache-merge-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("startup_models_cache.json");
+        let _ = std::fs::remove_file(&path);
+        set_test_cache_path(path.clone());
+
+        // models.dev seeds rich metadata.
+        store_rich(
+            "openai",
+            vec![CachedModel {
+                id: "gpt-5".into(),
+                name: Some("GPT-5".into()),
+                tool_call: Some(true),
+                reasoning: Some(true),
+                input_modalities: vec!["text".into(), "image".into()],
+                cost: ModelCost {
+                    input: Some(1.25),
+                    output: Some(10.0),
+                    ..Default::default()
+                },
+                limit: ModelLimit {
+                    context: Some(400_000),
+                    output: Some(128_000),
+                },
+            }],
+        );
+
+        // A later live API fetch knows only ids — and adds a new one.
+        store("openai", vec!["gpt-5".into(), "gpt-5-mini".into()]);
+
+        let full = models_full_for("openai").unwrap();
+        let gpt5 = full.iter().find(|m| m.id == "gpt-5").unwrap();
+        // Rich metadata survived the id-only merge.
+        assert_eq!(gpt5.name.as_deref(), Some("GPT-5"));
+        assert_eq!(gpt5.tool_call, Some(true));
+        assert_eq!(gpt5.limit.context, Some(400_000));
+        // The newly-discovered id is present but bare.
+        let mini = full.iter().find(|m| m.id == "gpt-5-mini").unwrap();
+        assert_eq!(mini.name, None);
+        assert_eq!(mini.tool_call, None);
 
         let _ = std::fs::remove_file(&path);
     }

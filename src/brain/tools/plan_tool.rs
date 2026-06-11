@@ -3,7 +3,7 @@
 //! Allows the LLM to create, update, and manage structured plans for complex tasks.
 
 use super::error::{Result, ToolError};
-use super::r#trait::{Tool, ToolCapability, ToolExecutionContext, ToolResult};
+use super::r#trait::{Tool, ToolCapability, ToolExecutionContext, ToolResult, parse_input};
 use crate::tui::plan::{
     PlanDocument, PlanStatus, PlanTask, TaskDep, TaskType, ToolCall as PlanToolCall,
 };
@@ -355,13 +355,12 @@ impl Tool for PlanTool {
     }
 
     fn validate_input(&self, input: &Value) -> Result<()> {
-        let _: PlanOperation = serde_json::from_value(input.clone())
-            .map_err(|e| ToolError::InvalidInput(format!("Invalid input: {}", e)))?;
+        let _: PlanOperation = parse_input(input)?;
         Ok(())
     }
 
     async fn execute(&self, input: Value, context: &ToolExecutionContext) -> Result<ToolResult> {
-        let operation: PlanOperation = serde_json::from_value(input)?;
+        let operation: PlanOperation = parse_input(&input)?;
 
         // Load or create plan state from context (session-scoped)
         let session_dir = crate::config::stemcell_home()

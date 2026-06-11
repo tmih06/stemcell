@@ -288,30 +288,22 @@ impl DashboardData {
 async fn fetch_summary(pool: &Pool, since: Option<i64>) -> Result<SummaryStats> {
     let conn = pool.get().await.context("pool")?;
     conn.interact(move |conn| {
-        let (query, param): (&str, Vec<Box<dyn rusqlite::types::ToSql>>) = if let Some(s) = since {
-            (
-                "SELECT COALESCE(SUM(token_count), 0), COALESCE(SUM(cost), 0.0), \
-                 COUNT(DISTINCT session_id), COUNT(*) \
-                 FROM usage_ledger WHERE created_at >= ?1",
-                vec![Box::new(s)],
-            )
-        } else {
-            (
-                "SELECT COALESCE(SUM(token_count), 0), COALESCE(SUM(cost), 0.0), \
-                 COUNT(DISTINCT session_id), COUNT(*) \
-                 FROM usage_ledger",
-                vec![],
-            )
-        };
-        let refs: Vec<&dyn rusqlite::types::ToSql> = param.iter().map(|p| p.as_ref()).collect();
-        conn.query_row(query, refs.as_slice(), |row| {
-            Ok(SummaryStats {
-                total_tokens: row.get(0)?,
-                total_cost: row.get(1)?,
-                session_count: row.get(2)?,
-                call_count: row.get(3)?,
-            })
-        })
+        // `since.unwrap_or(0)` collapses the AllTime case: epoch timestamps are
+        // always >= 0, so a 0 floor matches every row — one query, not two.
+        conn.query_row(
+            "SELECT COALESCE(SUM(token_count), 0), COALESCE(SUM(cost), 0.0), \
+             COUNT(DISTINCT session_id), COUNT(*) \
+             FROM usage_ledger WHERE created_at >= ?1",
+            params![since.unwrap_or(0)],
+            |row| {
+                Ok(SummaryStats {
+                    total_tokens: row.get(0)?,
+                    total_cost: row.get(1)?,
+                    session_count: row.get(2)?,
+                    call_count: row.get(3)?,
+                })
+            },
+        )
     })
     .await
     .map_err(interact_err)?
@@ -321,25 +313,13 @@ async fn fetch_summary(pool: &Pool, since: Option<i64>) -> Result<SummaryStats> 
 async fn fetch_daily(pool: &Pool, since: Option<i64>) -> Result<Vec<DailyStats>> {
     let conn = pool.get().await.context("pool")?;
     conn.interact(move |conn| {
-        let (query, param): (&str, Vec<Box<dyn rusqlite::types::ToSql>>) = if let Some(s) = since {
-            (
-                "SELECT date(created_at, 'unixepoch') AS day, \
-                 COALESCE(SUM(token_count), 0), COALESCE(SUM(cost), 0.0), COUNT(*) \
-                 FROM usage_ledger WHERE created_at >= ?1 \
-                 GROUP BY day ORDER BY day ASC",
-                vec![Box::new(s)],
-            )
-        } else {
-            (
-                "SELECT date(created_at, 'unixepoch') AS day, \
-                 COALESCE(SUM(token_count), 0), COALESCE(SUM(cost), 0.0), COUNT(*) \
-                 FROM usage_ledger GROUP BY day ORDER BY day ASC",
-                vec![],
-            )
-        };
-        let refs: Vec<&dyn rusqlite::types::ToSql> = param.iter().map(|p| p.as_ref()).collect();
-        let mut stmt = conn.prepare(query)?;
-        let rows = stmt.query_map(refs.as_slice(), |row| {
+        let mut stmt = conn.prepare(
+            "SELECT date(created_at, 'unixepoch') AS day, \
+             COALESCE(SUM(token_count), 0), COALESCE(SUM(cost), 0.0), COUNT(*) \
+             FROM usage_ledger WHERE created_at >= ?1 \
+             GROUP BY day ORDER BY day ASC",
+        )?;
+        let rows = stmt.query_map(params![since.unwrap_or(0)], |row| {
             Ok(DailyStats {
                 date: row.get(0)?,
                 tokens: row.get(1)?,
@@ -390,33 +370,17 @@ fn merge_project_stats(stats: &mut Vec<ProjectStats>) {
 async fn fetch_projects(pool: &Pool, since: Option<i64>) -> Result<Vec<ProjectStats>> {
     let conn = pool.get().await.context("pool")?;
     conn.interact(move |conn| -> rusqlite::Result<Vec<ProjectStats>> {
-        let (query, param): (&str, Vec<Box<dyn rusqlite::types::ToSql>>) = if let Some(s) = since {
-            (
-                "SELECT COALESCE(s.working_directory, 'unknown'), \
-                 COALESCE(SUM(u.cost), 0.0), COALESCE(SUM(u.token_count), 0), \
-                 COUNT(DISTINCT u.session_id) \
-                 FROM usage_ledger u \
-                 LEFT JOIN sessions s ON u.session_id = s.id \
-                 WHERE u.created_at >= ?1 \
-                 GROUP BY s.working_directory \
-                 ORDER BY SUM(u.cost) DESC",
-                vec![Box::new(s)],
-            )
-        } else {
-            (
-                "SELECT COALESCE(s.working_directory, 'unknown'), \
-                 COALESCE(SUM(u.cost), 0.0), COALESCE(SUM(u.token_count), 0), \
-                 COUNT(DISTINCT u.session_id) \
-                 FROM usage_ledger u \
-                 LEFT JOIN sessions s ON u.session_id = s.id \
-                 GROUP BY s.working_directory \
-                 ORDER BY SUM(u.cost) DESC",
-                vec![],
-            )
-        };
-        let refs: Vec<&dyn rusqlite::types::ToSql> = param.iter().map(|p| p.as_ref()).collect();
-        let mut stmt = conn.prepare(query)?;
-        let rows = stmt.query_map(refs.as_slice(), |row| {
+        let mut stmt = conn.prepare(
+            "SELECT COALESCE(s.working_directory, 'unknown'), \
+             COALESCE(SUM(u.cost), 0.0), COALESCE(SUM(u.token_count), 0), \
+             COUNT(DISTINCT u.session_id) \
+             FROM usage_ledger u \
+             LEFT JOIN sessions s ON u.session_id = s.id \
+             WHERE u.created_at >= ?1 \
+             GROUP BY s.working_directory \
+             ORDER BY SUM(u.cost) DESC",
+        )?;
+        let rows = stmt.query_map(params![since.unwrap_or(0)], |row| {
             let raw: String = row.get(0)?;
             let project = normalize_project_name(&raw);
             Ok(ProjectStats {
@@ -516,20 +480,16 @@ async fn fetch_model_entries(pool: &Pool, since: Option<i64>) -> Result<Vec<Mode
 
     let conn = pool.get().await.context("pool")?;
     let raw = conn.interact(move |conn| {
-        let base_where = if since.is_some() {
-            "WHERE model != '' AND created_at >= ?1"
-        } else {
-            "WHERE model != ''"
-        };
+        // `created_at >= ?1` with a 0 floor (AllTime) matches every row, so a
+        // single parameterized query covers both the since and no-since cases.
         // Fetch raw model stats (grouped by SQL-normalized model, not quant-normalized)
-        let query = format!(
-            "WITH stripped AS ( \
+        let query = "WITH stripped AS ( \
                SELECT *, \
                  LOWER(CASE WHEN model LIKE '%/%' \
                    THEN SUBSTR(model, INSTR(model, '/') + 1) \
                    ELSE model \
                  END) AS m1 \
-               FROM usage_ledger {base_where} \
+               FROM usage_ledger WHERE model != '' AND created_at >= ?1 \
              ), \
              cleaned AS ( \
                SELECT *, \
@@ -581,18 +541,18 @@ async fn fetch_model_entries(pool: &Pool, since: Option<i64>) -> Result<Vec<Mode
                COUNT(*) \
              FROM spaced \
              GROUP BY normalized_model, m3 \
-             ORDER BY SUM(token_count) DESC"
-        );
-        let mut stmt = conn.prepare(&query)?;
-        let rows: Vec<(String, String, i64, i64)> = if let Some(s) = since {
-            stmt.query_map(params![s], |row| {
-                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?, row.get::<_, i64>(2)?, row.get::<_, i64>(3)?))
-            })?.collect::<std::result::Result<Vec<_>, _>>()?
-        } else {
-            stmt.query_map([], |row| {
-                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?, row.get::<_, i64>(2)?, row.get::<_, i64>(3)?))
-            })?.collect::<std::result::Result<Vec<_>, _>>()?
-        };
+             ORDER BY SUM(token_count) DESC";
+        let mut stmt = conn.prepare(query)?;
+        let rows: Vec<(String, String, i64, i64)> = stmt
+            .query_map(params![since.unwrap_or(0)], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, i64>(2)?,
+                    row.get::<_, i64>(3)?,
+                ))
+            })?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
         Ok::<_, rusqlite::Error>(rows)
     })
     .await
@@ -667,26 +627,13 @@ async fn fetch_tools(pool: &Pool, since: Option<i64>) -> Result<Vec<ToolStats>> 
         // still got recorded with the empty name, producing a blank row
         // in the dashboard. ToolRepo::record now refuses empty names at
         // write time, but this filter keeps legacy rows from rendering.
-        let (query, param): (&str, Vec<Box<dyn rusqlite::types::ToSql>>) = if let Some(s) = since {
-            (
-                "SELECT tool_name, COUNT(*) as cnt \
-                 FROM tool_executions \
-                 WHERE created_at >= ?1 AND tool_name <> '' \
-                 GROUP BY tool_name ORDER BY cnt DESC",
-                vec![Box::new(s)],
-            )
-        } else {
-            (
-                "SELECT tool_name, COUNT(*) as cnt \
-                 FROM tool_executions \
-                 WHERE tool_name <> '' \
-                 GROUP BY tool_name ORDER BY cnt DESC",
-                vec![],
-            )
-        };
-        let refs: Vec<&dyn rusqlite::types::ToSql> = param.iter().map(|p| p.as_ref()).collect();
-        let mut stmt = conn.prepare(query)?;
-        let rows = stmt.query_map(refs.as_slice(), |row| {
+        let mut stmt = conn.prepare(
+            "SELECT tool_name, COUNT(*) as cnt \
+             FROM tool_executions \
+             WHERE created_at >= ?1 AND tool_name <> '' \
+             GROUP BY tool_name ORDER BY cnt DESC",
+        )?;
+        let rows = stmt.query_map(params![since.unwrap_or(0)], |row| {
             Ok(ToolStats {
                 tool_name: row.get(0)?,
                 call_count: row.get(1)?,
@@ -703,36 +650,21 @@ async fn fetch_activities(pool: &Pool, since: Option<i64>) -> Result<Vec<Activit
     let conn = pool.get().await.context("pool")?;
     conn.interact(move |conn| -> rusqlite::Result<Vec<ActivityStats>> {
         // Fetch per-session stats with titles for classification
-        let (query, param): (&str, Vec<Box<dyn rusqlite::types::ToSql>>) = if let Some(s) = since {
-            (
-                "SELECT COALESCE(s.title, ''), \
-                 COALESCE(SUM(u.cost), 0.0), COUNT(*), \
-                 COUNT(DISTINCT u.session_id), s.category \
-                 FROM usage_ledger u \
-                 LEFT JOIN sessions s ON u.session_id = s.id \
-                 WHERE u.created_at >= ?1 \
-                 GROUP BY u.session_id",
-                vec![Box::new(s)],
-            )
-        } else {
-            (
-                "SELECT COALESCE(s.title, ''), \
-                 COALESCE(SUM(u.cost), 0.0), COUNT(*), \
-                 COUNT(DISTINCT u.session_id), s.category \
-                 FROM usage_ledger u \
-                 LEFT JOIN sessions s ON u.session_id = s.id \
-                 GROUP BY u.session_id",
-                vec![],
-            )
-        };
-        let refs: Vec<&dyn rusqlite::types::ToSql> = param.iter().map(|p| p.as_ref()).collect();
-        let mut stmt = conn.prepare(query)?;
+        let mut stmt = conn.prepare(
+            "SELECT COALESCE(s.title, ''), \
+             COALESCE(SUM(u.cost), 0.0), COUNT(*), \
+             COUNT(DISTINCT u.session_id), s.category \
+             FROM usage_ledger u \
+             LEFT JOIN sessions s ON u.session_id = s.id \
+             WHERE u.created_at >= ?1 \
+             GROUP BY u.session_id",
+        )?;
 
         // Aggregate by activity category
         // (cost, turns, total_sessions, one_shot_sessions)
         let mut categories: std::collections::HashMap<String, (f64, i64, i64, i64)> =
             std::collections::HashMap::new();
-        let rows = stmt.query_map(refs.as_slice(), |row| {
+        let rows = stmt.query_map(params![since.unwrap_or(0)], |row| {
             Ok((
                 row.get::<_, String>(0)?,
                 row.get::<_, f64>(1)?,

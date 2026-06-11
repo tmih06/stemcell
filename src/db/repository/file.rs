@@ -6,7 +6,7 @@ use crate::db::Pool;
 use crate::db::database::interact_err;
 use crate::db::models::File;
 use anyhow::{Context, Result};
-use rusqlite::params;
+use rusqlite::{OptionalExtension, params};
 use std::path::Path;
 use uuid::Uuid;
 
@@ -191,21 +191,6 @@ impl FileRepository {
 
         tracing::debug!("Deleted all file records for session: {}", session_id);
         Ok(())
-    }
-}
-
-/// Extension trait for rusqlite to add `.optional()` to query results
-trait OptionalExt<T> {
-    fn optional(self) -> rusqlite::Result<Option<T>>;
-}
-
-impl<T> OptionalExt<T> for rusqlite::Result<T> {
-    fn optional(self) -> rusqlite::Result<Option<T>> {
-        match self {
-            Ok(v) => Ok(Some(v)),
-            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
-            Err(e) => Err(e),
-        }
     }
 }
 
