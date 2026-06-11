@@ -9,7 +9,9 @@ use super::types::{HashRef, HashlineEditInput, HashlineEditOp, ResolvedEdit, Res
 use crate::brain::tools::brain_file_safety;
 use crate::brain::tools::edit::build_edit_diff;
 use crate::brain::tools::error::{Result, ToolError, validate_file_path};
-use crate::brain::tools::r#trait::{Tool, ToolCapability, ToolExecutionContext, ToolResult};
+use crate::brain::tools::r#trait::{
+    Tool, ToolCapability, ToolExecutionContext, ToolResult, parse_input,
+};
 use async_trait::async_trait;
 use serde_json::Value;
 use tokio::fs;
@@ -85,13 +87,12 @@ impl Tool for HashlineEditTool {
     }
 
     fn validate_input(&self, input: &Value) -> Result<()> {
-        let _: HashlineEditInput = serde_json::from_value(input.clone())
-            .map_err(|e| ToolError::InvalidInput(format!("Invalid input: {}", e)))?;
+        let _: HashlineEditInput = parse_input(input)?;
         Ok(())
     }
 
     async fn execute(&self, input: Value, context: &ToolExecutionContext) -> Result<ToolResult> {
-        let input: HashlineEditInput = serde_json::from_value(input)?;
+        let input: HashlineEditInput = parse_input(&input)?;
 
         // Validate path
         let path = match validate_file_path(&input.path, &context.working_dir()) {

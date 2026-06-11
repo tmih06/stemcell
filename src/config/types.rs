@@ -1844,6 +1844,106 @@ pub fn normalize_toml_key(key: &str) -> String {
         .to_string()
 }
 
+/// Split a dotted `section` path into table-name segments, normalizing the
+/// custom-provider name segment (`providers.custom.<name>`) via
+/// `normalize_toml_key` so writes and reads agree on the stored key.
+fn normalized_section_parts(section: &str) -> Vec<String> {
+    section
+        .split('.')
+        .enumerate()
+        .map(|(i, p)| {
+            if i >= 2 && section.starts_with("providers.custom") {
+                normalize_toml_key(p)
+            } else {
+                p.to_string()
+            }
+        })
+        .collect()
+}
+
+/// Walk `doc` along `parts`, creating empty tables as needed, and return a
+/// mutable reference to the innermost table.
+fn navigate_to_table<'a>(
+    doc: &'a mut toml_edit::DocumentMut,
+    parts: &[String],
+) -> Result<&'a mut toml_edit::Table> {
+    let mut current = doc.as_table_mut();
+    for part in parts {
+        if current.get(part.as_str()).is_none() {
+            current.insert(part, toml_edit::Item::Table(toml_edit::Table::new()));
+        }
+        current = current
+            .get_mut(part.as_str())
+            .context("section not found after insert")?
+            .as_table_mut()
+            .with_context(|| format!("'{}' is not a table", part))?;
+    }
+    Ok(current)
+}
+
+/// Parse a trimmed string into a TOML item, trying (in order) a JSON array,
+/// integer, float, and bool before falling back to a plain string.
+fn value_to_item(value: &str) -> toml_edit::Item {
+    if value.starts_with('[') && value.ends_with(']') {
+        // Try parsing as JSON array → TOML array
+        if let Ok(arr) = serde_json::from_str::<Vec<serde_json::Value>>(value) {
+            let mut toml_arr = toml_edit::Array::new();
+            for v in arr {
+                match v {
+                    serde_json::Value::String(s) => {
+                        toml_arr.push(s);
+                    }
+                    serde_json::Value::Number(n) => {
+                        if let Some(i) = n.as_i64() {
+                            toml_arr.push(i);
+                        } else if let Some(f) = n.as_f64() {
+                            toml_arr.push(f);
+                        }
+                    }
+                    serde_json::Value::Bool(b) => {
+                        toml_arr.push(b);
+                    }
+                    _ => {}
+                }
+            }
+            return toml_edit::value(toml_arr);
+        }
+        return toml_edit::value(value);
+    }
+    if let Ok(v) = value.parse::<i64>() {
+        toml_edit::value(v)
+    } else if let Ok(v) = value.parse::<f64>() {
+        toml_edit::value(v)
+    } else if let Ok(v) = value.parse::<bool>() {
+        toml_edit::value(v)
+    } else {
+        toml_edit::value(value)
+    }
+}
+
+/// Remove the leaf of a dotted `section` from `doc`, walking (without
+/// creating) to its parent table. Returns `true` when a value was removed.
+/// A missing parent / non-table parent / empty section is a no-op (`false`).
+fn remove_dotted_section(doc: &mut toml_edit::DocumentMut, section: &str) -> bool {
+    let parts: Vec<&str> = section.split('.').collect();
+    if parts.is_empty() {
+        return false;
+    }
+    let parent_parts = &parts[..parts.len() - 1];
+    let leaf = parts[parts.len() - 1];
+
+    let mut current = doc.as_table_mut();
+    for part in parent_parts {
+        match current.get_mut(part) {
+            Some(v) if v.is_table() => {
+                current = v.as_table_mut().unwrap();
+            }
+            _ => return false,
+        }
+    }
+    current.remove(leaf).is_some()
+}
+
 /// # Example
 /// ```no_run
 /// # fn main() -> anyhow::Result<()> {
@@ -1874,30 +1974,10 @@ pub fn write_secret_key(section: &str, key: &str, value: &str) -> Result<()> {
     };
 
     // Normalize custom provider names (e.g. "Qwen_2.5_4B" → "qwen-2-5-4b")
-    let parts: Vec<String> = section
-        .split('.')
-        .enumerate()
-        .map(|(i, p)| {
-            if i >= 2 && section.starts_with("providers.custom") {
-                normalize_toml_key(p)
-            } else {
-                p.to_string()
-            }
-        })
-        .collect();
+    let parts = normalized_section_parts(section);
 
     // Navigate/create nested tables
-    let mut current = doc.as_table_mut();
-    for part in &parts {
-        if current.get(part.as_str()).is_none() {
-            current.insert(part, toml_edit::Item::Table(toml_edit::Table::new()));
-        }
-        current = current
-            .get_mut(part.as_str())
-            .context("section not found after insert")?
-            .as_table_mut()
-            .with_context(|| format!("'{}' is not a table", part))?;
-    }
+    let current = navigate_to_table(&mut doc, &parts)?;
     current.insert(key, toml_edit::value(value));
 
     if let Some(parent) = path.parent() {
@@ -2588,6 +2668,8 @@ impl Config {
         "image",
         "cron",
         "memory",
+        "brain",
+        "tools",
     ];
 
     /// Check for unknown top-level keys and log warnings.
@@ -2888,43 +2970,41 @@ impl Config {
         }
     }
 
-    /// Apply environment variable overrides
+    /// Apply environment variable overrides.
+    ///
+    /// String/path vars are applied verbatim. Boolean vars are applied only
+    /// when they parse cleanly — a malformed value leaves the existing config
+    /// value untouched rather than clobbering it with a hardcoded default.
     fn apply_env_overrides(mut config: Self) -> Result<Self> {
-        // Database path
         if let Ok(db_path) = std::env::var("STEMCELL_DB_PATH") {
             config.database.path = PathBuf::from(db_path);
         }
-
-        // Log level
         if let Ok(log_level) = std::env::var("STEMCELL_LOG_LEVEL") {
             config.logging.level = log_level;
         }
-
-        // Log file
         if let Ok(log_file) = std::env::var("STEMCELL_LOG_FILE") {
             config.logging.file = Some(PathBuf::from(log_file));
         }
-
-        // Debug options
-        if let Ok(debug_lsp) = std::env::var("STEMCELL_DEBUG_LSP") {
-            config.debug.debug_lsp = debug_lsp.parse().unwrap_or(false);
-        }
-
-        if let Ok(profiling) = std::env::var("STEMCELL_PROFILING") {
-            config.debug.profiling = profiling.parse().unwrap_or(false);
-        }
-
-        // Crabrace options
-        if let Ok(enabled) = std::env::var("STEMCELL_CRABRACE_ENABLED") {
-            config.crabrace.enabled = enabled.parse().unwrap_or(true);
-        }
-
         if let Ok(base_url) = std::env::var("STEMCELL_CRABRACE_URL") {
             config.crabrace.base_url = base_url;
         }
 
-        if let Ok(auto_update) = std::env::var("STEMCELL_CRABRACE_AUTO_UPDATE") {
-            config.crabrace.auto_update = auto_update.parse().unwrap_or(true);
+        // Boolean overrides: only override on a clean parse, otherwise leave
+        // the loaded value untouched.
+        fn env_bool(var: &str) -> Option<bool> {
+            std::env::var(var).ok().and_then(|v| v.parse::<bool>().ok())
+        }
+        if let Some(v) = env_bool("STEMCELL_DEBUG_LSP") {
+            config.debug.debug_lsp = v;
+        }
+        if let Some(v) = env_bool("STEMCELL_PROFILING") {
+            config.debug.profiling = v;
+        }
+        if let Some(v) = env_bool("STEMCELL_CRABRACE_ENABLED") {
+            config.crabrace.enabled = v;
+        }
+        if let Some(v) = env_bool("STEMCELL_CRABRACE_AUTO_UPDATE") {
+            config.crabrace.auto_update = v;
         }
 
         Ok(config)
@@ -2964,69 +3044,11 @@ impl Config {
 
         // Navigate/create the section table (supports dotted paths like "channels.slack")
         // Normalize custom provider names (e.g. "Qwen_2.5_4B" → "qwen-2-5-4b")
-        let parts: Vec<String> = section
-            .split('.')
-            .enumerate()
-            .map(|(i, p)| {
-                // providers.custom.<name> — normalize the <name> part
-                if i >= 2 && section.starts_with("providers.custom") {
-                    normalize_toml_key(p)
-                } else {
-                    p.to_string()
-                }
-            })
-            .collect();
-
-        let mut current = doc.as_table_mut();
-        for part in &parts {
-            if current.get(part.as_str()).is_none() {
-                current.insert(part, toml_edit::Item::Table(toml_edit::Table::new()));
-            }
-            current = current
-                .get_mut(part.as_str())
-                .context("section not found after insert")?
-                .as_table_mut()
-                .with_context(|| format!("'{}' is not a table", part))?;
-        }
+        let parts = normalized_section_parts(section);
+        let current = navigate_to_table(&mut doc, &parts)?;
 
         // Parse the value — try JSON array, integer, float, bool, then fall back to string
-        let parsed: toml_edit::Item = if value.starts_with('[') && value.ends_with(']') {
-            // Try parsing as JSON array → TOML array
-            if let Ok(arr) = serde_json::from_str::<Vec<serde_json::Value>>(value) {
-                let mut toml_arr = toml_edit::Array::new();
-                for v in arr {
-                    match v {
-                        serde_json::Value::String(s) => {
-                            toml_arr.push(s);
-                        }
-                        serde_json::Value::Number(n) => {
-                            if let Some(i) = n.as_i64() {
-                                toml_arr.push(i);
-                            } else if let Some(f) = n.as_f64() {
-                                toml_arr.push(f);
-                            }
-                        }
-                        serde_json::Value::Bool(b) => {
-                            toml_arr.push(b);
-                        }
-                        _ => {}
-                    }
-                }
-                toml_edit::value(toml_arr)
-            } else {
-                toml_edit::value(value)
-            }
-        } else if let Ok(v) = value.parse::<i64>() {
-            toml_edit::value(v)
-        } else if let Ok(v) = value.parse::<f64>() {
-            toml_edit::value(v)
-        } else if let Ok(v) = value.parse::<bool>() {
-            toml_edit::value(v)
-        } else {
-            toml_edit::value(value)
-        };
-
-        current.insert(key, parsed);
+        current.insert(key, value_to_item(value));
 
         // Write back
         if let Some(parent) = path.parent() {
@@ -3042,7 +3064,8 @@ impl Config {
     }
 
     /// Write a key-value pair into the system keys.toml using TOML merge.
-    /// Same as write_key but targets keys.toml instead of config.toml.
+    /// Same as write_key but targets keys.toml and always stores the value as
+    /// a plain string (no type inference).
     pub fn write_keys_key(section: &str, key: &str, value: &str) -> Result<()> {
         use toml_edit::DocumentMut;
 
@@ -3058,22 +3081,8 @@ impl Config {
         };
 
         let parts: Vec<String> = section.split('.').map(|p| p.to_string()).collect();
-
-        let mut current = doc.as_table_mut();
-        for part in &parts {
-            if current.get(part.as_str()).is_none() {
-                current.insert(part, toml_edit::Item::Table(toml_edit::Table::new()));
-            }
-            current = current
-                .get_mut(part.as_str())
-                .context("section not found after insert")?
-                .as_table_mut()
-                .with_context(|| format!("'{}' is not a table", part))?;
-        }
-
-        let parsed: toml_edit::Item = toml_edit::value(value);
-
-        current.insert(key, parsed);
+        let current = navigate_to_table(&mut doc, &parts)?;
+        current.insert(key, toml_edit::value(value));
 
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent)?;
@@ -3106,25 +3115,7 @@ impl Config {
 
         let mut doc: DocumentMut = fs::read_to_string(&path)?.parse()?;
 
-        let parts: Vec<&str> = section.split('.').collect();
-        if parts.is_empty() {
-            return Ok(());
-        }
-
-        let parent_parts = &parts[..parts.len() - 1];
-        let leaf = parts[parts.len() - 1];
-
-        let mut current = doc.as_table_mut();
-        for part in parent_parts {
-            match current.get_mut(part) {
-                Some(v) if v.is_table() => {
-                    current = v.as_table_mut().unwrap();
-                }
-                _ => return Ok(()),
-            }
-        }
-
-        if current.remove(leaf).is_some() {
+        if remove_dotted_section(&mut doc, section) {
             tracing::info!("Removed keys.toml section [{section}]");
             Self::backup_config(&path, 7);
             fs::write(&path, doc.to_string())?;
@@ -3147,30 +3138,11 @@ impl Config {
 
         let mut doc: DocumentMut = fs::read_to_string(&path)?.parse()?;
 
-        let parts: Vec<&str> = section.split('.').collect();
-        if parts.is_empty() {
-            return Ok(());
+        if remove_dotted_section(&mut doc, section) {
+            tracing::info!("Removed config section [{section}]");
+            Self::backup_config(&path, 7);
+            fs::write(&path, doc.to_string())?;
         }
-
-        // Navigate to the parent table and remove the last key
-        let parent_parts = &parts[..parts.len() - 1];
-        let leaf = parts[parts.len() - 1];
-
-        let mut current = doc.as_table_mut();
-        for part in parent_parts {
-            match current.get_mut(part) {
-                Some(v) if v.is_table() => {
-                    current = v.as_table_mut().unwrap();
-                }
-                _ => return Ok(()), // parent doesn't exist, nothing to remove
-            }
-        }
-
-        current.remove(leaf);
-        tracing::info!("Removed config section [{section}]");
-
-        Self::backup_config(&path, 7);
-        fs::write(&path, doc.to_string())?;
         Ok(())
     }
 

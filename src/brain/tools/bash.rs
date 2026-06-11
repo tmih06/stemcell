@@ -3,7 +3,7 @@
 //! Allows executing shell commands in the system.
 
 use super::error::{Result, ToolError};
-use super::r#trait::{Tool, ToolCapability, ToolExecutionContext, ToolResult};
+use super::r#trait::{Tool, ToolCapability, ToolExecutionContext, ToolResult, parse_input};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -43,6 +43,67 @@ fn detach_session_pre_exec(cmd: &mut Command) {
 fn detach_session_pre_exec(_cmd: &mut Command) {
     // No-op on Windows — the TTY-bleed problem doesn't apply (different
     // console model) and pre_exec is a Unix-only API.
+}
+
+/// Spawn `shell shell_arg "<command>"` with the shared plumbing every
+/// execution branch needs — `current_dir`, the `setsid` TTY-detach
+/// `pre_exec`, piped stdout/stderr, and a wall-clock timeout — collapsing
+/// the near-identical Command setup the sudo / ssh-probe / ssh-retry /
+/// normal arms used to each spell out by hand.
+///
+/// The arms differ only in:
+///   - `stdin_password`: `Some(pw)` pipes stdin and writes `pw\n` to it
+///     (the sudo `-S` path); `None` attaches stdin to `/dev/null` so the
+///     child can't steal the parent TTY.
+///   - `envs`: extra environment variables (the SSH_ASKPASS retry).
+///
+/// Using piped stdout/stderr + `wait_with_output()` is exactly what
+/// `Command::output()` does internally, so the non-sudo callers keep
+/// identical capture behaviour.
+///
+/// Returns the raw nested result so callers can keep their per-branch
+/// error messages: outer `Err` = timed out, inner `Err` = spawn/IO error.
+#[allow(clippy::too_many_arguments)]
+async fn spawn_with_timeout(
+    shell: &str,
+    shell_arg: &str,
+    command: &str,
+    working_dir: &std::path::Path,
+    timeout_secs: u64,
+    stdin_password: Option<&str>,
+    envs: &[(&str, &str)],
+) -> std::result::Result<std::io::Result<std::process::Output>, tokio::time::error::Elapsed> {
+    let command_future = async {
+        let mut cmd = Command::new(shell);
+        cmd.arg(shell_arg)
+            .arg(command)
+            .current_dir(working_dir)
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped());
+        if stdin_password.is_some() {
+            cmd.stdin(std::process::Stdio::piped());
+        } else {
+            cmd.stdin(std::process::Stdio::null());
+        }
+        for (key, val) in envs {
+            cmd.env(key, val);
+        }
+        detach_session_pre_exec(&mut cmd);
+        let mut child = cmd.spawn()?;
+
+        // Write the sudo password to stdin and close it (no-op for the
+        // null-stdin branches, where `child.stdin` is None).
+        if let Some(password) = stdin_password
+            && let Some(mut stdin) = child.stdin.take()
+        {
+            let _ = stdin.write_all(format!("{}\n", password).as_bytes()).await;
+            drop(stdin);
+        }
+
+        child.wait_with_output().await
+    };
+
+    timeout(Duration::from_secs(timeout_secs), command_future).await
 }
 
 /// First-token of a shell command, normalized for SSH detection.
@@ -220,8 +281,7 @@ impl Tool for BashTool {
     }
 
     fn validate_input(&self, input: &Value) -> Result<()> {
-        let input: BashInput = serde_json::from_value(input.clone())
-            .map_err(|e| ToolError::InvalidInput(format!("Invalid input: {}", e)))?;
+        let input: BashInput = parse_input(input)?;
 
         if input.command.trim().is_empty() {
             return Err(ToolError::InvalidInput(
@@ -243,7 +303,7 @@ impl Tool for BashTool {
     }
 
     async fn execute(&self, input: Value, context: &ToolExecutionContext) -> Result<ToolResult> {
-        let input: BashInput = serde_json::from_value(input)?;
+        let input: BashInput = parse_input(&input)?;
 
         // Determine working directory
         let working_dir = if let Some(ref dir) = input.working_dir {
@@ -330,27 +390,17 @@ impl Tool for BashTool {
                 input.command.replacen("sudo ", "sudo -S -p \"\" ", 1)
             };
 
-            let command_future = async {
-                let mut cmd = Command::new(shell);
-                cmd.arg(shell_arg)
-                    .arg(&sudo_cmd)
-                    .current_dir(&working_dir)
-                    .stdin(std::process::Stdio::piped())
-                    .stdout(std::process::Stdio::piped())
-                    .stderr(std::process::Stdio::piped());
-                detach_session_pre_exec(&mut cmd);
-                let mut child = cmd.spawn()?;
-
-                // Write password to stdin and close it
-                if let Some(mut stdin) = child.stdin.take() {
-                    let _ = stdin.write_all(format!("{}\n", password).as_bytes()).await;
-                    drop(stdin);
-                }
-
-                child.wait_with_output().await
-            };
-
-            match timeout(Duration::from_secs(effective_timeout), command_future).await {
+            match spawn_with_timeout(
+                shell,
+                shell_arg,
+                &sudo_cmd,
+                &working_dir,
+                effective_timeout,
+                Some(password.as_str()),
+                &[],
+            )
+            .await
+            {
                 Ok(Ok(output)) => output,
                 Ok(Err(e)) => {
                     return Ok(ToolResult::error(format!(
@@ -369,29 +419,29 @@ impl Tool for BashTool {
             // BatchMode=yes first (key-only auth) and fall back to the
             // password callback + SSH_ASKPASS if the probe rejects auth.
             let probe_cmd = inject_batch_mode(&input.command);
-            let probe_future = async {
-                let mut cmd = Command::new(shell);
-                cmd.arg(shell_arg)
-                    .arg(&probe_cmd)
-                    .current_dir(&working_dir)
-                    .stdin(std::process::Stdio::null());
-                detach_session_pre_exec(&mut cmd);
-                cmd.output().await
-            };
 
-            let probe_output =
-                match timeout(Duration::from_secs(effective_timeout), probe_future).await {
-                    Ok(Ok(o)) => o,
-                    Ok(Err(e)) => {
-                        return Ok(ToolResult::error(format!(
-                            "Command execution failed: {}",
-                            e
-                        )));
-                    }
-                    Err(_) => {
-                        return Err(ToolError::Timeout(effective_timeout));
-                    }
-                };
+            let probe_output = match spawn_with_timeout(
+                shell,
+                shell_arg,
+                &probe_cmd,
+                &working_dir,
+                effective_timeout,
+                None,
+                &[],
+            )
+            .await
+            {
+                Ok(Ok(o)) => o,
+                Ok(Err(e)) => {
+                    return Ok(ToolResult::error(format!(
+                        "Command execution failed: {}",
+                        e
+                    )));
+                }
+                Err(_) => {
+                    return Err(ToolError::Timeout(effective_timeout));
+                }
+            };
 
             let probe_stderr = String::from_utf8_lossy(&probe_output.stderr).to_string();
             let probe_succeeded = probe_output.status.success();
@@ -433,23 +483,25 @@ impl Tool for BashTool {
                     }
                 };
 
-                let retry_future = async {
-                    let mut cmd = Command::new(shell);
-                    cmd.arg(shell_arg)
-                        .arg(&input.command)
-                        .current_dir(&working_dir)
-                        .stdin(std::process::Stdio::null())
-                        .env("SSH_ASKPASS", askpass.script_path())
-                        .env("SSH_ASKPASS_REQUIRE", "force")
+                let askpass_path = askpass.script_path().to_string_lossy().to_string();
+                match spawn_with_timeout(
+                    shell,
+                    shell_arg,
+                    &input.command,
+                    &working_dir,
+                    effective_timeout,
+                    None,
+                    &[
+                        ("SSH_ASKPASS", askpass_path.as_str()),
+                        ("SSH_ASKPASS_REQUIRE", "force"),
                         // SSH_ASKPASS_REQUIRE=force on modern OpenSSH ignores
                         // DISPLAY, but older builds (Debian 11, macOS preinstalled)
                         // still gate on it being non-empty. Keep both happy.
-                        .env("DISPLAY", ":0");
-                    detach_session_pre_exec(&mut cmd);
-                    cmd.output().await
-                };
-
-                match timeout(Duration::from_secs(effective_timeout), retry_future).await {
+                        ("DISPLAY", ":0"),
+                    ],
+                )
+                .await
+                {
                     Ok(Ok(output)) => output,
                     Ok(Err(e)) => {
                         return Ok(ToolResult::error(format!("SSH retry failed: {}", e)));
@@ -501,17 +553,17 @@ impl Tool for BashTool {
             #[cfg(not(feature = "rtk"))]
             let execution_command = input.command.clone();
 
-            let command_future = async {
-                let mut cmd = Command::new(shell);
-                cmd.arg(shell_arg)
-                    .arg(&execution_command)
-                    .current_dir(&working_dir)
-                    .stdin(std::process::Stdio::null());
-                detach_session_pre_exec(&mut cmd);
-                cmd.output().await
-            };
-
-            match timeout(Duration::from_secs(effective_timeout), command_future).await {
+            match spawn_with_timeout(
+                shell,
+                shell_arg,
+                &execution_command,
+                &working_dir,
+                effective_timeout,
+                None,
+                &[],
+            )
+            .await
+            {
                 Ok(Ok(output)) => output,
                 Ok(Err(e)) => {
                     return Ok(ToolResult::error(format!(
@@ -674,78 +726,109 @@ fn check_blocked_command(command: &str) -> Option<&'static str> {
     }
 
     // ── Disk/partition destruction ────────────────────────────────
-    if normalized.contains("mkfs")
-        || normalized.contains("dd if=") && normalized.contains("of=/dev")
-    {
-        return Some("disk formatting or raw device write");
-    }
-
-    // ── Fork bombs ───────────────────────────────────────────────
-    if normalized.contains(":(){ :|:& };:") || normalized.contains("./$0|./$0&") {
-        return Some("fork bomb");
-    }
-
-    // ── /dev/sda or /dev/nvme direct writes ──────────────────────
-    if (normalized.contains("> /dev/sd") || normalized.contains("> /dev/nvme"))
-        && !normalized.contains("/dev/stderr")
-        && !normalized.contains("/dev/stdout")
-    {
-        return Some("direct write to block device");
-    }
-
-    // ── chmod 777 on system dirs ─────────────────────────────────
-    if normalized.contains("chmod")
-        && normalized.contains("777")
-        && normalized.contains("-r")
-        && (normalized.contains(" /") && !normalized.contains(" /tmp"))
-    {
-        return Some("recursive chmod 777 on system directory");
-    }
-
-    // ── Overwrite system files ───────────────────────────────────
-    if normalized.contains("> /etc/passwd")
-        || normalized.contains("> /etc/shadow")
-        || normalized.contains("> /etc/sudoers")
-    {
-        return Some("overwrite critical system file");
-    }
-
-    // ── Kernel/system destruction ────────────────────────────────
-    if normalized.contains("echo") && normalized.contains("> /proc/") {
-        return Some("write to /proc filesystem");
-    }
-    if normalized.contains("> /dev/null < /dev/sda")
-        || normalized.contains("cat /dev/urandom > /dev/sd")
-    {
-        return Some("device destruction via /dev");
-    }
-
-    // ── Network exfiltration of sensitive files ──────────────────
-    if (normalized.contains("curl") || normalized.contains("wget") || normalized.contains("nc "))
-        && (normalized.contains("/etc/shadow")
-            || normalized.contains("/etc/passwd")
-            || normalized.contains("id_rsa")
-            || normalized.contains(".ssh/"))
-    {
-        return Some("network exfiltration of sensitive files");
-    }
-
-    // ── Crypto mining / known malware patterns ───────────────────
-    if normalized.contains("xmrig")
-        || normalized.contains("minerd")
-        || normalized.contains("cryptonight")
-        || normalized.contains("stratum+tcp")
-    {
-        return Some("cryptocurrency mining");
-    }
-
-    // ── iptables flush (locks out remote access) ─────────────────
-    if normalized.contains("iptables -f") && normalized.contains("drop") {
-        return Some("firewall flush with default DROP (can lock out remote access)");
+    // The remaining patterns are pure substring matches: each rule
+    // requires every `all_of` clause to have at least one substring
+    // present (AND-of-OR / CNF) and every `none_of` substring to be
+    // absent. Iterating a static table preserves the exact normalized
+    // matching the previous hand-written `if` chain used, without the
+    // copy-pasted `normalized.contains(...)` boilerplate.
+    for rule in BLOCK_RULES {
+        let all_present = rule
+            .all_of
+            .iter()
+            .all(|clause| clause.iter().any(|needle| normalized.contains(needle)));
+        let none_present = rule
+            .none_of
+            .iter()
+            .all(|needle| !normalized.contains(needle));
+        if all_present && none_present {
+            return Some(rule.reason);
+        }
     }
 
     None
 }
+
+/// One hard-blocklist rule evaluated against the normalized command.
+///
+/// `all_of` is AND-of-OR (conjunctive normal form): every inner slice is
+/// a clause that must have at least one substring present. `none_of`
+/// substrings must all be absent. Together these reproduce the compound
+/// `&&`/`||`/`!contains` conditions the blocklist relied on.
+struct BlockRule {
+    all_of: &'static [&'static [&'static str]],
+    none_of: &'static [&'static str],
+    reason: &'static str,
+}
+
+/// Hard blocklist (excluding the `rm -rf` target-parsing rule above).
+/// PRESERVES the exact substring semantics pinned by the inline tests —
+/// do not weaken or reorder in a way that changes which command first
+/// matches.
+static BLOCK_RULES: &[BlockRule] = &[
+    // ── Disk/partition destruction ──  mkfs || (dd if= && of=/dev)
+    BlockRule {
+        all_of: &[&["mkfs", "dd if="], &["mkfs", "of=/dev"]],
+        none_of: &[],
+        reason: "disk formatting or raw device write",
+    },
+    // ── Fork bombs ──
+    BlockRule {
+        all_of: &[&[":(){ :|:& };:", "./$0|./$0&"]],
+        none_of: &[],
+        reason: "fork bomb",
+    },
+    // ── /dev/sda or /dev/nvme direct writes ──
+    BlockRule {
+        all_of: &[&["> /dev/sd", "> /dev/nvme"]],
+        none_of: &["/dev/stderr", "/dev/stdout"],
+        reason: "direct write to block device",
+    },
+    // ── chmod 777 on system dirs ──
+    BlockRule {
+        all_of: &[&["chmod"], &["777"], &["-r"], &[" /"]],
+        none_of: &[" /tmp"],
+        reason: "recursive chmod 777 on system directory",
+    },
+    // ── Overwrite system files ──
+    BlockRule {
+        all_of: &[&["> /etc/passwd", "> /etc/shadow", "> /etc/sudoers"]],
+        none_of: &[],
+        reason: "overwrite critical system file",
+    },
+    // ── Kernel/system destruction ──  echo && > /proc/
+    BlockRule {
+        all_of: &[&["echo"], &["> /proc/"]],
+        none_of: &[],
+        reason: "write to /proc filesystem",
+    },
+    BlockRule {
+        all_of: &[&["> /dev/null < /dev/sda", "cat /dev/urandom > /dev/sd"]],
+        none_of: &[],
+        reason: "device destruction via /dev",
+    },
+    // ── Network exfiltration of sensitive files ──
+    BlockRule {
+        all_of: &[
+            &["curl", "wget", "nc "],
+            &["/etc/shadow", "/etc/passwd", "id_rsa", ".ssh/"],
+        ],
+        none_of: &[],
+        reason: "network exfiltration of sensitive files",
+    },
+    // ── Crypto mining / known malware patterns ──
+    BlockRule {
+        all_of: &[&["xmrig", "minerd", "cryptonight", "stratum+tcp"]],
+        none_of: &[],
+        reason: "cryptocurrency mining",
+    },
+    // ── iptables flush (locks out remote access) ──
+    BlockRule {
+        all_of: &[&["iptables -f"], &["drop"]],
+        none_of: &[],
+        reason: "firewall flush with default DROP (can lock out remote access)",
+    },
+];
 
 /// Maximum number of recent bash commands tracked per session for the
 /// retry-loop guard. Five is enough to catch tight back-to-back loops

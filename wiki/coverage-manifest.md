@@ -6,7 +6,6 @@ Every project-owned top-level source area in `src/`. Single crate with one binar
 |---|---|---|---|
 | `src/main.rs` | ✓ | [Entrypoints](entrypoints.md), [Flows](flows.md) | — |
 | `src/lib.rs` | ✓ | [Source Map](source-map.md) | — |
-| `src/app/` | ✓ | [Architecture](architecture/index.md), [Source Map](source-map.md) | — |
 | `src/cli/` | ✓ | [Subsystems/CLI](subsystems/cli/index.md), [Entrypoints](entrypoints.md) | — |
 | `src/config/` | ✓ | [Contracts](contracts.md), [Subsystems/CLI](subsystems/cli/index.md) | Per-field details in 126KB `types.rs` |
 | `src/db/` | ✓ | [Data Layer](subsystems/data/index.md), [Contracts](contracts.md) | Repository impl details |
@@ -37,7 +36,6 @@ Every project-owned top-level source area in `src/`. Single crate with one binar
 | `src/services/` | ✓ | [Infrastructure](subsystems/infra/index.md) | — |
 | `src/a2a/` | ✓ | [Contracts](contracts.md), [Infrastructure](subsystems/infra/index.md) | JSON-RPC subset details |
 | `src/cron/` | ✓ | [Flows](flows.md), [Infrastructure](subsystems/infra/index.md) | — |
-| `src/error/` | ✓ | [Contracts](contracts.md) | — |
 | `src/logging/` | ✓ | [Infrastructure](subsystems/infra/index.md) | — |
 | `src/startup/` | ✓ | [Infrastructure](subsystems/infra/index.md) | — |
 | `src/rtk/` | ✓ | [Infrastructure](subsystems/infra/index.md) | — |

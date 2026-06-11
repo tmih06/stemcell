@@ -51,12 +51,10 @@
 //! | [`cron`] | Scheduled task execution |
 //! | [`services`] | Session, message, and file services |
 
-pub mod app;
 pub mod brain;
 pub mod cli;
 pub mod config;
 pub mod db;
-pub mod error;
 pub mod logging;
 pub mod memory;
 pub mod services;
@@ -69,9 +67,6 @@ pub mod channels;
 pub mod cron;
 pub mod rtk;
 pub mod usage;
-
-// Re-export commonly used types
-pub use error::{ErrorCode, StemCellError};
 
 /// Version information
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

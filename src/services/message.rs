@@ -198,28 +198,34 @@ impl MessageService {
 
     /// Get the last message in a session
     pub async fn get_last_message(&self, session_id: Uuid) -> Result<Option<Message>> {
-        let messages = self.list_messages_for_session(session_id).await?;
-        Ok(messages.into_iter().last())
+        let repo = MessageRepository::new(self.context.pool());
+        repo.get_last_message(session_id)
+            .await
+            .context("Failed to get last message")
     }
 
     /// Get messages by role
     pub async fn get_messages_by_role(&self, session_id: Uuid, role: &str) -> Result<Vec<Message>> {
-        let messages = self.list_messages_for_session(session_id).await?;
-        Ok(messages.into_iter().filter(|m| m.role == role).collect())
+        let repo = MessageRepository::new(self.context.pool());
+        repo.find_by_session_and_role(session_id, role)
+            .await
+            .context("Failed to get messages by role")
     }
 
     /// Calculate total tokens for a session
     pub async fn calculate_total_tokens(&self, session_id: Uuid) -> Result<i32> {
-        let messages = self.list_messages_for_session(session_id).await?;
-        let total = messages.iter().filter_map(|m| m.token_count).sum();
-        Ok(total)
+        let repo = MessageRepository::new(self.context.pool());
+        repo.sum_token_count(session_id)
+            .await
+            .context("Failed to calculate total tokens")
     }
 
     /// Calculate total cost for a session
     pub async fn calculate_total_cost(&self, session_id: Uuid) -> Result<f64> {
-        let messages = self.list_messages_for_session(session_id).await?;
-        let total = messages.iter().filter_map(|m| m.cost).sum();
-        Ok(total)
+        let repo = MessageRepository::new(self.context.pool());
+        repo.sum_cost(session_id)
+            .await
+            .context("Failed to calculate total cost")
     }
 }
 

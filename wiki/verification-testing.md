@@ -62,7 +62,6 @@ cargo test --all-features
 | **Config — Update** | 4 | `src/config/update.rs` |
 | **Config — Crabrace** | 3 | `src/config/crabrace.rs` |
 | **DB — Repository (Plan)** | 15 | `src/db/repository/plan.rs` |
-| **DB — Retry** | 8 | `src/db/retry.rs` |
 | **DB — Repository (Other)** | 9 | `src/db/repository/` |
 | **DB — Database** | 5 | `src/db/database.rs` |
 | **DB — Models** | 4 | `src/db/models.rs` |
@@ -88,7 +87,6 @@ cargo test --all-features
 | **Memory — Search** | 3 | `src/memory/search.rs` |
 | **Pricing** | 17 | `src/pricing.rs` |
 | **Utils — Sanitize** | 41 | `src/utils/sanitize.rs` + `src/tests/sanitize_redaction_test.rs` |
-| **Utils — Retry** | 8 | `src/utils/retry.rs` |
 | **Utils — String** | 6 | `src/utils/string.rs` |
 | **Utils — Install** | 6 | `src/utils/install.rs` |
 | **Utils — Config Watcher** | 2 | `src/utils/config_watcher.rs` |
@@ -106,7 +104,7 @@ cargo test --all-features
 | Tests — File Extract | 36 | `src/tests/file_extract_test.rs` |
 | Tests — Fallback Vision | 39 | `src/tests/fallback_vision_test.rs` |
 | Tests — CLI Parsing | 28 | `src/tests/cli_test.rs` |
-| Tests — Custom Provider | 27 | `src/tests/custom_provider_test.rs` |
+| Tests — Custom Provider | 30 | `src/tests/custom_provider_test.rs` |
 | Tests — Onboarding Navigation | 26 | `src/tests/onboarding_navigation_test.rs` |
 | Tests — Message Compaction | 28 | `src/tests/compaction_test.rs` |
 | Tests — Channel Search | 24 | `src/tests/channel_search_test.rs` |

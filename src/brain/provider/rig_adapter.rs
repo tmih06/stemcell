@@ -180,6 +180,24 @@ fn build_tools(request: &LLMRequest) -> Vec<ToolDefinition> {
         .collect()
 }
 
+/// Build the rig `CompletionRequest` shared by both `complete` and `stream`.
+/// Kept private to this module; `model` is left `None` because the model is
+/// selected on the client via `completion_model(&request.model)`.
+fn build_completion_request(request: &LLMRequest) -> CompletionRequest {
+    CompletionRequest {
+        model: None,
+        chat_history: build_history(request),
+        preamble: request.system.clone(),
+        temperature: request.temperature.map(|t| t as f64),
+        max_tokens: request.max_tokens.map(|t| t as u64),
+        tools: build_tools(request),
+        additional_params: None,
+        documents: vec![],
+        output_schema: None,
+        tool_choice: None,
+    }
+}
+
 fn reasoning_text(reasoning: &Reasoning) -> String {
     reasoning
         .content
@@ -351,21 +369,7 @@ where
         let client = (self.client_builder)();
         let model = client.completion_model(&request.model);
 
-        let history = build_history(&request);
-        let tools = build_tools(&request);
-
-        let req = CompletionRequest {
-            model: None,
-            chat_history: history,
-            preamble: request.system,
-            temperature: request.temperature.map(|t| t as f64),
-            max_tokens: request.max_tokens.map(|t| t as u64),
-            tools,
-            additional_params: None,
-            documents: vec![],
-            output_schema: None,
-            tool_choice: None,
-        };
+        let req = build_completion_request(&request);
 
         let res = model
             .completion(req)
@@ -448,21 +452,7 @@ where
         let client = (self.client_builder)();
         let model = client.completion_model(&request.model);
 
-        let history = build_history(&request);
-        let tools = build_tools(&request);
-
-        let req = CompletionRequest {
-            model: None,
-            chat_history: history,
-            preamble: request.system,
-            temperature: request.temperature.map(|t| t as f64),
-            max_tokens: request.max_tokens.map(|t| t as u64),
-            tools,
-            additional_params: None,
-            documents: vec![],
-            output_schema: None,
-            tool_choice: None,
-        };
+        let req = build_completion_request(&request);
 
         let stream_res = model
             .stream(req)
