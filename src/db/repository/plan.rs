@@ -103,6 +103,13 @@ impl PlanRepository {
 
     /// Fetch tasks for many plans in a single query, grouped by plan_id.
     /// Avoids the N+1 pattern of calling `find_tasks_by_plan_id` per plan.
+    ///
+    /// The id list is chunked so the generated `IN (?, ?, ...)` clause never
+    /// exceeds SQLite's bind-variable limit (`SQLITE_MAX_VARIABLE_NUMBER`,
+    /// 999 on builds older than 3.32). A session realistically has a handful
+    /// of plans, but a single query over an unbounded list would hard-error
+    /// past the limit — chunking keeps it correct at any scale while still
+    /// collapsing the common case into one round-trip.
     async fn find_tasks_by_plan_ids(
         &self,
         plan_ids: &[Uuid],
@@ -110,33 +117,42 @@ impl PlanRepository {
         if plan_ids.is_empty() {
             return Ok(std::collections::HashMap::new());
         }
-        let id_strs: Vec<String> = plan_ids.iter().map(|id| id.to_string()).collect();
-        let tasks = self
-            .pool
-            .get()
-            .await
-            .context("Failed to get connection")?
-            .interact(move |conn| {
-                let placeholders = vec!["?"; id_strs.len()].join(",");
-                let sql = format!(
-                    "SELECT * FROM plan_tasks WHERE plan_id IN ({}) ORDER BY task_order ASC",
-                    placeholders
-                );
-                let mut stmt = conn.prepare(&sql)?;
-                let params_refs: Vec<&dyn rusqlite::ToSql> =
-                    id_strs.iter().map(|s| s as &dyn rusqlite::ToSql).collect();
-                let rows = stmt.query_map(params_refs.as_slice(), PlanTask::from_row)?;
-                rows.collect::<std::result::Result<Vec<_>, _>>()
-            })
-            .await
-            .map_err(interact_err)?
-            .context("Failed to find plan tasks")?;
+
+        // Conservative chunk size: well under the 999-variable floor, leaving
+        // headroom even if this query later grows additional bound params.
+        const CHUNK: usize = 900;
 
         let mut grouped: std::collections::HashMap<Uuid, Vec<PlanTask>> =
             std::collections::HashMap::new();
-        for task in tasks {
-            grouped.entry(task.plan_id).or_default().push(task);
+
+        for chunk in plan_ids.chunks(CHUNK) {
+            let id_strs: Vec<String> = chunk.iter().map(|id| id.to_string()).collect();
+            let tasks = self
+                .pool
+                .get()
+                .await
+                .context("Failed to get connection")?
+                .interact(move |conn| {
+                    let placeholders = vec!["?"; id_strs.len()].join(",");
+                    let sql = format!(
+                        "SELECT * FROM plan_tasks WHERE plan_id IN ({}) ORDER BY task_order ASC",
+                        placeholders
+                    );
+                    let mut stmt = conn.prepare(&sql)?;
+                    let params_refs: Vec<&dyn rusqlite::ToSql> =
+                        id_strs.iter().map(|s| s as &dyn rusqlite::ToSql).collect();
+                    let rows = stmt.query_map(params_refs.as_slice(), PlanTask::from_row)?;
+                    rows.collect::<std::result::Result<Vec<_>, _>>()
+                })
+                .await
+                .map_err(interact_err)?
+                .context("Failed to find plan tasks")?;
+
+            for task in tasks {
+                grouped.entry(task.plan_id).or_default().push(task);
+            }
         }
+
         Ok(grouped)
     }
 

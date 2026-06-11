@@ -382,6 +382,11 @@ impl MessageRepository {
     }
 
     /// Sum of `token_count` across all messages in a session (NULLs ignored).
+    ///
+    /// SQLite's `SUM` accumulates as i64; the public contract returns i32 to
+    /// match `Message::token_count`. A realistic session never approaches
+    /// `i32::MAX` (~2.1B) tokens, but we saturate rather than `as i32`-wrap so
+    /// an absurd total clamps to the max instead of silently going negative.
     pub async fn sum_token_count(&self, session_id: Uuid) -> Result<i32> {
         let sid = session_id.to_string();
         self.pool
@@ -397,7 +402,7 @@ impl MessageRepository {
             })
             .await
             .map_err(interact_err)?
-            .map(|v| v as i32)
+            .map(|v| v.clamp(0, i32::MAX as i64) as i32)
             .context("Failed to sum token count")
     }
 

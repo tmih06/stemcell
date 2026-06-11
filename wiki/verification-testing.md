@@ -104,7 +104,7 @@ cargo test --all-features
 | Tests — File Extract | 36 | `src/tests/file_extract_test.rs` |
 | Tests — Fallback Vision | 39 | `src/tests/fallback_vision_test.rs` |
 | Tests — CLI Parsing | 28 | `src/tests/cli_test.rs` |
-| Tests — Custom Provider | 27 | `src/tests/custom_provider_test.rs` |
+| Tests — Custom Provider | 30 | `src/tests/custom_provider_test.rs` |
 | Tests — Onboarding Navigation | 26 | `src/tests/onboarding_navigation_test.rs` |
 | Tests — Message Compaction | 28 | `src/tests/compaction_test.rs` |
 | Tests — Channel Search | 24 | `src/tests/channel_search_test.rs` |
