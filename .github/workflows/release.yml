@@ -12,11 +12,14 @@ env:
   CARGO_TERM_COLOR: always
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
   DOCKERFILE_PATH: src/docker/Dockerfile
-  # Linux platform intersection supported by both rust:slim-bookworm
-  # and debian:bookworm-slim. Docker images are Linux-only; native
-  # release binaries for Windows/macOS are built in the matrix below.
-  DOCKER_PLATFORMS: linux/amd64,linux/386,linux/arm/v7,linux/arm64,linux/ppc64le,linux/s390x
-  DOCKER_QEMU_PLATFORMS: 386,arm,arm64,ppc64le,s390x
+  # Docker images are Linux-only; native release binaries for
+  # Windows/macOS are built in the matrix below. We ship amd64 + arm64
+  # only: the wider arch set (386, arm/v7, ppc64le, s390x) can't build
+  # the current dependency graph — pprof has no 32-bit x86 frame-pointer
+  # support, and llama-cpp-sys-2's build script panics on arm/v7,
+  # ppc64le, and s390x (CARGO_CFG_TARGET_FEATURE unset on those targets).
+  # Both supported platforms build on native runners, so no QEMU needed.
+  DOCKER_PLATFORMS: linux/amd64,linux/arm64
 
 jobs:
   # CI only runs on PRs (not pushes to main). For release tags, we verify
@@ -257,20 +260,8 @@ jobs:
           - platform: linux/amd64
             runner: ubuntu-latest
             lto: fat
-          - platform: linux/386
-            runner: ubuntu-latest
-            lto: false
           - platform: linux/arm64
             runner: ubuntu-24.04-arm
-            lto: fat
-          - platform: linux/arm/v7
-            runner: ubuntu-latest
-            lto: false
-          - platform: linux/ppc64le
-            runner: ubuntu-latest
-            lto: fat
-          - platform: linux/s390x
-            runner: ubuntu-latest
             lto: fat
     steps:
       - name: Free disk space
@@ -288,9 +279,6 @@ jobs:
         id: image
         shell: bash
         run: echo "name=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
-
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
