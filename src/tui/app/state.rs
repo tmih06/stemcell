@@ -1439,19 +1439,29 @@ impl App {
         let tool_registry = self.agent_service.tool_registry().clone();
 
         // Rebuild system brain with new provider info to ensure RuntimeInfo is updated
-        let brain_path_for_loader = self.agent_service.brain_path().clone().unwrap_or_else(crate::brain::BrainLoader::resolve_path);
+        let brain_path_for_loader = self
+            .agent_service
+            .brain_path()
+            .clone()
+            .unwrap_or_else(crate::brain::BrainLoader::resolve_path);
         let brain_loader = crate::brain::BrainLoader::new(brain_path_for_loader.clone());
-        
+
         let command_loader = crate::brain::CommandLoader::from_brain_path(&brain_path_for_loader);
         let user_commands = command_loader.load();
         let builtin_commands: Vec<(&str, &str)> = crate::tui::app::SLASH_COMMANDS
             .iter()
             .map(|c| (c.name, c.description))
             .collect();
-        let commands_section = crate::brain::CommandLoader::commands_section(&builtin_commands, &user_commands);
+        let commands_section =
+            crate::brain::CommandLoader::commands_section(&builtin_commands, &user_commands);
 
-        let working_dir = self.agent_service.working_directory().read().expect("working_directory lock poisoned").clone();
-        
+        let working_dir = self
+            .agent_service
+            .working_directory()
+            .read()
+            .expect("working_directory lock poisoned")
+            .clone();
+
         let runtime_info = crate::brain::prompt_builder::RuntimeInfo {
             model: Some(provider.default_model().to_string()),
             provider: Some(provider.name().to_string()),

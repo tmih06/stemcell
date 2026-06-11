@@ -120,7 +120,12 @@ static REGISTRATIONS: LazyLock<Vec<ProviderRegistration>> = LazyLock::new(|| {
             display_name: "OpenCode Zen Free",
             session_id: "opencode_zen_free",
             aliases: &[],
-            is_enabled: |c| c.providers.opencode_zen_free.as_ref().is_some_and(|p| p.enabled),
+            is_enabled: |c| {
+                c.providers
+                    .opencode_zen_free
+                    .as_ref()
+                    .is_some_and(|p| p.enabled)
+            },
             factory: Box::new(|config| Box::pin(try_create_opencode_zen_free(config))),
             config_field: |c| c.providers.opencode_zen_free.as_ref(),
         },
@@ -1348,7 +1353,10 @@ async fn try_create_opencode_zen_free(config: &Config) -> Result<Option<Arc<dyn 
         _ => return Ok(None),
     };
 
-    let api_key = opencode_config.api_key.clone().unwrap_or_else(|| "public".to_string());
+    let api_key = opencode_config
+        .api_key
+        .clone()
+        .unwrap_or_else(|| "public".to_string());
 
     let base_url = opencode_config
         .base_url
@@ -1360,7 +1368,11 @@ async fn try_create_opencode_zen_free(config: &Config) -> Result<Option<Arc<dyn 
         .clone()
         .unwrap_or_else(|| "deepseek-v4-flash-free".to_string());
 
-    tracing::info!("Using OpenCode Zen Free API at: {} (model={})", base_url, model);
+    tracing::info!(
+        "Using OpenCode Zen Free API at: {} (model={})",
+        base_url,
+        model
+    );
 
     let provider = configure_openai_compatible(
         OpenAIProvider::with_base_url(api_key, base_url)

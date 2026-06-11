@@ -1073,7 +1073,12 @@ impl ProviderConfigs {
             ("codex", "Codex OAuth", false, self.codex.as_ref()),
             // OpenCode API — OAuth-backed but registered as a regular provider
             ("opencode", "OpenCode", false, self.opencode.as_ref()),
-            ("opencode_zen_free", "OpenCode Zen Free", false, self.opencode_zen_free.as_ref()),
+            (
+                "opencode_zen_free",
+                "OpenCode Zen Free",
+                false,
+                self.opencode_zen_free.as_ref(),
+            ),
             // API providers — require api_key in addition to enabled
             ("qwen", "Qwen", true, self.qwen.as_ref()),
             ("minimax", "Minimax", true, self.minimax.as_ref()),
