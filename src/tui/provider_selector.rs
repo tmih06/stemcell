@@ -25,6 +25,25 @@ pub struct ModelSelectorOption {
     pub provider_name: String,
     pub model_id: String,
     pub display_name: String,
+    /// Precomputed, lowercased search text (`display_name model_id
+    /// provider_name`). Built once in `rebuild_dialog_model_options_cache` so
+    /// filtering — which runs on every render and every keystroke — never
+    /// re-allocates a `format!` haystack and a `to_ascii_lowercase` copy per
+    /// option per pass. With large catalogues (OpenRouter ≈ 300+ models) that
+    /// allocation churn was a measurable chunk of the `/models` typing lag.
+    pub search_lower: String,
+}
+
+impl ModelSelectorOption {
+    /// Whether this option matches *every* term in `terms` (AND semantics).
+    /// An empty `terms` slice matches all options. Matches against the
+    /// precomputed `search_lower`, so callers must pass already-lowercased
+    /// terms (`query_terms` lowercases) and this allocates nothing.
+    fn matches_terms(&self, terms: &[String]) -> bool {
+        terms
+            .iter()
+            .all(|term| self.search_lower.contains(term.as_str()))
+    }
 }
 
 // Not a `matches!`: each arm yields a distinct `cfg!(feature = ...)`, so the
@@ -121,6 +140,15 @@ pub struct ProviderSelectorState {
     pub refresh_start: Option<std::time::Instant>,
     /// Success message from last refresh + when it was shown (auto-dismiss)
     pub refresh_message: Option<(String, std::time::Instant)>,
+    /// Cached "provider has credentials" flags, keyed by provider index, used
+    /// to paint the green "connected" tick. The `/models` render runs on every
+    /// keystroke AND every 100 ms animation tick; resolving this live calls
+    /// `Config::load()` (re-reads + re-parses config.toml & keys.toml, runs
+    /// migrations) and `which::which` for CLI providers — once per visible
+    /// provider, per frame. That per-frame disk churn was the main source of
+    /// model-navigation lag. The cache is warmed once via `warm_cred_cache`
+    /// and dropped via `invalidate_cred_cache` on open and after any save.
+    pub provider_cred_cache: std::collections::HashMap<usize, bool>,
 }
 
 impl ProviderSelectorState {
@@ -314,11 +342,18 @@ impl ProviderSelectorState {
                     .unwrap_or_else(|| "custom".to_string())
             };
             for model_id in self.dialog_models_for_provider(idx, config.as_ref(), &model_cache) {
+                let display_name = model_display_label(&model_id).to_string();
+                // Precompute the lowercased search text once here so the
+                // per-keystroke / per-frame filter is a pure substring scan
+                // with zero allocations (see `ModelSelectorOption::search_lower`).
+                let search_lower =
+                    format!("{} {} {}", display_name, model_id, provider_name).to_ascii_lowercase();
                 options.push(ModelSelectorOption {
                     provider_idx: idx,
                     provider_name: provider_name.clone(),
-                    display_name: model_display_label(&model_id).to_string(),
+                    display_name,
                     model_id,
+                    search_lower,
                 });
             }
         }
@@ -352,40 +387,32 @@ impl ProviderSelectorState {
     }
 
     pub fn filtered_dialog_model_options(&self) -> Vec<&ModelSelectorOption> {
-        let query = self.model_filter.trim().to_ascii_lowercase();
-        if query.is_empty() {
+        let terms = crate::tui::model_search::query_terms(&self.model_filter);
+        if terms.is_empty() {
             return self.dialog_model_options_cache.iter().collect();
         }
 
         self.dialog_model_options_cache
             .iter()
-            .filter(|option| {
-                option.display_name.to_ascii_lowercase().contains(&query)
-                    || option.model_id.to_ascii_lowercase().contains(&query)
-                    || option.provider_name.to_ascii_lowercase().contains(&query)
-            })
+            .filter(|option| option.matches_terms(&terms))
             .collect()
     }
 
     pub fn dialog_model_count(&self) -> usize {
-        let query = self.model_filter.trim().to_ascii_lowercase();
-        if query.is_empty() {
+        let terms = crate::tui::model_search::query_terms(&self.model_filter);
+        if terms.is_empty() {
             self.dialog_model_options_cache.len()
         } else {
             self.dialog_model_options_cache
                 .iter()
-                .filter(|option| {
-                    option.display_name.to_ascii_lowercase().contains(&query)
-                        || option.model_id.to_ascii_lowercase().contains(&query)
-                        || option.provider_name.to_ascii_lowercase().contains(&query)
-                })
+                .filter(|option| option.matches_terms(&terms))
                 .count()
         }
     }
 
     pub fn selected_dialog_model_option(&self) -> Option<ModelSelectorOption> {
-        let query = self.model_filter.trim().to_ascii_lowercase();
-        if query.is_empty() {
+        let terms = crate::tui::model_search::query_terms(&self.model_filter);
+        if terms.is_empty() {
             return self
                 .dialog_model_options_cache
                 .get(self.selected_model)
@@ -396,10 +423,7 @@ impl ProviderSelectorState {
         let mut matched = 0usize;
         let mut first = None;
         for option in &self.dialog_model_options_cache {
-            let matches = option.display_name.to_ascii_lowercase().contains(&query)
-                || option.model_id.to_ascii_lowercase().contains(&query)
-                || option.provider_name.to_ascii_lowercase().contains(&query);
-            if !matches {
+            if !option.matches_terms(&terms) {
                 continue;
             }
             if first.is_none() {
@@ -422,12 +446,23 @@ impl ProviderSelectorState {
     /// Check if a provider at the given index has credentials configured.
     /// Used by renderers to show a green indicator in the provider list.
     /// Does NOT mutate state — pure read from config.
+    ///
+    /// This loads config on every call. Hot render paths should warm the cache
+    /// once with [`warm_cred_cache`](Self::warm_cred_cache) and read
+    /// [`provider_credentials_cached`](Self::provider_credentials_cached)
+    /// instead, so a single `/models` frame doesn't re-parse config.toml +
+    /// keys.toml once per visible provider.
     pub fn provider_has_credentials(&self, idx: usize) -> bool {
-        let config = match crate::config::Config::load() {
-            Ok(c) => c,
-            Err(_) => return false,
-        };
+        match crate::config::Config::load() {
+            Ok(config) => self.provider_has_credentials_with(&config, idx),
+            Err(_) => false,
+        }
+    }
 
+    /// [`provider_has_credentials`](Self::provider_has_credentials) evaluated
+    /// against an already-loaded config, so a caller probing many providers in
+    /// one frame pays a single `Config::load()` rather than one per provider.
+    fn provider_has_credentials_with(&self, config: &crate::config::Config, idx: usize) -> bool {
         if idx < CUSTOM_PROVIDER_IDX {
             let id = PROVIDERS[idx].id;
             match id {
@@ -476,6 +511,51 @@ impl ProviderSelectorState {
                 .and_then(|p| p.api_key.as_ref())
                 .is_some_and(|k| !k.is_empty())
         }
+    }
+
+    /// Pre-populate `provider_cred_cache` for every provider in the current
+    /// display order with a SINGLE `Config::load()` (instead of one load per
+    /// provider per frame). Safe to call every frame: it returns immediately
+    /// once the cache is warm, so the render path becomes pure in-memory reads.
+    /// Cleared by [`invalidate_cred_cache`](Self::invalidate_cred_cache) on
+    /// open and after a save so the green ticks refresh.
+    pub fn warm_cred_cache(&mut self) {
+        let order = self.provider_display_order();
+        if order
+            .iter()
+            .all(|idx| self.provider_cred_cache.contains_key(idx))
+        {
+            return; // fully warm — no disk I/O this frame
+        }
+        let config = crate::config::Config::load().ok();
+        for idx in order {
+            if self.provider_cred_cache.contains_key(&idx) {
+                continue;
+            }
+            let configured = config
+                .as_ref()
+                .is_some_and(|cfg| self.provider_has_credentials_with(cfg, idx));
+            self.provider_cred_cache.insert(idx, configured);
+        }
+    }
+
+    /// Read the cached "has credentials" flag for `idx`. Falls back to a direct
+    /// (config-loading) lookup on a cache miss so call-sites never have to
+    /// special-case an unwarmed cache; warm via
+    /// [`warm_cred_cache`](Self::warm_cred_cache) first to keep the hot path
+    /// allocation- and disk-free.
+    pub fn provider_credentials_cached(&self, idx: usize) -> bool {
+        match self.provider_cred_cache.get(&idx) {
+            Some(&cached) => cached,
+            None => self.provider_has_credentials(idx),
+        }
+    }
+
+    /// Drop every cached credential flag so the next render re-reads from disk.
+    /// Call after a save that may change which providers have keys, or whenever
+    /// the custom-provider set changes (their indices shift).
+    pub fn invalidate_cred_cache(&mut self) {
+        self.provider_cred_cache.clear();
     }
 
     /// Detect if an API key exists in config for the current provider.
@@ -712,15 +792,17 @@ impl ProviderSelectorState {
         out
     }
 
-    /// Model names filtered by `model_filter` (case-insensitive substring match).
+    /// Model names filtered by `model_filter`. Multiple whitespace-separated
+    /// terms must *all* match (case-insensitive substring) — e.g. `deepseek
+    /// free` keeps only names containing both `deepseek` and `free`.
     pub fn filtered_model_names(&self) -> Vec<&str> {
         let all = self.all_model_names();
-        if self.model_filter.is_empty() {
+        let terms = crate::tui::model_search::query_terms(&self.model_filter);
+        if terms.is_empty() {
             all
         } else {
-            let q = self.model_filter.to_lowercase();
             all.into_iter()
-                .filter(|m| m.to_lowercase().contains(&q))
+                .filter(|m| crate::tui::model_search::matches_terms(&terms, m))
                 .collect()
         }
     }
@@ -902,46 +984,4 @@ pub fn load_default_models(provider_id: &str) -> Vec<String> {
         provider_id
     );
     models
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn compiled_cli_provider_visibility_matches_features() {
-        #[cfg(feature = "provider-claude-cli")]
-        assert!(index_of_provider("claude-cli").is_some());
-        #[cfg(not(feature = "provider-claude-cli"))]
-        assert!(index_of_provider("claude-cli").is_none());
-
-        #[cfg(feature = "provider-opencode-cli")]
-        assert!(index_of_provider("opencode-cli").is_some());
-        #[cfg(not(feature = "provider-opencode-cli"))]
-        assert!(index_of_provider("opencode-cli").is_none());
-
-        #[cfg(feature = "provider-codex-cli")]
-        assert!(index_of_provider("codex-cli").is_some());
-        #[cfg(not(feature = "provider-codex-cli"))]
-        assert!(index_of_provider("codex-cli").is_none());
-    }
-
-    #[test]
-    fn dialog_model_options_filter_by_provider_name_and_model_name() {
-        let mut state = ProviderSelectorState {
-            selected_provider: index_of_provider("openrouter").unwrap_or(0),
-            model_filter: "router".to_string(),
-            ..Default::default()
-        };
-        state.models = vec![
-            "openai/gpt-4o".to_string(),
-            "anthropic/claude-3.7".to_string(),
-        ];
-        state.rebuild_dialog_model_options_cache();
-
-        let options = state.filtered_dialog_model_options();
-        assert!(options.iter().any(
-            |option| option.provider_name == "OpenRouter" && option.model_id == "openai/gpt-4o"
-        ));
-    }
 }

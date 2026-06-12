@@ -813,6 +813,8 @@ fn render_provider_auth(lines: &mut Vec<Line<'static>>, wizard: &OnboardingWizar
                 }
             } else {
                 let filtered = wizard.ps.filtered_model_names();
+                let highlight_terms =
+                    crate::tui::model_search::query_terms(&wizard.ps.model_filter);
                 let total = filtered.len();
                 let safe_sel = wizard.ps.selected_model.min(total.saturating_sub(1));
                 let half = MAX_VISIBLE / 2;
@@ -855,10 +857,15 @@ fn render_provider_auth(lines: &mut Vec<Line<'static>>, wizard: &OnboardingWizar
                         } else {
                             Style::default().fg(Color::Reset)
                         };
-                        lines.push(Line::from(vec![
-                            Span::styled(prefix, style),
-                            Span::styled((*m).to_string(), style),
-                        ]));
+                        let hl_style = crate::tui::model_search::match_style(style);
+                        let mut row_spans = vec![Span::styled(prefix, style)];
+                        row_spans.extend(crate::tui::model_search::highlight_spans(
+                            m,
+                            &highlight_terms,
+                            style,
+                            hl_style,
+                        ));
+                        lines.push(Line::from(row_spans));
                     }
                     if end < total {
                         lines.push(Line::from(Span::styled(

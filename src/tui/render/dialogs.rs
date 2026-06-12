@@ -313,6 +313,11 @@ pub(super) fn render_model_selector(f: &mut Frame, app: &mut App, area: Rect) {
 
     let unified_model_picker = !app.ps.showing_providers;
     if unified_model_picker {
+        // Warm the credential cache once (no-op when already warm) BEFORE the
+        // immutable `dialog_model_options` borrow below, so the per-row green
+        // tick lookup is a pure in-memory read instead of a Config::load() per
+        // visible provider on every keystroke / animation frame.
+        app.ps.warm_cred_cache();
         let dialog_model_options = app.ps.filtered_dialog_model_options();
         let total = dialog_model_options.len();
         let max_sel = if total > 0 { total - 1 } else { 0 };
@@ -451,11 +456,7 @@ pub(super) fn render_model_selector(f: &mut Frame, app: &mut App, area: Rect) {
             // tick so provider names stay right-aligned whether or not a tick is
             // shown.
             const TICK_GUTTER: usize = 2;
-            // Credential status is cached per render so Config::load() (and the
-            // CLI-binary probes inside provider_has_credentials) runs at most
-            // once per distinct provider currently in view.
-            let mut cred_cache: std::collections::HashMap<usize, bool> =
-                std::collections::HashMap::new();
+            let highlight_terms = crate::tui::model_search::query_terms(&app.ps.model_filter);
 
             for (offset, option) in dialog_model_options[start..end].iter().enumerate() {
                 let option = *option;
@@ -485,14 +486,12 @@ pub(super) fn render_model_selector(f: &mut Frame, app: &mut App, area: Rect) {
                     " ".repeat(row_width.saturating_sub(TICK_GUTTER).saturating_sub(
                         model_label.chars().count() + provider_label.chars().count(),
                     ));
-                let row = format!("{model_label}{filler}{provider_label}");
+                let hl_style = crate::tui::model_search::match_style(style);
 
                 // Right-aligned green tick for providers that are connected
                 // (API key present, OAuth token saved, or CLI binary on PATH).
                 // Providers you are not logged into show a blank gutter instead.
-                let configured = *cred_cache
-                    .entry(option.provider_idx)
-                    .or_insert_with(|| app.ps.provider_has_credentials(option.provider_idx));
+                let configured = app.ps.provider_credentials_cached(option.provider_idx);
                 let tick_span = if configured {
                     Span::styled(
                         " ✓",
@@ -506,11 +505,24 @@ pub(super) fn render_model_selector(f: &mut Frame, app: &mut App, area: Rect) {
                     Span::styled("  ", style)
                 };
 
-                lines.push(Line::from(vec![
-                    Span::styled(prefix, style),
-                    Span::styled(row, style),
-                    tick_span,
-                ]));
+                // Highlight the query terms within the visible model + provider
+                // columns so the user sees why the row matched.
+                let mut row_spans = vec![Span::styled(prefix, style)];
+                row_spans.extend(crate::tui::model_search::highlight_spans(
+                    &model_label,
+                    &highlight_terms,
+                    style,
+                    hl_style,
+                ));
+                row_spans.push(Span::styled(filler, style));
+                row_spans.extend(crate::tui::model_search::highlight_spans(
+                    &provider_label,
+                    &highlight_terms,
+                    style,
+                    hl_style,
+                ));
+                row_spans.push(tick_span);
+                lines.push(Line::from(row_spans));
             }
 
             let visible_count = end.saturating_sub(start);
@@ -627,12 +639,17 @@ pub(super) fn render_model_selector(f: &mut Frame, app: &mut App, area: Rect) {
 
     // Custom providers keep the existing fetch/paste flow. Built-ins use a
     // flat searchable model catalogue inspired by opencode's model dialog.
-    let filter = app.ps.model_filter.to_lowercase();
+    // Warm the credential cache up front — before the immutable `app.ps`
+    // borrows below (`custom_display_models`, `dialog_model_options`) — so the
+    // provider-list ticks are in-memory reads instead of a Config::load() per
+    // provider on every frame.
+    app.ps.warm_cred_cache();
+    let highlight_terms = crate::tui::model_search::query_terms(&app.ps.model_filter);
     let custom_display_models: Vec<&str> = app
         .ps
         .models
         .iter()
-        .filter(|m| filter.is_empty() || m.to_lowercase().contains(&filter))
+        .filter(|m| crate::tui::model_search::matches_terms(&highlight_terms, m))
         .map(|s| s.as_ref())
         .collect();
     let dialog_model_options = if is_custom_selected {
@@ -725,7 +742,7 @@ pub(super) fn render_model_selector(f: &mut Frame, app: &mut App, area: Rect) {
     for &idx in &display_order {
         let selected = idx == provider_idx;
         let focused = focused_field == 0;
-        let configured = app.ps.provider_has_credentials(idx);
+        let configured = app.ps.provider_credentials_cached(idx);
 
         let prefix = if selected && focused { " > " } else { "   " };
         let marker = if selected { "[*]" } else { "[ ]" };
@@ -1138,12 +1155,17 @@ pub(super) fn render_model_selector(f: &mut Frame, app: &mut App, area: Rect) {
 
                 let suffix = if active { " (active)" } else { "" };
                 let label = crate::tui::provider_selector::model_display_label(model);
+                let hl_style = crate::tui::model_search::match_style(style);
 
-                lines.push(Line::from(vec![
-                    Span::styled(prefix, style),
-                    Span::styled(label.to_string(), style),
-                    Span::styled(suffix, Style::default().fg(Color::DarkGray)),
-                ]));
+                let mut row_spans = vec![Span::styled(prefix, style)];
+                row_spans.extend(crate::tui::model_search::highlight_spans(
+                    label,
+                    &highlight_terms,
+                    style,
+                    hl_style,
+                ));
+                row_spans.push(Span::styled(suffix, Style::default().fg(Color::DarkGray)));
+                lines.push(Line::from(row_spans));
             }
 
             if end < total {
@@ -1264,12 +1286,23 @@ pub(super) fn render_model_selector(f: &mut Frame, app: &mut App, area: Rect) {
                     " ".repeat(row_width.saturating_sub(
                         model_label.chars().count() + provider_label.chars().count(),
                     ));
-                let row = format!("{model_label}{filler}{provider_label}");
+                let hl_style = crate::tui::model_search::match_style(style);
 
-                lines.push(Line::from(vec![
-                    Span::styled(prefix, style),
-                    Span::styled(row, style),
-                ]));
+                let mut row_spans = vec![Span::styled(prefix, style)];
+                row_spans.extend(crate::tui::model_search::highlight_spans(
+                    &model_label,
+                    &highlight_terms,
+                    style,
+                    hl_style,
+                ));
+                row_spans.push(Span::styled(filler, style));
+                row_spans.extend(crate::tui::model_search::highlight_spans(
+                    &provider_label,
+                    &highlight_terms,
+                    style,
+                    hl_style,
+                ));
+                lines.push(Line::from(row_spans));
             }
 
             if end < total {

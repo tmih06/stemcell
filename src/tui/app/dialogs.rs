@@ -68,6 +68,11 @@ impl App {
     pub(crate) async fn open_model_selector(&mut self) {
         tracing::debug!("[open_model_selector] Opening model selector");
 
+        // Fresh dialog session: drop any cached green-tick lookups so the first
+        // render re-reads credential state from disk (custom provider indices
+        // may have shifted since the dialog was last open).
+        self.ps.invalidate_cred_cache();
+
         // Load config to get enabled provider
         let config = match crate::config::Config::load() {
             Ok(c) => c,
@@ -1860,6 +1865,13 @@ impl App {
                 write_errors.join(", ")
             ));
         }
+
+        // Credential state on disk may have just changed (a key was written, a
+        // custom entry added/renamed, providers toggled enabled), so drop the
+        // render's cached green-tick lookups — the next /models frame re-reads
+        // once and re-warms. This runs before the mid-navigation fast path so
+        // both per-field saves and the final confirm refresh the ticks.
+        self.ps.invalidate_cred_cache();
 
         // Fast path for mid-navigation in /models: the user is still
         // moving between fields (provider → api_key → model → ...), so

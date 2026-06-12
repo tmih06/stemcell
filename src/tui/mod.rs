@@ -17,6 +17,7 @@ pub mod runner;
 // Enhanced rendering modules
 pub mod highlight;
 pub mod markdown;
+pub mod model_search;
 
 pub mod components;
 

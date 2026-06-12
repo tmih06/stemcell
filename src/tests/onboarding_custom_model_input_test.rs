@@ -57,6 +57,7 @@ fn state() -> ProviderSelectorState {
         is_refreshing: false,
         refresh_start: None,
         refresh_message: None,
+        provider_cred_cache: std::collections::HashMap::new(),
     }
 }
 
