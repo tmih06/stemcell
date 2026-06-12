@@ -145,17 +145,25 @@ impl Tool for KgNoteTool {
             )));
         }
 
-        let content = if exists {
+        let (content, added_obs, added_rel) = if exists {
             let mut content = self.vault.read_note(&rel).unwrap_or_default();
-            content = insert_bullets(&content, "Observations", &observation_bullets);
-            content = insert_bullets(&content, "Relations", &relation_bullets);
-            content
+            let added_obs;
+            let added_rel;
+            (content, added_obs) = insert_bullets(&content, "Observations", &observation_bullets);
+            (content, added_rel) = insert_bullets(&content, "Relations", &relation_bullets);
+            (content, added_obs, added_rel)
         } else {
-            build_note(
-                &title,
-                note_type.as_deref(),
-                &observation_bullets,
-                &relation_bullets,
+            // A fresh note inserts every bullet verbatim, so the input counts are
+            // exactly what was added.
+            (
+                build_note(
+                    &title,
+                    note_type.as_deref(),
+                    &observation_bullets,
+                    &relation_bullets,
+                ),
+                observation_bullets.len(),
+                relation_bullets.len(),
             )
         };
 
@@ -170,15 +178,13 @@ impl Tool for KgNoteTool {
 
         let action = if exists { "Updated" } else { "Created" };
         Ok(ToolResult::success(format!(
-            "{action} {rel} (+{} observation(s), +{} relation(s))",
-            observation_bullets.len(),
-            relation_bullets.len()
+            "{action} {rel} (+{added_obs} observation(s), +{added_rel} relation(s))"
         )))
     }
 }
 
 /// Format an observation string as a bullet, leaving any existing `- ` prefix.
-fn observation_bullet(s: &str) -> String {
+pub(crate) fn observation_bullet(s: &str) -> String {
     let s = s.trim();
     if s.starts_with("- ") {
         s.to_string()
@@ -188,7 +194,7 @@ fn observation_bullet(s: &str) -> String {
 }
 
 /// Format a relation input (object `{type,target}` or bare string) as a bullet.
-fn relation_bullet(v: &Value) -> Option<String> {
+pub(crate) fn relation_bullet(v: &Value) -> Option<String> {
     if let Some(s) = v.as_str() {
         let s = s.trim();
         if s.is_empty() {
@@ -227,7 +233,7 @@ fn relation_bullet(v: &Value) -> Option<String> {
 }
 
 /// Build a fresh note with frontmatter and the given section bullets.
-fn build_note(
+pub(crate) fn build_note(
     title: &str,
     note_type: Option<&str>,
     observations: &[String],
@@ -242,17 +248,25 @@ fn build_note(
     s.push_str("---\n\n");
     s.push_str(&format!("# {title}\n"));
     let mut content = s;
-    content = insert_bullets(&content, "Observations", observations);
-    content = insert_bullets(&content, "Relations", relations);
+    (content, _) = insert_bullets(&content, "Observations", observations);
+    (content, _) = insert_bullets(&content, "Relations", relations);
     content
 }
 
 /// Insert bullets into a `## {section}` section, creating the section at the end
 /// if it doesn't exist. Existing content in the section is preserved; new
-/// bullets are appended after it.
-fn insert_bullets(content: &str, section_title: &str, bullets: &[String]) -> String {
+/// bullets are appended after it. Bullets whose trimmed text already appears in
+/// the section are skipped (idempotent append) — this keeps a memory tool from
+/// bloating notes with exact-duplicate facts re-remembered across sessions.
+///
+/// Returns the updated content and the number of bullets actually inserted.
+pub(crate) fn insert_bullets(
+    content: &str,
+    section_title: &str,
+    bullets: &[String],
+) -> (String, usize) {
     if bullets.is_empty() {
-        return content.to_string();
+        return (content.to_string(), 0);
     }
     let mut lines: Vec<String> = content.lines().map(str::to_string).collect();
 
@@ -279,14 +293,36 @@ fn insert_bullets(content: &str, section_title: &str, bullets: &[String]) -> Str
                     break;
                 }
             }
+            // Dedup against existing section lines only (between the heading and
+            // `end`), so identical bullets aren't appended again.
+            let existing: std::collections::HashSet<&str> =
+                lines[h + 1..end].iter().map(|l| l.trim()).collect();
+            let new_bullets: Vec<&String> = bullets
+                .iter()
+                .filter(|b| !existing.contains(b.trim()))
+                .collect();
+            if new_bullets.is_empty() {
+                // Nothing new — return content unchanged.
+                let mut out = lines.join("\n");
+                if !out.ends_with('\n') {
+                    out.push('\n');
+                }
+                return (out, 0);
+            }
             // Trim trailing blank lines inside the section before inserting.
             let mut at = end;
             while at > h + 1 && lines[at - 1].trim().is_empty() {
                 at -= 1;
             }
-            for (k, b) in bullets.iter().enumerate() {
+            let inserted = new_bullets.len();
+            for (k, b) in new_bullets.into_iter().enumerate() {
                 lines.insert(at + k, b.clone());
             }
+            let mut out = lines.join("\n");
+            if !out.ends_with('\n') {
+                out.push('\n');
+            }
+            (out, inserted)
         }
         None => {
             if lines.last().map(|l| !l.trim().is_empty()).unwrap_or(false) {
@@ -294,12 +330,11 @@ fn insert_bullets(content: &str, section_title: &str, bullets: &[String]) -> Str
             }
             lines.push(format!("## {section_title}"));
             lines.extend(bullets.iter().cloned());
+            let mut out = lines.join("\n");
+            if !out.ends_with('\n') {
+                out.push('\n');
+            }
+            (out, bullets.len())
         }
     }
-
-    let mut out = lines.join("\n");
-    if !out.ends_with('\n') {
-        out.push('\n');
-    }
-    out
 }

@@ -102,6 +102,7 @@ pub mod handshake_timeout_test;
 pub mod hashline_test;
 pub mod image_util_test;
 //pub mod integration_test;
+pub mod kg_note_test;
 pub mod kg_parser_test;
 pub mod kg_registration_test;
 pub mod kg_repository_test;
