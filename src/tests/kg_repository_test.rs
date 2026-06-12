@@ -139,6 +139,41 @@ async fn empty_query_returns_no_results() {
 }
 
 #[tokio::test]
+async fn fts_search_or_joins_tokens_so_partial_matches_hit() {
+    let (_db, repo) = setup().await;
+    // No single note contains every token of the natural-language query, so an
+    // AND-join would return nothing. OR-join must still surface the matches.
+    repo.index_note(
+        note("a.md", "Tokio Runtime", "Work-stealing scheduler", "c1"),
+        vec![],
+        vec![],
+    )
+    .await
+    .expect("a");
+    repo.index_note(
+        note("b.md", "Tasks", "How futures become tasks", "c2"),
+        vec![],
+        vec![],
+    )
+    .await
+    .expect("b");
+
+    let hits = repo
+        .search_fts("how does tokio schedule tasks", 5)
+        .await
+        .expect("search");
+    let titles: Vec<&str> = hits.iter().map(|h| h.title.as_str()).collect();
+    assert!(
+        titles.contains(&"Tokio Runtime"),
+        "OR semantics should match the note containing only 'tokio': {titles:?}"
+    );
+    assert!(
+        titles.contains(&"Tasks"),
+        "OR semantics should match the note containing only 'tasks': {titles:?}"
+    );
+}
+
+#[tokio::test]
 async fn observations_round_trip() {
     let (_db, repo) = setup().await;
     let id = repo
@@ -208,6 +243,89 @@ async fn outgoing_relation_starts_as_ghost_then_resolves() {
     assert_eq!(back.len(), 1);
     assert!(!back[0].outgoing);
     assert_eq!(back[0].other_id, Some(a));
+    assert_eq!(back[0].relation_type, "depends_on");
+}
+
+#[tokio::test]
+async fn resolve_links_for_note_resolves_both_directions() {
+    let (_db, repo) = setup().await;
+
+    // (b) back-fill direction: B exists first and links to a not-yet-created A.
+    let b = repo
+        .index_note(
+            note("b.md", "Tokio Runtime", "body", "c2"),
+            vec![],
+            vec![RelationInput {
+                to_name: "Rust Async".to_string(),
+                relation_type: "used_by".to_string(),
+                context: None,
+            }],
+        )
+        .await
+        .expect("b");
+    // B's link is a ghost — A does not exist yet.
+    let b_out = repo.neighbors(b, LinkDirection::Out).await.expect("b out");
+    assert!(b_out[0].other_id.is_none());
+
+    // Now create A, which itself links forward to B (the (a) outgoing direction).
+    let a = repo
+        .index_note(
+            note("a.md", "Rust Async", "body", "c1"),
+            vec![],
+            vec![RelationInput {
+                to_name: "Tokio Runtime".to_string(),
+                relation_type: "depends_on".to_string(),
+                context: None,
+            }],
+        )
+        .await
+        .expect("a");
+
+    // Scoped resolve for A: resolves A→B (outgoing) and back-fills B→A (incoming).
+    let resolved = repo.resolve_links_for_note(a).await.expect("resolve");
+    assert_eq!(
+        resolved, 2,
+        "both A's outgoing and B's incoming ghost resolve"
+    );
+
+    // (a) A's outgoing edge now points at B.
+    let a_out = repo.neighbors(a, LinkDirection::Out).await.expect("a out");
+    assert_eq!(a_out[0].other_id, Some(b));
+
+    // (b) B's pre-existing ghost now points at A.
+    let b_out2 = repo.neighbors(b, LinkDirection::Out).await.expect("b out2");
+    assert_eq!(b_out2[0].other_id, Some(a));
+}
+
+#[tokio::test]
+async fn resolve_links_for_note_back_fills_by_filename_stem() {
+    let (_db, repo) = setup().await;
+    // A links to "Tokio" (a filename stem, not the title of the target note).
+    repo.index_note(
+        note("a.md", "Rust Async", "body", "c1"),
+        vec![],
+        vec![RelationInput {
+            to_name: "Tokio".to_string(),
+            relation_type: "depends_on".to_string(),
+            context: None,
+        }],
+    )
+    .await
+    .expect("a");
+    // Target note's title differs from its filename stem.
+    let b = repo
+        .index_note(
+            note("concepts/Tokio.md", "The Tokio Runtime", "body", "c2"),
+            vec![],
+            vec![],
+        )
+        .await
+        .expect("b");
+
+    let resolved = repo.resolve_links_for_note(b).await.expect("resolve");
+    assert_eq!(resolved, 1, "ghost matching the filename stem back-fills");
+    let back = repo.backlinks(b).await.expect("back");
+    assert_eq!(back.len(), 1);
     assert_eq!(back[0].relation_type, "depends_on");
 }
 

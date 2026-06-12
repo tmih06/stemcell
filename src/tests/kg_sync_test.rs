@@ -152,3 +152,43 @@ async fn index_file_indexes_single_note() {
         .expect("present");
     assert_eq!(got.title, "New Note");
 }
+
+#[tokio::test]
+async fn index_file_resolves_links_both_directions() {
+    let (_dir, _db, vault, repo) = setup().await;
+    vault.ensure_scaffold().expect("scaffold");
+
+    // A links forward to a not-yet-indexed B; indexing A leaves a ghost.
+    vault
+        .write_note(
+            "concepts/Rust Async.md",
+            "# Rust Async\n\n## Relations\n- depends_on [[Tokio Runtime]]\n",
+        )
+        .expect("write a");
+    let a = sync::index_file(&vault, &repo, "concepts/Rust Async.md")
+        .await
+        .expect("index a");
+    let a_out = repo.neighbors(a, LinkDirection::Out).await.expect("a out");
+    assert!(a_out[0].other_id.is_none(), "ghost until B is indexed");
+
+    // B links back to A. Indexing B via the scoped path must resolve both
+    // B→A (outgoing) and the pre-existing A→B ghost (incoming back-fill).
+    vault
+        .write_note(
+            "concepts/Tokio Runtime.md",
+            "# Tokio Runtime\n\n## Relations\n- used_by [[Rust Async]]\n",
+        )
+        .expect("write b");
+    let b = sync::index_file(&vault, &repo, "concepts/Tokio Runtime.md")
+        .await
+        .expect("index b");
+
+    let a_out2 = repo.neighbors(a, LinkDirection::Out).await.expect("a out2");
+    assert_eq!(
+        a_out2[0].other_id,
+        Some(b),
+        "A→B back-filled by scoped resolve"
+    );
+    let b_out = repo.neighbors(b, LinkDirection::Out).await.expect("b out");
+    assert_eq!(b_out[0].other_id, Some(a), "B→A resolved by scoped resolve");
+}

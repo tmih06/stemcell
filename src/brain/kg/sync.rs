@@ -86,7 +86,10 @@ pub async fn index_file(vault: &Vault, repo: &KnowledgeGraphRepository, rel: &st
         .index_note(note, observations, relations)
         .await
         .with_context(|| format!("Failed to index {rel}"))?;
-    repo.resolve_dangling_links().await?;
+    // Scoped resolve: only this note's own ghost links plus ghosts elsewhere that
+    // now point at it — far cheaper than the vault-wide `resolve_dangling_links`,
+    // which the full `reindex` pass still uses.
+    repo.resolve_links_for_note(id).await?;
     Ok(id)
 }
 

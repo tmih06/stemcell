@@ -498,6 +498,93 @@ impl KnowledgeGraphRepository {
             .context("Failed to resolve dangling links")
     }
 
+    /// Resolve only the ghost relations that involve a single note — the cheap
+    /// path after a single-file index. Two directions:
+    ///
+    /// (a) **outgoing**: this note's own ghost relations (`from_id = note_id`,
+    ///     `to_id IS NULL`) are resolved by looking up each distinct `to_name`,
+    /// (b) **incoming back-fill**: any ghost relation vault-wide whose `to_name`
+    ///     now matches *this* note's title or filename stem gets its `to_id`
+    ///     set to `note_id` (e.g. notes that linked here before it existed).
+    ///
+    /// Matching mirrors [`get_note_by_name`](Self::get_note_by_name) /
+    /// [`resolve_dangling_links`](Self::resolve_dangling_links)
+    /// (case-insensitive title/path, nested filename stem via `LIKE ESCAPE`).
+    /// Returns the number of relation rows resolved.
+    pub async fn resolve_links_for_note(&self, note_id: i64) -> Result<usize> {
+        self.pool
+            .get()
+            .await
+            .context("Failed to get connection")?
+            .interact(move |conn| -> rusqlite::Result<usize> {
+                let tx = conn.transaction()?;
+                let mut resolved = 0usize;
+
+                // (a) Resolve this note's own outgoing ghost relations.
+                let names: Vec<String> = {
+                    let mut stmt = tx.prepare(
+                        "SELECT DISTINCT to_name FROM kg_relation \
+                         WHERE from_id = ?1 AND to_id IS NULL",
+                    )?;
+                    let rows = stmt.query_map(params![note_id], |r| r.get::<_, String>(0))?;
+                    rows.collect::<rusqlite::Result<Vec<_>>>()?
+                };
+                {
+                    let mut find = tx.prepare_cached(
+                        "SELECT id FROM kg_note \
+                         WHERE lower(title) = ?1 \
+                            OR lower(path) = ?2 \
+                            OR lower(path) LIKE ?3 ESCAPE '\\' \
+                         ORDER BY (lower(title) = ?1) DESC \
+                         LIMIT 1",
+                    )?;
+                    let mut upd = tx.prepare_cached(
+                        "UPDATE kg_relation SET to_id = ?1 \
+                         WHERE from_id = ?2 AND to_id IS NULL AND to_name = ?3",
+                    )?;
+                    for name in &names {
+                        let name_lc = name.trim().to_lowercase();
+                        let exact_md = format!("{name_lc}.md");
+                        let like_pattern = format!("%/{}.md", escape_like(&name_lc));
+                        let target: Option<i64> = find
+                            .query_row(params![name_lc, exact_md, like_pattern], |r| r.get(0))
+                            .map(Some)
+                            .or_else(|e| match e {
+                                rusqlite::Error::QueryReturnedNoRows => Ok(None),
+                                other => Err(other),
+                            })?;
+                        if let Some(id) = target {
+                            resolved += upd.execute(params![id, note_id, name])?;
+                        }
+                    }
+                }
+
+                // (b) Back-fill ghost relations vault-wide that point at THIS
+                // note's title or filename stem (others linked here pre-creation).
+                {
+                    let (title, path): (String, String) = tx.query_row(
+                        "SELECT title, path FROM kg_note WHERE id = ?1",
+                        params![note_id],
+                        |r| Ok((r.get(0)?, r.get(1)?)),
+                    )?;
+                    let title_lc = title.trim().to_lowercase();
+                    let stem_lc = filename_stem_lc(&path);
+                    let mut back = tx.prepare_cached(
+                        "UPDATE kg_relation SET to_id = ?1 \
+                         WHERE to_id IS NULL \
+                           AND (lower(trim(to_name)) = ?2 OR lower(trim(to_name)) = ?3)",
+                    )?;
+                    resolved += back.execute(params![note_id, title_lc, stem_lc])?;
+                }
+
+                tx.commit()?;
+                Ok(resolved)
+            })
+            .await
+            .map_err(interact_err)?
+            .context("Failed to resolve links for note")
+    }
+
     /// All `(path, checksum)` pairs currently indexed — used by the sync pass
     /// to skip unchanged files and detect deletions.
     pub async fn all_paths_with_checksums(&self) -> Result<Vec<(String, String)>> {
@@ -688,6 +775,16 @@ fn delete_note_cascade(tx: &rusqlite::Transaction<'_>, id: i64) -> rusqlite::Res
     Ok(())
 }
 
+/// Lowercased filename stem of a vault-relative path: strips the directory and
+/// the trailing `.md`. Mirrors the stem half of [`get_note_by_name`]'s matching
+/// (`%/stem.md`) for the reverse (back-fill) direction. e.g.
+/// `"concepts/Tokio.md"` → `"tokio"`, `"a.md"` → `"a"`.
+fn filename_stem_lc(path: &str) -> String {
+    let base = path.rsplit(['/', '\\']).next().unwrap_or(path);
+    let stem = base.strip_suffix(".md").unwrap_or(base);
+    stem.trim().to_lowercase()
+}
+
 /// Escape `%`, `_`, and `\` so a user/link string can be embedded literally in
 /// a `LIKE ... ESCAPE '\'` pattern.
 fn escape_like(s: &str) -> String {
@@ -704,8 +801,13 @@ fn escape_like(s: &str) -> String {
 }
 
 /// Turn a free-text query into a safe FTS5 MATCH expression: lowercased,
-/// alphanumeric tokens each double-quoted and AND-joined. Returns `None` when
+/// alphanumeric tokens each double-quoted and OR-joined. Returns `None` when
 /// the query has no usable tokens (caller should return no results).
+///
+/// Tokens are OR-joined (not space/AND) so a multi-word natural-language query
+/// matches notes containing *any* token, preserving recall; `bm25` ordering in
+/// the search query keeps the most-complete matches on top. Per-token
+/// double-quoting is what keeps tokens safe against FTS5 syntax injection.
 fn fts_match_query(raw: &str) -> Option<String> {
     let mut tokens: Vec<String> = Vec::new();
     for tok in raw.split(|c: char| !c.is_alphanumeric() && c != '_') {
@@ -719,7 +821,7 @@ fn fts_match_query(raw: &str) -> Option<String> {
     if tokens.is_empty() {
         None
     } else {
-        Some(tokens.join(" "))
+        Some(tokens.join(" OR "))
     }
 }
 
@@ -731,10 +833,13 @@ mod tests {
     fn fts_query_tokenizes_and_quotes() {
         assert_eq!(
             fts_match_query("rust async"),
-            Some("\"rust\" \"async\"".into())
+            Some("\"rust\" OR \"async\"".into())
         );
         assert_eq!(fts_match_query("  "), None);
-        assert_eq!(fts_match_query("a-b.c"), Some("\"a\" \"b\" \"c\"".into()));
+        assert_eq!(
+            fts_match_query("a-b.c"),
+            Some("\"a\" OR \"b\" OR \"c\"".into())
+        );
     }
 
     #[test]
