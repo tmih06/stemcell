@@ -115,4 +115,5 @@ not the qmd memory store, so there is no dual-store sync.
 
 `src/tests/kg_repository_test.rs`, `src/tests/kg_parser_test.rs`,
 `src/tests/kg_resolver_test.rs`, `src/tests/kg_sync_test.rs`,
-`src/tests/kg_traverse_test.rs` — see [Tests](tests.md).
+`src/tests/kg_traverse_test.rs`, `src/tests/kg_note_test.rs`,
+`src/tests/kg_registration_test.rs` — see [Tests](tests.md).
