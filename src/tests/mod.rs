@@ -103,6 +103,7 @@ pub mod hashline_test;
 pub mod image_util_test;
 //pub mod integration_test;
 pub mod kg_parser_test;
+pub mod kg_registration_test;
 pub mod kg_repository_test;
 pub mod kg_resolver_test;
 pub mod kg_sync_test;

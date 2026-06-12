@@ -114,6 +114,17 @@ const TOGGLE_TO_FEATURES: &[(&str, &[&str])] = &[
             "tool-dynamic-runtime",
         ],
     ),
+    // knowledge graph
+    (
+        "kg",
+        &[
+            "tool-kg-search",
+            "tool-kg-read",
+            "tool-kg-links",
+            "tool-kg-note",
+            "tool-kg-context",
+        ],
+    ),
     // image
     (
         "image",
@@ -149,8 +160,11 @@ const IMPLIES: &[(&str, &[&str])] = &[("file-write", &["file-read"])];
 /// `#[cfg(feature = "...")]` gates depend on. Each alias is
 /// auto-enabled when ANY of the listed pack keys is on. Keep in
 /// sync with `ALIAS_FROM_PACKS` in `src/scripts/tool_features.py`.
-const ALIAS_FROM_PACKS: &[(&str, &[&str])] =
-    &[("tools-rsi", &["rsi"]), ("tools-dynamic", &["rsi"])];
+const ALIAS_FROM_PACKS: &[(&str, &[&str])] = &[
+    ("tools-rsi", &["rsi"]),
+    ("tools-dynamic", &["rsi"]),
+    ("tools-kg", &["kg"]),
+];
 
 fn main() {
     println!("cargo:rerun-if-changed=build_toggles.toml");

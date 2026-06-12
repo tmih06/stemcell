@@ -126,6 +126,14 @@ TOGGLE_TO_FEATURES: dict[str, tuple[str, ...]] = {
         "tool-evolve",
         "tool-dynamic-runtime",
     ),
+    # knowledge graph
+    "kg": (
+        "tool-kg-search",
+        "tool-kg-read",
+        "tool-kg-links",
+        "tool-kg-note",
+        "tool-kg-context",
+    ),
     # image
     "image": (
         "tool-generate-image",
@@ -161,6 +169,7 @@ IMPLIES: dict[str, tuple[str, ...]] = {
 ALIAS_FROM_PACKS: dict[str, tuple[str, ...]] = {
     "tools-rsi": ("rsi",),
     "tools-dynamic": ("rsi",),
+    "tools-kg": ("kg",),
 }
 
 
