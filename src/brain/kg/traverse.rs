@@ -7,7 +7,7 @@
 //! The `kg_context` tool renders the result without dumping whole files.
 
 use crate::db::KnowledgeGraphRepository;
-use crate::db::repository::LinkDirection;
+use crate::db::repository::{LinkDirection, Neighbor};
 use anyhow::Result;
 use std::collections::HashMap;
 
@@ -27,6 +27,10 @@ pub struct GraphNode {
     pub distance: usize,
     /// Total degree (in + out edges) — the centrality signal.
     pub degree: i64,
+    /// Outgoing edges as `(relation_type, other_name)`, captured during the
+    /// single `neighbors(Both)` fetch done when this node was added. Lets
+    /// `kg_context` render links without a second per-node neighbors query.
+    pub outgoing: Vec<(String, String)>,
 }
 
 /// The ranked, budget-capped result of a traversal.
@@ -48,11 +52,13 @@ pub async fn traverse(
     let max_nodes = max_nodes.max(1);
 
     let mut visited: HashMap<i64, GraphNode> = HashMap::new();
-    let mut frontier: Vec<i64> = Vec::new();
+    // Frontier carries each node's already-fetched neighbors so we expand
+    // without a second neighbors() call per node.
+    let mut frontier: Vec<Vec<Neighbor>> = Vec::new();
 
     for &seed in seeds {
-        if add_node(repo, &mut visited, seed, 0).await? {
-            frontier.push(seed);
+        if let Some(neighbors) = add_node(repo, &mut visited, seed, 0).await? {
+            frontier.push(neighbors);
         }
     }
 
@@ -61,13 +67,13 @@ pub async fn traverse(
             break;
         }
         let mut next = Vec::new();
-        for &node_id in &frontier {
-            for nb in repo.neighbors(node_id, LinkDirection::Both).await? {
+        for neighbors in &frontier {
+            for nb in neighbors {
                 if let Some(other) = nb.other_id
                     && !visited.contains_key(&other)
-                    && add_node(repo, &mut visited, other, d).await?
+                    && let Some(other_neighbors) = add_node(repo, &mut visited, other, d).await?
                 {
-                    next.push(other);
+                    next.push(other_neighbors);
                 }
             }
         }
@@ -98,19 +104,34 @@ fn score(n: &GraphNode) -> i64 {
     n.degree + moc_bonus
 }
 
+/// Fetch a note and its edges, inserting it into `visited`. Returns the node's
+/// `neighbors(Both)` for the caller to expand the frontier, or `None` if the
+/// node was already visited or no longer exists.
+///
+/// One `neighbors(Both)` call replaces both the old `degree` query and the
+/// per-node render-time `neighbors(Out)` call: `degree` (in + out edges) equals
+/// the neighbor count because `neighbors(Both)` returns exactly the rows
+/// `repo.degree` counts (`from_id = id` plus `to_id = id`), and the outgoing
+/// subset is stashed on the node for `kg_context` to render.
 async fn add_node(
     repo: &KnowledgeGraphRepository,
     visited: &mut HashMap<i64, GraphNode>,
     id: i64,
     distance: usize,
-) -> Result<bool> {
+) -> Result<Option<Vec<Neighbor>>> {
     if visited.contains_key(&id) {
-        return Ok(false);
+        return Ok(None);
     }
     let Some(rec) = repo.get_note_by_id(id).await? else {
-        return Ok(false);
+        return Ok(None);
     };
-    let degree = repo.degree(id).await?;
+    let neighbors = repo.neighbors(id, LinkDirection::Both).await?;
+    let degree = neighbors.len() as i64;
+    let outgoing = neighbors
+        .iter()
+        .filter(|nb| nb.outgoing)
+        .map(|nb| (nb.relation_type.clone(), nb.other_name.clone()))
+        .collect();
     visited.insert(
         id,
         GraphNode {
@@ -120,7 +141,8 @@ async fn add_node(
             note_type: rec.note_type,
             distance,
             degree,
+            outgoing,
         },
     );
-    Ok(true)
+    Ok(Some(neighbors))
 }

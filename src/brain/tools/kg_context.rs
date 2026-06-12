@@ -10,7 +10,6 @@ use super::error::Result;
 use super::r#trait::{Tool, ToolCapability, ToolExecutionContext, ToolResult};
 use crate::brain::kg::traverse::{self, DEFAULT_MAX_NODES, MAX_DEPTH};
 use crate::db::KnowledgeGraphRepository;
-use crate::db::repository::LinkDirection;
 use async_trait::async_trait;
 use serde_json::Value;
 
@@ -168,16 +167,15 @@ impl Tool for KgContextTool {
                 }
             }
 
-            // Outgoing links.
-            if let Ok(neighbors) = self.repo.neighbors(node.id, LinkDirection::Out).await {
-                let links: Vec<String> = neighbors
-                    .iter()
-                    .take(LINKS_PER_NODE)
-                    .map(|n| format!("{} → [[{}]]", n.relation_type, n.other_name))
-                    .collect();
-                if !links.is_empty() {
-                    out.push_str(&format!("    links: {}\n", links.join("; ")));
-                }
+            // Outgoing links — captured during traversal, no extra query.
+            let links: Vec<String> = node
+                .outgoing
+                .iter()
+                .take(LINKS_PER_NODE)
+                .map(|(relation_type, other_name)| format!("{relation_type} → [[{other_name}]]"))
+                .collect();
+            if !links.is_empty() {
+                out.push_str(&format!("    links: {}\n", links.join("; ")));
             }
         }
 
