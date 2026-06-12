@@ -313,6 +313,11 @@ pub(super) fn render_model_selector(f: &mut Frame, app: &mut App, area: Rect) {
 
     let unified_model_picker = !app.ps.showing_providers;
     if unified_model_picker {
+        // Warm the credential cache once (no-op when already warm) BEFORE the
+        // immutable `dialog_model_options` borrow below, so the per-row green
+        // tick lookup is a pure in-memory read instead of a Config::load() per
+        // visible provider on every keystroke / animation frame.
+        app.ps.warm_cred_cache();
         let dialog_model_options = app.ps.filtered_dialog_model_options();
         let total = dialog_model_options.len();
         let max_sel = if total > 0 { total - 1 } else { 0 };
@@ -451,11 +456,6 @@ pub(super) fn render_model_selector(f: &mut Frame, app: &mut App, area: Rect) {
             // tick so provider names stay right-aligned whether or not a tick is
             // shown.
             const TICK_GUTTER: usize = 2;
-            // Credential status is cached per render so Config::load() (and the
-            // CLI-binary probes inside provider_has_credentials) runs at most
-            // once per distinct provider currently in view.
-            let mut cred_cache: std::collections::HashMap<usize, bool> =
-                std::collections::HashMap::new();
             let highlight_terms = crate::tui::model_search::query_terms(&app.ps.model_filter);
 
             for (offset, option) in dialog_model_options[start..end].iter().enumerate() {
@@ -491,9 +491,7 @@ pub(super) fn render_model_selector(f: &mut Frame, app: &mut App, area: Rect) {
                 // Right-aligned green tick for providers that are connected
                 // (API key present, OAuth token saved, or CLI binary on PATH).
                 // Providers you are not logged into show a blank gutter instead.
-                let configured = *cred_cache
-                    .entry(option.provider_idx)
-                    .or_insert_with(|| app.ps.provider_has_credentials(option.provider_idx));
+                let configured = app.ps.provider_credentials_cached(option.provider_idx);
                 let tick_span = if configured {
                     Span::styled(
                         " ✓",
@@ -641,6 +639,11 @@ pub(super) fn render_model_selector(f: &mut Frame, app: &mut App, area: Rect) {
 
     // Custom providers keep the existing fetch/paste flow. Built-ins use a
     // flat searchable model catalogue inspired by opencode's model dialog.
+    // Warm the credential cache up front — before the immutable `app.ps`
+    // borrows below (`custom_display_models`, `dialog_model_options`) — so the
+    // provider-list ticks are in-memory reads instead of a Config::load() per
+    // provider on every frame.
+    app.ps.warm_cred_cache();
     let highlight_terms = crate::tui::model_search::query_terms(&app.ps.model_filter);
     let custom_display_models: Vec<&str> = app
         .ps
@@ -739,7 +742,7 @@ pub(super) fn render_model_selector(f: &mut Frame, app: &mut App, area: Rect) {
     for &idx in &display_order {
         let selected = idx == provider_idx;
         let focused = focused_field == 0;
-        let configured = app.ps.provider_has_credentials(idx);
+        let configured = app.ps.provider_credentials_cached(idx);
 
         let prefix = if selected && focused { " > " } else { "   " };
         let marker = if selected { "[*]" } else { "[ ]" };
