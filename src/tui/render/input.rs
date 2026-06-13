@@ -770,10 +770,7 @@ pub(super) fn render_slash_autocomplete(f: &mut Frame, app: &App, input_area: Re
                     };
                     spans.push(Span::styled(SKILL_TAG, tag_style));
                 } else {
-                    spans.push(Span::styled(
-                        " ".repeat(marker_slot as usize),
-                        style,
-                    ));
+                    spans.push(Span::styled(" ".repeat(marker_slot as usize), style));
                 }
             }
             spans.push(Span::styled(format!(" {} ", desc.as_ref()), desc_style));
