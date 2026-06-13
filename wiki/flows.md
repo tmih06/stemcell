@@ -75,6 +75,27 @@ memory_search tool
   → return ranked results                    [memory/search.rs]
 ```
 
+## Knowledge Graph Flow
+
+```
+Retrieval (summary-first, retrieve-then-traverse):
+  kg_search "<query>"                         [brain/tools/kg_search.rs]
+    → KnowledgeGraphRepository::search_fts    [db/repository/knowledge_graph.rs]
+  → kg_context / kg_links                     [brain/tools/kg_context.rs, kg_links.rs]
+    → traverse(seeds, depth≤2, budget)        [brain/kg/traverse.rs]  (BFS + degree/MOC ranking)
+    → neighbors / backlinks                   [db/repository/knowledge_graph.rs]
+  → kg_read "<note>" [anchor]                 [brain/tools/kg_read.rs]
+    → Vault::read_note + resolver slice       [brain/kg/vault.rs, brain/kg/resolver.rs]
+
+Write / index:
+  kg_note (create|append)                     [brain/tools/kg_note.rs]
+    → surgical write to vault                 [brain/kg/vault.rs]
+    → sync::index_file → index_note           [brain/kg/sync.rs]
+    → resolve_dangling_links (back-fill to_id)
+  Startup / live:
+    spawn_indexer → reindex + notify watcher  [brain/kg/sync.rs]  (sha256 skip, prune, resolve)
+```
+
 ## Compaction Flow
 
 ```

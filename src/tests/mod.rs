@@ -102,6 +102,17 @@ pub mod handshake_timeout_test;
 pub mod hashline_test;
 pub mod image_util_test;
 //pub mod integration_test;
+pub mod kg_git_review_test;
+#[cfg(feature = "tool-kg-note")]
+pub mod kg_note_test;
+pub mod kg_parser_test;
+pub mod kg_pending_batch_test;
+#[cfg(feature = "tools-kg")]
+pub mod kg_registration_test;
+pub mod kg_repository_test;
+pub mod kg_resolver_test;
+pub mod kg_sync_test;
+pub mod kg_traverse_test;
 pub mod kimi_reasoning_test;
 pub mod local_provider_gate_test;
 pub mod mouse_fragment_filter_test;

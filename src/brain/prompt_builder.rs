@@ -131,6 +131,15 @@ Your tool executions are automatically tracked. When you notice recurring failur
 
 Do NOT call these tools every turn. Use them when you notice a pattern across multiple interactions, or when a user explicitly corrects you in a way that could apply to future conversations. Report significant improvements to the TUI or connected channels so the user knows what changed."#;
 
+pub(crate) const BRAIN_PREAMBLE_KG: &str = r#"KNOWLEDGE GRAPH (long-term memory):
+You have a persistent knowledge graph — an Obsidian vault of atomic notes linked by [[wikilinks]] — with custom tools. Retrieve summary-first and expand on demand; do NOT dump whole notes when a fragment will do:
+- kg_search "<query>": entry-point notes (title · path · snippet · type, no bodies). Start here to find where to look.
+- kg_context query="<q>" or note="<name>": bounded 1–2 hop traversal returning ranked notes + key facts + links. Use this to gather multi-hop context cheaply.
+- kg_links "<note>": a note's typed relations and backlinks.
+- kg_read "<note>" [anchor/section]: frontmatter facts + body, or just one #heading/^block. Use last, for specifics.
+- kg_note: capture a durable fact, decision, or entity as a linked note. Search first to avoid duplicates; append to an existing note when one fits.
+Flow: kg_search → kg_context/kg_links → kg_read. Write durable knowledge with kg_note so useful facts survive past the session."#;
+
 /// Loads brain workspace files and assembles the system brain.
 pub struct BrainLoader {
     workspace_path: PathBuf,
@@ -544,6 +553,10 @@ fn push_preamble_and_tools(prompt: &mut String, active_tools: Option<&[String]>)
             prompt.push_str(BRAIN_PREAMBLE_RSI);
             prompt.push_str("\n\n");
         }
+        if tools.iter().any(|t| t.starts_with("kg_")) {
+            prompt.push_str(BRAIN_PREAMBLE_KG);
+            prompt.push_str("\n\n");
+        }
         prompt.push_str("--- CURRENTLY EQUIPPED TOOLS ---\n");
         prompt.push_str("You ONLY have access to the tools listed below (and in your JSON tool schema). Do not hallucinate or attempt to use any other tools.\n");
         prompt.push_str(&tools.join(", "));
@@ -643,6 +656,27 @@ pub(crate) fn compiled_features() -> Vec<&'static str> {
     }
     if cfg!(feature = "tools-dynamic") {
         out.push("tools-dynamic");
+    }
+    if cfg!(feature = "tools-kg") {
+        out.push("tools-kg");
+    }
+    if cfg!(feature = "tool-kg-search") {
+        out.push("tool-kg-search");
+    }
+    if cfg!(feature = "tool-kg-read") {
+        out.push("tool-kg-read");
+    }
+    if cfg!(feature = "tool-kg-links") {
+        out.push("tool-kg-links");
+    }
+    if cfg!(feature = "tool-kg-note") {
+        out.push("tool-kg-note");
+    }
+    if cfg!(feature = "tool-kg-remember") {
+        out.push("tool-kg-remember");
+    }
+    if cfg!(feature = "tool-kg-context") {
+        out.push("tool-kg-context");
     }
     // Per-tool features — one entry per `tool-*` cargo feature.
     if cfg!(feature = "tool-read") {

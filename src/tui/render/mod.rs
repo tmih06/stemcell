@@ -7,6 +7,7 @@ mod dialogs;
 
 mod help;
 mod input;
+pub(crate) mod kg_review;
 pub(crate) mod mission_control;
 pub(crate) mod palette;
 mod panes;
@@ -185,6 +186,14 @@ pub fn render(f: &mut Frame, app: &mut App) {
             let (title_area, content_area) = split_title_area(full_content_area);
             render_app_title(f, title_area);
             skills_dialog::draw(f, app, content_area);
+        }
+        AppMode::KgReview => {
+            // Full-screen overlay (like Mission Control). Clears the chat area
+            // first so split panes don't bleed through.
+            f.render_widget(Clear, full_content_area);
+            let (title_area, content_area) = split_title_area(full_content_area);
+            render_app_title(f, title_area);
+            kg_review::draw(f, app, content_area);
         }
         AppMode::StatusLine => {
             // Keep the regular chat shell visible so toggling fields gives an

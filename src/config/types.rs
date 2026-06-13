@@ -841,6 +841,25 @@ pub struct MemoryConfig {
     /// via API instead of the local GGUF model. Eliminates ~300MB download + ~2.9GB RAM.
     #[serde(default)]
     pub embedding: Option<EmbeddingConfig>,
+
+    /// Override directory for the Obsidian-style knowledge-graph vault.
+    /// When unset, defaults to `<stemcell_home>/vault` (i.e. `~/.stemcell/vault`).
+    /// Accepts a leading `~` for the home directory.
+    #[serde(default)]
+    pub vault_dir: Option<String>,
+
+    /// Put the knowledge-graph vault under git: init on startup, auto-commit
+    /// direct writes, and enable `/kg log`/`restore`/`revert` versioning.
+    /// Off by default — when off the vault is plain files with no git backing.
+    #[serde(default)]
+    pub kg_git_enabled: bool,
+
+    /// Route the main agent's memory writes through a review queue: the
+    /// `kg_remember` tool seals writes onto a batch branch awaiting user
+    /// approval via `/kg`, instead of writing straight to the vault. Implies
+    /// git backing. Off by default. RSI writes are never gated.
+    #[serde(default)]
+    pub kg_review_enabled: bool,
 }
 
 const fn default_vector_enabled() -> bool {
@@ -852,6 +871,9 @@ impl Default for MemoryConfig {
         Self {
             vector_enabled: default_vector_enabled(),
             embedding: None,
+            vault_dir: None,
+            kg_git_enabled: false,
+            kg_review_enabled: false,
         }
     }
 }
@@ -2347,6 +2369,26 @@ impl Default for Config {
 }
 
 impl Config {
+    /// Whether the main agent's knowledge-graph memory writes are routed
+    /// through the `/kg` review queue (the `kg_remember` batch tool) instead
+    /// of writing straight to the vault.
+    ///
+    /// Tied to the `/approve` permission policy: the gate engages when the
+    /// agent is in `approve-only` mode (you're already approving each action,
+    /// so memory writes queue too). The explicit `memory.kg_review_enabled`
+    /// flag forces it on regardless of policy, for users who want the queue
+    /// without per-tool approval prompts.
+    pub fn kg_review_active(&self) -> bool {
+        self.memory.kg_review_enabled || self.agent.approval_policy == "approve-only"
+    }
+
+    /// Whether the knowledge-graph vault is git-backed (init on startup,
+    /// versioning via `/kg log`/`restore`/`revert`). Implied whenever the
+    /// review gate is active, since the queue needs a repo to stage onto.
+    pub fn kg_git_active(&self) -> bool {
+        self.memory.kg_git_enabled || self.kg_review_active()
+    }
+
     /// Build a runtime `VoiceConfig` from `providers.stt` / `providers.tts`.
     pub fn voice_config(&self) -> VoiceConfig {
         let stt = self.providers.stt.as_ref();

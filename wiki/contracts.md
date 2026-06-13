@@ -2,7 +2,7 @@
 
 ## Database Schema
 
-24 migrations in `src/migrations/`:
+26 migrations in `src/migrations/`:
 
 | Migration | Key tables affected |
 |---|---|
@@ -30,10 +30,61 @@
 | `20260517000001_cron_jobs_text_recast.sql` | Cron jobs text recast |
 | `20260522000001_add_auto_title_attempted.sql` | `sessions.auto_title_attempted` |
 | `20260529000001_add_channel_thread_id.sql` | `channel_thread_id` |
+| `20260611000001_add_knowledge_graph.sql` | `kg_note`, `kg_note_fts`, `kg_observation`, `kg_relation` |
+| `20260613000001_add_kg_pending_batch.sql` | `kg_pending_batch` (review-gate queue) |
 
-Key tables: `sessions`, `messages`, `feedback_ledger`, `tool_executions`, `cron_jobs`, `cron_job_runs`, `usage_ledger`, `plans`, `pending_requests`, `channel_messages`, `recent_paths`, `a2a_tasks`.
+Key tables: `sessions`, `messages`, `feedback_ledger`, `tool_executions`, `cron_jobs`, `cron_job_runs`, `usage_ledger`, `plans`, `pending_requests`, `channel_messages`, `recent_paths`, `a2a_tasks`, `kg_note`, `kg_observation`, `kg_relation`, `kg_pending_batch`.
 
 DB connection: deadpool-sqlite pool via `src/db/database.rs`. Repositories in `src/db/repository/`.
+
+## Knowledge Graph
+
+Migration `20260611000001_add_knowledge_graph.sql`. The vault on disk
+(`~/.stemcell/vault/`, overridable via `[memory].vault_dir`) is the source of
+truth; these tables are a rebuildable index maintained by `src/brain/kg/sync.rs`.
+
+| Table | Columns |
+|---|---|
+| `kg_note` | `id`, `path` UNIQUE, `title`, `note_type`, `frontmatter_json`, `checksum`, `mtime`, `size`, `created_at`, `updated_at` |
+| `kg_note_fts` | FTS5 virtual table over `note_id` (UNINDEXED), `title`, `body`, `observations`; bm25-ranked |
+| `kg_observation` | `id`, `note_id`, `category`, `content`, `tags_json`, `context` |
+| `kg_relation` | `id`, `from_id`, `to_id` (NULLABLE — ghost link), `to_name`, `relation_type`, `context` |
+
+`to_id` is nullable so unresolved wikilinks are first-class rows; resolution
+back-fills `to_id`. FK clauses are advisory (production omits `PRAGMA
+foreign_keys`), so `KnowledgeGraphRepository` deletes child rows explicitly.
+
+Repository: `src/db/repository/knowledge_graph.rs` — `index_note`, `search_fts`,
+`neighbors`/`backlinks`, `resolve_dangling_links`/`resolve_links_for_note`,
+`prune_paths`, `get_note_by_ref`, `observations_for_note`, `degree`.
+
+### Review-gate queue
+
+Migration `20260613000001_add_kg_pending_batch.sql`. Durable queue for the
+optional git review gate (active under `approve-only` policy or forced via
+`[memory].kg_review_enabled` — see `Config::kg_review_active`); empty when the
+gate is off. Diffs are reproducible from `branch` + `base_sha`, so there are no
+per-file rows.
+
+| Table | Columns |
+|---|---|
+| `kg_pending_batch` | `id` (PK, also branch suffix), `branch`, `base_sha`, `summary`, `status` (`pending`/`approved`/`declined`/`conflicted`), `worktree_path`, `merge_sha`, `files_changed`, `insertions`, `deletions`, `created_at`, `resolved_at`; index on `status` |
+
+Repository: `src/db/repository/kg_pending_batch.rs` — `insert`, `list_by_status`,
+`get`, `mark_approved`/`mark_declined`/`mark_conflicted`, `last_approved`.
+
+### Tool I/O
+
+Tools gated behind `tool-kg-*` features (umbrella `tools-kg`, in `default`):
+
+| Tool | Params | Returns |
+|---|---|---|
+| `kg_search` | `query`, `n`=5 | Entry points: title · path · snippet · type |
+| `kg_read` | `note`, `anchor?`, `section?` | Frontmatter facts + (sliced) body |
+| `kg_links` | `note`, `direction`=both (out/in/both) | `relation_type → [[Target]]` lines + backlinks |
+| `kg_note` | `title`, `type?`, `observations[]`, `relations[{type,target}]`, `mode`=create/append | Writes/updates note (surgical), reindexes |
+| `kg_context` | `query` or `note`, `depth`=1 (max 2), `budget`=12 | Ranked titles + key facts + links |
+| `kg_remember` | `summary`, `notes[{title, type?, observations[]?, relations[{type,target}]?}]` | Seals the batch onto a branch + parks a `kg_pending_batch` row; returns batch id. Registered in place of `kg_note` when the review gate is active (`approve-only` policy or `kg_review_enabled`). |
 
 ## Provider Trait
 

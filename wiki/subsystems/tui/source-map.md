@@ -31,6 +31,10 @@
 | `mission_control/state.rs` | Mission Control app state |
 | `mission_control/input.rs` | Mission Control input handling |
 | `mission_control/actions.rs` | Mission Control action dispatch |
+| `kg_review/mod.rs` | KG review sub-app (`/kg`) — module root |
+| `kg_review/state.rs` | KG review state (batch queue, log, diff, view) |
+| `kg_review/input.rs` | KG review key handling (approve/decline/restore) |
+| `kg_review/actions.rs` | KG review action dispatch — calls the `review` service |
 | `skills_dialog/mod.rs` | Skills picker sub-app — module root |
 | `skills_dialog/state.rs` | Skills dialog state |
 | `skills_dialog/input.rs` | Skills dialog input handling |
@@ -64,6 +68,7 @@
 | `mission_control/schedule_panel.rs` | Cron schedule panel |
 | `mission_control/detail_popup.rs` | Detail popup rendering |
 | `mission_control/theme.rs` | Mission Control theme |
+| `kg_review/mod.rs` | KG review render — batch list + diff pane |
 | `skills_dialog/mod.rs` | Skills dialog render module |
 | `skills_dialog/card.rs` | Skills card rendering |
 | `skills_dialog/dispatch.rs` | Skills dialog render dispatch |

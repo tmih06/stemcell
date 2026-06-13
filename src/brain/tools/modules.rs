@@ -878,6 +878,84 @@ impl ToolModule for DynamicModule {
     }
 }
 
+/// Knowledge graph: kg_search, kg_read, kg_links, kg_note/kg_remember, kg_context
+#[cfg(any(
+    feature = "tool-kg-search",
+    feature = "tool-kg-read",
+    feature = "tool-kg-links",
+    feature = "tool-kg-note",
+    feature = "tool-kg-remember",
+    feature = "tool-kg-context"
+))]
+struct KnowledgeGraphModule;
+
+#[cfg(any(
+    feature = "tool-kg-search",
+    feature = "tool-kg-read",
+    feature = "tool-kg-links",
+    feature = "tool-kg-note",
+    feature = "tool-kg-remember",
+    feature = "tool-kg-context"
+))]
+impl ToolModule for KnowledgeGraphModule {
+    fn id(&self) -> &str {
+        "knowledge_graph"
+    }
+    fn name(&self) -> &str {
+        "Knowledge Graph"
+    }
+    fn description(&self) -> &str {
+        "Obsidian-style knowledge-graph long-term memory: FTS search, sliced reads, \
+         link/backlink traversal, note capture, and bounded multi-hop context"
+    }
+    #[allow(unused_variables)]
+    fn register(&self, ctx: &ModuleContext) {
+        use crate::brain::kg::vault::Vault;
+        use crate::db::KnowledgeGraphRepository;
+
+        let repo = KnowledgeGraphRepository::new(ctx.pool.clone());
+        let vault = Vault::from_config(&ctx.config);
+
+        #[cfg(feature = "tool-kg-search")]
+        ctx.register(Arc::new(super::kg_search::KgSearchTool::new(repo.clone())));
+        #[cfg(feature = "tool-kg-read")]
+        ctx.register(Arc::new(super::kg_read::KgReadTool::new(
+            repo.clone(),
+            vault.clone(),
+        )));
+        #[cfg(feature = "tool-kg-links")]
+        ctx.register(Arc::new(super::kg_links::KgLinksTool::new(repo.clone())));
+
+        // Write path: when the review gate is on, register the gated batch tool
+        // (`kg_remember`) *instead of* the direct-write `kg_note`, so the main
+        // agent cannot bypass the queue. RSI registers `kg_note` separately on its
+        // own loop (see rsi.rs) and is intentionally never gated.
+        //
+        // The gate follows the `/approve` permission policy: `approve-only` mode
+        // routes memory writes through the `/kg` queue. See `Config::kg_review_active`.
+        let review_gated = ctx.config.kg_review_active();
+        #[cfg(feature = "tool-kg-remember")]
+        if review_gated {
+            ctx.register(Arc::new(super::kg_remember::KgRememberTool::new(
+                ctx.config.clone(),
+                ctx.pool.clone(),
+            )));
+        }
+        #[cfg(feature = "tool-kg-note")]
+        if !review_gated {
+            ctx.register(Arc::new(super::kg_note::KgNoteTool::new(
+                repo.clone(),
+                vault.clone(),
+            )));
+        }
+
+        #[cfg(feature = "tool-kg-context")]
+        ctx.register(Arc::new(super::kg_context::KgContextTool::new(
+            repo.clone(),
+        )));
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Module registry
 // ---------------------------------------------------------------------------
@@ -1032,6 +1110,15 @@ pub fn all_modules() -> Vec<Box<dyn ToolModule>> {
     );
     #[cfg(feature = "tools-dynamic")]
     modules.push(Box::new(DynamicModule));
+    #[cfg(any(
+        feature = "tool-kg-search",
+        feature = "tool-kg-read",
+        feature = "tool-kg-links",
+        feature = "tool-kg-note",
+        feature = "tool-kg-remember",
+        feature = "tool-kg-context"
+    ))]
+    modules.push(Box::new(KnowledgeGraphModule));
     modules
 }
 

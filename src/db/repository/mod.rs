@@ -7,6 +7,8 @@ pub mod cron_job;
 pub mod cron_job_run;
 pub mod feedback_ledger;
 pub mod file;
+pub mod kg_pending_batch;
+pub mod knowledge_graph;
 pub mod message;
 pub mod pending_request;
 pub mod plan;
@@ -20,6 +22,11 @@ pub use cron_job::CronJobRepository;
 pub use cron_job_run::CronJobRunRepository;
 pub use feedback_ledger::FeedbackLedgerRepository;
 pub use file::FileRepository;
+pub use kg_pending_batch::{KgBatchStats, KgPendingBatch, KgPendingBatchRepository};
+pub use knowledge_graph::{
+    KnowledgeGraphRepository, LinkDirection, Neighbor, NoteRecord, NoteUpsert, ObservationInput,
+    ObservationRecord, RelationInput, SearchHit,
+};
 pub use message::MessageRepository;
 pub use pending_request::PendingRequestRepository;
 pub use plan::PlanRepository;

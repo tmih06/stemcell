@@ -99,6 +99,17 @@
 | `session_search.rs` | Session history search |
 | `channel_search.rs` | Channel message search |
 
+### Knowledge Graph
+
+| File | Role |
+|---|---|
+| `kg_search.rs` | Vault entry-point FTS search |
+| `kg_read.rs` | Note / anchor slice read |
+| `kg_links.rs` | Relations + backlinks |
+| `kg_note.rs` | Note capture (surgical append) |
+| `kg_context.rs` | Bounded graph traversal |
+| `kg_remember.rs` | Review-gated batch capture — seals notes onto a branch + parks a pending row (replaces `kg_note` when `Config::kg_review_active`, i.e. `approve-only` policy) |
+
 ### Browser (CDP Chrome Automation)
 
 | File | Role |
@@ -218,3 +229,20 @@
 | `activity_service.rs` | Activity feed — parses `improvements.md` journal |
 | `schedule_service.rs` | Cron schedule queue |
 | `mod.rs` | Module declarations |
+
+## Knowledge Graph (`src/brain/kg/`)
+
+| File | Role |
+|---|---|
+| `mod.rs` | Module root |
+| `parser.rs` | Pure markdown parser — frontmatter, `[[wikilinks]]`, `#tags`, typed observations/relations, anchors |
+| `resolver.rs` | Link resolution (name → path) + anchor (`#heading`/`^block`) → line-range slicing |
+| `vault.rs` | Vault path resolution, `.obsidian/` scaffold, read/write, markdown walk, slug/folder helpers |
+| `sync.rs` | Filesystem → SQLite indexer (checksum-skip, prune, resolve), `notify` watcher, `spawn_indexer`, watcher-suppression gate |
+| `traverse.rs` | Bounded-depth BFS with degree-centrality + MOC ranking and budget truncation |
+| `compose.rs` | Pure note-composition helpers (`build_note`, `insert_bullets`, `resolve_note_rel`) shared by `kg_note` and the review gate |
+| `git_review.rs` | `GitRepo` git shell-out wrapper (init/commit/worktree/diff/merge/log/show/revert/reset) + pure diff/log parsers |
+| `review.rs` | Review-gate orchestration (`queue_batch`/`approve`/`decline`/`revert_last`/`restore`/`list_pending`/`batch_diff`/`log`/`show`) |
+
+Index lives in `src/db/repository/knowledge_graph.rs`; the review queue in
+`src/db/repository/kg_pending_batch.rs`; see [Knowledge Graph](knowledge-graph.md).

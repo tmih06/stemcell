@@ -76,6 +76,13 @@ multi-agent = false
 [rsi]
 rsi = false
 
+## == Knowledge Graph ==
+## Obsidian-style long-term memory: FTS search, sliced reads,
+## link/backlink traversal, note capture, bounded multi-hop
+## context. The five kg_* tools work as a pack over a markdown vault.
+[kg]
+kg = true
+
 ## == Image ==
 ## Image generation + vision analysis.
 [image]

@@ -223,6 +223,10 @@ pub const SLASH_COMMANDS: &[SlashCommand] = &[
         description: "RSI proposals, activity log and schedule — mission control, dashboard, activity, schedule, tasks, jobs",
     },
     SlashCommand {
+        name: "/kg",
+        description: "Review knowledge-graph memory writes — kg, memory, knowledge, review, approve, notes, vault, /memory",
+    },
+    SlashCommand {
         name: "/skills",
         description: "Browse and run loaded skills — skills, commands, prompts, tools, run, /prompts",
     },
@@ -641,6 +645,9 @@ pub struct App {
     /// Skills dialog state — filter buffer, selection, scroll. Same
     /// "single-struct field" pattern as MC.
     pub skills_dialog: crate::tui::app::skills_dialog::SkillsDialogState,
+    /// `/kg` review-screen state — pending queue, log, diff pane, selection.
+    /// Same single-struct field pattern as `mc` / `skills_dialog`.
+    pub kg_review: crate::tui::app::kg_review::KgReviewState,
 
     /// Statusline dialog state — checklist selection index. Same
     /// "single-struct field" pattern as the skills dialog.
@@ -925,6 +932,7 @@ impl App {
             skills,
             mc: crate::tui::app::mission_control::McState::default(),
             skills_dialog: crate::tui::app::skills_dialog::SkillsDialogState::default(),
+            kg_review: crate::tui::app::kg_review::KgReviewState::default(),
             statusline_dialog: crate::tui::app::statusline_dialog::StatusLineDialogState::default(),
             statusline_fields,
             onboarding: None,
@@ -3613,6 +3621,9 @@ impl App {
             }
             AppMode::SkillsList => {
                 crate::tui::app::skills_dialog::input::handle_key(self, event).await;
+            }
+            AppMode::KgReview => {
+                crate::tui::app::kg_review::input::handle_key(self, event).await;
             }
             AppMode::StatusLine => {
                 crate::tui::app::statusline_dialog::input::handle_key(self, event).await;

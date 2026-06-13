@@ -182,7 +182,7 @@ rwhisper = { version = "0.4", optional = true, features = ["metal", "accelerate"
 winresource = "0.1"
 
 [features]
-default = ["telegram", "whatsapp", "discord", "slack", "trello", "local-stt", "local-tts", "browser", "rtk", "tools-file-ops", "tools-search", "tools-workflow", "tools-multi-agent", "tools-rsi", "tools-image", "tools-brain", "tools-channel-integrations", "tools-browser", "tools-meta", "tools-dynamic"]
+default = ["telegram", "whatsapp", "discord", "slack", "trello", "local-stt", "local-tts", "browser", "rtk", "tools-file-ops", "tools-search", "tools-workflow", "tools-multi-agent", "tools-rsi", "tools-image", "tools-brain", "tools-channel-integrations", "tools-browser", "tools-meta", "tools-dynamic", "tools-kg"]
 # Profiling feature enables pprof on Unix only (no-op on Windows)
 profiling = []
 # RTK (Rust Token Killer) integration - filters bash command outputs to save 60-90% tokens
@@ -363,6 +363,16 @@ tool-rsi-proposals = ["tools-dynamic"]
 # User-defined tools from tools.toml
 tools-dynamic = []
 tool-dynamic-runtime = ["tools-dynamic"]
+
+# Obsidian-style knowledge-graph long-term memory (FTS5 + graph traversal over
+# a markdown vault). Each tool can be packed individually.
+tools-kg = ["tool-kg-search", "tool-kg-read", "tool-kg-links", "tool-kg-note", "tool-kg-context", "tool-kg-remember"]
+tool-kg-search = []
+tool-kg-read = []
+tool-kg-links = []
+tool-kg-note = []
+tool-kg-context = []
+tool-kg-remember = []
 
 # Build toggles live in `build_toggles.toml` at the repo root, grouped
 # into [tools] / [channels] / [capabilities] sections. The Python
