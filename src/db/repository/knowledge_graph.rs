@@ -21,7 +21,7 @@
 use crate::db::Pool;
 use crate::db::database::interact_err;
 use anyhow::{Context, Result};
-use rusqlite::{Connection, params, params_from_iter};
+use rusqlite::{Connection, params};
 
 /// Direction of a relation query relative to the queried note.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -654,11 +654,20 @@ impl KnowledgeGraphRepository {
             .context("Failed to delete note by path")
     }
 
-    /// Remove every note whose path is not in `existing_paths` (plus its
-    /// children + FTS rows). Incoming relations to pruned notes revert to
-    /// ghost state. Returns the number of notes pruned.
-    pub async fn prune_missing(&self, existing_paths: &[String]) -> Result<usize> {
-        let keep: Vec<String> = existing_paths.to_vec();
+    /// Delete an explicit set of notes by path (plus their children + FTS rows),
+    /// reverting incoming relations to ghost state. Returns the number of notes
+    /// removed.
+    ///
+    /// Unlike a "keep set" prune that deletes everything *not* in a list, this
+    /// deletes only the paths given. Callers compute the doomed set from a
+    /// snapshot taken before walking the filesystem, so a note inserted
+    /// concurrently (e.g. by a `kg_note` write) is absent from that set and can
+    /// never be pruned — closing the walk/prune TOCTOU window.
+    pub async fn prune_paths(&self, paths: &[String]) -> Result<usize> {
+        if paths.is_empty() {
+            return Ok(0);
+        }
+        let paths: Vec<String> = paths.to_vec();
         self.pool
             .get()
             .await
@@ -666,30 +675,34 @@ impl KnowledgeGraphRepository {
             .interact(move |conn| -> rusqlite::Result<usize> {
                 let tx = conn.transaction()?;
 
-                // Collect ids to delete (everything not in `keep`).
-                let doomed: Vec<i64> = if keep.is_empty() {
-                    let mut stmt = tx.prepare("SELECT id FROM kg_note")?;
-                    let rows = stmt.query_map([], |r| r.get::<_, i64>(0))?;
-                    rows.collect::<rusqlite::Result<Vec<_>>>()?
-                } else {
-                    let placeholders = vec!["?"; keep.len()].join(",");
-                    let sql = format!("SELECT id FROM kg_note WHERE path NOT IN ({placeholders})");
-                    let mut stmt = tx.prepare(&sql)?;
-                    let rows =
-                        stmt.query_map(params_from_iter(keep.iter()), |r| r.get::<_, i64>(0))?;
-                    rows.collect::<rusqlite::Result<Vec<_>>>()?
+                let ids: Vec<i64> = {
+                    let mut find = tx.prepare_cached("SELECT id FROM kg_note WHERE path = ?1")?;
+                    let mut ids = Vec::new();
+                    for p in &paths {
+                        let id: Option<i64> = find
+                            .query_row(params![p], |r| r.get(0))
+                            .map(Some)
+                            .or_else(|e| match e {
+                                rusqlite::Error::QueryReturnedNoRows => Ok(None),
+                                other => Err(other),
+                            })?;
+                        if let Some(id) = id {
+                            ids.push(id);
+                        }
+                    }
+                    ids
                 };
 
-                for id in &doomed {
+                for id in &ids {
                     delete_note_cascade(&tx, *id)?;
                 }
 
                 tx.commit()?;
-                Ok(doomed.len())
+                Ok(ids.len())
             })
             .await
             .map_err(interact_err)?
-            .context("Failed to prune missing notes")
+            .context("Failed to prune notes by path")
     }
 }
 

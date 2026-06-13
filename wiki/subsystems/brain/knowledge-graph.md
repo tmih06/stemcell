@@ -95,6 +95,18 @@ kg_note                    → write durable facts as linked notes
 - **Change detection:** each file's sha256 checksum is compared to the stored
   one; unchanged files are skipped. Deleted files are pruned; incoming links to
   pruned notes revert to ghost state.
+- **Incremental watcher:** the watcher does not full-reindex on every edit. It
+  accumulates the changed paths across a 500ms debounce window, classifies each
+  via `Vault::classify_path` (`PathClass::Note`/`Other`/`Ignore`), then calls
+  `sync::sync_paths` to touch only those notes — indexing paths still on disk,
+  pruning those gone. `.obsidian/`-style noise is `Ignore`d so it triggers no
+  work. A folder-scope change (`PathClass::Other` — a dir rename/delete moves
+  child notes with no per-note event) falls back to a full `reindex`.
+- **Prune is snapshot-scoped (no TOCTOU):** `reindex` computes the prune set from
+  the `(path, checksum)` snapshot taken *before* the filesystem walk
+  (`existing − seen`) and deletes those exact paths via `repo.prune_paths`. A note
+  committed concurrently (e.g. a `kg_note` write landing mid-walk) is absent from
+  that snapshot, so it can never be pruned as collateral.
 - **Write path:** `kg_note` writes the markdown then calls `sync::index_file` to
   reindex just that note.
 

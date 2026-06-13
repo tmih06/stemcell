@@ -379,7 +379,7 @@ async fn reindex_replaces_children_and_updates_checksum() {
 }
 
 #[tokio::test]
-async fn prune_missing_removes_notes_and_reverts_incoming_to_ghost() {
+async fn prune_paths_removes_notes_and_reverts_incoming_to_ghost() {
     let (_db, repo) = setup().await;
     let a = repo
         .index_note(
@@ -398,9 +398,9 @@ async fn prune_missing_removes_notes_and_reverts_incoming_to_ghost() {
         .expect("b");
     repo.resolve_dangling_links().await.expect("resolve");
 
-    // Prune everything except a.md.
+    // Prune b.md by naming it explicitly.
     let pruned = repo
-        .prune_missing(&["a.md".to_string()])
+        .prune_paths(&["b.md".to_string()])
         .await
         .expect("prune");
     assert_eq!(pruned, 1);
@@ -413,7 +413,7 @@ async fn prune_missing_removes_notes_and_reverts_incoming_to_ghost() {
 }
 
 #[tokio::test]
-async fn prune_missing_empty_keep_set_removes_all() {
+async fn prune_paths_empty_input_is_a_noop() {
     let (_db, repo) = setup().await;
     repo.index_note(note("a.md", "A", "body", "c1"), vec![], vec![])
         .await
@@ -421,9 +421,39 @@ async fn prune_missing_empty_keep_set_removes_all() {
     repo.index_note(note("b.md", "B", "body", "c2"), vec![], vec![])
         .await
         .expect("b");
-    let pruned = repo.prune_missing(&[]).await.expect("prune");
+    // An empty doomed set deletes nothing — unlike the old keep-set prune, this
+    // can never wipe the index, which is what makes the snapshot-diff caller in
+    // `reindex` safe against a concurrently-emptied filesystem listing.
+    let pruned = repo.prune_paths(&[]).await.expect("prune");
+    assert_eq!(pruned, 0);
+    assert_eq!(repo.note_count().await.expect("count"), 2);
+}
+
+#[tokio::test]
+async fn prune_paths_removes_only_named_notes() {
+    let (_db, repo) = setup().await;
+    repo.index_note(note("a.md", "A", "body", "c1"), vec![], vec![])
+        .await
+        .expect("a");
+    repo.index_note(note("b.md", "B", "body", "c2"), vec![], vec![])
+        .await
+        .expect("b");
+    repo.index_note(note("c.md", "C", "body", "c3"), vec![], vec![])
+        .await
+        .expect("c");
+    // Naming a missing path alongside real ones is harmless — only the present
+    // ones are removed, and the count reflects exactly that.
+    let pruned = repo
+        .prune_paths(&[
+            "a.md".to_string(),
+            "c.md".to_string(),
+            "gone.md".to_string(),
+        ])
+        .await
+        .expect("prune");
     assert_eq!(pruned, 2);
-    assert_eq!(repo.note_count().await.expect("count"), 0);
+    assert_eq!(repo.note_count().await.expect("count"), 1);
+    assert!(repo.get_note_by_path("b.md").await.expect("q").is_some());
 }
 
 #[tokio::test]

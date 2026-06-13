@@ -54,8 +54,8 @@ back-fills `to_id`. FK clauses are advisory (production omits `PRAGMA
 foreign_keys`), so `KnowledgeGraphRepository` deletes child rows explicitly.
 
 Repository: `src/db/repository/knowledge_graph.rs` — `index_note`, `search_fts`,
-`neighbors`/`backlinks`, `resolve_dangling_links`, `prune_missing`,
-`get_note_by_ref`, `observations_for_note`, `degree`.
+`neighbors`/`backlinks`, `resolve_dangling_links`/`resolve_links_for_note`,
+`prune_paths`, `get_note_by_ref`, `observations_for_note`, `degree`.
 
 ### Tool I/O
 

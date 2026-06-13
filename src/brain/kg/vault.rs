@@ -16,6 +16,22 @@ pub const FOLDERS: &[&str] = &["concepts", "people", "projects", "MOCs", "daily"
 /// Directories never treated as note content during a walk.
 const SKIP_DIRS: &[&str] = &[".obsidian", ".trash", ".git"];
 
+/// How the watcher should react to a raw `notify` event path. See
+/// [`Vault::classify_path`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PathClass {
+    /// A tracked `.md` note at this vault-relative path: index it if it exists
+    /// on disk, delete it from the index if it's gone.
+    Note(String),
+    /// A directory or non-`.md` change under a real folder. Child notes can move
+    /// with no per-note event (e.g. a folder rename/delete), so the watcher
+    /// falls back to a full reindex to stay correct.
+    Other,
+    /// Outside the vault, the vault root itself, or under a skipped/hidden
+    /// directory (`.obsidian/`, dotdirs). Drop it — no work.
+    Ignore,
+}
+
 /// A handle to a vault rooted at an absolute directory.
 #[derive(Debug, Clone)]
 pub struct Vault {
@@ -107,6 +123,41 @@ impl Vault {
             None
         } else {
             Some(joined)
+        }
+    }
+
+    /// Classify a raw `notify` event path so the watcher knows how to react.
+    /// Mirrors the filter [`list_markdown`](Self::list_markdown) applies during a
+    /// full walk, which the raw event stream does not.
+    ///
+    /// The path need not exist on disk: a delete event names a file that is
+    /// already gone, so this never touches the filesystem — the caller decides
+    /// index-vs-delete by re-checking [`exists`](Self::exists).
+    pub fn classify_path(&self, abs: &Path) -> PathClass {
+        let Ok(rel) = abs.strip_prefix(&self.root) else {
+            return PathClass::Ignore;
+        };
+        let mut segments: Vec<String> = Vec::new();
+        for comp in rel.components() {
+            let seg = comp.as_os_str().to_string_lossy();
+            // Any dotdir/dotfile or SKIP_DIRS component → ignore (kills the
+            // constant `.obsidian/` write noise so it never triggers indexing).
+            if seg.starts_with('.') || SKIP_DIRS.contains(&seg.as_ref()) {
+                return PathClass::Ignore;
+            }
+            segments.push(seg.into_owned());
+        }
+        let joined = segments.join("/");
+        if joined.is_empty() {
+            // The vault root itself — not actionable on its own.
+            PathClass::Ignore
+        } else if joined.ends_with(".md") {
+            PathClass::Note(joined)
+        } else {
+            // A directory or non-`.md` file under a real folder. Folder-scope
+            // changes (rename/delete of a dir) move child notes with no per-note
+            // event, so the watcher falls back to a full reindex to catch them.
+            PathClass::Other
         }
     }
 

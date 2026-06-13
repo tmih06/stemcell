@@ -9,7 +9,7 @@
 
 use super::parser;
 use super::resolver::filename_stem;
-use super::vault::{self, Vault};
+use super::vault::{self, PathClass, Vault};
 use crate::config::Config;
 use crate::db::{KnowledgeGraphRepository, NoteUpsert, ObservationInput, Pool, RelationInput};
 use anyhow::{Context, Result};
@@ -37,7 +37,7 @@ pub async fn reindex(vault: &Vault, repo: &KnowledgeGraphRepository) -> Result<S
         repo.all_paths_with_checksums().await?.into_iter().collect();
 
     let mut stats = SyncStats::default();
-    let mut seen: Vec<String> = Vec::new();
+    let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
 
     for abs in vault.list_markdown() {
         let Some(rel) = vault.relative(&abs) else {
@@ -50,7 +50,7 @@ pub async fn reindex(vault: &Vault, repo: &KnowledgeGraphRepository) -> Result<S
                 continue;
             }
         };
-        seen.push(rel.clone());
+        seen.insert(rel.clone());
 
         let checksum = checksum_hex(&bytes);
         if existing.get(&rel).map(String::as_str) == Some(checksum.as_str()) {
@@ -68,7 +68,15 @@ pub async fn reindex(vault: &Vault, repo: &KnowledgeGraphRepository) -> Result<S
         stats.indexed += 1;
     }
 
-    stats.pruned = repo.prune_missing(&seen).await?;
+    // Prune from the pre-walk snapshot, not live DB state: a note committed
+    // concurrently (e.g. a `kg_note` write) isn't in `existing`, so it can never
+    // be a prune candidate — this closes the walk/prune TOCTOU window.
+    let doomed: Vec<String> = existing
+        .keys()
+        .filter(|p| !seen.contains(*p))
+        .cloned()
+        .collect();
+    stats.pruned = repo.prune_paths(&doomed).await?;
     stats.resolved = repo.resolve_dangling_links().await?;
     Ok(stats)
 }
@@ -91,6 +99,39 @@ pub async fn index_file(vault: &Vault, repo: &KnowledgeGraphRepository, rel: &st
     // which the full `reindex` pass still uses.
     repo.resolve_links_for_note(id).await?;
     Ok(id)
+}
+
+/// Apply a set of changed vault-relative paths incrementally: index each path
+/// that currently exists on disk, delete each that no longer does. Used by the
+/// live watcher so a single note save touches only that note, not the whole
+/// vault. Returns the outcome counters (`resolved` is left 0 — `index_file`
+/// resolves each indexed note's links inline).
+///
+/// Classifying by on-disk existence (rather than trusting the `notify` event
+/// kind) handles editor atomic-saves uniformly: a save that surfaces as
+/// remove-then-create, or as a bare rename-to, still ends with the file present,
+/// so it indexes; a real delete ends with it absent, so it prunes.
+pub async fn sync_paths(
+    vault: &Vault,
+    repo: &KnowledgeGraphRepository,
+    rels: &[String],
+) -> Result<SyncStats> {
+    let mut stats = SyncStats::default();
+    let mut doomed: Vec<String> = Vec::new();
+    for rel in rels {
+        if vault.exists(rel) {
+            match index_file(vault, repo, rel).await {
+                Ok(_) => stats.indexed += 1,
+                Err(e) => tracing::warn!("KG sync: failed to index {rel}: {e}"),
+            }
+        } else {
+            doomed.push(rel.clone());
+        }
+    }
+    if !doomed.is_empty() {
+        stats.pruned = repo.prune_paths(&doomed).await?;
+    }
+    Ok(stats)
 }
 
 /// Map a parsed note + file metadata into repository inputs.
@@ -224,28 +265,64 @@ pub fn spawn_watcher(vault: Vault, repo: KnowledgeGraphRepository) -> tokio::tas
         tracing::info!("KG watcher: watching {:?}", root);
 
         let debounce = Duration::from_millis(500);
-        while rx.recv().is_ok() {
-            // Drain the debounce window so a burst of save events → one reindex.
+        while let Ok(first) = rx.recv() {
+            // Drain the debounce window so a burst of save events → one pass,
+            // accumulating every changed path across the whole burst.
+            let mut events = vec![first];
             let deadline = std::time::Instant::now() + debounce;
             loop {
                 let remaining = deadline.saturating_duration_since(std::time::Instant::now());
-                if remaining.is_zero() || rx.recv_timeout(remaining).is_err() {
+                if remaining.is_zero() {
                     break;
                 }
+                match rx.recv_timeout(remaining) {
+                    Ok(ev) => events.push(ev),
+                    Err(_) => break,
+                }
+            }
+
+            // Classify the burst: collect the distinct `.md` notes touched, and
+            // note whether any folder-scope change demands a full reindex.
+            let mut notes: Vec<String> = Vec::new();
+            let mut needs_full = false;
+            for event in &events {
+                for path in &event.paths {
+                    match vault.classify_path(path) {
+                        PathClass::Note(rel) => {
+                            if !notes.contains(&rel) {
+                                notes.push(rel);
+                            }
+                        }
+                        PathClass::Other => needs_full = true,
+                        PathClass::Ignore => {}
+                    }
+                }
+            }
+
+            if !needs_full && notes.is_empty() {
+                continue; // Pure `.obsidian/` noise — nothing to do.
             }
 
             let vault = vault.clone();
             let repo = repo.clone();
             rt.spawn(async move {
-                match reindex(&vault, &repo).await {
+                // A folder-scope change (dir rename/delete) can move child notes
+                // with no per-note event, so fall back to a full reindex; that
+                // pass also re-syncs the individually-touched notes.
+                let result = if needs_full {
+                    reindex(&vault, &repo).await
+                } else {
+                    sync_paths(&vault, &repo, &notes).await
+                };
+                match result {
                     Ok(stats) if stats.indexed > 0 || stats.pruned > 0 => tracing::debug!(
-                        "KG watcher reindex: {} indexed, {} pruned, {} resolved",
+                        "KG watcher sync: {} indexed, {} pruned, {} resolved",
                         stats.indexed,
                         stats.pruned,
                         stats.resolved
                     ),
                     Ok(_) => {}
-                    Err(e) => tracing::warn!("KG watcher reindex failed: {e}"),
+                    Err(e) => tracing::warn!("KG watcher sync failed: {e}"),
                 }
             });
         }
