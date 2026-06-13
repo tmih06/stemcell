@@ -39,6 +39,10 @@
 | `statusline_dialog/state.rs` | Statusline dialog state |
 | `statusline_dialog/input.rs` | Statusline dialog input handling |
 | `statusline_dialog/actions.rs` | Statusline dialog action dispatch |
+| `export_dialog/mod.rs` | Export dialog — module root |
+| `export_dialog/state.rs` | Export dialog state + target options |
+| `export_dialog/input.rs` | Export dialog input handling |
+| `export_dialog/actions.rs` | Export dialog action dispatch |
 
 ## Rendering (`src/tui/render/`)
 
@@ -69,6 +73,8 @@
 | `skills_dialog/dispatch.rs` | Skills dialog render dispatch |
 | `statusline_dialog/mod.rs` | Statusline dialog render module |
 | `statusline_dialog/dispatch.rs` | Statusline dialog render dispatch |
+| `export_dialog/mod.rs` | Export dialog render module |
+| `export_dialog/dispatch.rs` | Export dialog render dispatch |
 
 ## Components (`src/tui/components/`)
 

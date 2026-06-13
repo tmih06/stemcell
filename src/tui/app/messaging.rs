@@ -2,6 +2,7 @@
 
 use super::dialogs::ensure_whispercrabs;
 use super::events::{AppMode, ToolApprovalResponse, TuiEvent};
+use super::export_dialog::ExportTarget;
 use super::onboarding::OnboardingWizard;
 use super::*;
 use crate::brain::SelfUpdater;
@@ -815,6 +816,10 @@ impl App {
             }
             "/debug" => {
                 self.run_debug_dump().await;
+                true
+            }
+            "/export" => {
+                crate::tui::app::export_dialog::actions::open(self);
                 true
             }
             "/mission-control" => {
@@ -2020,6 +2025,95 @@ impl App {
         self.push_collapsible_system_message(summary, report);
     }
 
+    /// Render the current session's full transcript and deliver it per
+    /// `target` (clipboard, file, or both). Pulls the complete history from
+    /// the DB — not the trimmed in-memory window — so a long, partially-paged
+    /// session still exports in full, and reuses `expand_message` so the
+    /// transcript matches exactly what the chat view renders (user input,
+    /// reasoning, tool calls with inputs/outputs, assistant responses).
+    /// Read-only — never mutates session state, never panics, never blocks
+    /// the UI on errors.
+    pub(crate) async fn run_export(&mut self, target: ExportTarget) {
+        let Some(session) = self.current_session.clone() else {
+            self.set_notification("Nothing to export — no active session", true);
+            return;
+        };
+
+        let messages = match self
+            .message_service
+            .list_messages_for_session(session.id)
+            .await
+        {
+            Ok(m) => m,
+            Err(e) => {
+                self.set_notification(format!("Export failed: {e}"), true);
+                return;
+            }
+        };
+
+        let expanded: Vec<DisplayMessage> = messages
+            .into_iter()
+            .flat_map(Self::expand_message)
+            .collect();
+        let transcript = build_transcript(
+            &ExportHeader {
+                title: session.title.as_deref().unwrap_or("(untitled)"),
+                id: session.id,
+                model: session.model.as_deref().unwrap_or("(unknown)"),
+                provider: session.provider_name.as_deref().unwrap_or("(unknown)"),
+                created_at: session.created_at,
+                token_count: session.token_count.into(),
+                cost: session.total_cost,
+            },
+            &expanded,
+        );
+
+        let chars = transcript.chars().count();
+        let copied = matches!(target, ExportTarget::Clipboard | ExportTarget::Both)
+            .then(|| Self::copy_to_clipboard(&transcript));
+
+        let written = matches!(target, ExportTarget::File | ExportTarget::Both).then(|| {
+            let dir = crate::config::stemcell_home().join("exports");
+            let ts = chrono::Utc::now().format("%Y%m%d-%H%M%S");
+            let path = dir.join(format!("session-{ts}.md"));
+            std::fs::create_dir_all(&dir)
+                .and_then(|()| std::fs::write(&path, &transcript))
+                .map(|()| path)
+        });
+
+        // Compose a single notification covering whichever actions ran.
+        let mut ok_parts: Vec<String> = Vec::new();
+        let mut err_parts: Vec<String> = Vec::new();
+        if let Some(copied) = copied {
+            if copied {
+                ok_parts.push(format!("copied {chars} chars"));
+            } else {
+                err_parts.push("clipboard unavailable".to_string());
+            }
+        }
+        if let Some(written) = written {
+            match written {
+                Ok(path) => ok_parts.push(format!("wrote {}", path.display())),
+                Err(e) => err_parts.push(format!("file write failed: {e}")),
+            }
+        }
+
+        if err_parts.is_empty() {
+            self.set_notification(format!("Exported — {}", ok_parts.join(", ")), false);
+        } else if ok_parts.is_empty() {
+            self.set_notification(format!("Export failed: {}", err_parts.join(", ")), true);
+        } else {
+            self.set_notification(
+                format!(
+                    "Exported — {} ({})",
+                    ok_parts.join(", "),
+                    err_parts.join(", ")
+                ),
+                true,
+            );
+        }
+    }
+
     pub(crate) async fn send_message(&mut self, content: String) -> Result<()> {
         tracing::info!(
             "[send_message] START is_processing={} has_session={} content_len={}",
@@ -2847,4 +2941,119 @@ pub(crate) fn build_debug_report(input: &DebugReportInput) -> String {
     }
 
     out
+}
+
+/// Session metadata rendered into the transcript header by [`build_transcript`].
+pub(crate) struct ExportHeader<'a> {
+    pub title: &'a str,
+    pub id: Uuid,
+    pub model: &'a str,
+    pub provider: &'a str,
+    pub created_at: chrono::DateTime<chrono::Utc>,
+    pub token_count: i64,
+    pub cost: f64,
+}
+
+/// Render a full session transcript as Markdown. Pure function over the
+/// already-expanded [`DisplayMessage`] list (the same structure the chat view
+/// renders), so the export captures exactly what the user saw: user input,
+/// assistant reasoning, tool calls with their inputs and outputs, and
+/// responses. Kept `App`-free so it is unit-testable.
+pub(crate) fn build_transcript(header: &ExportHeader, messages: &[DisplayMessage]) -> String {
+    use std::fmt::Write as _;
+    let mut out = String::with_capacity(8192);
+
+    let _ = writeln!(out, "# {}", header.title);
+    let _ = writeln!(out);
+    let _ = writeln!(out, "- **Session:** {}", header.id);
+    let _ = writeln!(
+        out,
+        "- **Provider / model:** {} / {}",
+        header.provider, header.model
+    );
+    let _ = writeln!(
+        out,
+        "- **Created:** {}",
+        header.created_at.format("%Y-%m-%d %H:%M:%S UTC")
+    );
+    let _ = writeln!(
+        out,
+        "- **Exported:** {}",
+        chrono::Utc::now().format("%Y-%m-%d %H:%M:%S UTC")
+    );
+    let _ = writeln!(
+        out,
+        "- **Tokens:** {} | **Cost:** ${:.4} | **Messages:** {}",
+        header.token_count,
+        header.cost,
+        messages.len()
+    );
+    let _ = writeln!(out);
+
+    for msg in messages {
+        render_transcript_message(&mut out, msg);
+    }
+
+    out
+}
+
+/// Append one `DisplayMessage` to the transcript, dispatching on its role.
+fn render_transcript_message(out: &mut String, msg: &DisplayMessage) {
+    use std::fmt::Write as _;
+
+    match msg.role.as_str() {
+        // Paging markers are UI chrome, not conversation content.
+        "history_marker" => {}
+        "tool_group" => {
+            if let Some(group) = &msg.tool_group {
+                for call in &group.calls {
+                    let status = if call.success { "ok" } else { "FAILED" };
+                    let _ = writeln!(out, "### 🔧 Tool: {} [{status}]", call.description);
+                    if !call.tool_input.is_null() {
+                        let pretty = serde_json::to_string_pretty(&call.tool_input)
+                            .unwrap_or_else(|_| call.tool_input.to_string());
+                        let _ = writeln!(out, "\n_Input:_\n\n```json\n{pretty}\n```");
+                    }
+                    if let Some(details) = &call.details {
+                        let trimmed = details.trim();
+                        if !trimmed.is_empty() {
+                            let _ = writeln!(out, "\n_Output:_\n\n```\n{trimmed}\n```");
+                        }
+                    }
+                    let _ = writeln!(out);
+                }
+            }
+        }
+        role => {
+            let label = match role {
+                "user" => "## 👤 User",
+                "assistant" => "## 🤖 Assistant",
+                "system" => "## ⚙️ System",
+                "error" => "## ❌ Error",
+                other => {
+                    // Unknown role — surface it verbatim rather than dropping it.
+                    let _ = writeln!(out, "## {other}");
+                    ""
+                }
+            };
+            if !label.is_empty() {
+                let _ = writeln!(out, "{label}");
+            }
+            let _ = writeln!(out);
+
+            // Reasoning/thinking is stored in `details` for assistant messages.
+            if let Some(reasoning) = &msg.details {
+                let trimmed = reasoning.trim();
+                if !trimmed.is_empty() {
+                    let _ = writeln!(out, "_Reasoning:_\n\n> {}\n", trimmed.replace('\n', "\n> "));
+                }
+            }
+
+            let content = msg.content.trim();
+            if !content.is_empty() {
+                let _ = writeln!(out, "{content}");
+            }
+            let _ = writeln!(out);
+        }
+    }
 }

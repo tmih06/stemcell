@@ -2,6 +2,7 @@
 
 pub(crate) mod background_session;
 mod dialogs;
+pub mod export_dialog;
 pub(crate) mod input;
 pub(crate) mod messaging;
 pub mod mission_control;

@@ -242,6 +242,10 @@ pub const SLASH_COMMANDS: &[SlashCommand] = &[
         name: "/debug",
         description: "Dump agent internals: system prompt, equipped tools, context usage — debug, inspect, diagnostics, dump, internals, prompt",
     },
+    SlashCommand {
+        name: "/export",
+        description: "Export the chat session: copy, save to file, or both — export, save, copy, transcript, download, backup, share",
+    },
 ];
 
 /// True if `query` is a prefix of any whitespace/punctuation-delimited word in
@@ -655,6 +659,10 @@ pub struct App {
     /// each change to config.toml).
     pub statusline_fields: crate::config::StatusLineConfig,
 
+    /// Export dialog state — option selection index. Same "single-struct
+    /// field" pattern as the statusline dialog.
+    pub export_dialog: crate::tui::app::export_dialog::ExportDialogState,
+
     /// Onboarding wizard state
     pub onboarding: Option<OnboardingWizard>,
     pub force_onboard: bool,
@@ -930,6 +938,7 @@ impl App {
             mc: crate::tui::app::mission_control::McState::default(),
             skills_dialog: crate::tui::app::skills_dialog::SkillsDialogState::default(),
             statusline_dialog: crate::tui::app::statusline_dialog::StatusLineDialogState::default(),
+            export_dialog: crate::tui::app::export_dialog::ExportDialogState::default(),
             statusline_fields,
             onboarding: None,
             force_onboard: false,
@@ -3609,6 +3618,9 @@ impl App {
             }
             AppMode::StatusLine => {
                 crate::tui::app::statusline_dialog::input::handle_key(self, event).await;
+            }
+            AppMode::Export => {
+                crate::tui::app::export_dialog::input::handle_key(self, event).await;
             }
         }
 

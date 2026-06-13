@@ -80,6 +80,7 @@ pub mod evolve_diagnose_test;
 pub mod evolve_systemd_restart_test;
 pub mod evolve_test;
 pub mod exa_search_test;
+pub mod export_command_test;
 pub mod follow_up_intermediate_flush_test;
 pub mod follow_up_question_test;
 pub mod format_user_error_test;

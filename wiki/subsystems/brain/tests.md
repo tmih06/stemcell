@@ -63,7 +63,7 @@ All 227 test files in `src/tests/`, grouped by area:
 | HTTP request | `http_request_test.rs` |
 | Image util | `image_util_test.rs` |
 | Integration | `integration_test.rs` |
-| Input/UI | `altgr_input_test.rs`, `ctrl_o_toggle_test.rs`, `debug_command_test.rs` |
+| Input/UI | `altgr_input_test.rs`, `ctrl_o_toggle_test.rs`, `debug_command_test.rs`, `export_command_test.rs` |
 | Kimi reasoning | `kimi_reasoning_test.rs` |
 | Local provider | `local_provider_gate_test.rs` |
 | Merge keys | `merge_provider_keys_test.rs` |

@@ -386,6 +386,8 @@ pub enum AppMode {
     SkillsList,
     /// Status bar field toggle checklist (triggered by /statusline)
     StatusLine,
+    /// Export-session option picker (triggered by /export)
+    Export,
 }
 
 /// Event handler for the TUI
