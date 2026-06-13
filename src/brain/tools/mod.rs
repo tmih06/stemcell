@@ -88,6 +88,8 @@ pub mod kg_links;
 pub mod kg_note;
 #[cfg(feature = "tool-kg-read")]
 pub mod kg_read;
+#[cfg(feature = "tool-kg-remember")]
+pub mod kg_remember;
 #[cfg(feature = "tool-kg-search")]
 pub mod kg_search;
 #[cfg(feature = "tool-load-brain-file")]

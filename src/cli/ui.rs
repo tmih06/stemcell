@@ -126,6 +126,7 @@ async fn cmd_chat_inner(
         feature = "tool-kg-read",
         feature = "tool-kg-links",
         feature = "tool-kg-note",
+        feature = "tool-kg-remember",
         feature = "tool-kg-context"
     ))]
     crate::brain::kg::sync::spawn_indexer(config, db.pool().clone());

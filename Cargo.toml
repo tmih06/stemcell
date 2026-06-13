@@ -366,12 +366,13 @@ tool-dynamic-runtime = ["tools-dynamic"]
 
 # Obsidian-style knowledge-graph long-term memory (FTS5 + graph traversal over
 # a markdown vault). Each tool can be packed individually.
-tools-kg = ["tool-kg-search", "tool-kg-read", "tool-kg-links", "tool-kg-note", "tool-kg-context"]
+tools-kg = ["tool-kg-search", "tool-kg-read", "tool-kg-links", "tool-kg-note", "tool-kg-context", "tool-kg-remember"]
 tool-kg-search = []
 tool-kg-read = []
 tool-kg-links = []
 tool-kg-note = []
 tool-kg-context = []
+tool-kg-remember = []
 
 # Build toggles live in `build_toggles.toml` at the repo root, grouped
 # into [tools] / [channels] / [capabilities] sections. The Python

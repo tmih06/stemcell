@@ -817,6 +817,11 @@ impl App {
                 crate::tui::app::mission_control::actions::open(self).await;
                 true
             }
+            "/kg" => {
+                let sub = input.split_whitespace().nth(1).unwrap_or("");
+                crate::tui::app::kg_review::actions::dispatch(self, sub, input).await;
+                true
+            }
             "/skills" => {
                 crate::tui::app::skills_dialog::actions::open(self);
                 true

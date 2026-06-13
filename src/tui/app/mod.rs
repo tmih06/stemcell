@@ -3,6 +3,7 @@
 pub(crate) mod background_session;
 mod dialogs;
 pub(crate) mod input;
+pub mod kg_review;
 mod messaging;
 pub mod mission_control;
 pub mod skills_dialog;

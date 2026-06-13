@@ -133,6 +133,7 @@ TOGGLE_TO_FEATURES: dict[str, tuple[str, ...]] = {
         "tool-kg-links",
         "tool-kg-note",
         "tool-kg-context",
+        "tool-kg-remember",
     ),
     # image
     "image": (

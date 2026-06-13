@@ -386,6 +386,9 @@ pub enum AppMode {
     SkillsList,
     /// Status bar field toggle checklist (triggered by /statusline)
     StatusLine,
+    /// Knowledge-graph review queue — pending memory-write batches +
+    /// vault history (triggered by /kg)
+    KgReview,
 }
 
 /// Event handler for the TUI

@@ -16,8 +16,11 @@
 //!
 //! [`KnowledgeGraphRepository`]: crate::db::KnowledgeGraphRepository
 
+pub mod compose;
+pub mod git_review;
 pub mod parser;
 pub mod resolver;
+pub mod review;
 pub mod sync;
 pub mod traverse;
 pub mod vault;

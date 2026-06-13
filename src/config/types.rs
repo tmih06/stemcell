@@ -847,6 +847,19 @@ pub struct MemoryConfig {
     /// Accepts a leading `~` for the home directory.
     #[serde(default)]
     pub vault_dir: Option<String>,
+
+    /// Put the knowledge-graph vault under git: init on startup, auto-commit
+    /// direct writes, and enable `/kg log`/`restore`/`revert` versioning.
+    /// Off by default — when off the vault is plain files with no git backing.
+    #[serde(default)]
+    pub kg_git_enabled: bool,
+
+    /// Route the main agent's memory writes through a review queue: the
+    /// `kg_remember` tool seals writes onto a batch branch awaiting user
+    /// approval via `/kg`, instead of writing straight to the vault. Implies
+    /// git backing. Off by default. RSI writes are never gated.
+    #[serde(default)]
+    pub kg_review_enabled: bool,
 }
 
 const fn default_vector_enabled() -> bool {
@@ -859,6 +872,8 @@ impl Default for MemoryConfig {
             vector_enabled: default_vector_enabled(),
             embedding: None,
             vault_dir: None,
+            kg_git_enabled: false,
+            kg_review_enabled: false,
         }
     }
 }

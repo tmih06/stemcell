@@ -14,6 +14,7 @@ use crate::config::Config;
 use crate::db::{KnowledgeGraphRepository, NoteUpsert, ObservationInput, Pool, RelationInput};
 use anyhow::{Context, Result};
 use sha2::{Digest, Sha256};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, UNIX_EPOCH};
 
 /// Outcome counters for a sync pass.
@@ -23,6 +24,51 @@ pub struct SyncStats {
     pub skipped: usize,
     pub pruned: usize,
     pub resolved: usize,
+}
+
+// --- watcher suppression gate ---
+//
+// Git review operations (merge, revert, reset) mutate the watched vault working
+// tree, which would trip the `notify` watcher into reindexing a tree that is
+// mid-rewrite. The gate lets the caller suppress watcher-driven reindexes for
+// the duration of a git op, then do one authoritative `reindex` afterward.
+//
+// Two counters make this timing-independent: `DEPTH` (>0 while any op holds a
+// guard) and `GEN` (bumped on every guard drop). The watcher captures `GEN` when
+// a debounce burst starts and, before acting, drops the burst if either the gate
+// is currently held OR `GEN` moved — so a burst that began before/during an op
+// (even one that finished within the debounce window) is always discarded.
+
+static SUPPRESS_DEPTH: AtomicU64 = AtomicU64::new(0);
+static SUPPRESS_GEN: AtomicU64 = AtomicU64::new(0);
+
+/// RAII guard that suppresses watcher reindexes while held. Drop bumps the
+/// generation counter so any burst overlapping the guarded op is discarded.
+#[must_use = "the gate is released when the guard is dropped"]
+pub struct SuppressGuard;
+
+/// Begin suppressing watcher-driven reindexes. The returned guard releases the
+/// suppression (and bumps the generation) when dropped.
+pub fn suppress_begin() -> SuppressGuard {
+    SUPPRESS_DEPTH.fetch_add(1, Ordering::SeqCst);
+    SuppressGuard
+}
+
+impl Drop for SuppressGuard {
+    fn drop(&mut self) {
+        SUPPRESS_DEPTH.fetch_sub(1, Ordering::SeqCst);
+        SUPPRESS_GEN.fetch_add(1, Ordering::SeqCst);
+    }
+}
+
+/// True while at least one [`SuppressGuard`] is held.
+pub fn suppressed() -> bool {
+    SUPPRESS_DEPTH.load(Ordering::SeqCst) > 0
+}
+
+/// Current suppression generation — bumped each time a guard is dropped.
+pub fn suppress_gen() -> u64 {
+    SUPPRESS_GEN.load(Ordering::SeqCst)
 }
 
 /// Full reindex pass: walk the vault, (re)index changed files, prune deleted
@@ -214,11 +260,20 @@ fn mtime_secs(meta: &std::fs::Metadata) -> i64 {
 }
 
 /// Resolve the vault, run an initial reindex, then start a live watcher.
-/// Spawned at startup when the knowledge-graph tools are enabled.
+/// Spawned at startup when the knowledge-graph tools are enabled. When
+/// `git_enabled` is set, the vault is initialized as a git repo first (idempotent)
+/// so versioning / the review gate have a repo to operate on.
 pub fn spawn_indexer(config: &Config, pool: Pool) {
     let vault = Vault::from_config(config);
+    let git_enabled = config.memory.kg_git_enabled || config.memory.kg_review_enabled;
     let repo = KnowledgeGraphRepository::new(pool);
     tokio::spawn(async move {
+        if git_enabled {
+            match super::review::ensure_repo(&vault) {
+                Ok(_) => tracing::info!("KG vault git backing ready ({:?})", vault.root()),
+                Err(e) => tracing::warn!("KG vault git init failed: {e}"),
+            }
+        }
         match reindex(&vault, &repo).await {
             Ok(stats) => tracing::info!(
                 "KG vault indexed: {} new, {} unchanged, {} pruned, {} links resolved ({:?})",
@@ -266,6 +321,12 @@ pub fn spawn_watcher(vault: Vault, repo: KnowledgeGraphRepository) -> tokio::tas
 
         let debounce = Duration::from_millis(500);
         while let Ok(first) = rx.recv() {
+            // Snapshot the suppression generation at the start of the burst. A
+            // gated git op (merge/reset/…) bumps this on completion, so any burst
+            // it caused — whose events arrive before or during this window — is
+            // discarded below rather than racing the authoritative reindex.
+            let gen_at_start = suppress_gen();
+
             // Drain the debounce window so a burst of save events → one pass,
             // accumulating every changed path across the whole burst.
             let mut events = vec![first];
@@ -279,6 +340,12 @@ pub fn spawn_watcher(vault: Vault, repo: KnowledgeGraphRepository) -> tokio::tas
                     Ok(ev) => events.push(ev),
                     Err(_) => break,
                 }
+            }
+
+            // Drop the burst if a gated op is in flight or completed during the
+            // window — its own explicit reindex is the sole index update.
+            if suppressed() || suppress_gen() != gen_at_start {
+                continue;
             }
 
             // Classify the burst: collect the distinct `.md` notes touched, and

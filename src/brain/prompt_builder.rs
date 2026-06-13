@@ -672,6 +672,9 @@ pub(crate) fn compiled_features() -> Vec<&'static str> {
     if cfg!(feature = "tool-kg-note") {
         out.push("tool-kg-note");
     }
+    if cfg!(feature = "tool-kg-remember") {
+        out.push("tool-kg-remember");
+    }
     if cfg!(feature = "tool-kg-context") {
         out.push("tool-kg-context");
     }

@@ -878,12 +878,13 @@ impl ToolModule for DynamicModule {
     }
 }
 
-/// Knowledge graph: kg_search, kg_read, kg_links, kg_note, kg_context
+/// Knowledge graph: kg_search, kg_read, kg_links, kg_note/kg_remember, kg_context
 #[cfg(any(
     feature = "tool-kg-search",
     feature = "tool-kg-read",
     feature = "tool-kg-links",
     feature = "tool-kg-note",
+    feature = "tool-kg-remember",
     feature = "tool-kg-context"
 ))]
 struct KnowledgeGraphModule;
@@ -893,6 +894,7 @@ struct KnowledgeGraphModule;
     feature = "tool-kg-read",
     feature = "tool-kg-links",
     feature = "tool-kg-note",
+    feature = "tool-kg-remember",
     feature = "tool-kg-context"
 ))]
 impl ToolModule for KnowledgeGraphModule {
@@ -923,11 +925,27 @@ impl ToolModule for KnowledgeGraphModule {
         )));
         #[cfg(feature = "tool-kg-links")]
         ctx.register(Arc::new(super::kg_links::KgLinksTool::new(repo.clone())));
+
+        // Write path: when the review gate is on, register the gated batch tool
+        // (`kg_remember`) *instead of* the direct-write `kg_note`, so the main
+        // agent cannot bypass the queue. RSI registers `kg_note` separately on its
+        // own loop (see rsi.rs) and is intentionally never gated.
+        let review_gated = ctx.config.memory.kg_review_enabled;
+        #[cfg(feature = "tool-kg-remember")]
+        if review_gated {
+            ctx.register(Arc::new(super::kg_remember::KgRememberTool::new(
+                ctx.config.clone(),
+                ctx.pool.clone(),
+            )));
+        }
         #[cfg(feature = "tool-kg-note")]
-        ctx.register(Arc::new(super::kg_note::KgNoteTool::new(
-            repo.clone(),
-            vault.clone(),
-        )));
+        if !review_gated {
+            ctx.register(Arc::new(super::kg_note::KgNoteTool::new(
+                repo.clone(),
+                vault.clone(),
+            )));
+        }
+
         #[cfg(feature = "tool-kg-context")]
         ctx.register(Arc::new(super::kg_context::KgContextTool::new(
             repo.clone(),
@@ -1094,6 +1112,7 @@ pub fn all_modules() -> Vec<Box<dyn ToolModule>> {
         feature = "tool-kg-read",
         feature = "tool-kg-links",
         feature = "tool-kg-note",
+        feature = "tool-kg-remember",
         feature = "tool-kg-context"
     ))]
     modules.push(Box::new(KnowledgeGraphModule));

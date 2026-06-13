@@ -333,3 +333,37 @@ async fn reindex_prunes_from_pre_walk_snapshot_only() {
             .is_none()
     );
 }
+
+// --- watcher suppression gate ---
+//
+// The gate is process-global static state, so these assert *relative* changes
+// (a held guard suppresses; drop bumps the generation; nesting) rather than
+// absolute values, keeping them robust under parallel test execution.
+
+#[test]
+fn suppress_guard_suppresses_while_held_and_bumps_gen_on_drop() {
+    let gen_before = sync::suppress_gen();
+    {
+        let _g = sync::suppress_begin();
+        assert!(sync::suppressed(), "gate is held inside the guard's scope");
+    }
+    assert!(
+        sync::suppress_gen() > gen_before,
+        "dropping the guard bumps the generation"
+    );
+}
+
+#[test]
+fn suppress_guard_nests() {
+    let outer = sync::suppress_begin();
+    let inner = sync::suppress_begin();
+    assert!(sync::suppressed(), "suppressed with both held");
+    drop(inner);
+    assert!(
+        sync::suppressed(),
+        "still suppressed while the outer guard remains"
+    );
+    drop(outer);
+    // Depth is back to this test's baseline; we don't assert !suppressed()
+    // because a parallel test may hold its own guard.
+}

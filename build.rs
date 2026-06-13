@@ -123,6 +123,7 @@ const TOGGLE_TO_FEATURES: &[(&str, &[&str])] = &[
             "tool-kg-links",
             "tool-kg-note",
             "tool-kg-context",
+            "tool-kg-remember",
         ],
     ),
     // image
