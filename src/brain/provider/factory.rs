@@ -1324,9 +1324,14 @@ async fn try_create_opencode(config: &Config) -> Result<Option<Arc<dyn Provider>
         .clone()
         .unwrap_or_else(|| "public".to_string());
 
+    // Zen lives at /zen/v1. Older configs (and the pre-rename default) baked in
+    // the Go endpoint /zen/go/v1, where Zen's free models 401 ("not supported").
+    // Rewrite that stale path so existing [providers.opencode] configs keep working
+    // after the Zen/Go split instead of silently failing every completion.
     let base_url = opencode_config
         .base_url
         .clone()
+        .map(|u| u.replace("/zen/go/v1", "/zen/v1"))
         .unwrap_or_else(|| "https://opencode.ai/zen/v1/chat/completions".to_string());
 
     let model = opencode_config
