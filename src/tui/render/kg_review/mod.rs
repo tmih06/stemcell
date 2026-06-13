@@ -8,6 +8,7 @@
 
 use crate::tui::app::App;
 use crate::tui::app::kg_review::state::KgView;
+use crate::tui::render::input::truncate_to_chars;
 use crate::tui::render::palette::{ORANGE, TEAL, TEXT_DIM, TEXT_PRIMARY, TEXT_SECONDARY, WHITE};
 
 use ratatui::Frame;
@@ -86,7 +87,7 @@ fn draw_batch_list(frame: &mut Frame, app: &App, area: Rect) {
         };
         lines.push(Line::from(vec![
             Span::styled(marker, Style::default().fg(TEAL)),
-            Span::styled(truncate(&batch.summary, 48), name_style),
+            Span::styled(truncate_to_chars(&batch.summary, 48), name_style),
         ]));
         // Stat line: +ins / -del across N files, plus a conflicted flag.
         let mut spans = vec![Span::styled(
@@ -199,7 +200,7 @@ fn draw_log(frame: &mut Frame, app: &App, area: Rect) {
                 Span::styled(marker, Style::default().fg(WHITE)),
                 Span::styled(format!("{sha} "), Style::default().fg(ORANGE)),
                 Span::styled(format!("{date}  "), Style::default().fg(TEXT_DIM)),
-                Span::styled(truncate(&entry.subject, 60), subj_style),
+                Span::styled(truncate_to_chars(&entry.subject, 60), subj_style),
             ])
         })
         .collect();
@@ -229,14 +230,4 @@ fn draw_help_bar(frame: &mut Frame, app: &App, area: Rect) {
         Style::default().fg(BORDER_IDLE)
     };
     frame.render_widget(Paragraph::new(Line::from(Span::styled(hint, style))), area);
-}
-
-/// Truncate to `max` chars with an ellipsis.
-fn truncate(s: &str, max: usize) -> String {
-    if s.chars().count() <= max {
-        s.to_string()
-    } else {
-        let kept: String = s.chars().take(max.saturating_sub(1)).collect();
-        format!("{kept}…")
-    }
 }

@@ -85,6 +85,32 @@ pub fn relation_bullet(v: &Value) -> Option<String> {
     })
 }
 
+/// Apply observation/relation bullets to a note, returning the new content and
+/// the number of observation/relation bullets actually added. `existing` is the
+/// note's current markdown when it already exists (bullets are surgically
+/// appended and deduped); `None` builds a fresh note. Shared by `kg_note` (direct
+/// write) and the git-review batch path so both compose identically.
+pub fn compose_content(
+    existing: Option<&str>,
+    title: &str,
+    note_type: Option<&str>,
+    observations: &[String],
+    relations: &[String],
+) -> (String, usize, usize) {
+    match existing {
+        Some(current) => {
+            let (content, added_obs) = insert_bullets(current, "Observations", observations);
+            let (content, added_rel) = insert_bullets(&content, "Relations", relations);
+            (content, added_obs, added_rel)
+        }
+        None => (
+            build_note(title, note_type, observations, relations),
+            observations.len(),
+            relations.len(),
+        ),
+    }
+}
+
 /// Build a fresh note with frontmatter and the given section bullets.
 pub fn build_note(
     title: &str,

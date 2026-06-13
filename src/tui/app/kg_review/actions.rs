@@ -14,18 +14,16 @@ const LOG_LIMIT: usize = 50;
 
 /// Enter the `/kg` review screen and load the pending queue. Optional
 /// `subcommand` (from `/kg <sub>`) routes to a non-default view or action.
-pub async fn dispatch(app: &mut App, subcommand: &str, _full_input: &str) {
+pub async fn dispatch(app: &mut App, subcommand: &str) {
     match subcommand {
-        "" | "review" | "queue" => open(app).await,
-        "log" => open_log(app).await,
+        "" | "review" | "queue" => open_view(app, KgView::Queue).await,
+        "log" => open_view(app, KgView::Log).await,
         "revert" => {
-            open(app).await;
+            open_view(app, KgView::Queue).await;
             revert_last(app).await;
         }
         other => {
-            app.mode = AppMode::KgReview;
-            app.kg_review.reset();
-            refresh(app).await;
+            open_view(app, KgView::Queue).await;
             notify(
                 app,
                 &format!("Unknown /kg subcommand \"{other}\" — showing queue"),
@@ -34,28 +32,17 @@ pub async fn dispatch(app: &mut App, subcommand: &str, _full_input: &str) {
     }
 }
 
-/// Enter the review screen on the Queue view.
-pub async fn open(app: &mut App) {
+/// Enter the review screen on a given view and load its data.
+pub async fn open_view(app: &mut App, view: KgView) {
     app.mode = AppMode::KgReview;
     app.kg_review.reset();
-    app.kg_review.view = KgView::Queue;
-    refresh(app).await;
-}
-
-/// Enter the review screen on the Log view.
-pub async fn open_log(app: &mut App) {
-    app.mode = AppMode::KgReview;
-    app.kg_review.reset();
-    app.kg_review.view = KgView::Log;
+    app.kg_review.view = view;
     refresh(app).await;
 }
 
 /// Re-fetch the active view's data into the cached snapshots, then refresh the
 /// selected batch's diff.
 pub async fn refresh(app: &mut App) {
-    let Some(config) = load_config(app) else {
-        return;
-    };
     let pool = app.agent_service.context().pool();
 
     match app.kg_review.view {
@@ -71,6 +58,9 @@ pub async fn refresh(app: &mut App) {
             load_diff(app).await;
         }
         KgView::Log => {
+            let Some(config) = load_config(app) else {
+                return;
+            };
             match crate::brain::kg::review::log(&config, LOG_LIMIT) {
                 Ok(log) => app.kg_review.log = log,
                 Err(e) => {

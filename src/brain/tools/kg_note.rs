@@ -18,7 +18,8 @@ use serde_json::Value;
 // depending on the `tool-kg-note` feature. Re-exported here for callers (and
 // tests) that reference the historical `kg_note::` path.
 pub use crate::brain::kg::compose::{
-    build_note, insert_bullets, observation_bullet, relation_bullet, resolve_note_rel,
+    build_note, compose_content, insert_bullets, observation_bullet, relation_bullet,
+    resolve_note_rel,
 };
 
 pub struct KgNoteTool {
@@ -147,27 +148,14 @@ impl Tool for KgNoteTool {
             )));
         }
 
-        let (content, added_obs, added_rel) = if exists {
-            let mut content = self.vault.read_note(&rel).unwrap_or_default();
-            let added_obs;
-            let added_rel;
-            (content, added_obs) = insert_bullets(&content, "Observations", &observation_bullets);
-            (content, added_rel) = insert_bullets(&content, "Relations", &relation_bullets);
-            (content, added_obs, added_rel)
-        } else {
-            // A fresh note inserts every bullet verbatim, so the input counts are
-            // exactly what was added.
-            (
-                build_note(
-                    &title,
-                    note_type.as_deref(),
-                    &observation_bullets,
-                    &relation_bullets,
-                ),
-                observation_bullets.len(),
-                relation_bullets.len(),
-            )
-        };
+        let existing = exists.then(|| self.vault.read_note(&rel).unwrap_or_default());
+        let (content, added_obs, added_rel) = compose_content(
+            existing.as_deref(),
+            &title,
+            note_type.as_deref(),
+            &observation_bullets,
+            &relation_bullets,
+        );
 
         if let Err(e) = self.vault.write_note(&rel, &content) {
             return Ok(ToolResult::error(format!("Failed to write {rel}: {e}")));

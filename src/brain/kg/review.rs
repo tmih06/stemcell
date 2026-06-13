@@ -17,7 +17,7 @@
 //! batch's writes live only on its branch until approved — they are intentionally
 //! invisible to `kg_search`/`kg_read` until the user accepts them.
 
-use super::compose::{self, build_note, insert_bullets};
+use super::compose;
 use super::git_review::{GitRepo, LogEntry, MergeOutcome};
 use super::sync;
 use super::vault::Vault;
@@ -86,19 +86,16 @@ async fn compose_note(
 
     let rel = compose::resolve_note_rel(kg_repo, &note.title, note.note_type.as_deref()).await?;
 
-    let content = if stage_vault.exists(&rel) {
-        let mut content = stage_vault.read_note(&rel).unwrap_or_default();
-        (content, _) = insert_bullets(&content, "Observations", &observation_bullets);
-        (content, _) = insert_bullets(&content, "Relations", &relation_bullets);
-        content
-    } else {
-        build_note(
-            &note.title,
-            note.note_type.as_deref(),
-            &observation_bullets,
-            &relation_bullets,
-        )
-    };
+    let existing = stage_vault
+        .exists(&rel)
+        .then(|| stage_vault.read_note(&rel).unwrap_or_default());
+    let (content, _, _) = compose::compose_content(
+        existing.as_deref(),
+        &note.title,
+        note.note_type.as_deref(),
+        &observation_bullets,
+        &relation_bullets,
+    );
     Ok((rel, content))
 }
 
@@ -282,11 +279,9 @@ pub async fn restore(config: &Config, pool: Pool, sha: &str) -> Result<()> {
 /// batch is still actionable — the user can decline it or resolve manually — so
 /// both states surface in the `/kg` queue.
 pub async fn list_pending(pool: Pool) -> Result<Vec<crate::db::KgPendingBatch>> {
-    let queue = KgPendingBatchRepository::new(pool);
-    let mut batches = queue.list_by_status("pending").await?;
-    batches.extend(queue.list_by_status("conflicted").await?);
-    batches.sort_by_key(|b| std::cmp::Reverse(b.created_at));
-    Ok(batches)
+    KgPendingBatchRepository::new(pool)
+        .list_by_statuses(&["pending", "conflicted"])
+        .await
 }
 
 /// The full patch for a pending batch (its branch vs. its recorded base).

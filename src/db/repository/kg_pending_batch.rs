@@ -115,6 +115,35 @@ impl KgPendingBatchRepository {
             .context("Failed to list pending batches")
     }
 
+    /// All batches in any of `statuses`, newest first. One query for the
+    /// review queue (`pending` + `conflicted`) instead of a round-trip per status.
+    pub async fn list_by_statuses(&self, statuses: &[&str]) -> Result<Vec<KgPendingBatch>> {
+        if statuses.is_empty() {
+            return Ok(Vec::new());
+        }
+        let statuses: Vec<String> = statuses.iter().map(|s| s.to_string()).collect();
+        self.pool
+            .get()
+            .await
+            .context("Failed to get connection")?
+            .interact(move |conn| {
+                let placeholders = vec!["?"; statuses.len()].join(", ");
+                let sql = format!(
+                    "SELECT id, branch, base_sha, summary, status, worktree_path, merge_sha, \
+                            files_changed, insertions, deletions, created_at \
+                     FROM kg_pending_batch WHERE status IN ({placeholders}) \
+                     ORDER BY created_at DESC, rowid DESC"
+                );
+                let mut stmt = conn.prepare(&sql)?;
+                let params = rusqlite::params_from_iter(statuses.iter());
+                let rows = stmt.query_map(params, batch_from_row)?;
+                rows.collect::<rusqlite::Result<Vec<_>>>()
+            })
+            .await
+            .map_err(interact_err)?
+            .context("Failed to list batches by status")
+    }
+
     /// Fetch one batch by id.
     pub async fn get(&self, id: &str) -> Result<Option<KgPendingBatch>> {
         let id = id.to_string();

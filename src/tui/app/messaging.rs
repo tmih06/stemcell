@@ -819,7 +819,7 @@ impl App {
             }
             "/kg" => {
                 let sub = input.split_whitespace().nth(1).unwrap_or("");
-                crate::tui::app::kg_review::actions::dispatch(self, sub, input).await;
+                crate::tui::app::kg_review::actions::dispatch(self, sub).await;
                 true
             }
             "/skills" => {
