@@ -211,10 +211,6 @@ pub const SLASH_COMMANDS: &[SlashCommand] = &[
         description: "Download latest release, update and upgrade — evolve, update, upgrade, latest, release, /update, /upgrade",
     },
     SlashCommand {
-        name: "/whisper",
-        description: "Speak anywhere, dictate and paste to clipboard — whisper, dictate, voice, speak, transcribe",
-    },
-    SlashCommand {
         name: "/cd",
         description: "Change working directory or folder — cd, directory, folder, path, chdir, cwd",
     },
@@ -3919,6 +3915,14 @@ impl App {
                 .get(index - n_builtin - n_user)
                 .map(|s| s.description.as_str())
         }
+    }
+
+    /// True if the combined index points at a skill (vs. a built-in command or
+    /// a user-defined command). Skills occupy the tail of the index space
+    /// (after built-ins and user commands), so the picker can flag them with a
+    /// distinct indicator — they're agent-run prompts, not program functions.
+    pub fn slash_command_is_skill(&self, index: usize) -> bool {
+        index >= SLASH_COMMANDS.len() + self.user_commands.len()
     }
 
     /// Reload user commands from brain workspace (called after agent responses)

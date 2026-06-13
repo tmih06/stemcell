@@ -641,6 +641,12 @@ pub(crate) fn fit_dropdown(
     })
 }
 
+/// Right-of-name marker shown beside skill entries in the slash dropdown so
+/// users can tell agent-run skills apart from built-in/user commands. The
+/// leading space separates it from the name column; its char width also sizes
+/// the equal-width blank slot rendered on non-skill rows for alignment.
+const SKILL_TAG: &str = " skill";
+
 /// Render slash command autocomplete dropdown above the input area
 pub(super) fn render_slash_autocomplete(f: &mut Frame, app: &App, input_area: Rect) {
     let count = app.slash_filtered.len() as u16;
@@ -688,8 +694,25 @@ pub(super) fn render_slash_autocomplete(f: &mut Frame, app: &App, input_area: Re
     // cramped. The display format `{:<10}` pads short names to 10
     // automatically; longer names render at their natural width.
     let name_col_chars = name_lengths.iter().copied().max().unwrap_or(10).max(10) as u16;
-    let (width, _inner_width, desc_budget) =
-        dropdown_dimensions(name_col_chars, &desc_lengths, input_area.width, pad_x);
+    // Skills get a right-of-name badge so users can tell agent-run skills
+    // apart from built-in/user commands. Reserve the slot only when a skill
+    // is actually visible, otherwise non-skill-only lists keep the tighter
+    // layout. The slot is folded into the name-column width passed to
+    // `dropdown_dimensions` so the description budget accounts for it.
+    let any_skill_visible = visible_slice
+        .iter()
+        .any(|&idx| app.slash_command_is_skill(idx));
+    let marker_slot = if any_skill_visible {
+        SKILL_TAG.chars().count() as u16
+    } else {
+        0
+    };
+    let (width, _inner_width, desc_budget) = dropdown_dimensions(
+        name_col_chars + marker_slot,
+        &desc_lengths,
+        input_area.width,
+        pad_x,
+    );
     let dropdown_area = Rect {
         x: input_area.x + 1,
         y: input_area.y.saturating_sub(fit.height),
@@ -725,10 +748,33 @@ pub(super) fn render_slash_autocomplete(f: &mut Frame, app: &App, input_area: Re
             // Pad the name column to `name_col_chars` so descriptions
             // line up vertically. `format!` width arg has to be `usize`.
             let name_col = name_col_chars as usize;
-            Line::from(vec![
-                Span::styled(format!("  {:<width$}", name, width = name_col), style),
-                Span::styled(format!(" {} ", desc.as_ref()), desc_style),
-            ])
+            let mut spans = vec![Span::styled(
+                format!("  {:<width$}", name, width = name_col),
+                style,
+            )];
+            // Marker slot between name and description. Skills get a teal
+            // `skill` badge; non-skills get equal-width blank padding so the
+            // description column stays aligned. Only present when a skill is
+            // visible in the current window (`marker_slot > 0`).
+            if marker_slot > 0 {
+                if app.slash_command_is_skill(cmd_idx) {
+                    let tag_style = if is_selected {
+                        Style::default()
+                            .fg(Color::Black)
+                            .bg(Color::Gray)
+                            .add_modifier(Modifier::BOLD)
+                    } else {
+                        Style::default()
+                            .fg(Color::Cyan)
+                            .add_modifier(Modifier::BOLD)
+                    };
+                    spans.push(Span::styled(SKILL_TAG, tag_style));
+                } else {
+                    spans.push(Span::styled(" ".repeat(marker_slot as usize), style));
+                }
+            }
+            spans.push(Span::styled(format!(" {} ", desc.as_ref()), desc_style));
+            Line::from(spans)
         })
         .collect();
 
