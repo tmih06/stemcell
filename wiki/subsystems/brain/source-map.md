@@ -180,7 +180,6 @@
 | `a2a_send.rs` | Agent-to-agent send |
 | `load_brain_file.rs` | Load brain file into context |
 | `write_stemcell_file.rs` | Write stemcell file |
-| `slash_command.rs` | Slash command execution |
 | `rename_session.rs` | Rename current session |
 | `tool_manage.rs` | Tool management meta-tool |
 | `rebuild.rs` | Rebuild tool |

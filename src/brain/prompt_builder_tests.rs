@@ -238,12 +238,12 @@ fn test_runtime_info_included_in_core_brain() {
 
 // ── slash commands ────────────────────────────────────────────────────────────
 
-/// The slash-commands section was removed (2026-06-13): the model can only
-/// invoke commands through the `slash_command` tool, whose own description
-/// already enumerates the invocable built-ins. Injecting the full list also
-/// surfaced TUI-only commands (/onboard, /new, /mission-control, /statusline,
-/// …) the model can never call, which it then parroted to users as
-/// capabilities. The section must not reappear in either render path.
+/// The slash-commands section was removed (2026-06-13) and the agent-facing
+/// `slash_command` tool deleted entirely: slash commands are a TUI/channel
+/// affordance the model cannot invoke. Injecting the list surfaced commands
+/// (/onboard, /new, /mission-control, /statusline, …) the model can never
+/// call, which it then parroted to users as capabilities. The section must
+/// not reappear in either render path.
 #[test]
 fn test_slash_commands_section_absent_from_core_brain() {
     let dir = TempDir::new().unwrap();

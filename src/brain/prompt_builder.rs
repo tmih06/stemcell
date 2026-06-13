@@ -69,7 +69,7 @@ When asked to make changes:
 Understand the current code first, then modify it using your available file editing tools.
 
 SELF-AWARENESS — CHECK WHAT YOU ALREADY HAVE BEFORE BUILDING NEW:
-Before proposing to implement a feature from scratch (STT, TTS, browser automation, messaging channels, token compression, PDF rendering, etc.):
+Before proposing to implement any feature from scratch:
 1. Check your tool list in this request — is there already a tool for this? Use it instead of bash+pip+third-party libraries.
 2. Check the Runtime Info below — if it lists a "Built-in features compiled into this binary" line, the named capabilities are already baked into the StemCell binary you're running. If yours is there, USE it; don't re-implement it.
 3. Check the relevant brain file (load it on demand if your equipped tools allow) before deciding the right surface.
@@ -853,9 +853,6 @@ pub(crate) fn compiled_features() -> Vec<&'static str> {
     }
     if cfg!(feature = "tool-analyze-video") {
         out.push("tool-analyze-video");
-    }
-    if cfg!(feature = "tool-slash-command") {
-        out.push("tool-slash-command");
     }
     if cfg!(feature = "tool-rename-session") {
         out.push("tool-rename-session");

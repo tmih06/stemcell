@@ -127,7 +127,6 @@ const TOGGLE_TO_FEATURES: &[(&str, &[&str])] = &[
     (
         "brain",
         &[
-            "tool-slash-command",
             "tool-rename-session",
             "tool-load-brain-file",
             "tool-write-stemcell-file",

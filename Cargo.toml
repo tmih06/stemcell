@@ -295,13 +295,11 @@ tool-analyze-video = []
 
 # Brain file I/O, session management, A2A communication
 tools-brain = [
-    "tool-slash-command",
     "tool-rename-session",
     "tool-load-brain-file",
     "tool-write-stemcell-file",
     "tool-a2a-send",
 ]
-tool-slash-command = []
 tool-rename-session = []
 tool-load-brain-file = []
 tool-write-stemcell-file = []

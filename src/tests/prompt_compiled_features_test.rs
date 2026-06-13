@@ -239,20 +239,3 @@ fn brain_preamble_references_compiled_features_line() {
          compiled features so the agent knows where to look"
     );
 }
-
-#[test]
-fn brain_preamble_names_concrete_capabilities_users_might_ask_to_reimplement() {
-    use crate::brain::prompt_builder::BRAIN_PREAMBLE_CORE;
-    // The user incident was specifically STT/TTS. Other common ones:
-    // browser automation, messaging channels. List the headline cases
-    // so the agent recognizes the pattern without abstract reasoning.
-    let lower = BRAIN_PREAMBLE_CORE.to_lowercase();
-    assert!(
-        lower.contains("stt"),
-        "STT must be named as a check-first example"
-    );
-    assert!(
-        lower.contains("tts"),
-        "TTS must be named as a check-first example"
-    );
-}

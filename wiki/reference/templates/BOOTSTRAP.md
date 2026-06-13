@@ -50,7 +50,7 @@ Ask which LLM they want to use — this is the brain powering your responses:
 If they want to add a new provider, say:
 > "Paste your base URL, API key, and model name — I'll write both `config.toml` and `keys.toml` for you right now."
 
-The name after `custom.` is free-form (`groq`, `nvidia`, `together`, anything). It must match in both files. Multiple providers can coexist — only the one with `enabled = true` is active. Switch anytime via `/models`.
+The name after `custom.` is free-form (`groq`, `nvidia`, `together`, anything). It must match in both files. Multiple providers can coexist — only the one with `enabled = true` is active. Switch anytime by editing `config.toml` (or via `config_manager`).
 
 ## Connect (Optional)
 

@@ -134,7 +134,6 @@ TOGGLE_TO_FEATURES: dict[str, tuple[str, ...]] = {
     ),
     # brain
     "brain": (
-        "tool-slash-command",
         "tool-rename-session",
         "tool-load-brain-file",
         "tool-write-stemcell-file",

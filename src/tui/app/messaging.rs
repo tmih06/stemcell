@@ -1967,12 +1967,7 @@ impl App {
             self.agent_service.context().pool(),
         )
         .await;
-        // doctor_text lives on the slash_command tool, which is cfg-gated; fall
-        // back to a placeholder when that feature isn't compiled in.
-        #[cfg(feature = "tool-slash-command")]
-        let doctor = crate::brain::tools::slash_command::SlashCommandTool::doctor_text();
-        #[cfg(not(feature = "tool-slash-command"))]
-        let doctor = String::from("(unavailable — built without tool-slash-command)");
+        let doctor = crate::config::health::doctor_text();
 
         let report = build_debug_report(&DebugReportInput {
             prompt: prompt.as_deref(),
