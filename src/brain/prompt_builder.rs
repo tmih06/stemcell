@@ -11,7 +11,7 @@ use std::path::PathBuf;
 /// Kept lean (~8 KB) so always-injecting is cheap. TOOLS.md and CODE.md
 /// moved to contextual (on-demand via `load_brain_file`) to avoid ~44k
 /// first-request bloat.
-const CORE_BRAIN_FILES: &[(&str, &str)] =
+pub(crate) const CORE_BRAIN_FILES: &[(&str, &str)] =
     &[("SOUL.md", "personality"), ("USER.md", "user profile")];
 
 /// Contextual brain files — loaded on demand via the `load_brain_file` tool.
@@ -113,23 +113,122 @@ NEVER generate text plans. ALWAYS use the plan tool for planning requests.
 
 ALWAYS explore first before answering questions about a codebase. Don't guess - use the tools!"#;
 
-pub(crate) const BRAIN_PREAMBLE_WEB: &str = r#"WEB / GITHUB / BROWSER ROUTING — pick the right surface, not the heaviest one:
-- Web research, docs, "what's the latest X", "find me info about Y": use `exa_search` (if available) → `brave_search` (if available) → `web_search`. Never reach for `browser_navigate` to read pages.
-- Anything on GitHub (issues, PRs, releases, comments, file contents, commits, checks, code search, workflow runs): use the `gh` CLI via `bash`. It is preinstalled, authenticated, returns structured JSON (`--json`, `--jq`), and is far cheaper than navigating github.com in a browser.
-- `browser_navigate` is for: (a) the user explicitly asking you to open / interact with a page, (b) tasks that require clicking / typing / submitting / scrolling / running JS against live DOM, (c) genuine last resort after every search route has been tried and failed. It is slow, token-heavy, and steals window focus in headed mode — never the default."#;
+/// Build the WEB / GITHUB / BROWSER routing preamble from the *equipped*
+/// tool set. Returns `None` when none of the relevant surfaces are present.
+///
+/// Data-driven so a tool that isn't equipped never gets name-dropped: when
+/// the model sees a tool named in prose but absent from its schema, it
+/// reconciles the contradiction by reporting the tool as "disabled" —
+/// which leaks the existence of tools the user deliberately turned off.
+/// Each named surface (search tools, `gh` via `bash`, `browser_navigate`)
+/// only appears when it's actually in `tools`.
+pub(crate) fn build_web_preamble(tools: &[String]) -> Option<String> {
+    let has = |name: &str| tools.iter().any(|t| t == name);
+    let search_tools: Vec<&str> = ["exa_search", "brave_search", "web_search"]
+        .into_iter()
+        .filter(|t| has(t))
+        .collect();
+    let has_browser = has("browser_navigate");
+    let has_bash = has("bash");
 
-pub(crate) const BRAIN_PREAMBLE_RSI: &str = r#"RECURSIVE SELF-IMPROVEMENT:
-You have three tools for improving yourself over time:
-- feedback_analyze: Query your performance history (tool success rates, failure patterns, recent events). Call with query='summary' or query='tool_stats' or query='failures'.
-- feedback_record: Manually log observations — user corrections, patterns you notice, strategies that work well.
-- self_improve: Propose or apply changes to your brain files (SOUL.md, TOOLS.md, etc.). Runs autonomously — no human approval needed. Changes are logged to ~/.stemcell/rsi/improvements.md and archived in ~/.stemcell/rsi/history/.
+    if search_tools.is_empty() && !has_browser && !has_bash {
+        return None;
+    }
 
-Your tool executions are automatically tracked. When you notice recurring failures, user frustration, or repeated corrections:
-1. Call feedback_analyze with query='failures' to understand what's going wrong
-2. Call feedback_record to log the pattern you observed
-3. Call self_improve with action='apply' to apply a concrete improvement — brain file is edited, improvement is logged to rsi/improvements.md, and a daily archive entry is created
+    let mut out = String::from(
+        "WEB / GITHUB / BROWSER ROUTING — pick the right surface, not the heaviest one:\n",
+    );
 
-Do NOT call these tools every turn. Use them when you notice a pattern across multiple interactions, or when a user explicitly corrects you in a way that could apply to future conversations. Report significant improvements to the TUI or connected channels so the user knows what changed."#;
+    if !search_tools.is_empty() {
+        let chain = search_tools
+            .iter()
+            .map(|t| format!("`{t}`"))
+            .collect::<Vec<_>>()
+            .join(" → ");
+        out.push_str(&format!(
+            "- Web research, docs, \"what's the latest X\", \"find me info about Y\": use {chain} (in that preference order)."
+        ));
+        if has_browser {
+            out.push_str(" Never reach for `browser_navigate` to read pages.");
+        }
+        out.push('\n');
+    }
+
+    if has_bash {
+        out.push_str(
+            "- Anything on GitHub (issues, PRs, releases, comments, file contents, commits, checks, code search, workflow runs): use the `gh` CLI via `bash`. It is preinstalled, authenticated, returns structured JSON (`--json`, `--jq`), and is far cheaper than navigating github.com in a browser.\n",
+        );
+    }
+
+    if has_browser {
+        out.push_str(
+            "- `browser_navigate` is for: (a) the user explicitly asking you to open / interact with a page, (b) tasks that require clicking / typing / submitting / scrolling / running JS against live DOM, (c) genuine last resort after every search route has been tried and failed. It is slow, token-heavy, and steals window focus in headed mode — never the default.\n",
+        );
+    }
+
+    Some(out)
+}
+
+/// Build the recursive-self-improvement preamble from the *equipped* tool
+/// set. Returns `None` when no RSI tool is present.
+///
+/// Same rationale as [`build_web_preamble`]: only describe the RSI tools the
+/// agent actually holds, so a disabled `self_improve` / `feedback_*` never
+/// reaches the model as a named-but-absent tool.
+pub(crate) fn build_rsi_preamble(tools: &[String]) -> Option<String> {
+    let has = |name: &str| tools.iter().any(|t| t == name);
+    let has_analyze = has("feedback_analyze");
+    let has_record = has("feedback_record");
+    let has_improve = has("self_improve");
+
+    if !has_analyze && !has_record && !has_improve {
+        return None;
+    }
+
+    let count = [has_analyze, has_record, has_improve]
+        .iter()
+        .filter(|b| **b)
+        .count();
+    let mut out = format!(
+        "RECURSIVE SELF-IMPROVEMENT:\nYou have {count} tool{} for improving yourself over time:\n",
+        if count == 1 { "" } else { "s" }
+    );
+
+    if has_analyze {
+        out.push_str("- feedback_analyze: Query your performance history (tool success rates, failure patterns, recent events). Call with query='summary' or query='tool_stats' or query='failures'.\n");
+    }
+    if has_record {
+        out.push_str("- feedback_record: Manually log observations — user corrections, patterns you notice, strategies that work well.\n");
+    }
+    if has_improve {
+        out.push_str("- self_improve: Propose or apply changes to your brain files (SOUL.md, TOOLS.md, etc.). Runs autonomously — no human approval needed. Changes are logged to ~/.stemcell/rsi/improvements.md and archived in ~/.stemcell/rsi/history/.\n");
+    }
+
+    out.push_str(
+        "\nYour tool executions are automatically tracked. When you notice recurring failures, user frustration, or repeated corrections:\n",
+    );
+    let mut steps: Vec<&str> = Vec::new();
+    if has_analyze {
+        steps.push("Call feedback_analyze with query='failures' to understand what's going wrong");
+    }
+    if has_record {
+        steps.push("Call feedback_record to log the pattern you observed");
+    }
+    if has_improve {
+        steps.push(
+            "Call self_improve with action='apply' to apply a concrete improvement — brain file is edited, improvement is logged to rsi/improvements.md, and a daily archive entry is created",
+        );
+    }
+    for (i, s) in steps.iter().enumerate() {
+        out.push_str(&format!("{}. {s}\n", i + 1));
+    }
+
+    out.push_str(
+        "\nDo NOT call these tools every turn. Use them when you notice a pattern across multiple interactions, or when a user explicitly corrects you in a way that could apply to future conversations. Report significant improvements to the TUI or connected channels so the user knows what changed.",
+    );
+
+    Some(out)
+}
 
 /// Loads brain workspace files and assembles the system brain.
 pub struct BrainLoader {
@@ -527,21 +626,12 @@ fn push_preamble_and_tools(prompt: &mut String, active_tools: Option<&[String]>)
             prompt.push_str(BRAIN_PREAMBLE_PLAN);
             prompt.push_str("\n\n");
         }
-        if tools.iter().any(|t| {
-            t == "exa_search"
-                || t == "brave_search"
-                || t == "web_search"
-                || t == "browser_navigate"
-                || t == "bash"
-        }) {
-            prompt.push_str(BRAIN_PREAMBLE_WEB);
+        if let Some(web) = build_web_preamble(tools) {
+            prompt.push_str(&web);
             prompt.push_str("\n\n");
         }
-        if tools
-            .iter()
-            .any(|t| t == "self_improve" || t == "feedback_analyze")
-        {
-            prompt.push_str(BRAIN_PREAMBLE_RSI);
+        if let Some(rsi) = build_rsi_preamble(tools) {
+            prompt.push_str(&rsi);
             prompt.push_str("\n\n");
         }
         prompt.push_str("--- CURRENTLY EQUIPPED TOOLS ---\n");
@@ -852,13 +942,33 @@ pub(crate) fn compiled_features() -> Vec<&'static str> {
     out
 }
 
+/// Features surfaced in the "Built-in features" prompt line — the subset
+/// of [`compiled_features`] that represents genuine binary *capabilities*
+/// (channels, voice, browser, providers, …).
+///
+/// Excludes the build-time tool-gating features: `tool-*` (per-tool) and
+/// `tools-*` (coarse group aliases). A tool being *compiled in* does NOT
+/// mean it is *equipped* — many register only when a key/config is present
+/// (e.g. `brave_search` needs an API key, channel-send tools need a
+/// connected account). Tool availability is authoritatively governed by the
+/// `--- CURRENTLY EQUIPPED TOOLS ---` list; surfacing `tool-brave-search`
+/// here made the agent claim a "built-in Brave Search capability" it could
+/// not actually invoke. Capabilities the agent should reason about (and not
+/// re-implement) stay; tool-registration flags do not.
+pub(crate) fn displayed_features() -> Vec<&'static str> {
+    compiled_features()
+        .into_iter()
+        .filter(|f| !f.starts_with("tool-") && !f.starts_with("tools-"))
+        .collect()
+}
+
 /// Append the "Built-in features" line that surfaces what's compiled
 /// into this binary so the agent reaches for existing capabilities
 /// instead of writing new ones from scratch (issue: new user asked
 /// for "local STT/TTS implementation" and the agent started coding
 /// when both are default features with working backends).
 pub(crate) fn push_compiled_features(prompt: &mut String) {
-    let features = compiled_features();
+    let features = displayed_features();
     if features.is_empty() {
         return;
     }
@@ -866,7 +976,7 @@ pub(crate) fn push_compiled_features(prompt: &mut String) {
         "Built-in features compiled into this binary: {}\n\
          Before implementing any of these capabilities from scratch, USE the built-in. \
          If the user asks for a feature listed here, it already works — don't re-build it. \
-         If they ask for a Cargo feature NOT in this list (e.g. `pdfium`), tell them to \
+         If they ask for a Cargo feature NOT in this list, tell them to \
          rebuild with `--features <name>` instead of writing fresh code.\n",
         features.join(", ")
     ));

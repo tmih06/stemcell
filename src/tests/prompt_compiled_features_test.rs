@@ -9,7 +9,7 @@
 //! had no way to know they were compiled in, and no directive
 //! telling it to check first.
 
-use crate::brain::prompt_builder::{compiled_features, push_compiled_features};
+use crate::brain::prompt_builder::{compiled_features, displayed_features, push_compiled_features};
 
 #[test]
 fn telegram_feature_is_compiled_in_test_build() {
@@ -133,11 +133,33 @@ fn all_cargo_features_are_listed() {
 fn push_compiled_features_lists_each_active_feature() {
     let mut s = String::new();
     push_compiled_features(&mut s);
-    for f in compiled_features() {
+    for f in displayed_features() {
         assert!(
             s.contains(f),
-            "feature `{f}` is compiled in but missing from prompt output: {s}"
+            "feature `{f}` is surfaced but missing from prompt output: {s}"
         );
+    }
+}
+
+/// The leak this guards: `tool-*` / `tools-*` build features must NOT appear
+/// in the "Built-in features" line. A tool being compiled in is not the same
+/// as it being equipped (many register only when a key/account is present),
+/// so surfacing `tool-brave-search` made the agent claim a "built-in Brave
+/// Search capability" it could not invoke. Tool availability is governed
+/// solely by the `CURRENTLY EQUIPPED TOOLS` list.
+#[test]
+fn push_compiled_features_omits_tool_gating_features() {
+    let mut s = String::new();
+    push_compiled_features(&mut s);
+    for f in compiled_features() {
+        if f.starts_with("tool-") || f.starts_with("tools-") {
+            assert!(
+                !s.contains(f),
+                "tool-gating feature `{f}` must not leak into the built-in \
+                 features line — equipped tools are governed by the equipped \
+                 list, not compiled features: {s}"
+            );
+        }
     }
 }
 

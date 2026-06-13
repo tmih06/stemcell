@@ -78,7 +78,7 @@ All 227 test files in `src/tests/`, grouped by area:
 | Phantom | `analysis_intent_nudge_test.rs`, `phantom_cleanup_intent_test.rs`, `phantom_db_persistence_test.rs`, `phantom_deferment_test.rs`, `phantom_post_success_exemption_test.rs`, `phantom_pronoun_drop_test.rs` |
 | Plans | `plan_document_test.rs`, `plan_mode_integration_test.rs`, `plan_tool_description_test.rs`, `plan_tool_test.rs`, `plan_window_test.rs` |
 | Profile | `profile_test.rs` |
-| Prompt | `prompt_compiled_features_test.rs`, `prompt_inline_edit_directive_test.rs`, `prompt_known_paths_test.rs` |
+| Prompt | `prompt_compiled_features_test.rs`, `prompt_disabled_tool_leak_test.rs`, `prompt_inline_edit_directive_test.rs`, `prompt_known_paths_test.rs` |
 | Provider | `provider_error_proxy_test.rs`, `provider_picker_setup_hint_test.rs`, `provider_registry_test.rs`, `provider_sync_test.rs` |
 | QR render | `qr_render_test.rs` |
 | Qwen | `qwen_detect_test.rs`, `qwen_tool_extractor_test.rs`, `qwen_tool_marker_strip_test.rs` |

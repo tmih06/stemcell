@@ -193,16 +193,11 @@ async fn cmd_chat_inner(
     // Get event sender from app
     let event_sender = app.event_sender();
 
-    // Kick off startup jobs in the background (config/env checks, RSI boot
-    // snapshot, model-list cache warming). Non-blocking — the TUI stays
-    // interactive while they run, a failing job logs but never aborts boot,
-    // and the completed report arrives as a collapsible startup-info line.
-    crate::startup::spawn(
-        config.clone(),
-        db.pool().clone(),
-        event_sender.clone(),
-        startup_ready_tx,
-    );
+    // Startup jobs are kicked off after the tool registry is built (below) so
+    // the tools-loaded job can report the live equipped-tool list. Capture a
+    // sender clone now, before `event_sender` is moved into the approval
+    // closure, and hand it to the spawn call once the registry exists.
+    let startup_event_sender = event_sender.clone();
 
     // Forward RSI notifications to TUI as system messages
     {
@@ -477,6 +472,19 @@ async fn cmd_chat_inner(
             #[cfg(feature = "trello")]
             trello_state: Some(trello_state.clone()),
         },
+    );
+
+    // Kick off startup jobs in the background now that the tool registry
+    // exists (config/env checks, tools-loaded + brain-files reports, RSI boot
+    // snapshot, model-list cache warming). Non-blocking — the TUI stays
+    // interactive while they run, a failing job logs but never aborts boot,
+    // and the completed report arrives as a collapsible startup-info line.
+    crate::startup::spawn(
+        config.clone(),
+        db.pool().clone(),
+        shared_tool_registry.list_tools(),
+        startup_event_sender,
+        startup_ready_tx,
     );
 
     let mut system_brain = brain_loader.build_core_brain(

@@ -22,7 +22,7 @@
 //! constructor needs an `Arc<BrowserManager>`, which costs a real
 //! Chrome handshake we don't want in a unit test.
 
-use crate::brain::prompt_builder::BRAIN_PREAMBLE_WEB;
+use crate::brain::prompt_builder::build_web_preamble;
 use crate::brain::tools::Tool;
 use crate::brain::tools::bash::BashTool;
 use crate::brain::tools::brave_search::BraveSearchTool;
@@ -31,30 +31,84 @@ use crate::brain::tools::web_search::WebSearchTool;
 
 const BROWSER_NAVIGATE_SRC: &str = include_str!("../brain/tools/browser/navigate.rs");
 
+fn all_web_tools() -> Vec<String> {
+    [
+        "exa_search",
+        "brave_search",
+        "web_search",
+        "browser_navigate",
+        "bash",
+    ]
+    .into_iter()
+    .map(String::from)
+    .collect()
+}
+
 #[test]
 fn brain_preamble_carries_routing_block() {
-    // The block must include all three surfaces (search / gh / browser)
-    // and the "last resort" framing for browser. Without all three,
-    // the model still has freedom to misroute.
+    // With every web surface equipped, the block must include all three
+    // surfaces (search / gh / browser) and the "last resort" framing for
+    // browser. Without all three, the model still has freedom to misroute.
+    let preamble = build_web_preamble(&all_web_tools())
+        .expect("preamble must be present when web tools are equipped");
     assert!(
-        BRAIN_PREAMBLE_WEB.contains("WEB / GITHUB / BROWSER ROUTING"),
-        "the routing section header must be present in BRAIN_PREAMBLE \
+        preamble.contains("WEB / GITHUB / BROWSER ROUTING"),
+        "the routing section header must be present in the web preamble \
          so the rule reaches the model every turn"
     );
     assert!(
-        BRAIN_PREAMBLE_WEB.contains("exa_search")
-            && BRAIN_PREAMBLE_WEB.contains("brave_search")
-            && BRAIN_PREAMBLE_WEB.contains("web_search"),
+        preamble.contains("exa_search")
+            && preamble.contains("brave_search")
+            && preamble.contains("web_search"),
         "preamble must name all three search tools so the model knows \
          the preference order"
     );
     assert!(
-        BRAIN_PREAMBLE_WEB.contains("`gh` CLI"),
+        preamble.contains("`gh` CLI"),
         "preamble must name the gh CLI as the GitHub surface"
     );
     assert!(
-        BRAIN_PREAMBLE_WEB.contains("last resort"),
+        preamble.contains("last resort"),
         "browser must be framed as a last resort, not just an option"
+    );
+}
+
+/// The leak this fix closes: a tool that is NOT equipped must never be
+/// name-dropped in the routing prose. When the model sees a tool named in
+/// prose but absent from its schema, it reconciles the contradiction by
+/// reporting the tool as "disabled" — leaking the existence of tools the
+/// user deliberately turned off.
+#[test]
+fn web_preamble_omits_unequipped_tools() {
+    // Only web_search + bash equipped — browser and the other search tools
+    // are off. Their names must not appear anywhere in the prose.
+    let tools = vec!["web_search".to_string(), "bash".to_string()];
+    let preamble =
+        build_web_preamble(&tools).expect("preamble present when web_search/bash equipped");
+    assert!(
+        !preamble.contains("browser_navigate"),
+        "unequipped browser_navigate must not be named: {preamble}"
+    );
+    assert!(
+        !preamble.contains("exa_search"),
+        "unequipped exa_search must not be named: {preamble}"
+    );
+    assert!(
+        !preamble.contains("brave_search"),
+        "unequipped brave_search must not be named: {preamble}"
+    );
+    assert!(
+        preamble.contains("web_search"),
+        "equipped web_search must still be named: {preamble}"
+    );
+}
+
+#[test]
+fn web_preamble_absent_when_no_web_tools() {
+    let tools = vec!["read_file".to_string(), "edit_file".to_string()];
+    assert!(
+        build_web_preamble(&tools).is_none(),
+        "no web surface equipped → no web preamble at all"
     );
 }
 

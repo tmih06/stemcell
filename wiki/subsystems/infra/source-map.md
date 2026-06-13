@@ -64,6 +64,8 @@
 | `jobs/mod.rs` | Built-in job re-exports |
 | `jobs/check_config.rs` | Config validation |
 | `jobs/check_envs.rs` | Environment variable check |
+| `jobs/tools_loaded.rs` | Equipped-tool count + names report |
+| `jobs/brain_files.rs` | Brain/system files found on disk report |
 | `jobs/fetch_models.rs` | Model cache population |
 | `jobs/rsi_digest.rs` | RSI daily digest |
 | `jobs/rsi_proposals.rs` | RSI proposal loading |

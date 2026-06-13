@@ -24,6 +24,8 @@ pub fn default_jobs() -> StartupJobs {
     queue
         .register(Arc::new(jobs::CheckConfigJob))
         .register(Arc::new(jobs::CheckEnvsJob))
+        .register(Arc::new(jobs::ToolsLoadedJob))
+        .register(Arc::new(jobs::BrainFilesJob))
         .register(Arc::new(jobs::RsiStatusJob))
         .register(Arc::new(jobs::RsiProposalsJob))
         .register(Arc::new(jobs::RsiDigestJob))
@@ -38,12 +40,14 @@ pub fn default_jobs() -> StartupJobs {
 pub fn spawn(
     config: crate::config::Config,
     pool: crate::db::Pool,
+    tools: Vec<String>,
     event_sender: tokio::sync::mpsc::UnboundedSender<crate::tui::events::TuiEvent>,
     ready_tx: tokio::sync::watch::Sender<bool>,
 ) {
     let ctx = Arc::new(StartupContext {
         config,
         pool: Some(pool),
+        tools: Some(tools),
     });
     let queue = default_jobs();
     tokio::spawn(async move {
