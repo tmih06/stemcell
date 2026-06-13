@@ -22,9 +22,9 @@ The core AI layer of StemCell — LLM providers, agent orchestration, 30+ tools,
 ## LLM Providers
 
 - **Native APIs:** Anthropic (`anthropic.rs`), Google Gemini (`gemini.rs`), GitHub Copilot (`copilot.rs`), Qwen (`qwen.rs`)
-- **OpenAI Compatible:** `custom_openai_compatible.rs` — LM Studio, Ollama, Groq, OpenCode Zen Free, any OpenAI-format endpoint
+- **OpenAI Compatible:** `custom_openai_compatible.rs` — LM Studio, Ollama, Groq, OpenCode Zen (`/zen/v1`), OpenCode Go (`/zen/go/v1`), any OpenAI-format endpoint
 - **CLI Wrappers:** Claude Code (`claude_cli.rs`), Codex CLI (`codex_cli.rs`), OpenCode CLI (`opencode_cli.rs`)
-- **Model Fetching:** Dynamic model fetching supported via `models.dev` cost metadata (e.g., filtering free models for OpenCode Zen Free).
+- **Model Fetching:** Dynamic model fetching supported via `models.dev` (e.g. OpenCode Zen lists `/opencode/models`, OpenCode Go lists `/opencode-go/models` — never hardcoded).
 - **Infrastructure:** `fallback.rs` (fallback chain), `rate_limiter.rs` (per-provider pacing), `factory.rs` (config-driven creation). DB/API retry is handled by SQLite WAL + `busy_timeout` and provider-level fallback rather than a standalone retry module.
 
 ### Request pipeline (rig-core via `RigAdapter`)

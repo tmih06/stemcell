@@ -1036,17 +1036,17 @@ pub struct ProviderConfigs {
     #[serde(default)]
     pub codex: Option<ProviderConfig>,
 
-    /// OpenCode API — native provider for Go and Zen plans (opencode.ai)
+    /// OpenCode Zen — opencode.ai full catalog at /zen/v1 (paid + free models)
     #[serde(default)]
     pub opencode: Option<ProviderConfig>,
+
+    /// OpenCode Go — opencode.ai Go plan at /zen/go/v1 (paid-only catalog)
+    #[serde(default)]
+    pub opencode_go: Option<ProviderConfig>,
 
     /// Qwen (DashScope OpenAI-compatible) — standard API-key provider.
     #[serde(default)]
     pub qwen: Option<ProviderConfig>,
-
-    /// OpenCode Zen Free API
-    #[serde(default)]
-    pub opencode_zen_free: Option<ProviderConfig>,
 
     /// Ollama — local or cloud (api.ollama.com). Auto-detects local models via /api/tags.
     #[serde(default)]
@@ -1134,13 +1134,14 @@ impl ProviderConfigs {
 
         registry.extend_from_slice(&[
             ("codex", "Codex OAuth", false, self.codex.as_ref()),
-            // OpenCode API — OAuth-backed but registered as a regular provider
-            ("opencode", "OpenCode", false, self.opencode.as_ref()),
+            // OpenCode Zen — full opencode.ai catalog (/zen/v1)
+            ("opencode", "OpenCode Zen", false, self.opencode.as_ref()),
+            // OpenCode Go — Go plan catalog (/zen/go/v1), needs api key to complete
             (
-                "opencode_zen_free",
-                "OpenCode Zen Free",
-                false,
-                self.opencode_zen_free.as_ref(),
+                "opencode_go",
+                "OpenCode Go",
+                true,
+                self.opencode_go.as_ref(),
             ),
             // API providers — require api_key in addition to enabled
             ("qwen", "Qwen", true, self.qwen.as_ref()),

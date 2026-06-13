@@ -74,6 +74,7 @@ All 227 test files in `src/tests/`, grouped by area:
 | Nonstream compat | `nonstream_compat_test.rs` |
 | Onboarding | `onboarding_brain_test.rs`, `onboarding_custom_model_input_test.rs`, `onboarding_field_nav_test.rs`, `onboarding_keys_test.rs`, `onboarding_model_refresh_test.rs`, `onboarding_navigation_test.rs`, `onboarding_no_silent_commit_test.rs`, `onboarding_types_test.rs`, `onboarding_user_scroll_test.rs`, `onboarding_welcome_test.rs`, `onboarding_wizard_test.rs` |
 | OpenAI provider | `openai_provider_test.rs` |
+| OpenCode provider | `opencode_provider_test.rs`, `opencode_models_dev_fetch_test.rs` |
 | PDF | `pdf_page_range_parser_test.rs`, `pdf_smart_routing_test.rs`, `pdf_vision_test.rs` |
 | Phantom | `analysis_intent_nudge_test.rs`, `phantom_cleanup_intent_test.rs`, `phantom_db_persistence_test.rs`, `phantom_deferment_test.rs`, `phantom_post_success_exemption_test.rs`, `phantom_pronoun_drop_test.rs` |
 | Plans | `plan_document_test.rs`, `plan_mode_integration_test.rs`, `plan_tool_description_test.rs`, `plan_tool_test.rs`, `plan_window_test.rs` |

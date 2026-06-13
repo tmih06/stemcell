@@ -551,3 +551,63 @@ fn vision_custom_provider() {
     assert_eq!(key, "custom-key");
     assert_eq!(model, "custom-vision-model");
 }
+
+// ── OpenCode Zen base_url migration ─────────────────────────────
+
+/// A pre-split `[providers.opencode]` config baked in the Go endpoint
+/// (`/zen/go/v1`), where Zen's free models 401 with "Model not supported".
+/// After the Zen/Go rename the factory must rewrite that stale path to
+/// `/zen/v1` so existing configs keep completing instead of silently failing.
+#[tokio::test]
+async fn opencode_zen_rewrites_stale_go_base_url() {
+    let providers = ProviderConfigs {
+        opencode: Some(ProviderConfig {
+            enabled: true,
+            api_key: None,
+            base_url: Some("https://opencode.ai/zen/go/v1/chat/completions".to_string()),
+            default_model: Some("deepseek-v4-flash-free".to_string()),
+            ..Default::default()
+        }),
+        ..Default::default()
+    };
+    let config = Config {
+        providers,
+        ..Default::default()
+    };
+
+    let provider = create_provider_by_name(&config, "opencode")
+        .await
+        .expect("opencode Zen provider should build");
+    let base = provider.base_url().expect("Zen provider exposes base_url");
+    assert!(
+        base.contains("/zen/v1") && !base.contains("/zen/go/v1"),
+        "stale Go base_url must be rewritten to Zen, got: {base}"
+    );
+}
+
+/// A config with no explicit base_url must default to the Zen endpoint.
+#[tokio::test]
+async fn opencode_zen_defaults_to_zen_endpoint() {
+    let config = Config {
+        providers: ProviderConfigs {
+            opencode: Some(ProviderConfig {
+                enabled: true,
+                api_key: None,
+                base_url: None,
+                default_model: Some("deepseek-v4-flash-free".to_string()),
+                ..Default::default()
+            }),
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+
+    let provider = create_provider_by_name(&config, "opencode")
+        .await
+        .expect("opencode Zen provider should build");
+    let base = provider.base_url().expect("Zen provider exposes base_url");
+    assert!(
+        base.contains("/zen/v1") && !base.contains("/zen/go/v1"),
+        "default base_url must be the Zen endpoint, got: {base}"
+    );
+}

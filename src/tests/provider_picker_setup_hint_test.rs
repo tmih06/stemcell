@@ -17,14 +17,16 @@ fn empty_config_lists_every_known_provider_as_unconfigured() {
     let providers = ProviderConfigs::default();
     let list = all_known_providers_with_status(&providers);
 
-    // Must surface OpenCode (API) — the literal complaint in issue #126.
+    // Must surface OpenCode Zen (API) — the literal complaint in issue #126.
     let opencode = list.iter().find(|(id, _, _)| id == "opencode");
     assert!(
         opencode.is_some(),
-        "issue #126: OpenCode (API) must appear in the picker even without an API key"
+        "issue #126: OpenCode Zen must appear in the picker even without an API key"
     );
     let (_, label, configured) = opencode.unwrap();
-    assert!(!*configured);
+    // Zen browses/serves its free catalog without a key (the "public" fallback),
+    // so it is marked configured like the CLI providers — not gated on a key.
+    assert!(*configured);
     assert!(label.contains("OpenCode"));
 
     // CLI providers must be shown as configured (no API key needed).

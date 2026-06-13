@@ -219,7 +219,7 @@ impl ProviderSelectorState {
                 | "codex-cli"
                 | "codex"
                 | "opencode"
-                | "opencode_zen_free"
+                | "opencode_go"
                 | "ollama"
         )
     }

@@ -1182,7 +1182,7 @@ impl App {
         if let Some(ref mut p) = config.providers.opencode {
             p.enabled = false;
         }
-        if let Some(ref mut p) = config.providers.opencode_zen_free {
+        if let Some(ref mut p) = config.providers.opencode_go {
             p.enabled = false;
         }
         if let Some(ref mut p) = config.providers.qwen {
@@ -1441,10 +1441,11 @@ impl App {
                     ..Default::default()
                 });
             }
-            "opencode_zen_free" => {
-                config.providers.opencode_zen_free = Some(ProviderConfig {
+            "opencode_go" => {
+                // OpenCode Go native API provider (paid-only, needs a key)
+                config.providers.opencode_go = Some(ProviderConfig {
                     enabled: true,
-                    api_key: None,
+                    api_key: api_key.clone(),
                     base_url: None,
                     default_model: Some(default_model.to_string()),
                     models: vec![],
@@ -1536,7 +1537,7 @@ impl App {
             "codex-cli" => "providers.codex_cli",
             "codex" => "providers.codex",
             "opencode" => "providers.opencode",
-            "opencode_zen_free" => "providers.opencode_zen_free",
+            "opencode_go" => "providers.opencode_go",
             "qwen" => "providers.qwen",
             "ollama" => "providers.ollama",
             "" => {
@@ -1600,7 +1601,7 @@ impl App {
             "providers.codex_cli",
             "providers.codex",
             "providers.opencode",
-            "providers.opencode_zen_free",
+            "providers.opencode_go",
             "providers.qwen",
             "providers.ollama",
         ] {

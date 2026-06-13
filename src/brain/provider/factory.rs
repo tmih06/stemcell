@@ -109,7 +109,7 @@ static REGISTRATIONS: LazyLock<Vec<ProviderRegistration>> = LazyLock::new(|| {
             config_field: |c| c.providers.codex.as_ref(),
         },
         ProviderRegistration {
-            display_name: "OpenCode",
+            display_name: "OpenCode Zen",
             session_id: "opencode",
             aliases: &["opencode_api"],
             is_enabled: |c| c.providers.opencode.as_ref().is_some_and(|p| p.enabled),
@@ -117,17 +117,12 @@ static REGISTRATIONS: LazyLock<Vec<ProviderRegistration>> = LazyLock::new(|| {
             config_field: |c| c.providers.opencode.as_ref(),
         },
         ProviderRegistration {
-            display_name: "OpenCode Zen Free",
-            session_id: "opencode_zen_free",
+            display_name: "OpenCode Go",
+            session_id: "opencode_go",
             aliases: &[],
-            is_enabled: |c| {
-                c.providers
-                    .opencode_zen_free
-                    .as_ref()
-                    .is_some_and(|p| p.enabled)
-            },
-            factory: Box::new(|config| Box::pin(try_create_opencode_zen_free(config))),
-            config_field: |c| c.providers.opencode_zen_free.as_ref(),
+            is_enabled: |c| c.providers.opencode_go.as_ref().is_some_and(|p| p.enabled),
+            factory: Box::new(|config| Box::pin(try_create_opencode_go(config))),
+            config_field: |c| c.providers.opencode_go.as_ref(),
         },
         ProviderRegistration {
             display_name: "Qwen",
@@ -221,8 +216,8 @@ pub const PROVIDER_NAMES: &[&str] = &[
     #[cfg(feature = "provider-codex-cli")]
     "Codex CLI",
     "Codex",
-    "OpenCode",
-    "OpenCode Zen Free",
+    "OpenCode Zen",
+    "OpenCode Go",
     "Qwen",
     "Anthropic",
     "OpenAI",
@@ -1312,15 +1307,63 @@ fn try_create_codex_oauth(config: &Config) -> Result<Option<Arc<dyn Provider>>> 
     }
 }
 
-/// Try to create OpenCode API provider if configured (Go/Zen plans)
+/// Try to create OpenCode Zen API provider if configured.
+///
+/// Zen is the full opencode.ai catalog (paid + free) served at `/zen/v1`.
+/// An API key unlocks the paid models; `"public"` is accepted for the free
+/// subset, matching opencode's own behavior. The Go plan lives in
+/// `try_create_opencode_go` against the `/zen/go/v1` endpoint.
 async fn try_create_opencode(config: &Config) -> Result<Option<Arc<dyn Provider>>> {
     let opencode_config = match &config.providers.opencode {
         Some(cfg) if cfg.enabled => cfg,
         _ => return Ok(None),
     };
 
+    let api_key = opencode_config
+        .api_key
+        .clone()
+        .unwrap_or_else(|| "public".to_string());
+
+    // Zen lives at /zen/v1. Older configs (and the pre-rename default) baked in
+    // the Go endpoint /zen/go/v1, where Zen's free models 401 ("not supported").
+    // Rewrite that stale path so existing [providers.opencode] configs keep working
+    // after the Zen/Go split instead of silently failing every completion.
+    let base_url = opencode_config
+        .base_url
+        .clone()
+        .map(|u| u.replace("/zen/go/v1", "/zen/v1"))
+        .unwrap_or_else(|| "https://opencode.ai/zen/v1/chat/completions".to_string());
+
+    let model = opencode_config
+        .default_model
+        .clone()
+        .unwrap_or_else(|| "deepseek-v4-flash-free".to_string());
+
+    tracing::info!("Using OpenCode Zen API at: {} (model={})", base_url, model);
+
+    let provider = configure_openai_compatible(
+        OpenAIProvider::with_base_url(api_key, base_url)
+            .with_name("opencode")
+            .with_default_model(model.clone()),
+        opencode_config,
+    );
+
+    Ok(Some(Arc::new(provider.build())))
+}
+
+/// Try to create OpenCode Go API provider if configured.
+///
+/// Go is a separate opencode.ai plan served at `/zen/go/v1` with its own
+/// (paid-only) model catalog. Unlike Zen, every Go model costs money, so an
+/// API key is required — without one we skip rather than send `"public"`.
+async fn try_create_opencode_go(config: &Config) -> Result<Option<Arc<dyn Provider>>> {
+    let opencode_config = match &config.providers.opencode_go {
+        Some(cfg) if cfg.enabled => cfg,
+        _ => return Ok(None),
+    };
+
     let Some(api_key) = &opencode_config.api_key else {
-        tracing::warn!("OpenCode enabled but API key missing — check keys.toml");
+        tracing::warn!("OpenCode Go enabled but API key missing — check keys.toml");
         return Ok(None);
     };
 
@@ -1334,49 +1377,11 @@ async fn try_create_opencode(config: &Config) -> Result<Option<Arc<dyn Provider>
         .clone()
         .unwrap_or_else(|| "qwen3.6-plus".to_string());
 
-    tracing::info!("Using OpenCode API at: {} (model={})", base_url, model);
+    tracing::info!("Using OpenCode Go API at: {} (model={})", base_url, model);
 
     let provider = configure_openai_compatible(
         OpenAIProvider::with_base_url(api_key.clone(), base_url)
-            .with_name("opencode")
-            .with_default_model(model.clone()),
-        opencode_config,
-    );
-
-    Ok(Some(Arc::new(provider.build())))
-}
-
-/// Try to create OpenCode Zen Free API provider
-async fn try_create_opencode_zen_free(config: &Config) -> Result<Option<Arc<dyn Provider>>> {
-    let opencode_config = match &config.providers.opencode_zen_free {
-        Some(cfg) if cfg.enabled => cfg,
-        _ => return Ok(None),
-    };
-
-    let api_key = opencode_config
-        .api_key
-        .clone()
-        .unwrap_or_else(|| "public".to_string());
-
-    let base_url = opencode_config
-        .base_url
-        .clone()
-        .unwrap_or_else(|| "https://opencode.ai/zen/v1/chat/completions".to_string());
-
-    let model = opencode_config
-        .default_model
-        .clone()
-        .unwrap_or_else(|| "deepseek-v4-flash-free".to_string());
-
-    tracing::info!(
-        "Using OpenCode Zen Free API at: {} (model={})",
-        base_url,
-        model
-    );
-
-    let provider = configure_openai_compatible(
-        OpenAIProvider::with_base_url(api_key, base_url)
-            .with_name("opencode_zen_free")
+            .with_name("opencode_go")
             .with_default_model(model.clone()),
         opencode_config,
     );
