@@ -17,7 +17,7 @@ self-improvement (RSI). Rust edition 2024, MSRV 1.91, MIT.
    branch. CI does too.
 5. **Tests live in `src/tests/`**, one `*_test.rs` file per area, registered in
    `src/tests/mod.rs`. No new inline `#[cfg(test)] mod tests` blocks in source.
-6. **Atomic commits, Conventional Commits, no `Co-Authored-By`** (project policy).
+6. **Conventional Commits, strong messages, no `Co-Authored-By`** (project policy).
 7. **Update the wiki in the same change** when durable behavior shifts.
 
 ## Where To Work (sub-guides — read only what you need)
@@ -141,11 +141,13 @@ Rules:
 - **Body** explains the *why*, not the *what* — the diff already shows what
   changed. Answer "why was this wrong?" and "what breaks if we revert?". Wrap ~72
   cols. Omit only for trivial, self-evident commits.
-- **Atomic**: one logical change per commit. Don't bundle `cargo fmt` drift or
-  renames with logic — format-only churn goes in its own `chore: cargo fmt`
-  commit, mechanical renames separate from behavioral changes.
-- Split test additions from production fixes *only* if the test compiles against
-  the unfixed code; otherwise commit them together so the test proves the fix.
+- **A good message beats a perfect split.** Spend your effort on a clear subject
+  and a *why*-focused body, not on slicing one coherent change into multiple
+  commits. Group related work that ships together into one commit — don't burn
+  effort reconstructing intermediate states to separate, say, a fix from the perf
+  pass that depends on it. Tests belong with the code they cover.
+- Only split when the parts are genuinely independent: keep obvious noise like a
+  standalone `cargo fmt` pass or a mechanical rename out of a logic commit.
 - Add `[skip ci]` to docs/chore/non-functional commits — but **never** to a
   release commit (it skips the release workflow too).
 - **Never** add `Co-Authored-By` lines (project policy).
