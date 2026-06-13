@@ -802,7 +802,7 @@ impl App {
     /// the *local* terminal emulator interprets the sequence and sets its own
     /// clipboard. A tool that spawns but fails (e.g. xclip with no DISPLAY) is
     /// not treated as success, so we still reach the OSC 52 fallback.
-    fn copy_to_clipboard(text: &str) -> bool {
+    pub(crate) fn copy_to_clipboard(text: &str) -> bool {
         use std::io::Write;
         use std::process::{Command, Stdio};
 

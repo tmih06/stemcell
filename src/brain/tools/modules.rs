@@ -563,9 +563,8 @@ impl ToolModule for ImageModule {
 }
 
 /// Brain & session management: load_brain_file, write_stemcell_file,
-/// rename_session, slash_command, a2a_send
+/// rename_session, a2a_send
 #[cfg(any(
-    feature = "tool-slash-command",
     feature = "tool-rename-session",
     feature = "tool-load-brain-file",
     feature = "tool-write-stemcell-file",
@@ -574,7 +573,6 @@ impl ToolModule for ImageModule {
 struct BrainModule;
 
 #[cfg(any(
-    feature = "tool-slash-command",
     feature = "tool-rename-session",
     feature = "tool-load-brain-file",
     feature = "tool-write-stemcell-file",
@@ -588,17 +586,14 @@ impl ToolModule for BrainModule {
         "Brain & Session Management"
     }
     fn description(&self) -> &str {
-        "Brain file I/O, session management, slash commands, and A2A communication"
+        "Brain file I/O, session management, and A2A communication"
     }
     fn register(&self, ctx: &ModuleContext) {
         use super::{
             a2a_send::A2aSendTool, load_brain_file::LoadBrainFileTool,
-            rename_session::RenameSessionTool, slash_command::SlashCommandTool,
-            write_stemcell_file::WriteStemCellFileTool,
+            rename_session::RenameSessionTool, write_stemcell_file::WriteStemCellFileTool,
         };
 
-        #[cfg(feature = "tool-slash-command")]
-        ctx.register(Arc::new(SlashCommandTool));
         #[cfg(feature = "tool-rename-session")]
         ctx.register(Arc::new(RenameSessionTool));
 
@@ -981,7 +976,6 @@ pub fn all_modules() -> Vec<Box<dyn ToolModule>> {
     push_module!(
         modules,
         [
-            "tool-slash-command",
             "tool-rename-session",
             "tool-load-brain-file",
             "tool-write-stemcell-file",

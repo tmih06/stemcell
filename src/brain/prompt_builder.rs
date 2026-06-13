@@ -11,7 +11,7 @@ use std::path::PathBuf;
 /// Kept lean (~8 KB) so always-injecting is cheap. TOOLS.md and CODE.md
 /// moved to contextual (on-demand via `load_brain_file`) to avoid ~44k
 /// first-request bloat.
-const CORE_BRAIN_FILES: &[(&str, &str)] =
+pub(crate) const CORE_BRAIN_FILES: &[(&str, &str)] =
     &[("SOUL.md", "personality"), ("USER.md", "user profile")];
 
 /// Contextual brain files — loaded on demand via the `load_brain_file` tool.
@@ -47,9 +47,9 @@ IMPORTANT: You have access to tools for file operations and code exploration. US
 
 TOOL CALL PROTOCOL — CRITICAL:
 - Always call tools directly — never write code yourself, never describe what you plan to do. Just call the tool immediately.
-- Do NOT output markdown code blocks (```bash, ```sh, ```python, etc.) — invoke the `bash` / `python` tool instead. Code blocks are TEXT, the system will NOT execute them.
-- WRONG: writing ```bash\ngit status\n``` or "Let me run `git log`" — nothing runs.
-- RIGHT: emit a tool_call for `bash` with {"command": "git status"} via the structured tool-call API.
+- Do NOT output markdown code blocks (```bash, ```sh, ```python, etc.) — invoke the matching tool instead. Code blocks are TEXT, the system will NOT execute them.
+- WRONG: writing a ```bash fenced block or "Let me run `git log`" — nothing runs.
+- RIGHT: emit a tool_call through the structured tool-call API and let the harness run it for you.
 - NEVER claim to have run a command, read a file, or fetched a URL when you haven't actually invoked the corresponding tool. If you need work done, call the tool. If you can't, say so.
 - Thinking/reasoning is fine, but the final action MUST be either a tool_call or a direct answer — not a code block pretending to be one, not a narration of what you'd do.
 - NEVER emit IDE-style inline edit formats. These look like agent tool calls but are NOT — they were trained into you by Cursor / Aider / Cline / continue.dev datasets and don't work here. Specifically forbidden patterns:
@@ -57,7 +57,7 @@ TOOL CALL PROTOCOL — CRITICAL:
     ```search_and_replace
     <<<<<<< SEARCH ... ======= ... >>>>>>> REPLACE   ← Aider conflict-marker style
     ```diff with file headers                       ← unified-diff dumps
-  To edit a file: call the `edit_file` tool (or `write_file` for new files) with the structured tool-call API. If the file is large, read it first via `read_file`, then call `edit_file` with the precise `old_text` / `new_text`. The system will REJECT any inline-edit format and the change will NOT apply — you will have just leaked the file contents to the channel.
+  To edit a file, use your file-editing tool through the structured tool-call API — read large files first with your file-reading tool, then pass the precise `old_text` / `new_text`. (The exact tool names you hold are in the CURRENTLY EQUIPPED TOOLS list below.) The system will REJECT any inline-edit format and the change will NOT apply — you will have just leaked the file contents to the channel.
 
 CRITICAL RULE: After calling tools and getting results, you MUST provide a final text response to the user.
 DO NOT keep calling tools in a loop. Call the necessary tools, get results, then respond with text.
@@ -69,10 +69,10 @@ When asked to make changes:
 Understand the current code first, then modify it using your available file editing tools.
 
 SELF-AWARENESS — CHECK WHAT YOU ALREADY HAVE BEFORE BUILDING NEW:
-Before proposing to implement a feature from scratch (STT, TTS, browser automation, messaging channels, token compression, PDF rendering, etc.):
+Before proposing to implement any feature from scratch:
 1. Check your tool list in this request — is there already a tool for this? Use it instead of bash+pip+third-party libraries.
-2. Check the "Built-in features compiled into this binary" line in Runtime Info below — is the capability already baked into the StemCell binary you're running? If yes, USE it; don't re-implement it.
-3. Check the relevant brain file (TOOLS.md for tool usage, AGENTS.md for project conventions) before deciding the right surface.
+2. Check the Runtime Info below — if it lists a "Built-in features compiled into this binary" line, the named capabilities are already baked into the StemCell binary you're running. If yours is there, USE it; don't re-implement it.
+3. Check the relevant brain file (load it on demand if your equipped tools allow) before deciding the right surface.
 Skipping these checks wastes the user's time, ships duplicate code, and makes the agent look unaware of its own runtime.
 
 FINISHING A TURN — always acknowledge clearly, never disappear silently:
@@ -113,23 +113,122 @@ NEVER generate text plans. ALWAYS use the plan tool for planning requests.
 
 ALWAYS explore first before answering questions about a codebase. Don't guess - use the tools!"#;
 
-pub(crate) const BRAIN_PREAMBLE_WEB: &str = r#"WEB / GITHUB / BROWSER ROUTING — pick the right surface, not the heaviest one:
-- Web research, docs, "what's the latest X", "find me info about Y": use `exa_search` (if available) → `brave_search` (if available) → `web_search`. Never reach for `browser_navigate` to read pages.
-- Anything on GitHub (issues, PRs, releases, comments, file contents, commits, checks, code search, workflow runs): use the `gh` CLI via `bash`. It is preinstalled, authenticated, returns structured JSON (`--json`, `--jq`), and is far cheaper than navigating github.com in a browser.
-- `browser_navigate` is for: (a) the user explicitly asking you to open / interact with a page, (b) tasks that require clicking / typing / submitting / scrolling / running JS against live DOM, (c) genuine last resort after every search route has been tried and failed. It is slow, token-heavy, and steals window focus in headed mode — never the default."#;
+/// Build the WEB / GITHUB / BROWSER routing preamble from the *equipped*
+/// tool set. Returns `None` when none of the relevant surfaces are present.
+///
+/// Data-driven so a tool that isn't equipped never gets name-dropped: when
+/// the model sees a tool named in prose but absent from its schema, it
+/// reconciles the contradiction by reporting the tool as "disabled" —
+/// which leaks the existence of tools the user deliberately turned off.
+/// Each named surface (search tools, `gh` via `bash`, `browser_navigate`)
+/// only appears when it's actually in `tools`.
+pub(crate) fn build_web_preamble(tools: &[String]) -> Option<String> {
+    let has = |name: &str| tools.iter().any(|t| t == name);
+    let search_tools: Vec<&str> = ["exa_search", "brave_search", "web_search"]
+        .into_iter()
+        .filter(|t| has(t))
+        .collect();
+    let has_browser = has("browser_navigate");
+    let has_bash = has("bash");
 
-pub(crate) const BRAIN_PREAMBLE_RSI: &str = r#"RECURSIVE SELF-IMPROVEMENT:
-You have three tools for improving yourself over time:
-- feedback_analyze: Query your performance history (tool success rates, failure patterns, recent events). Call with query='summary' or query='tool_stats' or query='failures'.
-- feedback_record: Manually log observations — user corrections, patterns you notice, strategies that work well.
-- self_improve: Propose or apply changes to your brain files (SOUL.md, TOOLS.md, etc.). Runs autonomously — no human approval needed. Changes are logged to ~/.stemcell/rsi/improvements.md and archived in ~/.stemcell/rsi/history/.
+    if search_tools.is_empty() && !has_browser && !has_bash {
+        return None;
+    }
 
-Your tool executions are automatically tracked. When you notice recurring failures, user frustration, or repeated corrections:
-1. Call feedback_analyze with query='failures' to understand what's going wrong
-2. Call feedback_record to log the pattern you observed
-3. Call self_improve with action='apply' to apply a concrete improvement — brain file is edited, improvement is logged to rsi/improvements.md, and a daily archive entry is created
+    let mut out = String::from(
+        "WEB / GITHUB / BROWSER ROUTING — pick the right surface, not the heaviest one:\n",
+    );
 
-Do NOT call these tools every turn. Use them when you notice a pattern across multiple interactions, or when a user explicitly corrects you in a way that could apply to future conversations. Report significant improvements to the TUI or connected channels so the user knows what changed."#;
+    if !search_tools.is_empty() {
+        let chain = search_tools
+            .iter()
+            .map(|t| format!("`{t}`"))
+            .collect::<Vec<_>>()
+            .join(" → ");
+        out.push_str(&format!(
+            "- Web research, docs, \"what's the latest X\", \"find me info about Y\": use {chain} (in that preference order)."
+        ));
+        if has_browser {
+            out.push_str(" Never reach for `browser_navigate` to read pages.");
+        }
+        out.push('\n');
+    }
+
+    if has_bash {
+        out.push_str(
+            "- Anything on GitHub (issues, PRs, releases, comments, file contents, commits, checks, code search, workflow runs): use the `gh` CLI via `bash`. It is preinstalled, authenticated, returns structured JSON (`--json`, `--jq`), and is far cheaper than navigating github.com in a browser.\n",
+        );
+    }
+
+    if has_browser {
+        out.push_str(
+            "- `browser_navigate` is for: (a) the user explicitly asking you to open / interact with a page, (b) tasks that require clicking / typing / submitting / scrolling / running JS against live DOM, (c) genuine last resort after every search route has been tried and failed. It is slow, token-heavy, and steals window focus in headed mode — never the default.\n",
+        );
+    }
+
+    Some(out)
+}
+
+/// Build the recursive-self-improvement preamble from the *equipped* tool
+/// set. Returns `None` when no RSI tool is present.
+///
+/// Same rationale as [`build_web_preamble`]: only describe the RSI tools the
+/// agent actually holds, so a disabled `self_improve` / `feedback_*` never
+/// reaches the model as a named-but-absent tool.
+pub(crate) fn build_rsi_preamble(tools: &[String]) -> Option<String> {
+    let has = |name: &str| tools.iter().any(|t| t == name);
+    let has_analyze = has("feedback_analyze");
+    let has_record = has("feedback_record");
+    let has_improve = has("self_improve");
+
+    if !has_analyze && !has_record && !has_improve {
+        return None;
+    }
+
+    let count = [has_analyze, has_record, has_improve]
+        .iter()
+        .filter(|b| **b)
+        .count();
+    let mut out = format!(
+        "RECURSIVE SELF-IMPROVEMENT:\nYou have {count} tool{} for improving yourself over time:\n",
+        if count == 1 { "" } else { "s" }
+    );
+
+    if has_analyze {
+        out.push_str("- feedback_analyze: Query your performance history (tool success rates, failure patterns, recent events). Call with query='summary' or query='tool_stats' or query='failures'.\n");
+    }
+    if has_record {
+        out.push_str("- feedback_record: Manually log observations — user corrections, patterns you notice, strategies that work well.\n");
+    }
+    if has_improve {
+        out.push_str("- self_improve: Propose or apply changes to your brain files (SOUL.md, TOOLS.md, etc.). Runs autonomously — no human approval needed. Changes are logged to ~/.stemcell/rsi/improvements.md and archived in ~/.stemcell/rsi/history/.\n");
+    }
+
+    out.push_str(
+        "\nYour tool executions are automatically tracked. When you notice recurring failures, user frustration, or repeated corrections:\n",
+    );
+    let mut steps: Vec<&str> = Vec::new();
+    if has_analyze {
+        steps.push("Call feedback_analyze with query='failures' to understand what's going wrong");
+    }
+    if has_record {
+        steps.push("Call feedback_record to log the pattern you observed");
+    }
+    if has_improve {
+        steps.push(
+            "Call self_improve with action='apply' to apply a concrete improvement — brain file is edited, improvement is logged to rsi/improvements.md, and a daily archive entry is created",
+        );
+    }
+    for (i, s) in steps.iter().enumerate() {
+        out.push_str(&format!("{}. {s}\n", i + 1));
+    }
+
+    out.push_str(
+        "\nDo NOT call these tools every turn. Use them when you notice a pattern across multiple interactions, or when a user explicitly corrects you in a way that could apply to future conversations. Report significant improvements to the TUI or connected channels so the user knows what changed.",
+    );
+
+    Some(out)
+}
 
 /// Loads brain workspace files and assembles the system brain.
 pub struct BrainLoader {
@@ -188,11 +287,9 @@ impl BrainLoader {
     /// 6. TOOLS.md — environment-specific notes
     /// 7. MEMORY.md — long-term context
     /// 8. Runtime info — model, provider, working directory, OS, timestamp
-    /// 9. Slash commands list (provided externally)
     pub fn build_system_brain(
         &self,
         runtime_info: Option<&RuntimeInfo>,
-        slash_commands_section: Option<&str>,
         active_tools: Option<&[String]>,
     ) -> String {
         let mut prompt = String::with_capacity(8192);
@@ -233,15 +330,6 @@ impl BrainLoader {
             prompt.push('\n');
         }
 
-        // 9. Slash commands list
-        if let Some(commands_section) = slash_commands_section
-            && !commands_section.is_empty()
-        {
-            prompt.push_str("--- Available Slash Commands ---\n");
-            prompt.push_str(commands_section);
-            prompt.push_str("\n\n");
-        }
-
         prompt
     }
 
@@ -256,7 +344,6 @@ impl BrainLoader {
     pub fn build_core_brain(
         &self,
         runtime_info: Option<&RuntimeInfo>,
-        slash_commands_section: Option<&str>,
         active_tools: Option<&[String]>,
     ) -> String {
         let mut prompt = String::with_capacity(4096);
@@ -305,6 +392,13 @@ impl BrainLoader {
             .unwrap_or_default();
         extras.sort();
 
+        // Tool-gate the brain-file access verbs: never name `load_brain_file`
+        // / `write_stemcell_file` when they aren't equipped, or the model
+        // reports them as "disabled" tools and may ghost-call them. `None`
+        // (tests / legacy callers) keeps the original wording.
+        let has_load = active_tools.is_none_or(|t| t.iter().any(|x| x == "load_brain_file"));
+        let has_write = active_tools.is_none_or(|t| t.iter().any(|x| x == "write_stemcell_file"));
+
         if !available.is_empty() || !extras.is_empty() {
             // Anchor the brain dir path so the agent doesn't have to grep for it.
             // Render as ~/... (collapse_home) to keep the prompt cache-stable
@@ -314,12 +408,26 @@ impl BrainLoader {
                 "--- Available Context Files (in {}/) ---\n",
                 brain_dir
             ));
+            // Access verb adapts to what's actually equipped.
+            let access_line = match (has_load, has_write) {
+                (true, true) => "Load on demand with the `load_brain_file` tool when relevant — \
+                     do NOT load unless the request actually needs that context. \
+                     Use `write_stemcell_file` to update or edit a brain file."
+                    .to_string(),
+                (true, false) => "Load on demand with the `load_brain_file` tool when relevant — \
+                     do NOT load unless the request actually needs that context."
+                    .to_string(),
+                (false, true) => "Read them with your file-reading tool when relevant — \
+                     do NOT read unless the request actually needs that context. \
+                     Use `write_stemcell_file` to update or edit a brain file."
+                    .to_string(),
+                (false, false) => "Read them with your file-reading tool when relevant — \
+                     do NOT read unless the request actually needs that context."
+                    .to_string(),
+            };
             prompt.push_str(&format!(
-                "Brain directory: {}/  (all files below live here)\n\
-                 Load on demand with the `load_brain_file` tool when relevant — \
-                 do NOT load unless the request actually needs that context. \
-                 Use `write_stemcell_file` to update or edit a brain file.\n\n",
-                brain_dir
+                "Brain directory: {}/  (all files below live here)\n{}\n\n",
+                brain_dir, access_line
             ));
             for (name, desc) in &available {
                 prompt.push_str(&format!("- **{}**: {}\n", name, desc));
@@ -355,8 +463,10 @@ impl BrainLoader {
             }
             prompt.push('\n');
 
-            // Memory persistence hint — tell the agent to proactively write learnings
-            if has("MEMORY.md") {
+            // Memory persistence hint — only when MEMORY.md exists AND the
+            // write tool is equipped (otherwise we'd name a tool the agent
+            // can't call).
+            if has("MEMORY.md") && has_write {
                 prompt.push_str(
                     "Write proactively to MEMORY.md (via `write_stemcell_file`) when:\n\
                      - You discover a fact, pattern, or context that would be valuable across sessions\n\
@@ -391,15 +501,6 @@ impl BrainLoader {
             push_known_paths(&mut prompt);
             push_compiled_features(&mut prompt);
             prompt.push('\n');
-        }
-
-        // 5. Slash commands list
-        if let Some(commands_section) = slash_commands_section
-            && !commands_section.is_empty()
-        {
-            prompt.push_str("--- Available Slash Commands ---\n");
-            prompt.push_str(commands_section);
-            prompt.push_str("\n\n");
         }
 
         prompt
@@ -507,7 +608,7 @@ fn push_home_anchor_and_expansion_rule(prompt: &mut String) {
         ));
     }
     prompt.push_str(
-        "Path expansion: when invoking shell tools (bash, etc.), pass `~/...` paths verbatim — \
+        "Path expansion: when invoking any shell tool, pass `~/...` paths verbatim — \
          the shell expands `~` for you. Do NOT substitute `/Users/<name>/...` yourself; if you \
          need an absolute form, copy the `Home:` line above exactly.\n",
     );
@@ -527,21 +628,12 @@ fn push_preamble_and_tools(prompt: &mut String, active_tools: Option<&[String]>)
             prompt.push_str(BRAIN_PREAMBLE_PLAN);
             prompt.push_str("\n\n");
         }
-        if tools.iter().any(|t| {
-            t == "exa_search"
-                || t == "brave_search"
-                || t == "web_search"
-                || t == "browser_navigate"
-                || t == "bash"
-        }) {
-            prompt.push_str(BRAIN_PREAMBLE_WEB);
+        if let Some(web) = build_web_preamble(tools) {
+            prompt.push_str(&web);
             prompt.push_str("\n\n");
         }
-        if tools
-            .iter()
-            .any(|t| t == "self_improve" || t == "feedback_analyze")
-        {
-            prompt.push_str(BRAIN_PREAMBLE_RSI);
+        if let Some(rsi) = build_rsi_preamble(tools) {
+            prompt.push_str(&rsi);
             prompt.push_str("\n\n");
         }
         prompt.push_str("--- CURRENTLY EQUIPPED TOOLS ---\n");
@@ -762,9 +854,6 @@ pub(crate) fn compiled_features() -> Vec<&'static str> {
     if cfg!(feature = "tool-analyze-video") {
         out.push("tool-analyze-video");
     }
-    if cfg!(feature = "tool-slash-command") {
-        out.push("tool-slash-command");
-    }
     if cfg!(feature = "tool-rename-session") {
         out.push("tool-rename-session");
     }
@@ -852,13 +941,33 @@ pub(crate) fn compiled_features() -> Vec<&'static str> {
     out
 }
 
+/// Features surfaced in the "Built-in features" prompt line — the subset
+/// of [`compiled_features`] that represents genuine binary *capabilities*
+/// (channels, voice, browser, providers, …).
+///
+/// Excludes the build-time tool-gating features: `tool-*` (per-tool) and
+/// `tools-*` (coarse group aliases). A tool being *compiled in* does NOT
+/// mean it is *equipped* — many register only when a key/config is present
+/// (e.g. `brave_search` needs an API key, channel-send tools need a
+/// connected account). Tool availability is authoritatively governed by the
+/// `--- CURRENTLY EQUIPPED TOOLS ---` list; surfacing `tool-brave-search`
+/// here made the agent claim a "built-in Brave Search capability" it could
+/// not actually invoke. Capabilities the agent should reason about (and not
+/// re-implement) stay; tool-registration flags do not.
+pub(crate) fn displayed_features() -> Vec<&'static str> {
+    compiled_features()
+        .into_iter()
+        .filter(|f| !f.starts_with("tool-") && !f.starts_with("tools-"))
+        .collect()
+}
+
 /// Append the "Built-in features" line that surfaces what's compiled
 /// into this binary so the agent reaches for existing capabilities
 /// instead of writing new ones from scratch (issue: new user asked
 /// for "local STT/TTS implementation" and the agent started coding
 /// when both are default features with working backends).
 pub(crate) fn push_compiled_features(prompt: &mut String) {
-    let features = compiled_features();
+    let features = displayed_features();
     if features.is_empty() {
         return;
     }
@@ -866,7 +975,7 @@ pub(crate) fn push_compiled_features(prompt: &mut String) {
         "Built-in features compiled into this binary: {}\n\
          Before implementing any of these capabilities from scratch, USE the built-in. \
          If the user asks for a feature listed here, it already works — don't re-build it. \
-         If they ask for a Cargo feature NOT in this list (e.g. `pdfium`), tell them to \
+         If they ask for a Cargo feature NOT in this list, tell them to \
          rebuild with `--features <name>` instead of writing fresh code.\n",
         features.join(", ")
     ));
@@ -917,7 +1026,7 @@ mod tests {
     fn test_build_prompt_no_files() {
         let dir = TempDir::new().unwrap();
         let loader = BrainLoader::new(dir.path().to_path_buf());
-        let prompt = loader.build_system_brain(None, None, None);
+        let prompt = loader.build_system_brain(None, None);
 
         // Should contain brain preamble even with no brain files
         assert!(prompt.contains("You are StemCell"));
@@ -930,7 +1039,7 @@ mod tests {
         std::fs::write(dir.path().join("SOUL.md"), "I am a helpful crab.").unwrap();
 
         let loader = BrainLoader::new(dir.path().to_path_buf());
-        let prompt = loader.build_system_brain(None, None, None);
+        let prompt = loader.build_system_brain(None, None);
 
         assert!(prompt.contains("You are StemCell"));
         assert!(prompt.contains("I am a helpful crab."));
@@ -946,7 +1055,7 @@ mod tests {
             provider: Some("anthropic".to_string()),
             working_directory: Some("/home/user/project".to_string()),
         };
-        let prompt = loader.build_system_brain(Some(&info), None, None);
+        let prompt = loader.build_system_brain(Some(&info), None);
 
         assert!(prompt.contains("claude-sonnet-4-20250514"));
         assert!(prompt.contains("anthropic"));
@@ -959,7 +1068,7 @@ mod tests {
         std::fs::write(dir.path().join("SOUL.md"), "  \n  ").unwrap();
 
         let loader = BrainLoader::new(dir.path().to_path_buf());
-        let prompt = loader.build_system_brain(None, None, None);
+        let prompt = loader.build_system_brain(None, None);
 
         // Should NOT contain SOUL.md section header for empty content
         // (the filename may appear in BRAIN_PREAMBLE tool docs, so check for the section format)

@@ -49,7 +49,8 @@ ServiceManager::new() → ServiceContext
 
 ```
 main.rs init → StartupJobs::run_all() (src/startup/mod.rs)
-  → Parallel job execution (check_config, check_envs, fetch_models, RSI jobs)
+  → Parallel job execution (check_config, check_envs, tools_loaded,
+    brain_files, fetch_models, RSI jobs)
   → TUI or CLI continues after jobs complete
 ```
 

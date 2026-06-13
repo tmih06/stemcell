@@ -3,8 +3,8 @@
 use anyhow::{Context, Result};
 use std::sync::Arc;
 
+use crate::brain::BrainLoader;
 use crate::brain::prompt_builder::RuntimeInfo;
-use crate::brain::{BrainLoader, CommandLoader};
 
 /// Start interactive chat session
 pub(crate) async fn cmd_daemon(config: &crate::config::Config) -> Result<()> {
@@ -124,8 +124,6 @@ async fn cmd_chat_inner(
     // Build dynamic system brain from workspace files
     let brain_path = BrainLoader::resolve_path();
     let brain_loader = BrainLoader::new(brain_path.clone());
-    let command_loader = CommandLoader::from_brain_path(&brain_path);
-    let user_commands = command_loader.load();
 
     let runtime_info = RuntimeInfo {
         model: Some(provider.default_model().to_string()),
@@ -137,12 +135,6 @@ async fn cmd_chat_inner(
             &working_directory,
         )),
     };
-
-    let builtin_commands: Vec<(&str, &str)> = crate::tui::app::SLASH_COMMANDS
-        .iter()
-        .map(|c| (c.name, c.description))
-        .collect();
-    let commands_section = CommandLoader::commands_section(&builtin_commands, &user_commands);
 
     // Inject performance history from feedback ledger (zero-setup, auto for all users)
     let feedback_digest =
@@ -193,16 +185,11 @@ async fn cmd_chat_inner(
     // Get event sender from app
     let event_sender = app.event_sender();
 
-    // Kick off startup jobs in the background (config/env checks, RSI boot
-    // snapshot, model-list cache warming). Non-blocking — the TUI stays
-    // interactive while they run, a failing job logs but never aborts boot,
-    // and the completed report arrives as a collapsible startup-info line.
-    crate::startup::spawn(
-        config.clone(),
-        db.pool().clone(),
-        event_sender.clone(),
-        startup_ready_tx,
-    );
+    // Startup jobs are kicked off after the tool registry is built (below) so
+    // the tools-loaded job can report the live equipped-tool list. Capture a
+    // sender clone now, before `event_sender` is moved into the approval
+    // closure, and hand it to the spawn call once the registry exists.
+    let startup_event_sender = event_sender.clone();
 
     // Forward RSI notifications to TUI as system messages
     {
@@ -479,9 +466,21 @@ async fn cmd_chat_inner(
         },
     );
 
+    // Kick off startup jobs in the background now that the tool registry
+    // exists (config/env checks, tools-loaded + brain-files reports, RSI boot
+    // snapshot, model-list cache warming). Non-blocking — the TUI stays
+    // interactive while they run, a failing job logs but never aborts boot,
+    // and the completed report arrives as a collapsible startup-info line.
+    crate::startup::spawn(
+        config.clone(),
+        db.pool().clone(),
+        shared_tool_registry.list_tools(),
+        startup_event_sender,
+        startup_ready_tx,
+    );
+
     let mut system_brain = brain_loader.build_core_brain(
         Some(&runtime_info),
-        Some(&commands_section),
         Some(&shared_tool_registry.list_tools()),
     );
     if let Some(digest) = &feedback_digest {

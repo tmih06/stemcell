@@ -4,7 +4,7 @@
 
 mod chat;
 mod dialogs;
-
+pub(crate) mod export_dialog;
 mod help;
 mod input;
 pub(crate) mod mission_control;
@@ -191,6 +191,11 @@ pub fn render(f: &mut Frame, app: &mut App) {
             // immediate preview in the status bar without leaving the overlay.
             render_chat_shell(f, app, chunks.as_ref(), ChatShellMode::RespectSplitPanes);
             statusline_dialog::draw(f, app, chunks[3], full_content_area);
+        }
+        AppMode::Export => {
+            // Keep the chat shell visible behind a centered confirm popup.
+            render_chat_shell(f, app, chunks.as_ref(), ChatShellMode::RespectSplitPanes);
+            export_dialog::draw(f, app, full_content_area);
         }
         AppMode::Settings => {
             let (title_area, content_area) = split_title_area(full_content_area);

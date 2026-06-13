@@ -694,11 +694,8 @@ pub(crate) async fn cmd_run(
             &std::env::current_dir().unwrap_or_default(),
         )),
     };
-    let mut system_brain = brain_loader.build_system_brain(
-        Some(&runtime_info),
-        None,
-        Some(&tool_registry.list_tools()),
-    );
+    let mut system_brain =
+        brain_loader.build_system_brain(Some(&runtime_info), Some(&tool_registry.list_tools()));
     if let Some(digest) =
         crate::brain::prompt_builder::build_feedback_digest(db.pool().clone()).await
     {
@@ -949,11 +946,8 @@ pub(crate) async fn cmd_agent_interactive(
             &std::env::current_dir().unwrap_or_default(),
         )),
     };
-    let mut system_brain = brain_loader.build_system_brain(
-        Some(&runtime_info),
-        None,
-        Some(&tool_registry.list_tools()),
-    );
+    let mut system_brain =
+        brain_loader.build_system_brain(Some(&runtime_info), Some(&tool_registry.list_tools()));
     if let Some(digest) =
         crate::brain::prompt_builder::build_feedback_digest(db.pool().clone()).await
     {

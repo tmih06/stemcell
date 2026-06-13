@@ -123,7 +123,6 @@
 | `src/brain/tools/generate_image.rs` | Image generation |
 | `src/brain/tools/analyze_image.rs` | Image analysis |
 | `src/brain/tools/analyze_video.rs` | Video analysis |
-| `src/brain/tools/slash_command.rs` | Slash commands |
 | `src/brain/tools/rename_session.rs` | Session renaming |
 | `src/brain/tools/load_brain_file.rs` | Load brain file |
 | `src/brain/tools/write_stemcell_file.rs` | Write stemcell file |

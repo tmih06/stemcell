@@ -117,3 +117,131 @@ fn now_epoch() -> u64 {
         .unwrap_or_default()
         .as_secs()
 }
+
+/// Run the doctor health check and return the result as plain text.
+///
+/// Inspects keys.toml, configured providers/channels, voice + approval
+/// settings, persisted provider health, and config-recovery snapshot.
+/// Used by the TUI `/debug` dump and channel `/doctor` — neither goes
+/// through the LLM, so this lives in config (always compiled) rather than
+/// on an agent tool.
+pub fn doctor_text() -> String {
+    let config = match super::Config::load() {
+        Ok(c) => c,
+        Err(e) => return format!("Failed to load config: {}", e),
+    };
+
+    let mut lines = vec!["Health Check".to_string(), String::new()];
+
+    // Check keys.toml validity
+    let keys_path = super::keys_path();
+    if keys_path.exists() {
+        match std::fs::read_to_string(&keys_path) {
+            Ok(content) => match toml::from_str::<toml::Value>(&content) {
+                Ok(_) => lines.push("keys.toml — OK".to_string()),
+                Err(e) => lines.push(format!("keys.toml — PARSE ERROR: {e}")),
+            },
+            Err(e) => lines.push(format!("keys.toml — READ ERROR: {e}")),
+        }
+    } else {
+        lines.push("keys.toml — NOT FOUND".to_string());
+    }
+    lines.push(String::new());
+
+    // Check providers — iterate the canonical registry so every built-in
+    // provider is covered (a hardcoded list silently hid providers for
+    // months; see provider_registry docs).
+    lines.push("Providers:".to_string());
+    for (id, _display, requires_api_key, provider_opt) in config.providers.provider_registry() {
+        if let Some(provider) = provider_opt
+            && provider.enabled
+        {
+            let has_key = provider.api_key.as_ref().is_some_and(|k| !k.is_empty());
+            let model = provider.default_model.as_deref().unwrap_or("(not set)");
+            let status = if !requires_api_key || has_key {
+                "OK"
+            } else {
+                "MISSING API KEY"
+            };
+            lines.push(format!("  {} — {} (model: {})", id, status, model));
+        }
+    }
+
+    if let Some(ref custom) = config.providers.custom {
+        for (name, provider) in custom {
+            if provider.enabled {
+                let has_key = provider.api_key.as_ref().is_some_and(|k| !k.is_empty());
+                let model = provider.default_model.as_deref().unwrap_or("(not set)");
+                let status = if has_key { "OK" } else { "MISSING API KEY" };
+                lines.push(format!("  custom/{} — {} (model: {})", name, status, model));
+            }
+        }
+    }
+
+    // Check channels
+    lines.push(String::new());
+    lines.push("Channels:".to_string());
+    let ch = &config.channels;
+    if ch.telegram.enabled {
+        lines.push("  telegram — enabled".to_string());
+    }
+    if ch.discord.enabled {
+        lines.push("  discord — enabled".to_string());
+    }
+    if ch.slack.enabled {
+        lines.push("  slack — enabled".to_string());
+    }
+    if ch.whatsapp.enabled {
+        lines.push("  whatsapp — enabled".to_string());
+    }
+    if ch.trello.enabled {
+        lines.push("  trello — enabled".to_string());
+    }
+
+    // Voice config
+    lines.push(String::new());
+    let voice = config.voice_config();
+    lines.push(format!(
+        "Voice: STT={}, TTS={}",
+        voice.stt_enabled, voice.tts_enabled
+    ));
+
+    // Approval policy
+    lines.push(format!("Approval: {}", config.agent.approval_policy));
+
+    // Provider health
+    lines.push(String::new());
+    lines.push("Provider Health:".to_string());
+    let health_state: HealthState =
+        std::fs::read_to_string(super::stemcell_home().join("provider_health.json"))
+            .ok()
+            .and_then(|s| serde_json::from_str(&s).ok())
+            .unwrap_or_default();
+    if health_state.providers.is_empty() {
+        lines.push("  (no data yet)".to_string());
+    } else {
+        for (name, h) in &health_state.providers {
+            let status = if h.consecutive_failures > 0 {
+                format!("FAILING ({}x)", h.consecutive_failures)
+            } else {
+                "OK".to_string()
+            };
+            lines.push(format!("  {} — {}", name, status));
+        }
+    }
+
+    // Last known good config
+    let has_good = super::stemcell_home()
+        .join("config.last_good.toml")
+        .exists();
+    lines.push(format!(
+        "Config recovery: {}",
+        if has_good {
+            "snapshot available"
+        } else {
+            "no snapshot"
+        }
+    ));
+
+    lines.join("\n")
+}

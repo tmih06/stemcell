@@ -1061,15 +1061,7 @@ fn trigger_restart() {
 
 /// Run doctor health check directly (no LLM needed). Returns a user-facing status message.
 pub fn run_doctor() -> String {
-    #[cfg(feature = "tool-slash-command")]
-    {
-        use crate::brain::tools::slash_command::SlashCommandTool;
-        SlashCommandTool::doctor_text()
-    }
-    #[cfg(not(feature = "tool-slash-command"))]
-    {
-        "Doctor is unavailable without the tool-slash-command feature enabled.".to_string()
-    }
+    crate::config::health::doctor_text()
 }
 
 /// Try to execute a command that returns a simple text response (no platform-specific UI).

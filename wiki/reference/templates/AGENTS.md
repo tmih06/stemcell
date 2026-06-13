@@ -49,7 +49,7 @@ Compaction triggers automatically at 80% context usage. The system generates a c
 
 **Compaction persists across restarts** — the marker is saved to the database, so restarting the app loads only from the last compaction point forward.
 
-**Manual compaction:** Type `/compact` to force compaction at any time. The summary is returned directly as the response.
+**Compaction** runs automatically as the context window fills; the summary is returned directly as the response.
 
 ### 🧠 MEMORY.md - Your Long-Term Memory
 - **ONLY load in main session** (direct chats with your human)
@@ -209,19 +209,19 @@ All custom skills, tools, plugins, and implementations go in your **workspace**,
 ### Why This Matters
 - **`git pull` is always safe** — it only touches source code and default templates
 - **Your custom work is never overwritten** — skills, plugins, scripts, memory, config all live in `~/.stemcell/`
-- **Upgrades are painless** — `/evolve` downloads the latest binary, or pull + rebuild from source. Your customizations persist.
+- **Upgrades are painless** — update the binary or pull + rebuild from source. Your customizations persist.
 
 ### Upgrading StemCell
 
 **Option 1 — Binary update (recommended):**
-Type `/evolve` in the TUI or any channel. The agent downloads the latest release binary from GitHub and hot-restarts. No Rust toolchain needed.
+Use the `evolve` tool to download the latest release binary from GitHub and hot-restart. No Rust toolchain needed.
 
 **Option 2 — Build from source:**
 ```bash
 cd /srv/rs/stemcell    # or wherever your source lives
 git pull origin main
 cargo build --release
-# Or type /rebuild in the TUI
+# Or use the rebuild tool
 ```
 
 Both options leave your workspace at `~/.stemcell/` untouched.
@@ -239,7 +239,7 @@ When searching for new integrations, libraries, or adding new features, **always
 
 Skills provide your tools. When you need one, check its `SKILL.md`. Keep local notes (camera names, SSH details, voice preferences) in `TOOLS.md`.
 
-`/cd` changes the working directory for all tool execution. You can also change it via `config_manager` with `set_working_directory` — both persist to config.toml.
+To change the working directory for all tool execution, use `config_manager` with `set_working_directory` — it persists to config.toml.
 
 ## Cron Jobs — Best Practices
 

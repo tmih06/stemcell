@@ -5,8 +5,7 @@ and RSI instructions are already in the system prompt — don't duplicate them h
 
 ## What belongs here
 
-- Skill pointers (what/where to load on demand)
-- Commands vs Tools vs Skills distinction
+- Skill pointers (what/where to read on demand)
 - Profile-aware paths
 - Custom routing rules specific to your setup
 
@@ -17,32 +16,23 @@ and RSI instructions are already in the system prompt — don't duplicate them h
 - Provider configuration (lives in config.toml + onboarding)
 - System commands (basic OS knowledge)
 
-## Skills (load on demand)
+## Skills (read on demand)
 
-| Skill | Command | What it covers |
-|-------|---------|----------------|
-| Browser CDP | `/browser-cdp` | CDP automation, selectors, screenshots |
-| Channels | `/channels` | Telegram, Discord, Slack, Trello, WhatsApp setup |
-| Dynamic Tools | `/dynamic-tools` | tools.toml format, runtime tool management |
-| SocialCrabs | `/socialcrabs` | Twitter/X, Instagram, LinkedIn automation |
-| Google CLI | `/gog` | Gmail, Calendar via gog CLI |
-| GitHub Workflow | `/github_workflow` | CI/CD, branch protection, release workflow |
-| A2A Gateway | `/a2a-gateway` | Agent-to-Agent protocol reference |
-| Servers | `/servers` | SSH aliases, Docker containers, Nginx sites |
+Skills are reference docs stored as `SKILL.md` files. When a task matches one,
+read the file with your file-reading tool — it is loaded context, not an
+executable command. Files live under `~/.stemcell/skills/<name>/SKILL.md`
+(user overrides) or are bundled with the binary.
 
-## Commands vs Tools vs Skills
-
-| Concept | What it is | Example |
-|---------|-----------|---------|
-| Tool | A function the agent calls directly | `bash`, `read_file`, `grep` |
-| Command | A slash shortcut defined in commands.toml | `/check`, `/rebuild`, `/status` |
-| Skill | A workflow template loaded on demand | `/browser-cdp`, `/channels` |
-
-## Build Commands
-
-- `/rebuild` — Build, test, and hot-restart from source
-- `/check` — Run `cargo clippy` and `cargo test`
-- `/evolve` — Download latest release binary
+| Skill | Slug | What it covers |
+|-------|------|----------------|
+| Browser CDP | `browser-cdp` | CDP automation, selectors, screenshots |
+| Channels | `channels` | Telegram, Discord, Slack, Trello, WhatsApp setup |
+| Dynamic Tools | `dynamic-tools` | tools.toml format, runtime tool management |
+| SocialCrabs | `socialcrabs` | Twitter/X, Instagram, LinkedIn automation |
+| Google CLI | `gog` | Gmail, Calendar via gog CLI |
+| GitHub Workflow | `github_workflow` | CI/CD, branch protection, release workflow |
+| A2A Gateway | `a2a-gateway` | Agent-to-Agent protocol reference |
+| Servers | `servers` | SSH aliases, Docker containers, Nginx sites |
 
 ## Profile-Aware Paths
 
@@ -51,6 +41,5 @@ and RSI instructions are already in the system prompt — don't duplicate them h
 | Brain files | `~/.stemcell/{SOUL,USER,AGENTS,TOOLS,MEMORY,CODE,SECURITY}.md` |
 | Config | `~/.stemcell/config.toml` |
 | Keys | `~/.stemcell/keys.toml` |
-| Commands | `~/.stemcell/commands.toml` |
 | Plans | `~/.stemcell/agents/session/.stemcell_plan_<id>.json` |
 | Logs | `~/.stemcell/logs/stemcell.YYYY-MM-DD` |

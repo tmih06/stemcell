@@ -36,10 +36,17 @@ fn forbids_aider_style_search_replace_markers() {
 
 #[test]
 fn points_agent_at_edit_file_tool_as_the_real_path() {
+    // The preamble must point the agent at its real editing path after
+    // forbidding inline formats. It no longer hardcodes a tool *name*
+    // (`edit_file`) — names vary by build profile and are surfaced in the
+    // CURRENTLY EQUIPPED TOOLS list — but it must still direct the model to
+    // the structured tool-call API rather than leaving it nowhere to go.
+    let lower = BRAIN_PREAMBLE_CORE.to_lowercase();
     assert!(
-        BRAIN_PREAMBLE_CORE.contains("edit_file"),
-        "after forbidding inline formats, preamble must point the agent \
-         at the actual `edit_file` tool — otherwise the model has nowhere to go"
+        lower.contains("file-editing tool") && lower.contains("structured tool-call api"),
+        "after forbidding inline formats, preamble must point the agent at \
+         the file-editing tool via the structured tool-call API — otherwise \
+         the model has nowhere to go"
     );
 }
 

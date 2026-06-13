@@ -13,6 +13,7 @@ Terminal UI built with [Ratatui](https://ratatui.rs/) v0.30 and [Crossterm](http
 | Syntax highlighting | Code block highlighting via syntect | `src/tui/highlight.rs` |
 | Onboarding wizard | Step-by-first-run setup | `src/tui/onboarding/`, `src/tui/onboarding_render.rs` |
 | Skills dialog | Browse and select available skills | `src/tui/app/skills_dialog/`, `src/tui/render/skills_dialog/` |
+| Export dialog | Export session transcript to clipboard/file | `src/tui/app/export_dialog/`, `src/tui/render/export_dialog/` |
 | Mission Control TUI | RSI inbox, activity feed, cron schedule | `src/tui/app/mission_control/`, `src/tui/render/mission_control/` |
 | Plan rendering | Display execution plans | `src/tui/plan.rs`, `src/tui/render/plan_widget.rs`, `src/tui/render/plan_window.rs` |
 | Background sessions | Parallel session execution | `src/tui/app/background_session.rs` |

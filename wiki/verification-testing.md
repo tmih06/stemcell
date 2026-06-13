@@ -38,7 +38,6 @@ cargo test --all-features
 | **Brain Tools — Dynamic Tools** | 17 | `src/brain/tools/dynamic/` |
 | **Brain Tools — Doc Parser** | 10 | `src/brain/tools/doc_parser.rs` |
 | **Brain Tools — Registry** | 7 | `src/brain/tools/registry.rs` |
-| **Brain Tools — Slash Command** | 6 | `src/brain/tools/slash_command.rs` |
 | **Brain Tools — Write/Read/Config/Memory/Error** | 20 | `src/brain/tools/` |
 | **Brain Tools — Subagent** | 9 | `src/brain/tools/subagent.rs` |
 | **Brain Tools — Error** | 6 | `src/brain/tools/error.rs` |
@@ -171,6 +170,7 @@ cargo test --all-features
 | Tests — Mission Control Schedule Service | 5 | `src/tests/mission_control_schedule_service_test.rs` |
 | Tests — Mission Control Input | 23 | `src/tests/mission_control_input_test.rs` |
 | Tests — Skills Dialog | 18 | `src/tests/skills_dialog_test.rs` |
+| Tests — Export Command | 11 | `src/tests/export_command_test.rs` |
 | Tests — merge_provider_keys (OpenCode persistence regression) | 4 | `src/tests/merge_provider_keys_test.rs` |
 | Tests — Onboarding Wizard | 67 | `src/tests/onboarding_wizard_test.rs` |
 | Tests — RSI (Recursive Self-Improvement) | 79 | `src/tests/rsi_test.rs` |

@@ -27,6 +27,16 @@ impl StartupJobs {
         self
     }
 
+    /// Number of registered jobs.
+    pub fn len(&self) -> usize {
+        self.jobs.len()
+    }
+
+    /// Whether the queue has no registered jobs.
+    pub fn is_empty(&self) -> bool {
+        self.jobs.is_empty()
+    }
+
     /// Run every registered job concurrently, await all, and return outcomes.
     ///
     /// A job that returns `Err` becomes a `Failed` outcome. A job whose task
@@ -97,6 +107,7 @@ mod tests {
         Arc::new(StartupContext {
             config: crate::config::Config::default(),
             pool: None,
+            tools: None,
         })
     }
 

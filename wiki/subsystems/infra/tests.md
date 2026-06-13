@@ -26,7 +26,7 @@
 | Cron | Scheduler wake cycle, job execution, run history recording |
 | RTK | Command rewriting, token savings tracking |
 | Services | CRUD operations with temp databases, edge cases |
-| Startup | Parallel job execution, config/env validation, model cache warm |
+| Startup | Parallel job execution, config/env validation, model cache warm, tools-loaded + brain-files reports (`startup_jobs_test.rs`) |
 
 ---
 

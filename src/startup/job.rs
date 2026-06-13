@@ -19,6 +19,10 @@ pub struct StartupContext {
     /// Database pool, for jobs that read/write app state (e.g. the RSI
     /// feedback digest). `None` in unit tests that don't need it.
     pub pool: Option<crate::db::Pool>,
+    /// The equipped tool names from the live registry, captured at spawn time.
+    /// `None` when the registry isn't available (unit tests, headless paths
+    /// that skip tool registration).
+    pub tools: Option<Vec<String>>,
 }
 
 /// A unit of startup work.

@@ -100,8 +100,6 @@ pub mod rsi_propose;
 pub mod self_improve;
 #[cfg(feature = "tool-session-search")]
 pub mod session_search;
-#[cfg(feature = "tool-slash-command")]
-pub mod slash_command;
 #[cfg(feature = "tool-task-manager")]
 pub mod task;
 #[cfg(feature = "tool-write-stemcell-file")]

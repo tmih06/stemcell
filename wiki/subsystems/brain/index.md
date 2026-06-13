@@ -56,7 +56,7 @@ Located at `src/brain/agent/service/`, the `AgentService` orchestrates the conve
 | Subagent | Multi-agent orchestration (`spawn`, `wait`, `close`, `resume`, `send_input`, teams) |
 | RSI | `feedback_record`, `feedback_analyze`, `self_improve`, `rsi_proposals`, `rsi_propose` |
 | Channels | Telegram, Discord, Slack, WhatsApp, Trello (connect/send pairs) |
-| Meta | `tool_manage`, `rebuild`, `evolve`, `config_tool`, `slash_command`, `rename_session` |
+| Meta | `tool_manage`, `rebuild`, `evolve`, `config_tool`, `rename_session` |
 | Other | `bash`, `code_exec`, `doc_parser`, `http`, `generate_image`, `analyze_image`, `analyze_video`, `task`, `plan_tool`, `cron_manage`, `context`, `notebook`, `follow_up_question`, `a2a_send`, `load_brain_file`, `write_stemcell_file` |
 
 ## Key Design Decisions
