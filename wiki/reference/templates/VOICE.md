@@ -34,16 +34,6 @@ pitch = 0      # -12 to +12 semitones
 
 ## STT — Speech-to-Text
 
-### WhisperCrabs
-
-[WhisperCrabs](https://github.com/tmih06/whispercrabs) — floating voice-to-text tool controllable via D-Bus.
-
-**D-Bus Interface:**
-- `StartRecording()` — begin capture
-- `StopRecording()` — end capture, returns transcript
-- `GetTranscript()` — get last recording text
-- `SetProvider(config)` — configure STT backend
-
 **Supported Backends:**
 - OpenAI Whisper API
 - Local Whisper model (via whisper.cpp)
@@ -54,16 +44,7 @@ pitch = 0      # -12 to +12 semitones
 When receiving voice messages (Telegram/WhatsApp):
 
 1. Download audio file
-2. Transcribe via STT (WhisperCrabs or API)
+2. Transcribe via STT
 3. Process text normally
 4. Optionally respond with TTS voice message
 
-## Quick Reference
-
-```bash
-# Check if WhisperCrabs is running
-dbus-send --session --dest=com.github.tmih06.WhisperCrabs --type=method_call /com/github/tmih06/WhisperCrabs com.github.tmih06.WhisperCrabs.IsRunning
-
-# Start recording
-dbus-send --session --dest=com.github.tmih06.WhisperCrabs --type=method_call /com/github/tmih06/WhisperCrabs com.github.tmih06.WhisperCrabs.StartRecording
-```

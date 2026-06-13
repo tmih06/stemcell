@@ -1,6 +1,5 @@
 //! Messaging — session CRUD, slash commands, message expansion, streaming.
 
-use super::dialogs::ensure_whispercrabs;
 use super::events::{AppMode, ToolApprovalResponse, TuiEvent};
 use super::export_dialog::ExportTarget;
 use super::onboarding::OnboardingWizard;
@@ -759,50 +758,6 @@ impl App {
                     .unwrap_or(Uuid::nil());
                 tokio::spawn(async move {
                     run_evolve_directly(sid, sender).await;
-                });
-                true
-            }
-            "/whisper" => {
-                self.push_system_message("Setting up WhisperCrabs...".to_string());
-                let sender = self.event_sender();
-                let sid = self
-                    .current_session
-                    .as_ref()
-                    .map(|s| s.id)
-                    .unwrap_or(Uuid::nil());
-                tokio::spawn(async move {
-                    match ensure_whispercrabs().await {
-                        Ok(binary_path) => {
-                            // Launch the binary (GTK handles if already running)
-                            match tokio::process::Command::new(&binary_path)
-                                .stdin(std::process::Stdio::null())
-                                .stdout(std::process::Stdio::null())
-                                .stderr(std::process::Stdio::null())
-                                .spawn()
-                            {
-                                Ok(_) => {
-                                    let _ = sender.send(TuiEvent::SystemMessage {
-                                        session_id: sid,
-                                        text: "WhisperCrabs is running! A floating mic button is now on your screen.\n\n\
-                                            Speak from any app — transcription is auto-copied to your clipboard. Just paste wherever you need.\n\n\
-                                            To change settings, right-click the button or just ask me here.".to_string(),
-                                    });
-                                }
-                                Err(e) => {
-                                    let _ = sender.send(TuiEvent::Error {
-                                        session_id: sid,
-                                        message: format!("Failed to launch WhisperCrabs: {}", e),
-                                    });
-                                }
-                            }
-                        }
-                        Err(e) => {
-                            let _ = sender.send(TuiEvent::Error {
-                                session_id: sid,
-                                message: format!("WhisperCrabs setup failed: {}", e),
-                            });
-                        }
-                    }
                 });
                 true
             }

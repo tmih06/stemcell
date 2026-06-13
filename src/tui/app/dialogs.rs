@@ -9,7 +9,6 @@ use crate::tui::provider_selector::{
     is_provider_index_available,
 };
 use anyhow::Result;
-use std::path::PathBuf;
 use uuid::Uuid;
 
 impl App {
@@ -3425,101 +3424,6 @@ impl App {
             ds.data = data;
         }
     }
-}
-
-/// Download WhisperCrabs binary if not cached, return the path to the binary.
-pub(crate) async fn ensure_whispercrabs() -> Result<PathBuf> {
-    let bin_dir = crate::config::stemcell_home().join("bin");
-    std::fs::create_dir_all(&bin_dir)?;
-
-    let binary_name = if cfg!(target_os = "windows") {
-        "whispercrabs.exe"
-    } else {
-        "whispercrabs"
-    };
-    let binary_path = bin_dir.join(binary_name);
-
-    if binary_path.exists() {
-        return Ok(binary_path);
-    }
-
-    // Detect platform
-    let (os_name, ext) = match std::env::consts::OS {
-        "linux" => ("linux", "tar.gz"),
-        "macos" => ("macos", "tar.gz"),
-        "windows" => ("windows", "zip"),
-        other => anyhow::bail!("Unsupported OS: {}", other),
-    };
-    let arch = std::env::consts::ARCH; // "x86_64" or "aarch64"
-
-    // Download latest release via GitHub API
-    let client = reqwest::Client::new();
-    let release_url = "https://api.github.com/repos/tmih06/whispercrabs/releases/latest";
-    let release: serde_json::Value = client
-        .get(release_url)
-        .header("User-Agent", "stemcell")
-        .send()
-        .await?
-        .json()
-        .await?;
-
-    // Find matching asset
-    let pattern = format!("whispercrabs-{}-{}", os_name, arch);
-    let asset = release["assets"]
-        .as_array()
-        .and_then(|assets| {
-            assets
-                .iter()
-                .find(|a| a["name"].as_str().is_some_and(|n| n.contains(&pattern)))
-        })
-        .ok_or_else(|| anyhow::anyhow!("No release found for {}-{}", os_name, arch))?;
-
-    let download_url = asset["browser_download_url"]
-        .as_str()
-        .ok_or_else(|| anyhow::anyhow!("Missing download URL in release asset"))?;
-
-    // Download the archive
-    let bytes = client
-        .get(download_url)
-        .header("User-Agent", "stemcell")
-        .send()
-        .await?
-        .bytes()
-        .await?;
-
-    // Extract (tar.gz for Linux/macOS, zip for Windows)
-    let tmp = bin_dir.join("whispercrabs_download");
-    std::fs::write(&tmp, &bytes)?;
-
-    if ext == "tar.gz" {
-        let output = tokio::process::Command::new("tar")
-            .args([
-                "xzf",
-                &tmp.to_string_lossy(),
-                "-C",
-                &bin_dir.to_string_lossy(),
-            ])
-            .output()
-            .await?;
-        if !output.status.success() {
-            let _ = std::fs::remove_file(&tmp);
-            anyhow::bail!("Failed to extract archive");
-        }
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            std::fs::set_permissions(&binary_path, std::fs::Permissions::from_mode(0o755))?;
-        }
-    }
-
-    // Clean up temp file
-    let _ = std::fs::remove_file(&tmp);
-
-    if !binary_path.exists() {
-        anyhow::bail!("Binary not found after extraction — archive may use a different layout");
-    }
-
-    Ok(binary_path)
 }
 
 /// Result of a Telegram test connection attempt.

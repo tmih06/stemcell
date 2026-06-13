@@ -211,10 +211,6 @@ pub const SLASH_COMMANDS: &[SlashCommand] = &[
         description: "Download latest release, update and upgrade — evolve, update, upgrade, latest, release, /update, /upgrade",
     },
     SlashCommand {
-        name: "/whisper",
-        description: "Speak anywhere, dictate and paste to clipboard — whisper, dictate, voice, speak, transcribe",
-    },
-    SlashCommand {
         name: "/cd",
         description: "Change working directory or folder — cd, directory, folder, path, chdir, cwd",
     },
