@@ -79,6 +79,28 @@ const BUILTIN_SKILLS: &[(&str, &str)] = &[
     ),
 ];
 
+/// True if the built-in skill named `name` should be registered in this
+/// build. Skills whose bodies drive feature-gated tools are hidden when
+/// those tools aren't compiled in — otherwise we'd advertise a slash
+/// command (and let the LLM invoke a skill) whose tools don't exist in the
+/// binary. Each arm tracks the same feature as the tool the skill drives:
+///   - `browser-cdp`    → CDP browser tools (`feature = "browser"`)
+///   - `a2a-gateway`    → `a2a_send` tool (`feature = "tool-a2a-send"`)
+///   - `dynamic-tools`  → `tool_manage` meta-tool (`feature = "tool-tool-manage"`)
+///   - `opencli`        → opencli-rs dynamic tools (`feature = "tools-dynamic"`)
+///
+/// Skills that drive only always-present tools (read/bash/git) — `cost-estimate`,
+/// `security-audit`, `repo-audit` — are never gated.
+fn builtin_skill_available(name: &str) -> bool {
+    match name {
+        "browser-cdp" => cfg!(feature = "browser"),
+        "a2a-gateway" => cfg!(feature = "tool-a2a-send"),
+        "dynamic-tools" => cfg!(feature = "tool-tool-manage"),
+        "opencli" => cfg!(feature = "tools-dynamic"),
+        _ => true,
+    }
+}
+
 /// Where this skill came from. Used by the TUI to badge built-ins
 /// differently from user-installed ones in the autocomplete dropdown.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -189,8 +211,13 @@ fn user_skills_dir() -> PathBuf {
 pub fn load_all_skills() -> Vec<Skill> {
     let mut by_name: std::collections::BTreeMap<String, Skill> = std::collections::BTreeMap::new();
 
-    // 1. Built-ins
+    // 1. Built-ins. A built-in whose tools aren't compiled into this build
+    //    is skipped so we never register a slash command (or let the LLM
+    //    invoke a skill) backed by tools that don't exist.
     for (name, raw) in BUILTIN_SKILLS {
+        if !builtin_skill_available(name) {
+            continue;
+        }
         match Skill::parse(name, raw, SkillSource::Builtin) {
             Ok(skill) => {
                 by_name.insert(skill.name.clone(), skill);
