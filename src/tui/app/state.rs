@@ -238,6 +238,10 @@ pub const SLASH_COMMANDS: &[SlashCommand] = &[
         name: "/statusline",
         description: "Toggle status bar fields",
     },
+    SlashCommand {
+        name: "/debug",
+        description: "Dump agent internals: system prompt, equipped tools, context usage — debug, inspect, diagnostics, dump, internals, prompt",
+    },
 ];
 
 /// True if `query` is a prefix of any whitespace/punctuation-delimited word in
@@ -1463,15 +1467,6 @@ impl App {
             .unwrap_or_else(crate::brain::BrainLoader::resolve_path);
         let brain_loader = crate::brain::BrainLoader::new(brain_path_for_loader.clone());
 
-        let command_loader = crate::brain::CommandLoader::from_brain_path(&brain_path_for_loader);
-        let user_commands = command_loader.load();
-        let builtin_commands: Vec<(&str, &str)> = crate::tui::app::SLASH_COMMANDS
-            .iter()
-            .map(|c| (c.name, c.description))
-            .collect();
-        let commands_section =
-            crate::brain::CommandLoader::commands_section(&builtin_commands, &user_commands);
-
         let working_dir = self
             .agent_service
             .working_directory()
@@ -1485,11 +1480,9 @@ impl App {
             working_directory: Some(crate::brain::tools::error::collapse_home(&working_dir)),
         };
 
-        let system_brain = Some(brain_loader.build_core_brain(
-            Some(&runtime_info),
-            Some(&commands_section),
-            Some(&tool_registry.list_tools()),
-        ));
+        let system_brain = Some(
+            brain_loader.build_core_brain(Some(&runtime_info), Some(&tool_registry.list_tools())),
+        );
 
         // Get event sender for approval callback
         let event_sender = self.event_sender();

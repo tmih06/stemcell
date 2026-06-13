@@ -3,8 +3,8 @@
 use anyhow::{Context, Result};
 use std::sync::Arc;
 
+use crate::brain::BrainLoader;
 use crate::brain::prompt_builder::RuntimeInfo;
-use crate::brain::{BrainLoader, CommandLoader};
 
 /// Start interactive chat session
 pub(crate) async fn cmd_daemon(config: &crate::config::Config) -> Result<()> {
@@ -124,8 +124,6 @@ async fn cmd_chat_inner(
     // Build dynamic system brain from workspace files
     let brain_path = BrainLoader::resolve_path();
     let brain_loader = BrainLoader::new(brain_path.clone());
-    let command_loader = CommandLoader::from_brain_path(&brain_path);
-    let user_commands = command_loader.load();
 
     let runtime_info = RuntimeInfo {
         model: Some(provider.default_model().to_string()),
@@ -137,12 +135,6 @@ async fn cmd_chat_inner(
             &working_directory,
         )),
     };
-
-    let builtin_commands: Vec<(&str, &str)> = crate::tui::app::SLASH_COMMANDS
-        .iter()
-        .map(|c| (c.name, c.description))
-        .collect();
-    let commands_section = CommandLoader::commands_section(&builtin_commands, &user_commands);
 
     // Inject performance history from feedback ledger (zero-setup, auto for all users)
     let feedback_digest =
@@ -489,7 +481,6 @@ async fn cmd_chat_inner(
 
     let mut system_brain = brain_loader.build_core_brain(
         Some(&runtime_info),
-        Some(&commands_section),
         Some(&shared_tool_registry.list_tools()),
     );
     if let Some(digest) = &feedback_digest {

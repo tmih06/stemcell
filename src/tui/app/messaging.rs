@@ -813,6 +813,10 @@ impl App {
                 self.mode = AppMode::Help;
                 true
             }
+            "/debug" => {
+                self.run_debug_dump().await;
+                true
+            }
             "/mission-control" => {
                 crate::tui::app::mission_control::actions::open(self).await;
                 true
@@ -1905,6 +1909,122 @@ impl App {
             self.scroll_offset = 0;
         }
     }
+
+    /// Gather agent/runtime state, render the full `/debug` report, show a
+    /// compact summary inline (full report in the Ctrl+O-expandable body), and
+    /// write the full report to `~/.stemcell/debug/debug-<UTC-timestamp>.txt`.
+    /// Read-only — never mutates agent state, never panics, never blocks the UI.
+    pub(crate) async fn run_debug_dump(&mut self) {
+        let prompt = self.agent_service.system_brain().cloned();
+        let prompt_tokens = prompt
+            .as_deref()
+            .map(crate::brain::tokenizer::count_tokens)
+            .unwrap_or(0);
+        let provider = self.agent_service.provider_name();
+        let model = self.agent_service.provider_model();
+        let working_dir = self
+            .agent_service
+            .working_directory()
+            .read()
+            .map(|wd| wd.display().to_string())
+            .unwrap_or_default();
+        let tools = self.agent_service.tool_registry().list_tools();
+        let features = crate::brain::prompt_builder::displayed_features();
+        let disabled = crate::config::Config::load()
+            .map(|c| c.tools.disabled)
+            .unwrap_or_default();
+
+        // Brain files: split into inline (always injected) vs on-demand, by
+        // what actually exists on disk — mirrors the brain-files startup job.
+        let brain_dir = self
+            .agent_service
+            .brain_path()
+            .clone()
+            .unwrap_or_else(crate::brain::BrainLoader::resolve_path);
+        let inline_files: Vec<(&str, &str)> = crate::brain::prompt_builder::CORE_BRAIN_FILES
+            .iter()
+            .filter(|(name, _)| brain_dir.join(name).exists())
+            .copied()
+            .collect();
+        let on_demand_files: Vec<(&str, &str)> =
+            crate::brain::prompt_builder::CONTEXTUAL_BRAIN_FILES
+                .iter()
+                .filter(|(name, _)| brain_dir.join(name).exists())
+                .copied()
+                .collect();
+
+        let session_info = self.current_session.as_ref().map(|s| DebugSessionInfo {
+            id: s.id,
+            title: s.title.as_deref().unwrap_or("(untitled)"),
+            model: s.model.as_deref().unwrap_or("(unknown)"),
+            token_count: s.token_count.into(),
+            cost: s.total_cost,
+            message_count: self.messages.len(),
+        });
+
+        // Best-effort extras — both may be slow or absent; never fail on them.
+        let rsi_digest = crate::brain::prompt_builder::build_feedback_digest(
+            self.agent_service.context().pool(),
+        )
+        .await;
+        // doctor_text lives on the slash_command tool, which is cfg-gated; fall
+        // back to a placeholder when that feature isn't compiled in.
+        #[cfg(feature = "tool-slash-command")]
+        let doctor = crate::brain::tools::slash_command::SlashCommandTool::doctor_text();
+        #[cfg(not(feature = "tool-slash-command"))]
+        let doctor = String::from("(unavailable — built without tool-slash-command)");
+
+        let report = build_debug_report(&DebugReportInput {
+            prompt: prompt.as_deref(),
+            prompt_tokens,
+            provider: &provider,
+            model: &model,
+            working_dir: &working_dir,
+            context_pct: self.context_usage_percent(),
+            context_max: self.context_max_tokens,
+            last_input_tokens: self.last_input_tokens,
+            tools: &tools,
+            features: &features,
+            disabled: &disabled,
+            inline_files: &inline_files,
+            on_demand_files: &on_demand_files,
+            brain_dir: &brain_dir.display().to_string(),
+            version: crate::VERSION,
+            os: std::env::consts::OS,
+            session: session_info,
+            rsi_digest: rsi_digest.as_deref(),
+            doctor: &doctor,
+        });
+
+        // Write the full report to a timestamped file.
+        let debug_dir = crate::config::stemcell_home().join("debug");
+        let ts = chrono::Utc::now().format("%Y%m%d-%H%M%S");
+        let file_path = debug_dir.join(format!("debug-{ts}.txt"));
+        let write_result =
+            std::fs::create_dir_all(&debug_dir).and_then(|()| std::fs::write(&file_path, &report));
+
+        let mut summary = format!(
+            "Debug: {provider}/{model} · {:.0}% context · {} tools · {prompt_tokens} prompt tokens",
+            self.context_usage_percent(),
+            tools.len(),
+        );
+        match write_result {
+            Ok(()) => {
+                summary.push_str(&format!(
+                    "\nFull report: {} (Ctrl+O to expand inline)",
+                    file_path.display()
+                ));
+            }
+            Err(e) => {
+                summary.push_str(&format!(
+                    "\n(file write failed: {e} — full report below, Ctrl+O to expand)"
+                ));
+            }
+        }
+
+        self.push_collapsible_system_message(summary, report);
+    }
+
     pub(crate) async fn send_message(&mut self, content: String) -> Result<()> {
         tracing::info!(
             "[send_message] START is_processing={} has_session={} content_len={}",
@@ -2576,4 +2696,160 @@ pub(crate) async fn run_evolve_directly(
         text: "Evolve is unavailable in this build. Rebuild with `--features tools-meta`."
             .to_string(),
     });
+}
+
+/// Plain inputs for [`build_debug_report`] — gathered from `App` state by the
+/// `/debug` handler, kept as borrowed data so the report builder stays a pure,
+/// testable function with no `App` dependency.
+pub(crate) struct DebugReportInput<'a> {
+    pub prompt: Option<&'a str>,
+    pub prompt_tokens: usize,
+    pub provider: &'a str,
+    pub model: &'a str,
+    pub working_dir: &'a str,
+    pub context_pct: f64,
+    pub context_max: u32,
+    pub last_input_tokens: Option<u32>,
+    pub tools: &'a [String],
+    pub features: &'a [&'a str],
+    pub disabled: &'a [String],
+    /// Brain files injected into every prompt (name, label).
+    pub inline_files: &'a [(&'a str, &'a str)],
+    /// Brain files available on demand via `load_brain_file` (name, label).
+    pub on_demand_files: &'a [(&'a str, &'a str)],
+    pub brain_dir: &'a str,
+    pub version: &'a str,
+    pub os: &'a str,
+    pub session: Option<DebugSessionInfo<'a>>,
+    pub rsi_digest: Option<&'a str>,
+    pub doctor: &'a str,
+}
+
+/// Session fields surfaced in the debug report.
+pub(crate) struct DebugSessionInfo<'a> {
+    pub id: Uuid,
+    pub title: &'a str,
+    pub model: &'a str,
+    pub token_count: i64,
+    pub cost: f64,
+    pub message_count: usize,
+}
+
+/// Build the full `/debug` report. Pure function over borrowed inputs so it can
+/// be unit-tested without constructing an `App`. The handler gathers the state
+/// and writes the result both inline (collapsible) and to a file.
+pub(crate) fn build_debug_report(input: &DebugReportInput) -> String {
+    use std::fmt::Write as _;
+    let mut out = String::with_capacity(8192);
+
+    let _ = writeln!(out, "=== StemCell Debug Report ===");
+    let _ = writeln!(out, "Version: {} | OS: {}", input.version, input.os);
+    let _ = writeln!(out);
+
+    // ── Runtime ──
+    let _ = writeln!(out, "--- Runtime ---");
+    let _ = writeln!(out, "Provider: {}", input.provider);
+    let _ = writeln!(out, "Model: {}", input.model);
+    let _ = writeln!(out, "Working directory: {}", input.working_dir);
+    let used = input.last_input_tokens.unwrap_or(0);
+    let _ = writeln!(
+        out,
+        "Context: {used} / {} tokens ({:.0}% full)",
+        input.context_max, input.context_pct
+    );
+    let _ = writeln!(out);
+
+    // ── Session ──
+    if let Some(s) = &input.session {
+        let _ = writeln!(out, "--- Session ---");
+        let _ = writeln!(out, "ID: {}", s.id);
+        let _ = writeln!(out, "Title: {}", s.title);
+        let _ = writeln!(out, "Model: {}", s.model);
+        let _ = writeln!(
+            out,
+            "Tokens: {} | Cost: ${:.4} | Messages: {}",
+            s.token_count, s.cost, s.message_count
+        );
+        let _ = writeln!(out);
+    }
+
+    // ── Equipped tools ──
+    let _ = writeln!(out, "--- Equipped Tools ({}) ---", input.tools.len());
+    if input.tools.is_empty() {
+        let _ = writeln!(out, "(none — chatbot mode)");
+    } else {
+        let mut sorted = input.tools.to_vec();
+        sorted.sort();
+        let _ = writeln!(out, "{}", sorted.join(", "));
+    }
+    let _ = writeln!(out);
+
+    // ── Disabled tools ──
+    let _ = writeln!(out, "--- Disabled Modules ({}) ---", input.disabled.len());
+    if input.disabled.is_empty() {
+        let _ = writeln!(out, "(none)");
+    } else {
+        let _ = writeln!(out, "{}", input.disabled.join(", "));
+    }
+    let _ = writeln!(out);
+
+    // ── Compiled features ──
+    // Distinct from equipped tools: a feature compiled into the binary is NOT
+    // the same as a tool the agent holds (the source of the leak bugs).
+    let _ = writeln!(out, "--- Compiled Features ({}) ---", input.features.len());
+    if input.features.is_empty() {
+        let _ = writeln!(out, "(none)");
+    } else {
+        let _ = writeln!(out, "{}", input.features.join(", "));
+    }
+    let _ = writeln!(out);
+
+    // ── Brain files ──
+    let _ = writeln!(out, "--- Brain Files (in {}) ---", input.brain_dir);
+    let _ = writeln!(out, "Injected every prompt:");
+    if input.inline_files.is_empty() {
+        let _ = writeln!(out, "  (none found)");
+    } else {
+        for (name, label) in input.inline_files {
+            let _ = writeln!(out, "  {name} ({label})");
+        }
+    }
+    let _ = writeln!(out, "Available on demand (load_brain_file):");
+    if input.on_demand_files.is_empty() {
+        let _ = writeln!(out, "  (none found)");
+    } else {
+        for (name, label) in input.on_demand_files {
+            let _ = writeln!(out, "  {name} ({label})");
+        }
+    }
+    let _ = writeln!(out);
+
+    // ── RSI digest ──
+    if let Some(digest) = input.rsi_digest {
+        let _ = writeln!(out, "--- Performance Digest ---");
+        let _ = writeln!(out, "{}", digest.trim());
+        let _ = writeln!(out);
+    }
+
+    // ── Config health ──
+    let _ = writeln!(out, "--- Config Health ---");
+    let _ = writeln!(out, "{}", input.doctor.trim());
+    let _ = writeln!(out);
+
+    // ── System prompt (last, it's the largest) ──
+    let _ = writeln!(
+        out,
+        "--- System Prompt ({} tokens) ---",
+        input.prompt_tokens
+    );
+    match input.prompt {
+        Some(p) => {
+            let _ = writeln!(out, "{p}");
+        }
+        None => {
+            let _ = writeln!(out, "(not yet assembled — no active agent service)");
+        }
+    }
+
+    out
 }

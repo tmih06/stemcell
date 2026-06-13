@@ -47,9 +47,9 @@ IMPORTANT: You have access to tools for file operations and code exploration. US
 
 TOOL CALL PROTOCOL — CRITICAL:
 - Always call tools directly — never write code yourself, never describe what you plan to do. Just call the tool immediately.
-- Do NOT output markdown code blocks (```bash, ```sh, ```python, etc.) — invoke the `bash` / `python` tool instead. Code blocks are TEXT, the system will NOT execute them.
-- WRONG: writing ```bash\ngit status\n``` or "Let me run `git log`" — nothing runs.
-- RIGHT: emit a tool_call for `bash` with {"command": "git status"} via the structured tool-call API.
+- Do NOT output markdown code blocks (```bash, ```sh, ```python, etc.) — invoke the matching tool instead. Code blocks are TEXT, the system will NOT execute them.
+- WRONG: writing a ```bash fenced block or "Let me run `git log`" — nothing runs.
+- RIGHT: emit a tool_call through the structured tool-call API and let the harness run it for you.
 - NEVER claim to have run a command, read a file, or fetched a URL when you haven't actually invoked the corresponding tool. If you need work done, call the tool. If you can't, say so.
 - Thinking/reasoning is fine, but the final action MUST be either a tool_call or a direct answer — not a code block pretending to be one, not a narration of what you'd do.
 - NEVER emit IDE-style inline edit formats. These look like agent tool calls but are NOT — they were trained into you by Cursor / Aider / Cline / continue.dev datasets and don't work here. Specifically forbidden patterns:
@@ -57,7 +57,7 @@ TOOL CALL PROTOCOL — CRITICAL:
     ```search_and_replace
     <<<<<<< SEARCH ... ======= ... >>>>>>> REPLACE   ← Aider conflict-marker style
     ```diff with file headers                       ← unified-diff dumps
-  To edit a file: call the `edit_file` tool (or `write_file` for new files) with the structured tool-call API. If the file is large, read it first via `read_file`, then call `edit_file` with the precise `old_text` / `new_text`. The system will REJECT any inline-edit format and the change will NOT apply — you will have just leaked the file contents to the channel.
+  To edit a file, use your file-editing tool through the structured tool-call API — read large files first with your file-reading tool, then pass the precise `old_text` / `new_text`. (The exact tool names you hold are in the CURRENTLY EQUIPPED TOOLS list below.) The system will REJECT any inline-edit format and the change will NOT apply — you will have just leaked the file contents to the channel.
 
 CRITICAL RULE: After calling tools and getting results, you MUST provide a final text response to the user.
 DO NOT keep calling tools in a loop. Call the necessary tools, get results, then respond with text.
@@ -71,8 +71,8 @@ Understand the current code first, then modify it using your available file edit
 SELF-AWARENESS — CHECK WHAT YOU ALREADY HAVE BEFORE BUILDING NEW:
 Before proposing to implement a feature from scratch (STT, TTS, browser automation, messaging channels, token compression, PDF rendering, etc.):
 1. Check your tool list in this request — is there already a tool for this? Use it instead of bash+pip+third-party libraries.
-2. Check the "Built-in features compiled into this binary" line in Runtime Info below — is the capability already baked into the StemCell binary you're running? If yes, USE it; don't re-implement it.
-3. Check the relevant brain file (TOOLS.md for tool usage, AGENTS.md for project conventions) before deciding the right surface.
+2. Check the Runtime Info below — if it lists a "Built-in features compiled into this binary" line, the named capabilities are already baked into the StemCell binary you're running. If yours is there, USE it; don't re-implement it.
+3. Check the relevant brain file (load it on demand if your equipped tools allow) before deciding the right surface.
 Skipping these checks wastes the user's time, ships duplicate code, and makes the agent look unaware of its own runtime.
 
 FINISHING A TURN — always acknowledge clearly, never disappear silently:
@@ -287,11 +287,9 @@ impl BrainLoader {
     /// 6. TOOLS.md — environment-specific notes
     /// 7. MEMORY.md — long-term context
     /// 8. Runtime info — model, provider, working directory, OS, timestamp
-    /// 9. Slash commands list (provided externally)
     pub fn build_system_brain(
         &self,
         runtime_info: Option<&RuntimeInfo>,
-        slash_commands_section: Option<&str>,
         active_tools: Option<&[String]>,
     ) -> String {
         let mut prompt = String::with_capacity(8192);
@@ -332,15 +330,6 @@ impl BrainLoader {
             prompt.push('\n');
         }
 
-        // 9. Slash commands list
-        if let Some(commands_section) = slash_commands_section
-            && !commands_section.is_empty()
-        {
-            prompt.push_str("--- Available Slash Commands ---\n");
-            prompt.push_str(commands_section);
-            prompt.push_str("\n\n");
-        }
-
         prompt
     }
 
@@ -355,7 +344,6 @@ impl BrainLoader {
     pub fn build_core_brain(
         &self,
         runtime_info: Option<&RuntimeInfo>,
-        slash_commands_section: Option<&str>,
         active_tools: Option<&[String]>,
     ) -> String {
         let mut prompt = String::with_capacity(4096);
@@ -404,6 +392,13 @@ impl BrainLoader {
             .unwrap_or_default();
         extras.sort();
 
+        // Tool-gate the brain-file access verbs: never name `load_brain_file`
+        // / `write_stemcell_file` when they aren't equipped, or the model
+        // reports them as "disabled" tools and may ghost-call them. `None`
+        // (tests / legacy callers) keeps the original wording.
+        let has_load = active_tools.is_none_or(|t| t.iter().any(|x| x == "load_brain_file"));
+        let has_write = active_tools.is_none_or(|t| t.iter().any(|x| x == "write_stemcell_file"));
+
         if !available.is_empty() || !extras.is_empty() {
             // Anchor the brain dir path so the agent doesn't have to grep for it.
             // Render as ~/... (collapse_home) to keep the prompt cache-stable
@@ -413,12 +408,26 @@ impl BrainLoader {
                 "--- Available Context Files (in {}/) ---\n",
                 brain_dir
             ));
+            // Access verb adapts to what's actually equipped.
+            let access_line = match (has_load, has_write) {
+                (true, true) => "Load on demand with the `load_brain_file` tool when relevant — \
+                     do NOT load unless the request actually needs that context. \
+                     Use `write_stemcell_file` to update or edit a brain file."
+                    .to_string(),
+                (true, false) => "Load on demand with the `load_brain_file` tool when relevant — \
+                     do NOT load unless the request actually needs that context."
+                    .to_string(),
+                (false, true) => "Read them with your file-reading tool when relevant — \
+                     do NOT read unless the request actually needs that context. \
+                     Use `write_stemcell_file` to update or edit a brain file."
+                    .to_string(),
+                (false, false) => "Read them with your file-reading tool when relevant — \
+                     do NOT read unless the request actually needs that context."
+                    .to_string(),
+            };
             prompt.push_str(&format!(
-                "Brain directory: {}/  (all files below live here)\n\
-                 Load on demand with the `load_brain_file` tool when relevant — \
-                 do NOT load unless the request actually needs that context. \
-                 Use `write_stemcell_file` to update or edit a brain file.\n\n",
-                brain_dir
+                "Brain directory: {}/  (all files below live here)\n{}\n\n",
+                brain_dir, access_line
             ));
             for (name, desc) in &available {
                 prompt.push_str(&format!("- **{}**: {}\n", name, desc));
@@ -454,8 +463,10 @@ impl BrainLoader {
             }
             prompt.push('\n');
 
-            // Memory persistence hint — tell the agent to proactively write learnings
-            if has("MEMORY.md") {
+            // Memory persistence hint — only when MEMORY.md exists AND the
+            // write tool is equipped (otherwise we'd name a tool the agent
+            // can't call).
+            if has("MEMORY.md") && has_write {
                 prompt.push_str(
                     "Write proactively to MEMORY.md (via `write_stemcell_file`) when:\n\
                      - You discover a fact, pattern, or context that would be valuable across sessions\n\
@@ -490,15 +501,6 @@ impl BrainLoader {
             push_known_paths(&mut prompt);
             push_compiled_features(&mut prompt);
             prompt.push('\n');
-        }
-
-        // 5. Slash commands list
-        if let Some(commands_section) = slash_commands_section
-            && !commands_section.is_empty()
-        {
-            prompt.push_str("--- Available Slash Commands ---\n");
-            prompt.push_str(commands_section);
-            prompt.push_str("\n\n");
         }
 
         prompt
@@ -606,7 +608,7 @@ fn push_home_anchor_and_expansion_rule(prompt: &mut String) {
         ));
     }
     prompt.push_str(
-        "Path expansion: when invoking shell tools (bash, etc.), pass `~/...` paths verbatim — \
+        "Path expansion: when invoking any shell tool, pass `~/...` paths verbatim — \
          the shell expands `~` for you. Do NOT substitute `/Users/<name>/...` yourself; if you \
          need an absolute form, copy the `Home:` line above exactly.\n",
     );
@@ -1027,7 +1029,7 @@ mod tests {
     fn test_build_prompt_no_files() {
         let dir = TempDir::new().unwrap();
         let loader = BrainLoader::new(dir.path().to_path_buf());
-        let prompt = loader.build_system_brain(None, None, None);
+        let prompt = loader.build_system_brain(None, None);
 
         // Should contain brain preamble even with no brain files
         assert!(prompt.contains("You are StemCell"));
@@ -1040,7 +1042,7 @@ mod tests {
         std::fs::write(dir.path().join("SOUL.md"), "I am a helpful crab.").unwrap();
 
         let loader = BrainLoader::new(dir.path().to_path_buf());
-        let prompt = loader.build_system_brain(None, None, None);
+        let prompt = loader.build_system_brain(None, None);
 
         assert!(prompt.contains("You are StemCell"));
         assert!(prompt.contains("I am a helpful crab."));
@@ -1056,7 +1058,7 @@ mod tests {
             provider: Some("anthropic".to_string()),
             working_directory: Some("/home/user/project".to_string()),
         };
-        let prompt = loader.build_system_brain(Some(&info), None, None);
+        let prompt = loader.build_system_brain(Some(&info), None);
 
         assert!(prompt.contains("claude-sonnet-4-20250514"));
         assert!(prompt.contains("anthropic"));
@@ -1069,7 +1071,7 @@ mod tests {
         std::fs::write(dir.path().join("SOUL.md"), "  \n  ").unwrap();
 
         let loader = BrainLoader::new(dir.path().to_path_buf());
-        let prompt = loader.build_system_brain(None, None, None);
+        let prompt = loader.build_system_brain(None, None);
 
         // Should NOT contain SOUL.md section header for empty content
         // (the filename may appear in BRAIN_PREAMBLE tool docs, so check for the section format)

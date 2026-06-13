@@ -57,6 +57,7 @@ pub mod custom_model_paste_test;
 pub mod custom_provider_cache_autoenable_test;
 pub mod custom_provider_rename_keys_toml_test;
 pub mod custom_provider_section_resolver_test;
+pub mod debug_command_test;
 pub static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 pub mod git_branch_test;
 pub mod intermediate_text_strip_guard_test;

@@ -77,7 +77,7 @@ fn assembled_prompt_never_names_unequipped_tools() {
         .map(String::from)
         .collect();
 
-    let brain = loader.build_core_brain(None, None, Some(&equipped));
+    let brain = loader.build_core_brain(None, Some(&equipped));
 
     for absent in [
         "browser_navigate",
@@ -96,4 +96,69 @@ fn assembled_prompt_never_names_unequipped_tools() {
     // Sanity: the equipped tools that carry prose ARE still present.
     assert!(brain.contains("web_search"));
     assert!(brain.contains("`gh` CLI"));
+}
+
+/// The brain-file access verbs (`load_brain_file` / `write_stemcell_file`) are
+/// named in the "Available Context Files" section, which renders whenever brain
+/// files exist on disk. They must be gated on the tools being *equipped*, not on
+/// the files existing — otherwise a build without those tools name-drops them
+/// (the agent then reports them "disabled" or ghost-calls them).
+#[test]
+fn brain_file_section_omits_unequipped_access_tools() {
+    use crate::brain::prompt_builder::BrainLoader;
+    use tempfile::TempDir;
+
+    let dir = TempDir::new().unwrap();
+    // Brain files on disk → the section WILL render.
+    std::fs::write(dir.path().join("MEMORY.md"), "notes").unwrap();
+    let loader = BrainLoader::new(dir.path().to_path_buf());
+
+    // File ops only — neither load_brain_file nor write_stemcell_file equipped.
+    let equipped: Vec<String> = ["read_file", "edit_file", "bash"]
+        .into_iter()
+        .map(String::from)
+        .collect();
+    let brain = loader.build_core_brain(None, Some(&equipped));
+
+    // Section still renders (files exist) and lists MEMORY.md…
+    assert!(
+        brain.contains("Available Context Files"),
+        "section must render when brain files exist:\n{brain}"
+    );
+    // …but the unequipped access tools must NOT be named.
+    assert!(
+        !brain.contains("load_brain_file"),
+        "unequipped load_brain_file leaked into brain-file section:\n{brain}"
+    );
+    assert!(
+        !brain.contains("write_stemcell_file"),
+        "unequipped write_stemcell_file leaked into brain-file section:\n{brain}"
+    );
+}
+
+/// Inverse of the above: when the access tools ARE equipped, they must be named
+/// so the agent knows the verb for loading/writing brain files.
+#[test]
+fn brain_file_section_names_equipped_access_tools() {
+    use crate::brain::prompt_builder::BrainLoader;
+    use tempfile::TempDir;
+
+    let dir = TempDir::new().unwrap();
+    std::fs::write(dir.path().join("MEMORY.md"), "notes").unwrap();
+    let loader = BrainLoader::new(dir.path().to_path_buf());
+
+    let equipped: Vec<String> = ["read_file", "load_brain_file", "write_stemcell_file"]
+        .into_iter()
+        .map(String::from)
+        .collect();
+    let brain = loader.build_core_brain(None, Some(&equipped));
+
+    assert!(
+        brain.contains("load_brain_file"),
+        "equipped load_brain_file must be named so the agent knows the load verb:\n{brain}"
+    );
+    assert!(
+        brain.contains("write_stemcell_file"),
+        "equipped write_stemcell_file must be named:\n{brain}"
+    );
 }

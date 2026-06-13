@@ -161,25 +161,6 @@ impl CommandLoader {
         }
         Ok(removed)
     }
-
-    /// Generate a slash commands section for the system brain.
-    pub fn commands_section(builtin: &[(&str, &str)], user_commands: &[UserCommand]) -> String {
-        let mut section = String::new();
-
-        section.push_str("Built-in commands:\n");
-        for (name, desc) in builtin {
-            section.push_str(&format!("  {} — {}\n", name, desc));
-        }
-
-        if !user_commands.is_empty() {
-            section.push_str("\nUser-defined commands:\n");
-            for cmd in user_commands {
-                section.push_str(&format!("  {} — {}\n", cmd.name, cmd.description));
-            }
-        }
-
-        section
-    }
 }
 
 #[cfg(test)]
@@ -325,21 +306,5 @@ mod tests {
 
         let removed = loader.remove_command("/nonexistent").unwrap();
         assert!(!removed);
-    }
-
-    #[test]
-    fn test_commands_section() {
-        let builtin = vec![("/help", "Show help"), ("/models", "Switch model")];
-        let user = vec![UserCommand {
-            name: "/deploy".to_string(),
-            description: "Deploy".to_string(),
-            action: "prompt".to_string(),
-            prompt: "deploy".to_string(),
-        }];
-
-        let section = CommandLoader::commands_section(&builtin, &user);
-        assert!(section.contains("/help"));
-        assert!(section.contains("/deploy"));
-        assert!(section.contains("User-defined"));
     }
 }
