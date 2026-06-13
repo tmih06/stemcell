@@ -61,9 +61,10 @@ Repository: `src/db/repository/knowledge_graph.rs` — `index_note`, `search_fts
 ### Review-gate queue
 
 Migration `20260613000001_add_kg_pending_batch.sql`. Durable queue for the
-optional git review gate (`[memory].kg_review_enabled`); empty when the gate is
-off. Diffs are reproducible from `branch` + `base_sha`, so there are no per-file
-rows.
+optional git review gate (active under `approve-only` policy or forced via
+`[memory].kg_review_enabled` — see `Config::kg_review_active`); empty when the
+gate is off. Diffs are reproducible from `branch` + `base_sha`, so there are no
+per-file rows.
 
 | Table | Columns |
 |---|---|
@@ -83,7 +84,7 @@ Tools gated behind `tool-kg-*` features (umbrella `tools-kg`, in `default`):
 | `kg_links` | `note`, `direction`=both (out/in/both) | `relation_type → [[Target]]` lines + backlinks |
 | `kg_note` | `title`, `type?`, `observations[]`, `relations[{type,target}]`, `mode`=create/append | Writes/updates note (surgical), reindexes |
 | `kg_context` | `query` or `note`, `depth`=1 (max 2), `budget`=12 | Ranked titles + key facts + links |
-| `kg_remember` | `summary`, `notes[{title, type?, observations[]?, relations[{type,target}]?}]` | Seals the batch onto a branch + parks a `kg_pending_batch` row; returns batch id. Registered in place of `kg_note` only when `kg_review_enabled`. |
+| `kg_remember` | `summary`, `notes[{title, type?, observations[]?, relations[{type,target}]?}]` | Seals the batch onto a branch + parks a `kg_pending_batch` row; returns batch id. Registered in place of `kg_note` when the review gate is active (`approve-only` policy or `kg_review_enabled`). |
 
 ## Provider Trait
 

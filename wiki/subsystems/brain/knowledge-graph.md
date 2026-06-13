@@ -79,7 +79,7 @@ Registered by `KnowledgeGraphModule` in `src/brain/tools/modules.rs`.
 | `kg_links` | `src/brain/tools/kg_links.rs` | Backlinks + neighbors as `relation_type → [[Target]]` lines. |
 | `kg_note` | `src/brain/tools/kg_note.rs` | Creates/updates a note (surgical append, never full rewrite), reindexes. |
 | `kg_context` | `src/brain/tools/kg_context.rs` | Summary-first bounded traversal: ranked titles + key facts + links. |
-| `kg_remember` | `src/brain/tools/kg_remember.rs` | Review-gated alternative to `kg_note`: seals a multi-note batch onto a branch and parks it in the queue. Registered (in place of `kg_note`) only when `kg_review_enabled`. |
+| `kg_remember` | `src/brain/tools/kg_remember.rs` | Review-gated alternative to `kg_note`: seals a multi-note batch onto a branch and parks it in the queue. Registered (in place of `kg_note`) when the review gate is active — `approve-only` policy or `kg_review_enabled`. |
 
 ## Retrieval Pattern
 
@@ -117,18 +117,29 @@ kg_note                    → write durable facts as linked notes
 
 ## Git Review Gate (optional)
 
-Two `[memory]` flags add git-backed versioning and a human review gate on top of
-the vault. Both default **off** — with them off the KG behaves exactly as above
-(`kg_note` writes straight to disk + index, no git).
+The review gate is **driven by the `/approve` permission policy**
+(`agent.approval_policy`): when the agent is in `approve-only` mode — i.e. you're
+already approving each tool call — its knowledge-graph memory writes are routed
+through the `/kg` queue too. Under `auto-session` / `auto-always` (the default),
+`kg_note` writes straight to disk + index as before. The decision lives in
+[`Config::kg_review_active`](../../contracts.md#config-structure) so registration
+(`modules.rs`) and startup repo-init (`sync.rs`) can't drift.
 
-- `kg_git_enabled` — the vault becomes a git repo. `spawn_indexer` calls
-  `review::ensure_repo` at startup (idempotent `git init` + `.gitignore`
+Two `[memory]` flags override the policy for users who want a fixed behavior:
+
+- `kg_review_enabled` — forces the gate **on** regardless of policy: the main
+  agent's `kg_note` is **replaced** by `kg_remember` (`modules.rs`), so it can no
+  longer write straight to long-term memory. RSI keeps its own ungated `kg_note`
+  (its apply/reject loop is its gate). Implies git backing.
+- `kg_git_enabled` — forces git backing **on** even when the gate is off (plain
+  versioning without the queue): the vault becomes a git repo, `spawn_indexer`
+  calls `review::ensure_repo` at startup (idempotent `git init` + `.gitignore`
   [`.obsidian/`, `.trash/`] + `.gitattributes` [`*.md merge=union`] + initial
-  commit). Every approved state is restorable via `/kg log` / `/kg restore`.
-- `kg_review_enabled` — the main agent's `kg_note` is **replaced** by
-  `kg_remember` (`modules.rs`), so it can no longer write straight to long-term
-  memory. RSI keeps its own ungated `kg_note` (its apply/reject loop is its gate).
-  Implies git backing.
+  commit), and every approved state is restorable via `/kg log` / `/kg restore`.
+
+Git backing turns on whenever the gate is active (the queue needs a repo to stage
+onto), so `approve-only` alone is enough to get the full versioned-review flow
+with no `[memory]` config at all.
 
 **Staging model.** A `kg_remember` call seals all its notes onto a `kg/batch/<id>`
 branch checked out in a worktree at `<vault>/../.kg-staging/<id>` — a *sibling* of
@@ -177,9 +188,10 @@ duplicates. Brain files shape behavior; the graph stores knowledge.
 
 `[memory].vault_dir` overrides the vault location (default
 `<stemcell_home>/vault`). The knowledge graph lives in the main app SQLite DB,
-not the qmd memory store, so there is no dual-store sync. `[memory].kg_git_enabled`
-and `[memory].kg_review_enabled` (both default false) turn on git versioning and
-the review gate respectively — see [Git Review Gate](#git-review-gate-optional).
+not the qmd memory store, so there is no dual-store sync. The review gate is
+driven by `agent.approval_policy` (`approve-only` engages it); `[memory].kg_git_enabled`
+and `[memory].kg_review_enabled` (both default false) override the policy to force
+git versioning or the gate on — see [Git Review Gate](#git-review-gate-optional).
 
 ## Tests
 

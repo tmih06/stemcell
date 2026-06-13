@@ -265,7 +265,7 @@ fn mtime_secs(meta: &std::fs::Metadata) -> i64 {
 /// so versioning / the review gate have a repo to operate on.
 pub fn spawn_indexer(config: &Config, pool: Pool) {
     let vault = Vault::from_config(config);
-    let git_enabled = config.memory.kg_git_enabled || config.memory.kg_review_enabled;
+    let git_enabled = config.kg_git_active();
     let repo = KnowledgeGraphRepository::new(pool);
     tokio::spawn(async move {
         if git_enabled {

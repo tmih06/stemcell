@@ -930,7 +930,10 @@ impl ToolModule for KnowledgeGraphModule {
         // (`kg_remember`) *instead of* the direct-write `kg_note`, so the main
         // agent cannot bypass the queue. RSI registers `kg_note` separately on its
         // own loop (see rsi.rs) and is intentionally never gated.
-        let review_gated = ctx.config.memory.kg_review_enabled;
+        //
+        // The gate follows the `/approve` permission policy: `approve-only` mode
+        // routes memory writes through the `/kg` queue. See `Config::kg_review_active`.
+        let review_gated = ctx.config.kg_review_active();
         #[cfg(feature = "tool-kg-remember")]
         if review_gated {
             ctx.register(Arc::new(super::kg_remember::KgRememberTool::new(

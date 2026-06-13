@@ -108,8 +108,7 @@
 | `kg_links.rs` | Relations + backlinks |
 | `kg_note.rs` | Note capture (surgical append) |
 | `kg_context.rs` | Bounded graph traversal |
-| `kg_remember.rs` | Review-gated batch capture (seals notes onto a branch + parks in queue) |
-| `kg_remember.rs` | Review-gated batch capture — seals notes onto a branch + parks a pending row (replaces `kg_note` when `kg_review_enabled`) |
+| `kg_remember.rs` | Review-gated batch capture — seals notes onto a branch + parks a pending row (replaces `kg_note` when `Config::kg_review_active`, i.e. `approve-only` policy) |
 
 ### Browser (CDP Chrome Automation)
 
