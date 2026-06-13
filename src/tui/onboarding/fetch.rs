@@ -418,14 +418,16 @@ pub async fn fetch_provider_models(
             req.send().await
         }
         "opencode" => {
-            // OpenCode Zen — full opencode.ai catalog (/zen/v1), free models
-            // included (their ids carry "-free"). Listed from models.dev (the
-            // same source opencode itself reads), not hardcoded.
-            return fetch_models_dev_opencode("/opencode/models").await;
+            // OpenCode Zen — opencode.ai catalog at /zen/v1, listed from
+            // models.dev (the same source opencode itself reads), not hardcoded.
+            // Without a key we keep only the free, non-deprecated models — those
+            // are the only ones the endpoint serves anonymously (everything else
+            // 401s), matching opencode's own free-model gating.
+            return fetch_models_dev_opencode("/opencode/models", api_key).await;
         }
         "opencode_go" => {
             // OpenCode Go — separate /zen/go/v1 plan, distinct models.dev key.
-            return fetch_models_dev_opencode("/opencode-go/models").await;
+            return fetch_models_dev_opencode("/opencode-go/models", api_key).await;
         }
         "zhipu" => {
             // z.ai GLM — /api/paas/v4/models or /api/coding/paas/v4/models
@@ -674,23 +676,53 @@ pub(crate) fn merge_minimax_baseline(baseline: Vec<String>, user: Vec<String>) -
 
 /// Fetch an OpenCode provider's model ids from `models.dev/api.json` — the same
 /// catalog opencode itself reads. `pointer` selects the provider object (e.g.
-/// `/opencode/models` for Zen, `/opencode-go/models` for Go). Returns the full
-/// id list; free models are kept (their ids already carry "-free"). Returns an
-/// empty vec on any network/parse failure so the picker degrades gracefully
-/// instead of panicking.
-async fn fetch_models_dev_opencode(pointer: &str) -> Vec<String> {
+/// `/opencode/models` for Zen, `/opencode-go/models` for Go).
+///
+/// Filtering mirrors what the endpoint actually serves:
+/// - **Deprecated** models (`status == "deprecated"`) are always dropped — they
+///   401 even for free ids, so listing them just hands the user dead options.
+/// - **Without an API key**, only free models (`cost.input == 0`) survive; the
+///   paid models 401 anonymously. With a key, the full (non-deprecated) catalog
+///   is returned. This matches opencode's own free-model gating in
+///   `provider/provider.ts` (deletes `cost.input !== 0` models when no key).
+///
+/// Returns an empty vec on any network/parse failure so the picker degrades
+/// gracefully instead of panicking.
+async fn fetch_models_dev_opencode(pointer: &str, api_key: Option<&str>) -> Vec<String> {
+    let has_key = api_key.is_some_and(|k| !k.is_empty() && k != "public");
     let client = reqwest::Client::new();
     match client.get("https://models.dev/api.json").send().await {
         Ok(resp) if resp.status().is_success() => {
             if let Ok(json) = resp.json::<serde_json::Value>().await
                 && let Some(models) = json.pointer(pointer).and_then(|v| v.as_object())
             {
-                let mut ids: Vec<String> = models.keys().cloned().collect();
+                let mut ids: Vec<String> = models
+                    .iter()
+                    .filter(|(_, model)| {
+                        // Deprecated models 401 regardless of key — never list them.
+                        let deprecated =
+                            model.get("status").and_then(|s| s.as_str()) == Some("deprecated");
+                        if deprecated {
+                            return false;
+                        }
+                        if has_key {
+                            return true;
+                        }
+                        // No key: only free models are served anonymously.
+                        model
+                            .get("cost")
+                            .and_then(|c| c.get("input"))
+                            .and_then(|i| i.as_f64())
+                            .is_none_or(|input| input == 0.0)
+                    })
+                    .map(|(id, _)| id.clone())
+                    .collect();
                 ids.sort();
                 tracing::info!(
-                    "[fetch_provider_models] models.dev {} → {} models",
+                    "[fetch_provider_models] models.dev {} → {} models (has_key={})",
                     pointer,
-                    ids.len()
+                    ids.len(),
+                    has_key
                 );
                 return ids;
             }
