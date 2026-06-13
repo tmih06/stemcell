@@ -174,6 +174,12 @@ const CATALOG_PROVIDER_MAP: &[(&str, &str)] = &[
     ("ollama-cloud", "ollama"),
     ("amazon-bedrock", "bedrock"),
     ("google-vertex", "vertex"),
+    // OpenCode Zen (/zen/v1) and Go (/zen/go/v1) — listed from models.dev
+    // without credentials so the picker shows them even when no key is set.
+    // Go in particular is paid-only, so without this seed its cache stays
+    // empty and the provider vanishes from the picker entirely.
+    ("opencode", "opencode"),
+    ("opencode-go", "opencode_go"),
 ];
 
 /// The internal provider IDs we expect models.dev to cover, derived from the
@@ -246,6 +252,13 @@ async fn fetch_modelsdev_catalog() -> HashMap<String, Vec<CachedModel>> {
 
         for (model_id, model_val) in models {
             if model_id.is_empty() {
+                continue;
+            }
+
+            // Retired models 401 on completion regardless of key — never cache
+            // them, or the picker hands the user dead options. Mirrors the live
+            // fetch path in `fetch_models_dev_opencode`.
+            if model_val.get("status").and_then(|v| v.as_str()) == Some("deprecated") {
                 continue;
             }
 
