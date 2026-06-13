@@ -3917,6 +3917,14 @@ impl App {
         }
     }
 
+    /// True if the combined index points at a skill (vs. a built-in command or
+    /// a user-defined command). Skills occupy the tail of the index space
+    /// (after built-ins and user commands), so the picker can flag them with a
+    /// distinct indicator — they're agent-run prompts, not program functions.
+    pub fn slash_command_is_skill(&self, index: usize) -> bool {
+        index >= SLASH_COMMANDS.len() + self.user_commands.len()
+    }
+
     /// Reload user commands from brain workspace (called after agent responses)
     pub(crate) fn reload_user_commands(&mut self) {
         let command_loader = CommandLoader::from_brain_path(&self.brain_path);
