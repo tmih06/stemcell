@@ -222,7 +222,7 @@ jobs:
         # local-tts added when feature lands on main.
 
       - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v6
+        uses: codecov/codecov-action@v7
         with:
           files: ./cobertura.xml
 
@@ -307,10 +307,10 @@ jobs:
       - uses: actions/checkout@v6
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
 
       - name: Build image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: ${{ env.DOCKERFILE_PATH }}
