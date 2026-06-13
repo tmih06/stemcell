@@ -60,7 +60,7 @@ fn opencode_alone_resolves_to_opencode_display() {
     let mut c = cfg();
     c.providers.opencode = Some(cli_enabled("gpt-5-nano"));
     let (display, model) = resolve_provider_from_config(&c);
-    assert_eq!(display, "OpenCode");
+    assert_eq!(display, "OpenCode Zen");
     assert_eq!(model, "gpt-5-nano");
     let (id, m2) = c.providers.active_provider_and_model();
     assert_eq!(id, "opencode");
@@ -158,7 +158,7 @@ fn resolve_and_active_agree_on_priority_for_every_combination() {
     // display label corresponds to the picked session id.
     let cases: &[(&str, &str)] = &[
         ("claude-cli", "Claude CLI"),
-        ("opencode", "OpenCode"),
+        ("opencode", "OpenCode Zen"),
         ("qwen", "Qwen"),
         ("openrouter", "OpenRouter"),
         ("gemini", "Google Gemini"),

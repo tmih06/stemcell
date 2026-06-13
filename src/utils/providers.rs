@@ -75,8 +75,14 @@ pub const KNOWN_PROVIDERS: &[ProviderMeta] = &[
     },
     ProviderMeta {
         id: "opencode",
-        display_name: "OpenCode",
+        display_name: "OpenCode Zen",
         config_section: "providers.opencode",
+        needs_api_key: false,
+    },
+    ProviderMeta {
+        id: "opencode_go",
+        display_name: "OpenCode Go",
+        config_section: "providers.opencode_go",
         needs_api_key: true,
     },
     ProviderMeta {
@@ -90,12 +96,6 @@ pub const KNOWN_PROVIDERS: &[ProviderMeta] = &[
         display_name: "OpenRouter",
         config_section: "providers.openrouter",
         needs_api_key: true,
-    },
-    ProviderMeta {
-        id: "opencode_zen_free",
-        display_name: "OpenCode Zen Free",
-        config_section: "providers.opencode_zen_free",
-        needs_api_key: false,
     },
     ProviderMeta {
         id: "qwen",
@@ -193,6 +193,7 @@ pub fn config_for<'a>(providers: &'a ProviderConfigs, name: &str) -> Option<&'a 
         Some("codex-cli") => providers.codex_cli.as_ref(),
         Some("opencode-cli") => providers.opencode_cli.as_ref(),
         Some("opencode") => providers.opencode.as_ref(),
+        Some("opencode_go") => providers.opencode_go.as_ref(),
         Some("ollama") => providers.ollama.as_ref(),
         Some("qwen") => providers.qwen.as_ref(),
         _ => {

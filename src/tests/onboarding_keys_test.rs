@@ -22,8 +22,8 @@ fn test_provider_count_matches() {
     assert_eq!(PROVIDERS[8].name, "OpenCode CLI");
     assert_eq!(PROVIDERS[9].name, "Codex CLI");
     assert_eq!(PROVIDERS[10].name, "Codex");
-    assert_eq!(PROVIDERS[11].name, "OpenCode");
-    assert_eq!(PROVIDERS[12].name, "OpenCode Zen Free");
+    assert_eq!(PROVIDERS[11].name, "OpenCode Zen");
+    assert_eq!(PROVIDERS[12].name, "OpenCode Go");
     assert_eq!(PROVIDERS[13].name, "Qwen");
     assert_eq!(PROVIDERS[14].name, "Ollama");
     assert_eq!(PROVIDERS[15].name, "Custom OpenAI-Compatible");

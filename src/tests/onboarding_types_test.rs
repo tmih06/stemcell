@@ -93,7 +93,6 @@ fn all_providers_have_key_label_and_help() {
         "opencode-cli",
         "codex-cli",
         "opencode",
-        "opencode_zen_free",
         "ollama",
     ];
 

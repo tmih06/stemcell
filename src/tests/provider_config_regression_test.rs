@@ -92,6 +92,18 @@ fn known_provider_codex_oauth_section() {
 fn known_provider_opencode_section() {
     let meta = find_provider_meta("opencode").expect("opencode must exist");
     assert_eq!(meta.config_section, "providers.opencode");
+    assert_eq!(meta.display_name, "OpenCode Zen");
+    // Zen browses key-free (factory falls back to the "public" key like opencode
+    // itself); a key only unlocks paid models.
+    assert!(!meta.needs_api_key);
+}
+
+#[test]
+fn known_provider_opencode_go_section() {
+    let meta = find_provider_meta("opencode_go").expect("opencode_go must exist");
+    assert_eq!(meta.config_section, "providers.opencode_go");
+    assert_eq!(meta.display_name, "OpenCode Go");
+    // Every Go model is paid — a key is required to complete.
     assert!(meta.needs_api_key);
 }
 

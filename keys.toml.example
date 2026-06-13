@@ -37,8 +37,14 @@ api_key = ""
 api_key = ""
 
 [providers.opencode]
+# OpenCode Zen — full opencode.ai catalog at /zen/v1 (paid + free models).
+# Leave empty to browse/use the free models; set a key to unlock paid ones.
 # Get from: opencode.ai/settings
-# For Go and Zen plans — native API (no CLI needed)
+api_key = ""
+
+[providers.opencode_go]
+# OpenCode Go — opencode.ai Go plan at /zen/go/v1 (paid-only; key required).
+# Get from: opencode.ai/settings
 api_key = ""
 
 # Custom providers use the same name as in config.toml:

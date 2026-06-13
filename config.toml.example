@@ -89,13 +89,25 @@ base_url = "https://openrouter.ai/api/v1/chat/completions"
 default_model = "qwen/qwen3-coder-next"  # Many options at openrouter.ai/models
 
 # ========================================
-# OpenCode Provider (Go and Zen plans)
+# OpenCode Zen Provider (full catalog)
 # ========================================
 # Native API provider — no CLI subprocess needed.
-# Models are fetched live from opencode.ai/zen/go/v1/models
-# API key goes in keys.toml: [providers.opencode] api_key = "..."
+# Models are fetched live from models.dev (the opencode/* catalog), including
+# the free models (their ids carry "-free"). No key = free models only; a key
+# in keys.toml ([providers.opencode] api_key = "...") unlocks the paid ones.
 # Get key from: opencode.ai/settings
 [providers.opencode]
+enabled = false
+base_url = "https://opencode.ai/zen/v1/chat/completions"
+# default_model = "deepseek-v4-flash-free"  # Optional: override default
+
+# ========================================
+# OpenCode Go Provider (Go plan)
+# ========================================
+# Separate opencode.ai plan at /zen/go/v1 with its own paid-only catalog.
+# Models fetched live from models.dev (the opencode-go/* catalog).
+# API key required — goes in keys.toml: [providers.opencode_go] api_key = "..."
+[providers.opencode_go]
 enabled = false
 base_url = "https://opencode.ai/zen/go/v1/chat/completions"
 # default_model = "qwen3.6-plus"  # Optional: override default

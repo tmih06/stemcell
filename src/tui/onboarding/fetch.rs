@@ -418,48 +418,14 @@ pub async fn fetch_provider_models(
             req.send().await
         }
         "opencode" => {
-            // OpenCode API — /zen/go/v1/models (Go and Zen plans)
-            let mut req = client.get("https://opencode.ai/zen/go/v1/models");
-            if let Some(key) = api_key
-                && !key.is_empty()
-            {
-                req = req.header("Authorization", format!("Bearer {}", key));
-            }
-            req.send().await
+            // OpenCode Zen — full opencode.ai catalog (/zen/v1), free models
+            // included (their ids carry "-free"). Listed from models.dev (the
+            // same source opencode itself reads), not hardcoded.
+            return fetch_models_dev_opencode("/opencode/models").await;
         }
-        "opencode_zen_free" => {
-            // OpenCode Zen Free API
-            // Filter models dynamically based on cost from models.dev, matching OpenCode's source
-            let req = client.get("https://models.dev/api.json");
-            match req.send().await {
-                Ok(resp) if resp.status().is_success() => {
-                    if let Ok(json) = resp.json::<serde_json::Value>().await
-                        && let Some(models) =
-                            json.pointer("/opencode/models").and_then(|v| v.as_object())
-                    {
-                        let mut free_models: Vec<String> = models
-                            .iter()
-                            .filter_map(|(id, model)| {
-                                let is_free = model
-                                    .get("cost")
-                                    .and_then(|c| c.get("input"))
-                                    .and_then(|i| i.as_f64())
-                                    .is_none_or(|input| input == 0.0);
-                                if is_free { Some(id.clone()) } else { None }
-                            })
-                            .collect();
-                        free_models.sort();
-                        tracing::info!(
-                            "[fetch_provider_models] OpenCode Zen Free: fetched {} free models",
-                            free_models.len()
-                        );
-                        return free_models;
-                    }
-                }
-                Ok(resp) => tracing::warn!("models.dev API returned {}", resp.status()),
-                Err(e) => tracing::warn!("models.dev fetch failed: {}", e),
-            }
-            return Vec::new();
+        "opencode_go" => {
+            // OpenCode Go — separate /zen/go/v1 plan, distinct models.dev key.
+            return fetch_models_dev_opencode("/opencode-go/models").await;
         }
         "zhipu" => {
             // z.ai GLM — /api/paas/v4/models or /api/coding/paas/v4/models
@@ -704,6 +670,35 @@ pub(crate) fn merge_minimax_baseline(baseline: Vec<String>, user: Vec<String>) -
         }
     }
     out
+}
+
+/// Fetch an OpenCode provider's model ids from `models.dev/api.json` — the same
+/// catalog opencode itself reads. `pointer` selects the provider object (e.g.
+/// `/opencode/models` for Zen, `/opencode-go/models` for Go). Returns the full
+/// id list; free models are kept (their ids already carry "-free"). Returns an
+/// empty vec on any network/parse failure so the picker degrades gracefully
+/// instead of panicking.
+async fn fetch_models_dev_opencode(pointer: &str) -> Vec<String> {
+    let client = reqwest::Client::new();
+    match client.get("https://models.dev/api.json").send().await {
+        Ok(resp) if resp.status().is_success() => {
+            if let Ok(json) = resp.json::<serde_json::Value>().await
+                && let Some(models) = json.pointer(pointer).and_then(|v| v.as_object())
+            {
+                let mut ids: Vec<String> = models.keys().cloned().collect();
+                ids.sort();
+                tracing::info!(
+                    "[fetch_provider_models] models.dev {} → {} models",
+                    pointer,
+                    ids.len()
+                );
+                return ids;
+            }
+        }
+        Ok(resp) => tracing::warn!("models.dev API returned {}", resp.status()),
+        Err(e) => tracing::warn!("models.dev fetch failed: {}", e),
+    }
+    Vec::new()
 }
 
 /// Fetch available models from the opencode CLI binary.
