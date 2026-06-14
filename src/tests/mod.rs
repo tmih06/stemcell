@@ -208,6 +208,7 @@ pub mod tool_arg_unescape_test;
 pub mod tool_execution_repo_test;
 pub mod tool_loop_helpers_test;
 pub mod tui_error_test;
+pub mod tui_jump_to_latest_test;
 pub mod tui_render_clear_test;
 pub mod usage_activity_columns_test;
 pub mod usage_cosmetic_alias_test;

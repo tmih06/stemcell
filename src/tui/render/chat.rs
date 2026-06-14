@@ -37,6 +37,16 @@ pub(crate) fn reasoning_to_lines(text: &str, max_width: usize) -> Vec<Line<'stat
 
 /// Render the chat messages
 pub(super) fn render_chat(f: &mut Frame, app: &mut App, area: Rect) {
+    // Maintain the "jump to latest" toast anchor. While pinned to the bottom the
+    // user has seen everything, so there is no anchor. The first frame after
+    // they scroll up we record the last message they saw; the toast then counts
+    // whatever is appended afterwards (see `App::new_messages_since_anchor`).
+    if app.auto_scroll {
+        app.unread_anchor = None;
+    } else if app.unread_anchor.is_none() {
+        app.unread_anchor = app.messages.last().map(|m| m.id);
+    }
+
     let mut lines: Vec<Line> = Vec::new();
     // Track which message index each rendered line belongs to (for click-to-copy)
     let mut line_to_msg: Vec<Option<usize>> = Vec::new();
@@ -1073,5 +1083,51 @@ pub(super) fn render_chat(f: &mut Frame, app: &mut App, area: Rect) {
         )));
         f.render_widget(Clear, rect);
         f.render_widget(widget, rect);
+    }
+
+    // "Jump to latest" toast. Shown whenever the user has scrolled up so there
+    // is always a one-key way back to the newest message. `scroll_offset` is
+    // distance-from-bottom and was capped to the scrollable range just above,
+    // so `> 0` means "not pinned to the bottom" (there is content below the
+    // fold). The label reports how many new responses landed since they left
+    // the bottom, falling back to a plain hint when nothing new has arrived. If
+    // the transient copy notification is occupying the bottom-right corner this
+    // frame, sit one row above it so the two never overlap — and yield the row
+    // entirely when the area is too short to spare.
+    if app.scroll_offset > 0 && area.height > 0 {
+        let new_count = app.new_messages_since_anchor();
+        let detail = match new_count {
+            0 => "Jump to latest".to_string(),
+            1 => "1 new message".to_string(),
+            n => format!("{n} new messages"),
+        };
+        let label = format!(" ↓ Ctrl+End · {detail} ");
+        let notif_visible = app.notification.is_some();
+        let suppressed = notif_visible && area.height < 2;
+        if !suppressed {
+            let width = (UnicodeWidthStr::width(label.as_str()) as u16).min(area.width);
+            let bottom = area.y + area.height.saturating_sub(1);
+            let y = if notif_visible {
+                bottom.saturating_sub(1)
+            } else {
+                bottom
+            };
+            let x = area.x + area.width.saturating_sub(width).saturating_sub(1);
+            let rect = Rect {
+                x,
+                y,
+                width,
+                height: 1,
+            };
+            let widget = Paragraph::new(Line::from(Span::styled(
+                label,
+                Style::default()
+                    .fg(Color::Black)
+                    .bg(Color::Rgb(215, 100, 20))
+                    .add_modifier(Modifier::BOLD),
+            )));
+            f.render_widget(Clear, rect);
+            f.render_widget(widget, rect);
+        }
     }
 }

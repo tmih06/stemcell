@@ -1771,6 +1771,11 @@ impl App {
             if self.scroll_offset == 0 {
                 self.auto_scroll = true;
             }
+        } else if keys::is_jump_to_bottom(&event) {
+            // Ctrl+End — jump straight to the latest message. Mirrors the
+            // "jump to latest" toast hint shown while scrolled up.
+            self.scroll_offset = 0;
+            self.auto_scroll = true;
         } else if event.code == KeyCode::Backspace && event.modifiers.contains(KeyModifiers::ALT) {
             // Alt+Backspace — delete last word
             self.delete_last_word();
