@@ -524,6 +524,11 @@ pub struct App {
     /// When true, new streaming content auto-scrolls to bottom.
     /// Set to false when user scrolls up; re-enabled when they scroll back to bottom or send a message.
     pub auto_scroll: bool,
+    /// Id of the last message the user saw at the bottom before scrolling up.
+    /// Drives the "jump to latest" toast: while set (i.e. scrolled up), the
+    /// number of newer messages after this anchor is the toast's count.
+    /// `None` whenever the view is pinned to the bottom (everything seen).
+    pub(crate) unread_anchor: Option<Uuid>,
     /// When false, the runner releases terminal mouse capture so the user can
     /// drag-select text natively (terminal handles selection + clipboard).
     /// Toggled with F12. Defaults to true (mouse capture on).
@@ -849,6 +854,37 @@ pub struct App {
     pub(crate) prompt_analyzer: PromptAnalyzer,
 }
 
+/// Count the responses appended after `anchor` — the id of the last message the
+/// user saw at the bottom before scrolling up. Powers the "jump to latest"
+/// toast count.
+///
+/// Counts assistant replies with visible text and system notices; skips
+/// tool-call groups, empty "thinking-only" assistant turns, and history
+/// markers, so the number tracks actual responses rather than render fragments.
+/// Scanning from the back makes it immune to older history being *prepended*
+/// (e.g. on PageUp). Returns 0 when there is no anchor (pinned to the bottom)
+/// or the anchor message is no longer present (session reloaded / cleared).
+pub(crate) fn count_new_messages_since_anchor(
+    messages: &[DisplayMessage],
+    anchor: Option<Uuid>,
+) -> usize {
+    let Some(anchor) = anchor else {
+        return 0;
+    };
+    let mut count = 0;
+    for msg in messages.iter().rev() {
+        if msg.id == anchor {
+            return count;
+        }
+        let is_response =
+            msg.role == "system" || (msg.role == "assistant" && !msg.content.trim().is_empty());
+        if is_response {
+            count += 1;
+        }
+    }
+    0
+}
+
 impl App {
     /// Create a new app instance
     pub fn new(
@@ -881,6 +917,7 @@ impl App {
             scroll_offset: 0,
             prev_rendered_lines: 0,
             auto_scroll: true,
+            unread_anchor: None,
             mouse_capture_enabled: true,
             selected_session_index: 0,
             should_quit: false,
@@ -1023,6 +1060,14 @@ impl App {
     /// Check if a session_id matches the currently active session
     pub(crate) fn is_current_session(&self, session_id: Uuid) -> bool {
         self.current_session.as_ref().map(|s| s.id) == Some(session_id)
+    }
+
+    /// Number of new responses that arrived since the user scrolled away from
+    /// the bottom — the count shown by the "jump to latest" toast. Thin wrapper
+    /// over [`count_new_messages_since_anchor`] using the live transcript and
+    /// the current `unread_anchor`.
+    pub(crate) fn new_messages_since_anchor(&self) -> usize {
+        count_new_messages_since_anchor(&self.messages, self.unread_anchor)
     }
 
     /// Route a per-session mutator to either the foreground

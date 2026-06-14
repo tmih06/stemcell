@@ -105,7 +105,7 @@ All 227 test files in `src/tests/`, grouped by area:
 | Token tracking | `token_tracking_test.rs` |
 | Tool execution | `tool_execution_repo_test.rs`, `tool_loop_helpers_test.rs` |
 | Tool args/regression | `tool_arg_unescape_test.rs`, `tools_md_regression_test.rs` |
-| TUI | `tui_error_test.rs`, `tui_render_clear_test.rs`, `tui_tool_stack_test.rs` |
+| TUI | `tui_error_test.rs`, `tui_jump_to_latest_test.rs`, `tui_render_clear_test.rs`, `tui_tool_stack_test.rs` |
 | Usage | `usage_activity_columns_test.rs`, `usage_cosmetic_alias_test.rs`, `usage_grouping_test.rs`, `usage_ledger_test.rs` |
 | User correction | `user_correction_metadata_test.rs` |
 | Web/browser routing | `web_browser_routing_test.rs` |

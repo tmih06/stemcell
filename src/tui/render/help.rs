@@ -66,6 +66,7 @@ pub(super) fn render_help(f: &mut Frame, app: &App, area: Rect) {
         kv("Ctrl+J", "New line (alt)", cyan),
         kv("Escape (x2)", "Cancel / abort immediately", cyan),
         kv("Page Up/Down", "Scroll history", cyan),
+        kv("Ctrl+End", "Jump to latest", cyan),
         kv("Ctrl+S", "Select mode (copy text)", cyan),
         kv("Drag mouse", "Select text (auto-scrolls at edges)", cyan),
         kv("Right-click", "Copy message", cyan),

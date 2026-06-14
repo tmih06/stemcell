@@ -7,6 +7,7 @@
 | [`src/tui/plan_tests.rs`](source-map.md#core) | Plan display types and rendering |
 | `src/tests/model_search_test.rs` | Model search: query normalization, multi-term matching, highlight spans |
 | `src/tests/provider_selector_test.rs` | Provider visibility gating + `/models` multi-term filtering |
+| `src/tests/tui_jump_to_latest_test.rs` | "Jump to latest" toast counter: new-message count after the scroll anchor |
 
 ## Inline Tests
 

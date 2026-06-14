@@ -598,6 +598,11 @@ pub mod keys {
         event.code == KeyCode::PageDown
     }
 
+    /// Ctrl+End - Jump the transcript straight to the latest message (bottom)
+    pub fn is_jump_to_bottom(event: &KeyEvent) -> bool {
+        event.code == KeyCode::End && event.modifiers.contains(KeyModifiers::CONTROL)
+    }
+
     /// Tab - Select/Navigate
     pub fn is_tab(event: &KeyEvent) -> bool {
         event.code == KeyCode::Tab && event.modifiers.is_empty()
